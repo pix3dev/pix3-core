@@ -103,6 +103,7 @@ effect. Registered in
 | `core:PunchScale` | Squash-and-stretch scale punch (juice) |
 | `core:PopIn` | Spawn pop-in scale with overshoot (juice) |
 | `core:CameraBrain` | Blend the render camera between virtual cameras (§4) |
+| `core:Hitbox2D` | Queryable 2D collision shape (rect/circle, group tag) — see §4 "2D collision" |
 
 Most juice behaviors have a `triggerEvent` (a signal name) and/or `playOnStart`,
 so a keyframe **event track** or a script `emit()` can fire them.
@@ -181,11 +182,30 @@ fixed-step ECS loop is the integration point; **games implement their own physic
 systems** on top (DeepCore does this). If asked for physics, prefer a game-level
 ECS system unless building a reusable engine node (confirm first).
 
+### 2D collision (`scene.collision2d`, `core:Hitbox2D`)
+Lightweight query-based 2D hit-testing (Godot Area2D groups × Unity `Physics2D.Overlap*`
+— no solver, no rigidbodies). Attach `core:Hitbox2D` to any 2D node: shape
+(`rect`/`circle`), size, offset, `group` tag, `debugDraw` outline (Godot's
+"Visible Collision Shapes"). Shapes are **axis-aligned** (rotation ignored, scale
+honored). **Use from scripts:**
+`scene.collision2d.overlapPoint(x, y, group?)` / `overlapCircle(x, y, r, group?)` /
+`overlapRect(cx, cy, w, h, group?)` → `Hit2D[]`, and
+`raycast(x1, y1, x2, y2, group?)` → closest hit with entry point + distance (the
+sniper-laser / line-of-sight query). Coordinates are 2D world/design px (origin
+center, Y up). Broadphase is a linear scan — fine for hundreds of hitboxes.
+Lives in [../packages/pix3-runtime/src/core/Collision2DService.ts](../packages/pix3-runtime/src/core/Collision2DService.ts) +
+[../packages/pix3-runtime/src/behaviors/Hitbox2DBehavior.ts](../packages/pix3-runtime/src/behaviors/Hitbox2DBehavior.ts).
+
 ### Input (`this.input`, `InputService`)
 Polled + per-frame input, unified across pointer/keyboard: `getAxis(name)`,
 `getButton(name)`, `pointerEvents` / `keyEvents` (this frame), `pointerPosition`,
 `wheelDelta`, `isPointerDown`, `isHoveringUI`. Depth-counted `lock()`/`unlock()`
 (used by the Cutscene Director) silences the whole polled surface at once.
+Pointer events come from the DOM Pointer Events API, so **mouse and touch are
+already unified** — design every interaction for both (tap = click; don't rely
+on hover). `scene.getPointer2DWorldPosition()` converts the current pointer to
+2D world/design coordinates through the live 2D camera (Godot's
+`get_global_mouse_position()`).
 
 ### Signals (node events)
 `node.connect(name, target, method)` / `disconnect` / `emit(name, ...args)`. The
@@ -196,6 +216,18 @@ connections where the script is the target).
 ### Screen transitions
 `scene.fadeToBlack(sec)` / `fadeFromBlack(sec)` / `switchCameraWithFade(id, out, in)`
 / `flash(opts)`. Real-time overlays (survive hitstop).
+
+### Runtime spawning (`scene.instantiate`, `node.queueFree`)
+Godot's `instantiate()` + `add_child()` / `queue_free()` pair for gameplay
+spawning (enemies, projectile prefabs, VFX):
+`const node = await scene.instantiate('res://…/prefab.pix3scene', { parent: 'enemies' })`
+— the prefab (a `.pix3scene` with exactly one root node) is cloned with unique
+runtime ids, adopted under `parent` (node or node-query; default = first scene
+root), inherits `input`/`scene`, honors `initiallyVisible`, and its components
+`onStart` on the next tick. In 2D the parent decides draw order. Despawn with
+`node.queueFree()` — safe inside the node's own `onUpdate` (deferred to end of
+frame, components get a proper `onDetach`); immediate `node.dispose()` is for
+teardown outside the tick.
 
 ### Scene transitions (change the running scene)
 `await scene.changeScene('res://src/assets/scenes/level2.pix3scene', { transition: 'fade', durationSec: 0.3 })`
