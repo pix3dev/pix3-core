@@ -10,8 +10,9 @@ Done (P1, dev side):
 - writer hand-over `handover/claim` under the write mutex, `409 writer_superseded`;
 - `pix3:fs` events (two scans 300 ms apart, `author: editor|external`);
 - sync barrier `POST /__pix3/api/sync` (rescan → hard-invalidate roots → `environment.reloadModule` → page ack with executed-content stamps), `POST /__pix3/api/flush`;
-- `virtual:pix3/{editor-host,editor-scripts,bot-policies,spine-loader}`; `.pix3/dev.json`; version gate.
+- `virtual:pix3/{editor-host,editor-scripts,bot-policies,spine-loader}`; `.pix3/dev.json`; version gate;
+- the page client is the editor's `EditorHost` (`src/client/`, conformance in `host-contract.spec.ts`); `/__pix3/editor.css` and `optimizeDeps.include` come from the installed `@pix3/editor-core/dist`.
 
-Not yet: player (`./player`, `virtual:runtime-*`, scene manifest), build, changeset/journal, editor assets under `/__pix3/assets/`, `optimize-deps.json` from editor-core.
+Not yet: player (`./player`, `virtual:runtime-*`, scene manifest), build, changeset/journal, the image-generation key proxy.
 
 Specs: `src/plugin.spec.ts` (real Vite on a free port, fake tab over the socket).

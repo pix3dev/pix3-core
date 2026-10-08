@@ -8,7 +8,7 @@ Pix3 2.x: a plain Vite + TS game project plus `@pix3/vite-plugin`, which serves 
 
 The design and phase plan is `.plans/pix3-core.md` in the `pix3` repo (sibling checkout `../pix3`); P0 spike code and reports are in `../pix3-core-spikes`. `pix3` itself becomes `pix3-full`, frozen on 1.6.x.
 
-**Status (2026-10-08): seeded, P1 in progress.** `runtime`, `cli`, `docs` and the templates carry their `pix3` history and pass lint, type-check and tests. `packages/editor-core` is a source snapshot of the `pix3` editor awaiting the port (it does not compile and is outside lint/type-check/tests). `packages/vite-plugin` is empty until the dev-plugin work lands.
+**Status (2026-10-09): P1 in progress.** `runtime`, `cli`, `docs` and the templates carry their `pix3` history. `packages/vite-plugin` serves the editor, the file API and the sync barrier; `packages/editor-core` is ported (mounts on `/__pix3/` of a real project, edits, saves, follows the disk, two tabs) — record in `.plans/editor-core-port.md`. Everything is in lint, type-check and tests. Not yet: the player and build in the plugin, `FlushService`/`ScenePatchWriter` (plan §C), bridge 3p tools, `create-pix3` Vite templates.
 
 ## Doc router — read the SECTION, not the whole file
 
@@ -55,9 +55,10 @@ Every doc below is bigger than the answer to any single task. **Locate the ancho
 ## Commands
 
 ```bash
-npm test               # vitest: runtime, cli and template specs (happy-dom; CLI specs opt into node)
-npm run lint           # eslint over packages/runtime/src and packages/cli/src
-npm run type-check     # tsc per package: runtime, cli (+ its Node build config), create-pix3
+npm test               # vitest: every package's specs (happy-dom; Node specs opt in per file)
+npm run lint           # eslint over runtime, cli, vite-plugin, editor-core
+npm run type-check     # tsc per package
+npm run build -w packages/editor-core   # prebuilt editor → dist/ (+ check-dist)
 npm run version:sync   # stamp the root version into every package (lockstep, plan §A.3)
 ```
 
@@ -72,7 +73,7 @@ npm workspaces, versions lockstep from the root `package.json` (`2.0.0-alpha.N`;
 - **`packages/runtime/`** (`@pix3/runtime`) — the engine: nodes, `Script`, ECS, `SceneService`/`SceneRunner`, audio, resources. Ships TypeScript sources; keep it editor-agnostic. `src/main.ts`, `register-project-scripts.ts` and `generated/` are player templates outside its tsconfig — they move into the plugin. `fixtures/` holds the sample projects its specs load (not published).
 - **`packages/cli/`** (`@pix3/cli`) — `validate`, `check`, `smoke`, `tree`, `sfx`, `kit`, … Bundled with esbuild into `dist/`; `validate`/`smoke` bundle the runtime from this checkout. `serve/` is the source the plugin's `/__pix3/api/*` routes are ported from; `serve/`, `workspace-agent/` and `mcp*.ts` leave the CLI afterwards (plan §A.1).
 - **`packages/create-pix3/`** — `npm create pix3`; `templates/` are the project templates (with their history), also copied into the CLI tarball by `copy-templates`.
-- **`packages/editor-core/`** (`@pix3/editor-core`) — the Lit editor, mounted through `EditorHost`. See its README for the snapshot source and port rules.
+- **`packages/editor-core/`** (`@pix3/editor-core`) — the Lit editor, prebuilt to `dist/` and mounted through `EditorHost` (`src/host/`). See its README.
 - **`packages/vite-plugin/`** (`@pix3/vite-plugin`) — dev middleware, editor at `/__pix3/`, sync, virtual modules, build.
 - **`../DeepCore/`** — a game on `@pix3/runtime` 1.6.x; the real-world test of the runtime API (migration in plan §A.4).
 
@@ -88,7 +89,7 @@ The mental model that spans many files:
    - `appState` (Valtio proxy, `packages/editor-core/src/state/AppState.ts`) holds **only** UI state, scene metadata (paths/names), selection (node **IDs**), and undo/redo bookkeeping. UI subscribes via `subscribe(appState.section, cb)` and disposes in `disconnectedCallback`.
    - Actual nodes are Three.js `Object3D` subclasses living in the `SceneGraph` owned by `SceneManager`. They are **NOT reactive** — operations mutate them imperatively. Selection bridges the two by ID.
 
-3. **Dependency injection** (`packages/editor-core/src/fw/di.ts`): `@injectable()` services registered in `ServiceContainer` (singletons by default), injected via `@inject(ServiceClass)`. Requires `reflect-metadata` (imported first in `main.ts`) and `experimentalDecorators`. Services holding subscriptions/resources implement `dispose()`. The services in `packages/editor-core/src/services/` are grouped into domain subdirectories (`core`, `scene`, `project`, `assets`, `scripting`, `play`, `export`, `editor`, `animation`, `localization`, `image-gen`, `viewport`, `agent`, `atlas`) — deep-import from the domain folder (`@/services/<domain>/FooService`); no loose files sit at the `packages/editor-core/src/services/` root.
+3. **Dependency injection** (`packages/editor-core/src/fw/di.ts`): `@injectable()` services registered in `ServiceContainer` (singletons by default), injected via `@inject(ServiceClass)`. Requires `reflect-metadata` (imported first in `main.ts`) and `experimentalDecorators`. Services holding subscriptions/resources implement `dispose()`. The services in `packages/editor-core/src/services/` are grouped into domain subdirectories (`core`, `scene`, `project`, `assets`, `scripting`, `play`, `editor`, `animation`, `localization`, `image-gen`, `viewport`, `game-test`, `atlas`) — deep-import from the domain folder (`@/services/<domain>/FooService`); no loose files sit at the `packages/editor-core/src/services/` root.
 
 4. **Property schema system** (Godot-inspired): node and `Script` classes implement `static getPropertySchema()` returning typed `PropertyDefinition`s with `getValue`/`setValue` closures. The Inspector renders editors dynamically from these; all edits go through `UpdateObjectPropertyOperation`. See `docs/property-schema-reference.md` (source: `packages/runtime/src/fw/`).
 
@@ -111,7 +112,7 @@ The 2D layer is a separate render pass with an orthographic camera, drawn over t
 
 ### Spine is an optional, host-injected dependency (non-obvious)
 
-`SpineSkeleton2D` renders through `@esotericsoftware/spine-threejs` (`~4.3`), which the runtime **never imports**: `packages/runtime/src/core/spine/spine-module.ts` hand-declares the structural subset it uses, and the host registers a loader (`setSpineModuleLoader(() => import('@esotericsoftware/spine-threejs'))` — `packages/editor-core/src/core/lazy-spine.ts`, called from the editor's `main.ts`; the plugin's player does the same). Reasons: consumer projects compile our TS sources, so a type import would make Spine mandatory for every game; the Spine Runtimes License is a poor fit for an always-installed dependency; and the literal dynamic import must live in the host for its bundler to emit a lazy chunk. Two more load-bearing details: atlas **pages must never go through the pre-launch atlas** (their UVs come from the `.atlas` file — the loader reads page blobs directly and `TextureAtlasService` excludes them), and spine adds its batch meshes **lazily**, so the editor proxy re-stamps `LAYER_2D` on the view's children after every update (three.js layers are per-object, not inherited; the runtime's per-frame `assign2DLayers` covers play mode).
+`SpineSkeleton2D` renders through `@esotericsoftware/spine-threejs` (`~4.3`), which the runtime **never imports**: `packages/runtime/src/core/spine/spine-module.ts` hand-declares the structural subset it uses, and the host registers a loader (the plugin's `virtual:pix3/spine-loader` resolves the literal `import()` or `null`; `packages/editor-core/src/core/lazy-spine.ts` registers it at mount; the plugin's player does the same). Reasons: consumer projects compile our TS sources, so a type import would make Spine mandatory for every game; the Spine Runtimes License is a poor fit for an always-installed dependency; and the literal dynamic import must live in the host for its bundler to emit a lazy chunk. Two more load-bearing details: atlas **pages must never go through the pre-launch atlas** (their UVs come from the `.atlas` file — the loader reads page blobs directly and `TextureAtlasService` excludes them), and spine adds its batch meshes **lazily**, so the editor proxy re-stamps `LAYER_2D` on the view's children after every update (three.js layers are per-object, not inherited; the runtime's per-frame `assign2DLayers` covers play mode).
 
 ### Exported viewport and HUD
 
@@ -132,7 +133,7 @@ The single-file HTML export is mostly **code**, not assets (measured: 1.22 MiB o
 - **A player must not construct `SceneSaver`.** It value-imports every node class for serialization, so having it in the bundle pins all of them; `SceneManager` takes it optionally and the runtime entry boots via `SceneRunner.loadAndStartScene` (`startScene` clones the graph by serializing to YAML and re-parsing it, which a player does not need).
 - **Optional heavy libraries are wired through a generated `virtual:runtime-*` module** (spine, postprocessing, network) with a **static** import inside it — a dynamic import would become a chunk a single-file HTML can never fetch, and a bare specifier left unaliased is silently externalised into an unresolvable import. That last one was a real shipped bug for `postprocessing`.
 
-Build moves into the plugin (plan §B.6); until then `ProjectBuildService` / `PlayableHtmlBuildService` live in `packages/editor-core/src/services/export/`. Full measurements: `../pix3/.plans/done/playable-export-size.md`.
+Build moves into the plugin (plan §B.6); the 1.x `ProjectBuildService` / `PlayableHtmlBuildService` were removed from the editor in the port and are the source for it (`git show 35ac1c6:packages/editor-core/src/services/export/`). Full measurements: `../pix3/.plans/done/playable-export-size.md`.
 
 ### Editor viewport renders on demand (non-obvious)
 

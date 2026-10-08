@@ -12,14 +12,16 @@ export const SPINE_LOADER_ID = 'virtual:pix3/spine-loader';
 const escapeHtml = (text: string): string =>
   text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 
-export const editorPageHtml = (base: string): string =>
+export const editorPageHtml = (base: string, options: { css?: boolean } = {}): string =>
   `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pix3</title>
-    <style>html,body,#pix3-editor{margin:0;height:100%}</style>
+    <style>html,body,#pix3-editor{margin:0;height:100%}</style>${
+      options.css ? `\n    <link rel="stylesheet" href="${base}__pix3/editor.css" />` : ''
+    }
   </head>
   <body>
     <div id="pix3-editor"></div>

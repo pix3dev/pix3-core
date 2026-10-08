@@ -256,6 +256,11 @@ export class ProjectService {
 
   async loadProjectManifest(): Promise<ProjectManifest> {
     try {
+      // Ask the listing first: a project without a manifest is normal, and a blind read would be
+      // a 404 in the browser console on every open.
+      if (!(await this.storage.fileExists(PROJECT_MANIFEST_PATH))) {
+        throw new Error('no manifest');
+      }
       const yaml = await this.storage.readTextFile(PROJECT_MANIFEST_PATH);
       this.loadedManifestHash = await this.manifestHashOf(yaml);
       const parsed = parse(yaml);
@@ -301,9 +306,7 @@ export class ProjectService {
     if (getProjectId(manifest) !== null) {
       return manifest;
     }
-    try {
-      await this.storage.readTextFile(PROJECT_MANIFEST_PATH);
-    } catch {
+    if (!(await this.storage.fileExists(PROJECT_MANIFEST_PATH))) {
       return manifest;
     }
     const withId = withProjectId(manifest, createProjectId());

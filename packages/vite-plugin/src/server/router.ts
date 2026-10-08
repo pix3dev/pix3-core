@@ -18,6 +18,7 @@ import { errorBody, HttpError, readJson, sendJson } from './http.ts';
  * | Route | |
  * |---|---|
  * | `GET /__pix3/` | the editor page (raw HTML: no `transformIndexHtml`, no `/@vite/client`) |
+ * | `GET /__pix3/editor.css` | the prebuilt editor's stylesheet |
  * | `GET /__pix3/api/hello` | project, versions, `seq`, `revision`, current writer |
  * | `GET\|HEAD\|PUT /__pix3/api/file?path=` | bytes with sha256 ETag; conditional atomic write |
  * | `GET /__pix3/api/manifest` | full rescan + every file with its hash |
@@ -36,6 +37,8 @@ export interface RouterDeps {
   readonly barrier: SyncBarrier;
   readonly hello: () => Record<string, unknown>;
   readonly editorPage: () => { status: number; html: string };
+  /** The prebuilt editor's stylesheet (`@pix3/editor-core/dist/editor.css`), or null. */
+  readonly editorCss: () => Buffer | null;
   readonly log: (line: string) => void;
 }
 
@@ -62,6 +65,18 @@ export const createRouter = (deps: RouterDeps) => {
         'Cache-Control': 'no-cache',
       });
       res.end(method === 'HEAD' ? undefined : page.html);
+      return;
+    }
+    if (path === `${prefix}/editor.css` && (method === 'GET' || method === 'HEAD')) {
+      // Served statically, past the project's PostCSS (plan §B.0): no CSS import may reach the
+      // editor chain (contract B).
+      const css = deps.editorCss();
+      if (!css) throw new HttpError(404, 'not_found', '@pix3/editor-core is not installed.');
+      res.writeHead(200, {
+        'Content-Type': 'text/css; charset=utf-8',
+        'Cache-Control': 'no-cache',
+      });
+      res.end(method === 'HEAD' ? undefined : css);
       return;
     }
     if (!path.startsWith(apiPrefix)) throw new HttpError(404, 'not_found', 'Not found.');

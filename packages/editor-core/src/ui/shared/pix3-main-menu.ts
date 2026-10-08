@@ -12,6 +12,9 @@ import { IconService, IconSize } from '@/services/editor/IconService';
 import { appState, getAppStateSnapshot } from '@/state';
 import styles from './pix3-main-menu.ts.css?raw';
 
+/** Bundled with the editor (never the project's `public/`, plan §B.1). */
+const MENU_LOGO_URL = new URL('../../../assets/menu-logo.png', import.meta.url).href;
+
 interface MainMenuItem {
   id: string;
   label: string;
@@ -902,7 +905,7 @@ export class Pix3MainMenu extends ComponentBase {
             aria-label="Close project"
             @click=${this.handleLogoClick}
           >
-            <img src="/menu-logo.png" alt="Pix3" class="menu-logo" />
+            <img src=${MENU_LOGO_URL} alt="Pix3" class="menu-logo" />
           </button>
           ${this.menuSections
             .slice(0, this.inlineSectionCount)

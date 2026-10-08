@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -13,6 +13,7 @@ import {
 
 import {
   clearDevInfo,
+  findPackageDir,
   installedVersion,
   pluginVersion,
   versionMismatch,
@@ -61,6 +62,19 @@ const CLIENT_ENTRY = fileURLToPath(
   new URL(`./client/index.${import.meta.url.endsWith('.ts') ? 'ts' : 'js'}`, import.meta.url)
 );
 
+/** `dist/optimize-deps.json` of the installed editor, or nothing. */
+const editorOptimizeDeps = (editorCoreDir: string | null): string[] => {
+  if (!editorCoreDir) return [];
+  try {
+    const list = JSON.parse(
+      readFileSync(join(editorCoreDir, 'dist', 'optimize-deps.json'), 'utf8')
+    ) as unknown;
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
 export function pix3(options: Pix3Options = {}): Plugin {
   const settings = {
     resRoot: options.resRoot ?? '.',
@@ -84,16 +98,20 @@ export function pix3(options: Pix3Options = {}): Plugin {
 
     config(user) {
       const root = resolve(user.root ?? process.cwd());
+      const linkedEditorCore = findPackageDir(root, '@pix3/editor-core');
+      // Vite checks `fs.allow` against real paths; a workspace or pnpm link points elsewhere.
+      const editorCoreDir = linkedEditorCore ? realpathSync(linkedEditorCore) : null;
       // An explicit `fs.allow` switches off Vite's workspace-root default; keep it when the user
-      // set none, and add this package (the page client is served from it by `/@fs/`).
-      const allow = user.server?.fs?.allow
-        ? [PACKAGE_DIR]
-        : [searchForWorkspaceRoot(root), PACKAGE_DIR];
+      // set none, and add this package (the page client is served from it by `/@fs/`) and the
+      // prebuilt editor (served from wherever npm put it: hoisted, pnpm, a workspace link).
+      const own = [PACKAGE_DIR, ...(editorCoreDir ? [editorCoreDir] : [])];
+      const allow = user.server?.fs?.allow ? own : [searchForWorkspaceRoot(root), ...own];
       return {
         resolve: { dedupe: ['three', '@pix3/runtime'] },
         optimizeDeps: {
-          // One runtime and one three for the game and the editor (plan §B.2, S1).
-          include: ['@pix3/runtime', 'three'],
+          // One runtime and one three for the game and the editor (plan §B.2, S1), plus the bare
+          // subpaths the prebuilt editor imports (`dist/optimize-deps.json`).
+          include: ['@pix3/runtime', 'three', ...editorOptimizeDeps(editorCoreDir)],
           exclude: ['@pix3/editor-core'],
         },
         server: { fs: { allow } },
@@ -137,6 +155,8 @@ export function pix3(options: Pix3Options = {}): Plugin {
           seq: projectFiles.currentSeq,
           revision: projectFiles.revision(),
           writerId: projectFiles.writerId,
+          root,
+          projectName: basename(root),
           resRoot: settings.resRoot,
           versions,
         }),
@@ -152,6 +172,8 @@ export function pix3(options: Pix3Options = {}): Plugin {
       devServer.watcher.on('all', (_event, path) => projectFiles.noteFsEvent(path));
 
       const gate = versionMismatch(versions.runtime, versions.editorCore);
+      const editorCoreDir = findPackageDir(root, '@pix3/editor-core');
+      const editorCss = editorCoreDir ? join(editorCoreDir, 'dist', 'editor.css') : null;
       devServer.middlewares.use(
         createRouter({
           base,
@@ -172,7 +194,11 @@ export function pix3(options: Pix3Options = {}): Plugin {
           editorPage: () =>
             gate
               ? { status: 409, html: versionGatePageHtml(gate) }
-              : { status: 200, html: editorPageHtml(base) },
+              : {
+                  status: 200,
+                  html: editorPageHtml(base, { css: editorCss !== null && existsSync(editorCss) }),
+                },
+          editorCss: () => (editorCss && existsSync(editorCss) ? readFileSync(editorCss) : null),
         })
       );
 
