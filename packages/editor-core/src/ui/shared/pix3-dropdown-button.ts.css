@@ -1,0 +1,184 @@
+pix3-dropdown-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-2);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+pix3-dropdown-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+pix3-dropdown-button:hover:not([disabled]) {
+  background: var(--bg-3);
+}
+
+pix3-dropdown-button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Panel variant — matches the viewport toolbar dropdown button. */
+pix3-toolbar[variant='panel'] pix3-dropdown-button {
+  width: auto;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-1);
+}
+
+pix3-toolbar[variant='panel'] pix3-dropdown-button:hover:not([disabled]) {
+  background: transparent;
+  color: var(--fg-0);
+}
+
+.dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.dropdown__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.dropdown__caret {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+pix3-dropdown-button[icon-only] .dropdown__caret {
+  display: none;
+}
+
+.dropdown__menu {
+  display: none;
+  min-width: 12rem;
+  padding: 0.5rem 0;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-pop);
+}
+
+.dropdown__menu--hidden {
+  display: none !important;
+}
+
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+  gap: 0.5rem;
+}
+
+.dropdown__item:hover:not(.dropdown__item--disabled) {
+  background: var(--bg-2);
+  color: var(--fg-0);
+  cursor: pointer;
+}
+
+.dropdown__item:active:not(.dropdown__item--disabled) {
+  background: var(--bg-3);
+}
+
+.dropdown__item:focus-visible {
+  outline: none;
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+.dropdown__item--disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.dropdown__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.dropdown__item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdown__divider {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--line-1);
+}
+
+.dropdown__group {
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem 0;
+}
+
+.dropdown__group + .dropdown__group {
+  border-top: 1px solid var(--line-1);
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+}
+
+.dropdown__group-label {
+  padding: 0.5rem 1rem 0.25rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+  border-bottom: 1px solid var(--line-1);
+  margin-bottom: 0.25rem;
+}
+
+.dropdown__item--grouped {
+  padding-left: 2rem;
+}
+
+/* Portal styles - rendered at document.body level */
+.pix3-dropdown-portal {
+  all: unset;
+}
+
+.pix3-dropdown-portal .dropdown__menu {
+  display: block !important;
+  position: fixed;
+}

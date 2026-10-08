@@ -1,0 +1,433 @@
+/* ============================================================
+   Pix3 — global design tokens + base styles
+   Single source of truth for the redesign (.plans/redisign.md).
+   Tokens live on :root so they pierce Lit shadow roots; components
+   must only consume var(--...) — never raw hex/rgb literals.
+   ============================================================ */
+
+:root {
+  /* Surfaces (deep neutrals, slightly cool) */
+  --bg-0: oklch(0.16 0.008 250); /* app bg, viewport chrome */
+  --bg-1: oklch(0.19 0.008 250); /* panels */
+  --bg-2: oklch(0.22 0.008 250); /* raised: inputs, row hover */
+  --bg-3: oklch(0.26 0.008 250); /* hover raised, active segment */
+  --bg-4: oklch(0.31 0.008 250);
+
+  /* Lines */
+  --line-1: oklch(0.28 0.008 250); /* all panel separators */
+  --line-2: oklch(0.34 0.008 250); /* popover borders, hover borders */
+  --line-strong: oklch(0.42 0.008 250);
+
+  /* Text */
+  --fg-0: oklch(0.97 0.005 250); /* primary */
+  --fg-1: oklch(0.82 0.006 250); /* secondary, default icons */
+  --fg-2: oklch(0.62 0.006 250); /* tertiary, field labels */
+  --fg-3: oklch(0.48 0.006 250); /* muted, counters, hints */
+
+  /* Accent — amber */
+  --accent: oklch(0.8 0.15 75);
+  --accent-soft: oklch(0.8 0.15 75 / 0.16); /* selection background */
+  --accent-line: oklch(0.8 0.15 75 / 0.42); /* border of active elements */
+  --accent-fg: oklch(0.2 0.05 75); /* text ON accent background */
+
+  --danger: oklch(0.7 0.18 25);
+  --danger-soft: oklch(0.7 0.18 25 / 0.16);
+  --danger-line: oklch(0.7 0.18 25 / 0.42);
+  --warn: oklch(0.82 0.15 80);
+  --warn-soft: oklch(0.82 0.15 80 / 0.16);
+  /* Healthy/connected status. Distinct from --presence-* (collaborator identity,
+     which starts at amber) so an "all good" indicator never reads as a warning. */
+  --ok: oklch(0.76 0.17 150);
+  --ok-soft: oklch(0.76 0.17 150 / 0.16);
+  --ok-line: oklch(0.76 0.17 150 / 0.42);
+
+  /* Axis identity — transform/size fields, gizmo parity (X red · Y green · Z blue).
+     Width maps to X, height to Y. Consumed by pix3-number-field's axis chip. */
+  --axis-x: oklch(0.68 0.19 25);
+  --axis-y: oklch(0.76 0.17 145);
+  --axis-z: oklch(0.68 0.15 250);
+
+  /* Presence (collaborator cursors/avatars) */
+  --presence-1: oklch(0.8 0.15 75); /* amber (you) — matches --accent */
+  --presence-2: oklch(0.74 0.16 30); /* coral */
+  --presence-3: oklch(0.78 0.15 280); /* violet */
+  --presence-4: oklch(0.82 0.15 80); /* amber */
+  --presence-5: oklch(0.74 0.13 220); /* sky */
+
+  /* Type */
+  --font-ui: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Roboto Mono', 'Consolas', ui-monospace, monospace;
+
+  /* Density */
+  --row-h: 24px;
+  --pad-x: 8px;
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 10px;
+
+  /* Shadows — floating elements only */
+  --shadow-pop: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 8px 24px oklch(0 0 0 / 0.4);
+  --shadow-float:
+    0 1px 0 oklch(1 0 0 / 0.05) inset, 0 12px 40px oklch(0 0 0 / 0.5), 0 0 0 1px var(--line-1);
+
+  /* Legacy aliases — old component conventions mapped onto the new tokens.
+     Keep until every consumer is migrated, then remove. */
+  --pix3-accent-color: var(--accent);
+  --pix3-accent-rgb: 245, 174, 57; /* sRGB of oklch(0.8 0.15 75) */
+
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color-scheme: dark;
+  color: var(--fg-0);
+  background-color: var(--bg-0);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  min-height: 100%;
+  background-color: var(--bg-0);
+}
+
+body {
+  display: block;
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-ui);
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+#app,
+body > pix3-editor {
+  height: 100%;
+}
+
+/* Single focus ring everywhere */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Utilities */
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings:
+    'tnum' 1,
+    'ss01' 1;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-select {
+  user-select: none;
+}
+
+/* Viewport canvas backdrop grid */
+.viewport-grid {
+  background-color: oklch(0.13 0.008 250);
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.025) 1px, transparent 1px),
+    linear-gradient(oklch(1 0 0 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.05) 1px, transparent 1px);
+  background-size:
+    16px 16px,
+    16px 16px,
+    80px 80px,
+    80px 80px;
+}
+
+/* Checkerboard for transparent asset thumbs */
+.checker {
+  background-image:
+    linear-gradient(45deg, oklch(0.22 0.008 250) 25%, transparent 25%),
+    linear-gradient(-45deg, oklch(0.22 0.008 250) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, oklch(0.22 0.008 250) 75%),
+    linear-gradient(-45deg, transparent 75%, oklch(0.22 0.008 250) 75%);
+  background-size: 12px 12px;
+  background-position:
+    0 0,
+    0 6px,
+    6px -6px,
+    -6px 0;
+  background-color: oklch(0.27 0.008 250);
+}
+
+/* Global scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+/* ========================================
+   Golden Layout — flat panel chrome
+   Panel-header tabs per redesign §4.1: quiet text + 2px accent underline.
+   ======================================== */
+
+.lm_goldenlayout {
+  background: var(--bg-0);
+}
+
+.lm_content {
+  background: var(--bg-1);
+  border: none;
+}
+
+.lm_header {
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  min-height: 30px;
+  user-select: none;
+}
+
+.lm_header .lm_tabs {
+  align-items: stretch;
+}
+
+.lm_header .lm_tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  min-height: 29px;
+  margin: 0;
+  /* reserve room on the right so the close button never overlaps the title */
+  padding: 0 23px 0 8px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--fg-2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Tabs with no close button (fixed panels) don't need the reserved gutter. */
+.lm_header .lm_tab:not(:has(.lm_close_tab)) {
+  padding-right: 8px;
+}
+
+.lm_header .lm_tab span {
+  padding-top: 0;
+}
+
+.lm_header .lm_tab .lm_close_tab {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-1);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 10px 10px;
+  opacity: 0.55;
+  transition:
+    background-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.lm_header .lm_tab .lm_close_tab:hover {
+  background-color: var(--bg-3);
+  opacity: 1;
+}
+
+.lm_header .lm_tab:hover {
+  background: transparent;
+  color: var(--fg-1);
+}
+
+.lm_header .lm_tab.lm_active {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--fg-0);
+  font-weight: 500;
+  padding-bottom: 0;
+}
+
+.lm_header .lm_tab.lm_active:hover {
+  background: transparent;
+  color: var(--fg-0);
+}
+
+/* GL's dark theme paints a blue fill on a focused active tab (.lm_focused);
+   the redesign keeps tabs flat (text + accent underline), so neutralize it. */
+.lm_header .lm_tab.lm_focused,
+.lm_header .lm_tab.lm_active.lm_focused {
+  background: transparent;
+  color: var(--fg-0);
+}
+
+.lm_header .lm_tab.lm_active::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* Document tabs (§4.2) — the stack hosting scene/code editors gets card-style tabs:
+   active = small card on the viewport background, inactive = plain quiet text. */
+.lm_stack:has(pix3-editor-tab, pix3-code-tab, pix3-game-tab) .lm_header .lm_tab {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.lm_stack:has(pix3-editor-tab, pix3-code-tab, pix3-game-tab) .lm_header .lm_tab.lm_active {
+  height: 24px;
+  min-height: 24px;
+  margin: 3px 3px 0 3px;
+  padding: 0 24px 0 8px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-1);
+  border-radius: 5px;
+  align-self: center;
+}
+
+.lm_stack:has(pix3-editor-tab, pix3-code-tab, pix3-game-tab)
+  .lm_header
+  .lm_tab.lm_active
+  .lm_close_tab {
+  right: 4px;
+}
+
+.lm_stack:has(pix3-editor-tab, pix3-code-tab, pix3-game-tab) .lm_header .lm_tab.lm_active::after {
+  display: none;
+}
+
+/* The Home tab (background panel) is always visible and never closable. */
+.lm_tab[title='Home'] .lm_close_tab {
+  display: none !important;
+}
+
+/* Document-tab type icon (§4.2): a small vector glyph left of the tab title so the tab type
+   (scene / code / game / sprite editor / home) reads at a glance. Injected by LayoutManager. */
+.lm_header .lm_tab .pix3-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  opacity: 0.75;
+  flex: 0 0 auto;
+}
+
+.lm_header .lm_tab.lm_active .pix3-tab-icon {
+  opacity: 1;
+}
+
+.lm_header .lm_tab .pix3-tab-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+/* Unsaved-changes indicator: a dot immediately left of the title (the close button stays put on
+   the right). Drawn as a shape rather than a glyph so it honours the theme and scales cleanly. */
+.lm_header .lm_tab.pix3-tab-dirty .lm_title::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.lm_splitter {
+  background: var(--bg-0);
+  opacity: 1;
+  transition: background 120ms ease;
+}
+
+.lm_splitter:hover,
+.lm_splitter.lm_dragging {
+  background: var(--accent-line);
+}
+
+.lm_dragProxy .lm_content,
+.lm_dropTargetIndicator {
+  box-shadow: var(--shadow-pop);
+}
+
+.lm_dropTargetIndicator {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  outline: none;
+}

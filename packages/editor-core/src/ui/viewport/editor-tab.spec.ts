@@ -1,0 +1,908 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { appState, resetAppState } from '@/state';
+import { ASSET_RESOURCE_MIME } from '@/ui/shared/asset-drag-drop';
+import { CreateAnimatedSprite2DCommand } from '@/features/scene/CreateAnimatedSprite2DCommand';
+import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
+import type { CreateSprite2DOperationParams } from '@/features/scene/CreateSprite2DOperation';
+import { Group2D, Node3D, Sprite2D, type NodeBase, type SceneGraph } from '@pix3/runtime';
+import { Vector2 } from 'three';
+
+const { EditorTabComponent } = await import('./editor-tab');
+
+describe('EditorTabComponent', () => {
+  beforeEach(() => {
+    resetAppState();
+
+    if (!globalThis.ResizeObserver) {
+      globalThis.ResizeObserver = class {
+        disconnect(): void {}
+        observe(): void {}
+        unobserve(): void {}
+      } as typeof ResizeObserver;
+    }
+  });
+
+  afterEach(() => {
+    resetAppState();
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('accepts asset drags on the internal shadow DOM panel surface', async () => {
+    const panel = new EditorTabComponent();
+    stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const dropSurface = panel.shadowRoot?.querySelector<HTMLElement>('.panel');
+    expect(dropSurface).not.toBeNull();
+
+    const dataTransfer = createDataTransfer([ASSET_RESOURCE_MIME]);
+    const dragOverEvent = new Event('dragover', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dragOverEvent, 'dataTransfer', {
+      value: dataTransfer,
+      configurable: true,
+    });
+
+    dropSurface?.dispatchEvent(dragOverEvent);
+    await panel.updateComplete;
+
+    expect(dragOverEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.dropEffect).toBe('copy');
+    expect(
+      panel.shadowRoot?.querySelector('.panel')?.classList.contains('panel--asset-dragover')
+    ).toBe(true);
+  });
+
+  it('accepts uri-list asset drags on the internal shadow DOM panel surface', async () => {
+    const panel = new EditorTabComponent();
+    stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const dropSurface = panel.shadowRoot?.querySelector<HTMLElement>('.panel');
+    expect(dropSurface).not.toBeNull();
+
+    const dataTransfer = createDataTransfer(['text/uri-list']);
+    const dragOverEvent = new Event('dragover', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dragOverEvent, 'dataTransfer', {
+      value: dataTransfer,
+      configurable: true,
+    });
+
+    dropSurface?.dispatchEvent(dragOverEvent);
+    await panel.updateComplete;
+
+    expect(dragOverEvent.defaultPrevented).toBe(true);
+    expect(dataTransfer.dropEffect).toBe('copy');
+    expect(
+      panel.shadowRoot?.querySelector('.panel')?.classList.contains('panel--asset-dragover')
+    ).toBe(true);
+  });
+
+  it('creates a sprite command on image drop in the editor tab', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const dropSurface = panel.shadowRoot?.querySelector<HTMLElement>('.panel');
+    expect(dropSurface).not.toBeNull();
+
+    const dropEvent = new Event('drop', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: createDataTransfer(['text/uri-list'], {
+        'text/uri-list': 'res://assets/hero.png',
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(dropEvent, 'clientX', { value: 160, configurable: true });
+    Object.defineProperty(dropEvent, 'clientY', { value: 120, configurable: true });
+
+    dropSurface?.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledWith(
+      expect.any(CreateSprite2DCommand)
+    );
+  });
+
+  it('creates a sprite command when the image is dropped on the viewport host', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const host = panel.shadowRoot?.querySelector<HTMLElement>('.viewport-host');
+    expect(host).not.toBeNull();
+
+    const dropEvent = new Event('drop', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: createDataTransfer(['text/uri-list'], {
+        'text/uri-list': 'res://assets/hero.png',
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(dropEvent, 'clientX', { value: 160, configurable: true });
+    Object.defineProperty(dropEvent, 'clientY', { value: 120, configurable: true });
+
+    host?.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledWith(
+      expect.any(CreateSprite2DCommand)
+    );
+  });
+
+  it('creates an animated sprite command when a .pix3anim asset is dropped on the viewport host', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const host = panel.shadowRoot?.querySelector<HTMLElement>('.viewport-host');
+    expect(host).not.toBeNull();
+
+    const dropEvent = new Event('drop', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: createDataTransfer(['text/uri-list'], {
+        'text/uri-list': 'res://animations/walk.pix3anim',
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(dropEvent, 'clientX', { value: 160, configurable: true });
+    Object.defineProperty(dropEvent, 'clientY', { value: 120, configurable: true });
+
+    host?.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    expect(services.commandDispatcher.execute).toHaveBeenCalledWith(
+      expect.any(CreateAnimatedSprite2DCommand)
+    );
+  });
+
+  it('switches keyboard shortcut context to the viewport when the viewport host is clicked', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.editorContext.focusedArea = 'scene-tree';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const host = panel.shadowRoot?.querySelector<HTMLElement>('.viewport-host');
+    expect(host).not.toBeNull();
+
+    host?.dispatchEvent(createPointerEvent('pointerdown', { clientX: 120, clientY: 90 }));
+
+    expect(appState.editorContext.focusedArea).toBe('viewport');
+  });
+
+  it('parents dropped sprites into the compatible 2D container under the cursor', async () => {
+    appState.scenes.activeSceneId = 'scene-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    const containerNode = new Group2D({
+      id: 'container-node',
+      name: 'UI Layer',
+      position: new Vector2(50, 60),
+    });
+    const childNode = new Sprite2D({
+      id: 'child-node',
+      name: 'Existing Sprite',
+      texturePath: 'res://assets/existing.png',
+      position: new Vector2(10, 15),
+      width: 32,
+      height: 32,
+    });
+    containerNode.add(childNode);
+    containerNode.updateWorldMatrix(true, true);
+
+    services.viewportRenderer.raycastObject.mockReturnValue(childNode as NodeBase);
+    services.viewportRenderer.resolve2DAssetDropPosition.mockReturnValue(new Vector2(110, 220));
+    services.sceneManager.getSceneGraph.mockReturnValue({
+      rootNodes: [containerNode],
+      nodeMap: new Map<string, NodeBase>([
+        [containerNode.nodeId, containerNode],
+        [childNode.nodeId, childNode],
+      ]),
+    } as unknown as SceneGraph);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const host = panel.shadowRoot?.querySelector<HTMLElement>('.viewport-host');
+    expect(host).not.toBeNull();
+
+    const dropEvent = new Event('drop', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: createDataTransfer(['text/uri-list'], {
+        'text/uri-list': 'res://assets/hero.png',
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(dropEvent, 'clientX', { value: 160, configurable: true });
+    Object.defineProperty(dropEvent, 'clientY', { value: 120, configurable: true });
+
+    host?.dispatchEvent(dropEvent);
+
+    const command = services.commandDispatcher.execute.mock.calls[0]?.[0];
+    expect(command).toBeInstanceOf(CreateSprite2DCommand);
+    const params = (command as unknown as { params: CreateSprite2DOperationParams }).params;
+    expect(params.parentNodeId).toBe('container-node');
+    expect(params.position?.x).toBeCloseTo(60);
+    expect(params.position?.y).toBeCloseTo(160);
+  });
+
+  it('adds to viewport selection on shift click (Figma additive)', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    const hitNode = new Sprite2D({
+      id: 'sprite-toggle',
+      name: 'Toggle Sprite',
+      texturePath: 'res://assets/toggle.png',
+      width: 32,
+      height: 32,
+    });
+    services.viewportRenderer.raycastObject.mockReturnValue(hitNode as NodeBase);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 120, clientY: 90, buttons: 1, shiftKey: true })
+    );
+    panel.dispatchEvent(
+      createPointerEvent('pointerup', { clientX: 120, clientY: 90, shiftKey: true })
+    );
+
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    const command = services.commandDispatcher.execute.mock.calls[0]?.[0] as {
+      params?: {
+        nodeId?: string | null;
+        additive?: boolean;
+      };
+    };
+    expect(command.params).toEqual({ nodeId: 'sprite-toggle', additive: true });
+  });
+
+  it('deep-selects on ctrl click over the selection body without starting a move transform', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    const hitNode = new Sprite2D({
+      id: 'sprite-selected-toggle',
+      name: 'Selected Sprite',
+      texturePath: 'res://assets/selected-toggle.png',
+      width: 32,
+      height: 32,
+    });
+    services.viewportRenderer.get2DHandleAt.mockReturnValue('move');
+    services.viewportRenderer.raycastObject.mockReturnValue(hitNode as NodeBase);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 120, clientY: 90, buttons: 1, ctrlKey: true })
+    );
+    panel.dispatchEvent(
+      createPointerEvent('pointerup', { clientX: 120, clientY: 90, ctrlKey: true })
+    );
+
+    // Ctrl = deep select (Figma). A press on the frame body no longer starts a
+    // move, and Ctrl selects the raw leaf rather than toggling it.
+    expect(services.viewportRenderer.start2DTransform).not.toHaveBeenCalled();
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    const command = services.commandDispatcher.execute.mock.calls[0]?.[0] as {
+      params?: {
+        nodeId?: string | null;
+        additive?: boolean;
+      };
+    };
+    expect(command.params).toEqual({ nodeId: 'sprite-selected-toggle' });
+  });
+
+  it('keeps selection unchanged on shift click in empty viewport space', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.selection.nodeIds = ['selected-node'];
+    appState.selection.primaryNodeId = 'selected-node';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    // Shift = additive (Figma): shift-clicking empty space must not clear.
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 80, clientY: 60, buttons: 1, shiftKey: true })
+    );
+    panel.dispatchEvent(
+      createPointerEvent('pointerup', { clientX: 80, clientY: 60, shiftKey: true })
+    );
+
+    expect(services.commandDispatcher.execute).not.toHaveBeenCalled();
+    expect(appState.selection.nodeIds).toEqual(['selected-node']);
+    expect(appState.selection.primaryNodeId).toBe('selected-node');
+  });
+
+  it('defers a body-drag into a move transform from the original down point', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    services.viewportRenderer.get2DHandleAt.mockReturnValue('move');
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    // Press on the frame body: no transform starts yet (deferred).
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 120, clientY: 90, buttons: 1 })
+    );
+    expect(services.viewportRenderer.start2DTransform).not.toHaveBeenCalled();
+
+    // Drag past the threshold: the move starts from the ORIGINAL down point so
+    // the delta does not jump.
+    panel.dispatchEvent(
+      createPointerEvent('pointermove', { clientX: 140, clientY: 90, buttons: 1 })
+    );
+    expect(services.viewportRenderer.start2DTransform).toHaveBeenCalledWith(120, 90, 'move');
+  });
+
+  it('single click selects the top-level container in 2d (Figma scope)', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.scenes.activeSceneId = 'scene-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    const container = new Group2D({ id: 'container-node', name: 'Group' });
+    const child = new Sprite2D({
+      id: 'child-node',
+      name: 'Child',
+      texturePath: 'res://assets/child.png',
+      width: 16,
+      height: 16,
+    });
+    container.add(child);
+    services.viewportRenderer.raycastObject.mockReturnValue(child as NodeBase);
+    services.sceneManager.getSceneGraph.mockReturnValue({
+      rootNodes: [container],
+      nodeMap: new Map<string, NodeBase>([
+        [container.nodeId, container],
+        [child.nodeId, child],
+      ]),
+    } as unknown as SceneGraph);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 40, clientY: 40, buttons: 1 })
+    );
+    panel.dispatchEvent(createPointerEvent('pointerup', { clientX: 40, clientY: 40 }));
+
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    const command = services.commandDispatcher.execute.mock.calls[0]?.[0] as {
+      params?: { nodeId?: string | null; focusNodeId?: string | null; additive?: boolean };
+    };
+    expect(command.params).toEqual({
+      nodeId: 'container-node',
+      focusNodeId: null,
+      additive: false,
+    });
+  });
+
+  it('double click drills into the container and selects the child (Figma scope)', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.scenes.activeSceneId = 'scene-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    const container = new Group2D({ id: 'container-node', name: 'Group' });
+    const child = new Sprite2D({
+      id: 'child-node',
+      name: 'Child',
+      texturePath: 'res://assets/child.png',
+      width: 16,
+      height: 16,
+    });
+    container.add(child);
+    services.viewportRenderer.raycastObject.mockReturnValue(child as NodeBase);
+    services.sceneManager.getSceneGraph.mockReturnValue({
+      rootNodes: [container],
+      nodeMap: new Map<string, NodeBase>([
+        [container.nodeId, container],
+        [child.nodeId, child],
+      ]),
+    } as unknown as SceneGraph);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    // First click selects the container; second (double) click drills in.
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 40, clientY: 40, buttons: 1 })
+    );
+    panel.dispatchEvent(createPointerEvent('pointerup', { clientX: 40, clientY: 40 }));
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 40, clientY: 40, buttons: 1 })
+    );
+    panel.dispatchEvent(createPointerEvent('pointerup', { clientX: 40, clientY: 40 }));
+
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(2);
+    const drill = services.commandDispatcher.execute.mock.calls[1]?.[0] as {
+      params?: { nodeId?: string | null; focusNodeId?: string | null; additive?: boolean };
+    };
+    expect(drill.params).toEqual({
+      nodeId: 'child-node',
+      focusNodeId: 'container-node',
+      additive: false,
+    });
+  });
+
+  it('selects intersecting 2D nodes with a marquee drag in 2d navigation mode', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    services.viewportRenderer.getSelectable2DNodeIdsInScreenRect.mockReturnValue([
+      'node-1',
+      'node-2',
+    ]);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 20, clientY: 30, buttons: 1 })
+    );
+    panel.dispatchEvent(
+      createPointerEvent('pointermove', { clientX: 70, clientY: 90, buttons: 1 })
+    );
+    await panel.updateComplete;
+
+    const marquee = panel.shadowRoot?.querySelector('.viewport-marquee-selection');
+    expect(marquee).not.toBeNull();
+    expect(services.viewportRenderer.set2DMarqueePreviewNodeIds).toHaveBeenCalledWith([
+      'node-1',
+      'node-2',
+    ]);
+
+    panel.dispatchEvent(createPointerEvent('pointerup', { clientX: 70, clientY: 90 }));
+
+    expect(services.viewportRenderer.getSelectable2DNodeIdsInScreenRect).toHaveBeenCalledWith(
+      20,
+      30,
+      70,
+      90
+    );
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
+    const command = services.commandDispatcher.execute.mock.calls[0]?.[0] as {
+      params?: {
+        nodeIds?: string[];
+        primaryNodeId?: string | null;
+      };
+    };
+    expect(command.params).toEqual({ nodeIds: ['node-1', 'node-2'], primaryNodeId: 'node-1' });
+    expect(services.viewportRenderer.clear2DMarqueePreview).toHaveBeenCalled();
+
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector('.viewport-marquee-selection')).toBeNull();
+  });
+
+  it('hides both layer buttons and the navigation toggle for a 2D-only scene', async () => {
+    appState.scenes.activeSceneId = 'scene-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    services.sceneManager.getSceneGraph.mockReturnValue(
+      graphOf(new Sprite2D({ id: 'sprite', name: 'Sprite', width: 16, height: 16 }))
+    );
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const root = panel.shadowRoot;
+    // A single-layer scene has nothing to reveal by hiding a layer, so neither
+    // layer button nor the mode toggle is shown.
+    expect(root?.querySelector('[aria-label="Show 2D content"]')).toBeNull();
+    expect(root?.querySelector('[aria-label="Show 3D content"]')).toBeNull();
+    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).toBeNull();
+  });
+
+  it('hides both layer buttons and the navigation toggle for a 3D-only scene', async () => {
+    appState.scenes.activeSceneId = 'scene-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    services.sceneManager.getSceneGraph.mockReturnValue(
+      graphOf(new Node3D({ id: 'mesh', name: 'Mesh' }))
+    );
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const root = panel.shadowRoot;
+    expect(root?.querySelector('[aria-label="Show 2D content"]')).toBeNull();
+    expect(root?.querySelector('[aria-label="Show 3D content"]')).toBeNull();
+    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).toBeNull();
+  });
+
+  it('shows both layer buttons and the navigation toggle for a mixed scene', async () => {
+    appState.scenes.activeSceneId = 'scene-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    services.sceneManager.getSceneGraph.mockReturnValue(
+      graphOf(
+        new Sprite2D({ id: 'sprite', name: 'Sprite', width: 16, height: 16 }),
+        new Node3D({ id: 'mesh', name: 'Mesh' })
+      )
+    );
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const root = panel.shadowRoot;
+    expect(root?.querySelector('[aria-label="Show 2D content"]')).not.toBeNull();
+    expect(root?.querySelector('[aria-label="Show 3D content"]')).not.toBeNull();
+    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).not.toBeNull();
+  });
+});
+
+/**
+ * Standalone is the mode Vibe's scene view mounts: no Golden Layout, no tabs, therefore no entry in
+ * `appState.tabs` at all. Every "am I the active tab?" gate answers `false` in that world, so
+ * without the standalone escape the surface silently ignores every wheel, pointer and key event —
+ * a viewport that renders and cannot be used.
+ */
+describe('EditorTabComponent — standalone (tab-less) mode', () => {
+  const wheelEvent = (): Event => {
+    const event = new Event('wheel', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'deltaY', { value: 100, configurable: true });
+    Object.defineProperty(event, 'clientX', { value: 40, configurable: true });
+    Object.defineProperty(event, 'clientY', { value: 40, configurable: true });
+    return event;
+  };
+
+  it('handles viewport input with no tabs at all', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.standalone = true;
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    expect(appState.tabs.tabs).toHaveLength(0);
+    panel.dispatchEvent(wheelEvent());
+
+    expect(services.navigation2D.handleWheel).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the same input when it is an ordinary, inactive tab', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(wheelEvent());
+
+    expect(services.navigation2D.handleWheel).not.toHaveBeenCalled();
+  });
+
+  it('drops the top toolbar but keeps the in-canvas overlays', async () => {
+    const panel = new EditorTabComponent();
+    stubPanelServices(panel);
+    panel.standalone = true;
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const root = panel.shadowRoot;
+    // No room for grid / layer / camera / locale chrome beside a chat column — and every one of
+    // those switches has a Studio home.
+    expect(root?.querySelector('.viewport-toolbar-shell')).toBeNull();
+    // What you actually need to navigate and pick stays: it is painted inside the canvas.
+    expect(root?.querySelector('.transform-overlay')).not.toBeNull();
+    expect(root?.querySelector('.zoom-overlay')).not.toBeNull();
+  });
+
+  it('claims the shared canvas even though no tab is active', async () => {
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.standalone = true;
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    expect(services.viewportRenderer.attachToHost).toHaveBeenCalled();
+    // A Flow-loaded scene has no saved editor-camera context, so the default camera can be aimed at
+    // nothing. Frame once, on the first attach.
+    expect(services.commandDispatcher.executeById).toHaveBeenCalledWith('view.zoom-all');
+  });
+
+  /**
+   * The canvas is shared and has exactly one host. An agent's offscreen Studio mount reacts to the
+   * same `appState.tabs` mutations the user's viewport does, so without this gate it would take the
+   * canvas back and leave the visible Vibe viewport blank — while its own screenshots kept working,
+   * which is what makes the bug so hard to see.
+   */
+  it('does not let a Studio tab reclaim the canvas while the Vibe scene view is up', async () => {
+    appState.ui.workspaceMode = 'flow';
+    appState.ui.flowSceneViewVisible = true;
+    appState.tabs.tabs = [
+      { id: 'tab-1', title: 'Main', type: 'scene', resourceId: 'main', isDirty: false },
+    ];
+    appState.tabs.activeTabId = 'tab-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.tabId = 'tab-1';
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    expect(services.viewportRenderer.attachToHost).not.toHaveBeenCalled();
+  });
+
+  it('hands the canvas back to the active Studio tab once the scene view is gone', async () => {
+    appState.ui.workspaceMode = 'flow';
+    appState.ui.flowSceneViewVisible = false;
+    appState.tabs.tabs = [
+      { id: 'tab-1', title: 'Main', type: 'scene', resourceId: 'main', isDirty: false },
+    ];
+    appState.tabs.activeTabId = 'tab-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.tabId = 'tab-1';
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    expect(services.viewportRenderer.attachToHost).toHaveBeenCalled();
+  });
+
+  /**
+   * Switching Vibe -> Studio used to leave the Studio viewport blank until the scene was closed and
+   * reopened. Both views mount a `pix3-editor-tab` over the ONE shared canvas, and on the switch
+   * both are still connected and still subscribed: Valtio notifies in a microtask, long before Lit
+   * re-renders the shell and unmounts the Flow branch. Vibe's view subscribed last, so it was
+   * notified last and re-parented the canvas into its own host — which then left the DOM. Nothing
+   * mutates `appState.tabs` on a workspace switch, so nothing ever handed it back.
+   */
+  it('does not grab the shared canvas back while Vibe is being left', async () => {
+    resetAppState();
+    appState.ui.workspaceMode = 'flow';
+    appState.ui.flowSceneViewVisible = true;
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.standalone = true;
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+    services.viewportRenderer.attachToHost.mockClear();
+
+    appState.ui.workspaceMode = 'studio';
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(services.viewportRenderer.attachToHost).not.toHaveBeenCalled();
+  });
+
+  /** The other half of the same arbitration: the docked tab still has to take the canvas back. */
+  it('lets the docked Studio tab reclaim the canvas on the way back from Vibe', async () => {
+    resetAppState();
+    appState.ui.workspaceMode = 'flow';
+    appState.ui.flowSceneViewVisible = true;
+    appState.tabs.tabs = [
+      { id: 'tab-1', title: 'Main', type: 'scene', resourceId: 'main', isDirty: false },
+    ];
+    appState.tabs.activeTabId = 'tab-1';
+
+    const panel = new EditorTabComponent();
+    const services = stubPanelServices(panel);
+    panel.tabId = 'tab-1';
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+    // Gated out while Vibe owns the canvas, as the test above this pair asserts.
+    expect(services.viewportRenderer.attachToHost).not.toHaveBeenCalled();
+
+    appState.ui.workspaceMode = 'studio';
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(services.viewportRenderer.attachToHost).toHaveBeenCalled();
+  });
+});
+
+function graphOf(...nodes: NodeBase[]): SceneGraph {
+  return {
+    rootNodes: nodes,
+    nodeMap: new Map(nodes.map(node => [node.nodeId, node])),
+  } as unknown as SceneGraph;
+}
+
+function stubPanelServices(panel: InstanceType<typeof EditorTabComponent>) {
+  const stubCanvas = document.createElement('canvas');
+  vi.spyOn(stubCanvas, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    bottom: 240,
+    right: 320,
+    width: 320,
+    height: 240,
+    toJSON: () => ({}),
+  });
+
+  const commandDispatcher = {
+    execute: vi.fn<(command: unknown) => Promise<boolean>>(async () => false),
+    executeById: vi.fn<(id: string) => Promise<boolean>>(async () => false),
+  };
+  const viewportRenderer = {
+    initialize: vi.fn(),
+    attachToHost: vi.fn(),
+    pause: vi.fn(),
+    requestRender: vi.fn(),
+    resize: vi.fn(),
+    raycastObject: vi.fn<(x: number, y: number) => NodeBase | null>(() => null),
+    resolve2DAssetDropPosition: vi.fn<(x: number, y: number) => Vector2 | null>(
+      () => new Vector2(10, 20)
+    ),
+    setTransformMode: vi.fn(),
+    updateSelection: vi.fn(),
+    getCanvasElement: vi.fn(() => stubCanvas),
+    get2DHandleAt: vi.fn(() => 'idle'),
+    start2DTransform: vi.fn(),
+    getSelectable2DNodeIdsInScreenRect: vi.fn<
+      (x1: number, y1: number, x2: number, y2: number) => string[]
+    >(() => []),
+    set2DMarqueePreviewNodeIds: vi.fn<(nodeIds: string[]) => boolean>(() => false),
+    clear2DMarqueePreview: vi.fn<() => boolean>(() => false),
+    has2DTransform: vi.fn(() => false),
+    handleAxisGizmoPointerDown: vi.fn(() => false),
+    isAxisGizmoInteraction: vi.fn(() => false),
+  };
+  const sceneManager = {
+    getSceneGraph: vi.fn<(sceneId: string) => SceneGraph | null>(() => null),
+  };
+
+  Object.defineProperty(panel, 'viewportRenderer', {
+    value: viewportRenderer,
+    configurable: true,
+  });
+
+  Object.defineProperty(panel, 'commandDispatcher', {
+    value: commandDispatcher,
+    configurable: true,
+  });
+
+  Object.defineProperty(panel, 'iconService', {
+    value: {
+      getIcon: vi.fn(() => 'icon'),
+    },
+    configurable: true,
+  });
+
+  const navigation2D = {
+    startPan: vi.fn(),
+    endPan: vi.fn(),
+    updatePan: vi.fn(),
+    clearTouchState: vi.fn(),
+    handleWheel: vi.fn(),
+    isTouchGestureActive: vi.fn(() => false),
+    isTouchPointerTracked: vi.fn(() => false),
+    startTouchPointer: vi.fn(),
+    updateTouchPointer: vi.fn(() => false),
+    endTouchPointer: vi.fn(() => false),
+    updateTouchPan: vi.fn(),
+  };
+
+  Object.defineProperty(panel, 'navigation2D', {
+    value: navigation2D,
+    configurable: true,
+  });
+
+  Object.defineProperty(panel, 'sceneManager', {
+    value: sceneManager,
+    configurable: true,
+  });
+
+  return {
+    commandDispatcher,
+    viewportRenderer,
+    sceneManager,
+    navigation2D,
+  };
+}
+
+function createDataTransfer(types: string[], values: Record<string, string> = {}): DataTransfer {
+  return {
+    dropEffect: 'none',
+    getData: vi.fn((type: string) => values[type] ?? ''),
+    types,
+  } as unknown as DataTransfer;
+}
+
+function createPointerEvent(
+  type: string,
+  init: {
+    clientX: number;
+    clientY: number;
+    button?: number;
+    buttons?: number;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+  }
+): PointerEvent {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  }) as PointerEvent;
+
+  Object.defineProperties(event, {
+    clientX: { value: init.clientX, configurable: true },
+    clientY: { value: init.clientY, configurable: true },
+    button: { value: init.button ?? 0, configurable: true },
+    buttons: { value: init.buttons ?? 0, configurable: true },
+    ctrlKey: { value: init.ctrlKey ?? false, configurable: true },
+    metaKey: { value: init.metaKey ?? false, configurable: true },
+    shiftKey: { value: init.shiftKey ?? false, configurable: true },
+    pointerType: { value: 'mouse', configurable: true },
+    pointerId: { value: 1, configurable: true },
+  });
+
+  return event;
+}

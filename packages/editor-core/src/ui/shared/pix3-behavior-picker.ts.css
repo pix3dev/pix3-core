@@ -1,0 +1,294 @@
+/* Shared by pix3-behavior-picker and pix3-effect-picker (same modal/grid layout);
+   every rule is scoped to both host tags so the styles don't leak app-wide. */
+
+pix3-behavior-picker .dialog-backdrop,
+pix3-effect-picker .dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+  z-index: var(--pix3-z-modal);
+}
+
+pix3-behavior-picker .dialog-content,
+pix3-effect-picker .dialog-content {
+  display: flex;
+  flex-direction: column;
+}
+
+pix3-behavior-picker .behavior-picker-content,
+pix3-effect-picker .behavior-picker-content {
+  width: 900px;
+  max-width: 95vw;
+  height: 750px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  /* Use solid dialog background so the modal is opaque while keeping the backdrop semi-transparent */
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+
+pix3-behavior-picker .dialog-title,
+pix3-effect-picker .dialog-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+pix3-behavior-picker .picker-header,
+pix3-effect-picker .picker-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-1);
+  background: var(--bg-2);
+}
+
+pix3-behavior-picker .picker-header-row,
+pix3-effect-picker .picker-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+pix3-behavior-picker .picker-header h2,
+pix3-effect-picker .picker-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+pix3-behavior-picker .btn-create-new,
+pix3-effect-picker .btn-create-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-1);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+pix3-behavior-picker .btn-create-new:hover,
+pix3-effect-picker .btn-create-new:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+pix3-behavior-picker .search-box,
+pix3-effect-picker .search-box {
+  display: flex;
+  align-items: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  padding: 2px 8px;
+  gap: 8px;
+}
+
+pix3-behavior-picker .search-box input,
+pix3-effect-picker .search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fg-0);
+  font-size: 0.85rem;
+  outline: none;
+  padding: 4px 0;
+}
+
+pix3-behavior-picker .picker-body,
+pix3-effect-picker .picker-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+pix3-behavior-picker .behavior-list,
+pix3-effect-picker .behavior-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+pix3-behavior-picker .category-section,
+pix3-effect-picker .category-section {
+  margin-bottom: 8px;
+}
+
+pix3-behavior-picker .category-title,
+pix3-effect-picker .category-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fg-1);
+  background: var(--bg-2);
+  padding: 4px 16px;
+  margin: 0;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--line-1);
+}
+
+pix3-behavior-picker .category-grid,
+pix3-effect-picker .category-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+pix3-behavior-picker .behavior-item,
+pix3-effect-picker .behavior-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 16px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  gap: 8px;
+}
+
+pix3-behavior-picker .behavior-item:hover,
+pix3-effect-picker .behavior-item:hover {
+  background: var(--bg-2);
+}
+
+pix3-behavior-picker .behavior-item.selected,
+pix3-effect-picker .behavior-item.selected {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+pix3-behavior-picker .behavior-item.selected .behavior-name,
+pix3-effect-picker .behavior-item.selected .behavior-name {
+  color: var(--accent);
+}
+
+pix3-behavior-picker .behavior-icon,
+pix3-effect-picker .behavior-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+pix3-behavior-picker .behavior-info,
+pix3-effect-picker .behavior-info {
+  flex: 1;
+  min-width: 0;
+}
+
+pix3-behavior-picker .behavior-name,
+pix3-effect-picker .behavior-name {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--fg-0);
+}
+
+pix3-behavior-picker .behavior-desc,
+pix3-effect-picker .behavior-desc {
+  display: none;
+}
+
+pix3-behavior-picker .selected-description-panel,
+pix3-effect-picker .selected-description-panel {
+  padding: 12px 16px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line-1);
+  min-height: 80px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+pix3-behavior-picker .description-empty,
+pix3-effect-picker .description-empty {
+  color: var(--fg-2);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+pix3-behavior-picker .description-title,
+pix3-effect-picker .description-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--accent);
+}
+
+pix3-behavior-picker .description-text,
+pix3-effect-picker .description-text {
+  font-size: 0.85rem;
+  color: var(--fg-1);
+  line-height: 1.4;
+}
+
+pix3-behavior-picker .no-results,
+pix3-effect-picker .no-results {
+  text-align: center;
+  padding: 40px;
+  color: var(--fg-2);
+  font-style: italic;
+}
+
+pix3-behavior-picker .dialog-actions,
+pix3-effect-picker .dialog-actions {
+  padding: 16px;
+  border-top: 1px solid var(--line-1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--bg-2);
+}
+
+pix3-behavior-picker .btn-primary,
+pix3-effect-picker .btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  padding: 8px 20px;
+  border-radius: var(--radius-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+pix3-behavior-picker .btn-primary:disabled,
+pix3-effect-picker .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+pix3-behavior-picker .btn-secondary,
+pix3-effect-picker .btn-secondary {
+  background: transparent;
+  color: var(--fg-0);
+  border: 1px solid var(--line-1);
+  padding: 8px 20px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+
+pix3-behavior-picker .btn-secondary:hover,
+pix3-effect-picker .btn-secondary:hover {
+  background: var(--bg-2);
+}

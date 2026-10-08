@@ -1,0 +1,229 @@
+:host {
+  display: block;
+  max-width: min(640px, 100%);
+}
+
+.remote-card {
+  padding: 24px 28px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  color: var(--fg-0);
+}
+
+.remote-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.remote-card-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.remote-status-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+.remote-status-online {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.remote-status-connecting {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.remote-status-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.remote-card-copy {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-1);
+}
+
+.remote-card-body {
+  display: flex;
+  gap: 20px;
+  margin-top: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.remote-qr {
+  flex: 0 0 auto;
+  padding: 10px;
+  border-radius: var(--radius-3);
+  background: var(--fg-0);
+  line-height: 0;
+}
+
+.remote-details {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.remote-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.remote-field-label {
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.remote-link {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.remote-link:focus {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 2px;
+}
+
+.remote-status-line {
+  font-size: 13px;
+  color: var(--fg-1);
+}
+
+.remote-status-line strong {
+  color: var(--fg-0);
+}
+
+.remote-players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.remote-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-2);
+  background: var(--bg-2);
+  font-size: 12px;
+}
+
+.remote-player-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+.remote-player-offline .remote-player-dot {
+  background: var(--fg-3);
+}
+
+.remote-player-offline {
+  color: var(--fg-2);
+}
+
+.remote-player-label {
+  font-weight: 600;
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-player-offline .remote-player-label {
+  color: var(--fg-2);
+}
+
+.remote-player-stats {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+}
+
+.remote-players-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.remote-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.remote-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.remote-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.remote-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+.remote-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.remote-btn-danger {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+
+.remote-btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}

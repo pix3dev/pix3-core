@@ -1,0 +1,79 @@
+pix3-scene-tree-panel {
+  display: block;
+  height: 100%;
+}
+
+pix3-scene-tree-panel pix3-panel {
+  height: 100%;
+}
+
+.tree-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  font-size: 0.75rem; /* More compact, matches asset tree */
+  color: var(--fg-0);
+  overflow: auto;
+}
+
+.tree-root,
+.tree-children {
+  list-style: none;
+  margin: 0;
+}
+
+.tree-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  padding: 0;
+}
+
+.panel-placeholder {
+  margin: 0;
+  color: var(--fg-2);
+  font-style: italic;
+}
+
+.scene-tree-context-menu {
+  position: relative;
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+}
+
+.scene-tree-context-menu button {
+  appearance: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-0);
+  text-align: left;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+}
+
+.context-menu-shortcut {
+  margin-left: 1.5rem;
+  opacity: 0.55;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.scene-tree-context-menu button:hover,
+.scene-tree-context-menu button:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--accent);
+}

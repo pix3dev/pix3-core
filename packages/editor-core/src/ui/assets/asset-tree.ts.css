@@ -1,0 +1,335 @@
+asset-tree {
+  display: block;
+  height: 100%;
+}
+
+.tree {
+  height: 100%;
+  overflow: auto;
+  min-height: 0; /* allow flex children to shrink */
+  display: block;
+  padding-right: 0;
+  box-sizing: border-box;
+  font-size: 0.75rem;
+  color: var(--fg-1);
+}
+
+.tree-node {
+  display: block;
+}
+
+.node-children {
+  padding-inline-start: 14px;
+  margin-top: 0.08rem;
+  margin-bottom: 0.12rem;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 24px;
+  padding: 0 0.18rem;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  min-width: 0;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.icon {
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-2);
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.icon.folder {
+  color: var(--fg-1);
+}
+
+/* .icon.folder svg path left intentionally empty to allow future fine-tuning of folder svg strokes */
+
+.node-row:hover {
+  background: var(--bg-2);
+}
+
+.node-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.node-row.selected {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+.node-row.selected .icon {
+  color: var(--accent);
+}
+
+.node-row.drag-over {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+
+.tree.drag-over-root {
+  background: var(--accent-soft);
+  outline: 2px dashed var(--accent-line);
+  outline-offset: -2px;
+}
+
+.expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 0.68rem;
+  line-height: 1;
+  font: inherit;
+}
+
+.expander::before {
+  content: '';
+}
+
+.expander--visible::before {
+  content: '▾';
+}
+
+.expander--collapsed::before {
+  content: '▸';
+}
+
+.expander--button {
+  cursor: pointer;
+}
+
+.expander--button:hover {
+  color: var(--fg-1);
+}
+
+.expander--button:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+}
+
+.node-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-meta {
+  color: var(--fg-3);
+  font-size: 10.5px;
+  margin-left: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.node-edit {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+}
+
+/* Grouped "by type" view: virtual category rows */
+.node-row--category .node-name {
+  font-weight: 400;
+}
+
+/* Path of a lone folder lifted into its category row, e.g. Images (textures) */
+.node-name-suffix {
+  color: var(--fg-3);
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.icon.category {
+  color: var(--accent);
+}
+
+.node-count {
+  background: var(--bg-3);
+  border-radius: 999px;
+  padding: 0 0.45em;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.empty {
+  margin: 0;
+  color: var(--fg-2);
+  font-style: italic;
+  padding: 0.5rem 0.25rem;
+}
+
+/* Toolbar */
+.asset-tree-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.25rem;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.tb-btn {
+  background: none;
+  border: none;
+  color: var(--fg-1);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.tb-btn:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+.tb-dropdown {
+  position: relative;
+}
+
+.small-caret {
+  width: 10px;
+  height: 10px;
+  margin-left: 4px;
+}
+
+.tb-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* File icons in feather are visually narrower; scale slightly to match folder */
+.tb-icon.file svg {
+  transform: scale(1.05);
+  transform-origin: 50% 50%;
+}
+
+.menu {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-pop);
+  padding: 0.25rem;
+  border-radius: var(--radius-3);
+  min-width: 120px;
+  z-index: 10;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--fg-0);
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.menu-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Row context menu — rendered through DropdownPortal at document.body, so these
+   selectors are intentionally NOT scoped under the component element. */
+.tree-context-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-pop);
+}
+
+/* display:flex above beats the UA [hidden] rule, so re-assert it (see assets-content). */
+.tree-context-menu[hidden] {
+  display: none;
+}
+
+/* fixed => shrink-to-fit so DropdownPortal measures the content width. */
+.pix3-dropdown-portal .tree-context-menu {
+  position: fixed;
+}
+
+.tree-context-menu button[role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-0);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-context-menu button[role='menuitem']:hover {
+  background: var(--accent-soft);
+}
+
+.tree-context-menu button[role='menuitem'].is-danger {
+  color: var(--danger);
+}

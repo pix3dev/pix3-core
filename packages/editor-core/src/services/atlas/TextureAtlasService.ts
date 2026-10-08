@@ -1,0 +1,704 @@
+import { CanvasTexture } from 'three';
+import { parse as parseYaml } from 'yaml';
+import { injectable, inject } from '@/fw/di';
+import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { AtlasCacheStore } from '@/services/atlas/AtlasCacheStore';
+import { packMaxRects, type PackItem } from '@/services/atlas/MaxRectsPacker';
+import { sha256Hex } from '@/core/remote-preview/protocol';
+import {
+  ATLAS_SHEET_SCHEME,
+  configure2DTexture,
+  createAtlasResolver,
+  getProjectTextureFiltering,
+  parseSpineAtlasPageNames,
+  resolveSpinePagePath,
+  type AtlasManifest,
+  type AssetLoader,
+} from '@pix3/runtime';
+
+/** Bump to invalidate every cached atlas when the packing algorithm changes. */
+const PACKER_VERSION = 1;
+const DEFAULT_MAX_SHEET_SIZE = 2048;
+const DEFAULT_PADDING = 2;
+/** A frame wider/taller than this, or covering >25% of a sheet, stays standalone. */
+const MAX_FRAME_SIZE = 1024;
+
+const IMAGE_REF_PATTERN = /res:\/\/[^\s"'`)\]]+\.(?:png|jpe?g|webp)/gi;
+const ANIM_REF_PATTERN = /res:\/\/[^\s"'`)\]]+\.pix3anim/gi;
+/** res:// reference stopping at a template-literal boundary (`$`) — yields the
+ *  directory prefix of a dynamically-built path like `${DIR}/name.png`. */
+const RES_REF_PATTERN = /res:\/\/[^\s"'`)\]$]+/g;
+const IMAGE_EXT_PATTERN = /\.(?:png|jpe?g|webp)$/i;
+const SCENE_EXTENSIONS = ['.pix3scene', '.pix3prefab'] as const;
+const SCRIPT_DIRECTORIES = ['scripts', 'src/scripts'] as const;
+/** Directory name segments never packed even if referenced (reference art, build output). */
+const EXCLUDED_DIR_SEGMENTS = new Set(['design', 'references', 'reference', '.pix3', '.atlas']);
+/**
+ * Directories the pre-launch sweep never descends into. These can hold tens of
+ * thousands of files (a linked consumer project's `node_modules` alone is ~9.4k),
+ * and `listDirectory` stats every file it returns — so walking them cost several
+ * seconds of every single play-mode launch to find nothing. None of them can ever
+ * contain a scene, prefab, project script or sprite the atlas packs.
+ */
+const SWEEP_SKIPPED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.yalc',
+  '.vite',
+  '.cache',
+  'coverage',
+]);
+/** Parallel reads during the pre-launch scan (each is a round trip on a `pix3 serve` workspace). */
+const SCAN_READ_CONCURRENCY = 12;
+/** Minimum path depth for a directory-prefix include (avoids broad roots like textures/). */
+const MIN_DIR_PREFIX_SEGMENTS = 4;
+
+/** Node types whose textures are safe to atlas (full-[0,1] UV sprites). */
+const ATLAS_ELIGIBLE_TYPES = new Set(['Sprite2D', 'Button2D', 'AnimatedSprite2D', 'Bar2D']);
+/**
+ * A non-zero nine-slice inset disqualifies an otherwise-eligible node: the patch
+ * geometry cuts its UVs against the full [0,1] range of a standalone image, and a
+ * view onto a packed sheet occupies a sub-rect of it. Same reason `TiledSprite2D`
+ * is absent from the set above and loads with `{ atlas: false }`.
+ */
+const SLICE_BORDER_KEYS = [
+  'sliceBorderLeft',
+  'sliceBorderRight',
+  'sliceBorderTop',
+  'sliceBorderBottom',
+] as const;
+
+function hasNineSliceBorder(properties: unknown): boolean {
+  if (!properties || typeof properties !== 'object') {
+    return false;
+  }
+  const record = properties as Record<string, unknown>;
+  return SLICE_BORDER_KEYS.some(key => {
+    const value = Number(record[key]);
+    return Number.isFinite(value) && value > 0;
+  });
+}
+
+export interface AtlasPrepResult {
+  status: 'off' | 'empty' | 'hit' | 'miss' | 'error';
+  sheets?: number;
+  frames?: number;
+  excluded?: number;
+}
+
+export interface ExportedAtlas {
+  manifest: AtlasManifest;
+  /** PNG blobs index-aligned with `manifest.sheets` (file names in the manifest). */
+  sheets: Blob[];
+}
+
+interface ClassifiedInputs {
+  /** res:// image paths safe to atlas, sorted, minus anything an ineligible node touches. */
+  include: string[];
+  /** res:// paths deliberately excluded (touched by tiled/3D/other nodes). */
+  excluded: string[];
+  /** Project-relative path → byte size (from a single directory sweep). */
+  sizeMap: Map<string, number | null>;
+}
+
+interface SceneScan {
+  eligible: string[];
+  ineligible: string[];
+  anims: string[];
+}
+
+interface ScriptScan {
+  images: string[];
+  dirPrefixes: string[];
+}
+
+interface DecodedFrame {
+  resourcePath: string;
+  bitmap: ImageBitmap;
+  width: number;
+  height: number;
+}
+
+interface PackOutput {
+  manifest: AtlasManifest;
+  canvases: OffscreenCanvas[];
+}
+
+/**
+ * Editor-side pre-launch texture atlas packer (Phase 2). Scans the project's
+ * scenes/prefabs/scripts, classifies which textures are atlas-eligible, packs
+ * them into a few sheets with a content-addressed IndexedDB cache, and installs
+ * a resolver on the play-mode {@link AssetLoader} so every consumer transparently
+ * receives a view onto a shared sheet. The runtime never packs — this keeps
+ * `@pix3/runtime` editor-agnostic and publishable.
+ */
+@injectable()
+export class TextureAtlasService {
+  @inject(ProjectStorageService)
+  private readonly fs!: ProjectStorageService;
+
+  @inject(AtlasCacheStore)
+  private readonly cache!: AtlasCacheStore;
+
+  /**
+   * Per-file scan results with the workspace manifest sha256 they were computed from; reused only
+   * while the manifest still reports that hash. Other backends have no hash without a read and
+   * are scanned fresh every launch.
+   */
+  private readonly scanMemo = new Map<string, { hash: string; result: unknown }>();
+
+  /**
+   * Prepare and install the atlas on `assetLoader` before `startScene`. Idempotent
+   * per texture-set (content-hash cached). Any failure falls back to un-atlased
+   * loading (resolver cleared) so play mode always starts.
+   */
+  async prepareForPlay(assetLoader: AssetLoader): Promise<AtlasPrepResult> {
+    try {
+      const inputs = await this.scanAndClassify();
+      if (inputs.include.length === 0) {
+        assetLoader.setAtlasResolver(null);
+        return { status: 'empty' };
+      }
+
+      const filtering = getProjectTextureFiltering();
+      const hash = await this.hashFast(inputs, filtering);
+
+      const cached = await this.cache.get(hash);
+      if (cached) {
+        await this.installFromBlobs(assetLoader, cached.manifest, cached.sheets, hash);
+        console.info(
+          `[Atlas] cache=hit — ${cached.manifest.sheets.length} sheets, ${Object.keys(cached.manifest.frames).length} frames`
+        );
+        return this.resultFor('hit', cached.manifest);
+      }
+
+      const started = performance.now();
+      const packed = await this.pack(inputs.include, inputs.excluded, hash, filtering);
+      if (packed.manifest.sheets.length === 0) {
+        assetLoader.setAtlasResolver(null);
+        return { status: 'empty' };
+      }
+
+      const blobs = await Promise.all(
+        packed.canvases.map(canvas => canvas.convertToBlob({ type: 'image/png' }))
+      );
+      await this.cache.set(hash, { manifest: packed.manifest, sheets: blobs });
+      this.installFromCanvases(assetLoader, packed.manifest, packed.canvases, hash);
+      console.info(
+        `[Atlas] packed ${Object.keys(packed.manifest.frames).length} textures → ${packed.manifest.sheets.length} sheets in ${Math.round(performance.now() - started)}ms (cache=miss)`
+      );
+      return this.resultFor('miss', packed.manifest);
+    } catch (error) {
+      console.warn('[Atlas] preparation failed; falling back to un-atlased loading', error);
+      assetLoader.setAtlasResolver(null);
+      return { status: 'error' };
+    }
+  }
+
+  /**
+   * Pack the project for export (strict byte hash, no cache). Returns the manifest
+   * plus PNG blobs for {@link ProjectBuildService} to emit under `assets/.atlas/`.
+   * Returns null when nothing is eligible.
+   */
+  async packForExport(): Promise<ExportedAtlas | null> {
+    const inputs = await this.scanAndClassify();
+    if (inputs.include.length === 0) {
+      return null;
+    }
+    const filtering = getProjectTextureFiltering();
+    const hash = await this.hashStrict(inputs.include, filtering);
+    const packed = await this.pack(inputs.include, inputs.excluded, hash, filtering);
+    if (packed.manifest.sheets.length === 0) {
+      return null;
+    }
+    const sheets = await Promise.all(
+      packed.canvases.map(canvas => canvas.convertToBlob({ type: 'image/png' }))
+    );
+    return { manifest: packed.manifest, sheets };
+  }
+
+  private resultFor(status: 'hit' | 'miss', manifest: AtlasManifest): AtlasPrepResult {
+    return {
+      status,
+      sheets: manifest.sheets.length,
+      frames: Object.keys(manifest.frames).length,
+      excluded: manifest.excluded.length,
+    };
+  }
+
+  // --- Scanning & classification -------------------------------------------
+
+  private async scanAndClassify(): Promise<ClassifiedInputs> {
+    const sizeMap = await this.collectAllFiles();
+    const eligible = new Set<string>();
+    const ineligible = new Set<string>();
+    const animPaths = new Set<string>();
+    const paths = [...sizeMap.keys()];
+
+    const scenePaths = paths.filter(path => SCENE_EXTENSIONS.some(ext => path.endsWith(ext)));
+    for (const scan of await this.scanFiles(scenePaths, text => this.scanScene(text))) {
+      scan?.eligible.forEach(ref => eligible.add(ref));
+      scan?.ineligible.forEach(ref => ineligible.add(ref));
+      scan?.anims.forEach(ref => animPaths.add(ref));
+    }
+
+    // Animation resources: their frame textures belong to AnimatedSprite2D → eligible.
+    // A missing animation resource just leaves its sprite un-atlased.
+    const animFiles = [...animPaths].map(stripRes);
+    for (const refs of await this.scanFiles(animFiles, text => matchAll(text, IMAGE_REF_PATTERN))) {
+      refs?.forEach(ref => eligible.add(ref));
+    }
+
+    // Project scripts: literal res:// image refs are sprite textures; res://
+    // directory prefixes (e.g. `const AIR = 'res://…/enemy/air'`) and
+    // template-literal frame paths (`res://…/bridge1/${i}.png`) reveal
+    // dynamically-loaded sprites that static image refs miss — include every
+    // image under those directories so the enemy/effect textures atlas + batch.
+    const scriptPaths = paths.filter(
+      path =>
+        path.endsWith('.ts') &&
+        !path.endsWith('.spec.ts') &&
+        !path.endsWith('.d.ts') &&
+        SCRIPT_DIRECTORIES.some(dir => path === dir || path.startsWith(`${dir}/`))
+    );
+    const dirPrefixes = new Set<string>();
+    for (const scan of await this.scanFiles(scriptPaths, text => this.scanScript(text))) {
+      scan?.images.forEach(ref => eligible.add(ref));
+      scan?.dirPrefixes.forEach(prefix => dirPrefixes.add(prefix));
+    }
+    for (const prefix of dirPrefixes) {
+      for (const file of paths) {
+        if (file.startsWith(prefix) && IMAGE_EXT_PATTERN.test(file)) {
+          eligible.add(`res://${file}`);
+        }
+      }
+    }
+
+    // Spine atlas pages must never be repacked: a page's UVs come from the
+    // `.atlas` file and assume a standalone, full-[0,1] texture. The loader reads
+    // pages straight off disk (bypassing loadTexture), so this is belt-and-braces
+    // — and it also keeps large skeleton sheets out of the shared atlas.
+    const spinePaths = paths.filter(path => path.toLowerCase().endsWith('.atlas'));
+    const spineScans = await this.scanFiles(spinePaths, (text, path) =>
+      // A page name may itself be absolute/schemed (hand-edited atlas), which
+      // resolveSpinePagePath passes through — so normalize instead of blindly
+      // prefixing, or the entry would read `res://res://…` and match nothing.
+      parseSpineAtlasPageNames(text).map(
+        pageName => `res://${stripRes(resolveSpinePagePath(path, pageName))}`
+      )
+    );
+    spineScans.forEach(pages => pages?.forEach(page => ineligible.add(page)));
+
+    const include: string[] = [];
+    const excluded: string[] = [];
+    for (const path of [...eligible].sort((a, b) => a.localeCompare(b))) {
+      if (ineligible.has(path)) {
+        excluded.push(path);
+      } else {
+        include.push(path);
+      }
+    }
+    return { include, excluded, sizeMap };
+  }
+
+  private scanScene(text: string): SceneScan {
+    const eligible = new Set<string>();
+    const ineligible = new Set<string>();
+    const anims = new Set<string>();
+    const parsed = parseYaml(text) as { root?: unknown };
+    this.classifyNodes(parsed?.root, eligible, ineligible, anims);
+    return { eligible: [...eligible], ineligible: [...ineligible], anims: [...anims] };
+  }
+
+  private scanScript(text: string): ScriptScan {
+    const dirPrefixes: string[] = [];
+    for (const raw of matchAll(text, RES_REF_PATTERN)) {
+      const prefix = this.dirPrefixOf(raw);
+      if (prefix) {
+        dirPrefixes.push(prefix);
+      }
+    }
+    return { images: matchAll(text, IMAGE_REF_PATTERN), dirPrefixes };
+  }
+
+  /**
+   * Read and scan `paths` with bounded concurrency, results index-aligned; an
+   * unreadable or unscannable file yields null. On a `pix3 serve` workspace every
+   * read is a network round trip, so a sequential sweep of a real project's
+   * scenes + scripts cost >10 s of every launch. Files whose manifest sha256 is
+   * unchanged since the last scan are not read at all.
+   */
+  private async scanFiles<T>(
+    paths: readonly string[],
+    scan: (text: string, path: string) => T
+  ): Promise<Array<T | null>> {
+    return mapWithConcurrency(paths, SCAN_READ_CONCURRENCY, async path => {
+      const contentHash = this.fs.getManifestContentHash(path);
+      const memo = this.scanMemo.get(path);
+      if (memo && typeof contentHash === 'string' && memo.hash === contentHash) {
+        return memo.result as T | null;
+      }
+      let result: T | null;
+      try {
+        result = scan(await this.fs.readTextFile(path), path);
+      } catch {
+        result = null;
+      }
+      if (typeof contentHash === 'string') {
+        this.scanMemo.set(path, { hash: contentHash, result });
+      } else {
+        this.scanMemo.delete(path);
+      }
+      return result;
+    });
+  }
+
+  /**
+   * Derive the (project-relative) directory prefix a script res:// reference
+   * points into. A directory constant (`res://…/enemy/air`) → that dir; a
+   * template path truncated at `$` (`res://…/bridge1/`) → that dir; a literal
+   * file (`res://…/x.png`) → its parent dir. Returns null for shallow/broad or
+   * excluded (reference-art) prefixes.
+   */
+  private dirPrefixOf(raw: string): string | null {
+    let path = stripRes(raw);
+    if (!path) {
+      return null;
+    }
+    if (!path.endsWith('/')) {
+      const lastSlash = path.lastIndexOf('/');
+      if (lastSlash < 0) {
+        return null;
+      }
+      const tail = path.slice(lastSlash + 1);
+      path = /\.[a-z0-9]+$/i.test(tail) ? path.slice(0, lastSlash + 1) : `${path}/`;
+    }
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length < MIN_DIR_PREFIX_SEGMENTS) {
+      return null;
+    }
+    if (segments.some(segment => EXCLUDED_DIR_SEGMENTS.has(segment))) {
+      return null;
+    }
+    return path;
+  }
+
+  private classifyNodes(
+    nodes: unknown,
+    eligible: Set<string>,
+    ineligible: Set<string>,
+    animPaths: Set<string>
+  ): void {
+    if (!Array.isArray(nodes)) {
+      return;
+    }
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') {
+        continue;
+      }
+      const record = node as {
+        type?: unknown;
+        properties?: unknown;
+        children?: unknown;
+      };
+      const type = typeof record.type === 'string' ? record.type : '';
+      const propsText = record.properties ? JSON.stringify(record.properties) : '';
+      const atlasSafe = ATLAS_ELIGIBLE_TYPES.has(type) && !hasNineSliceBorder(record.properties);
+      const bucket = atlasSafe ? eligible : ineligible;
+      for (const ref of matchAll(propsText, IMAGE_REF_PATTERN)) {
+        bucket.add(ref);
+      }
+      for (const anim of matchAll(propsText, ANIM_REF_PATTERN)) {
+        animPaths.add(anim);
+      }
+      this.classifyNodes(record.children, eligible, ineligible, animPaths);
+    }
+  }
+
+  private async collectAllFiles(
+    directory = '.',
+    out = new Map<string, number | null>()
+  ): Promise<Map<string, number | null>> {
+    let entries: ReadonlyArray<{
+      name: string;
+      kind: FileSystemHandleKind;
+      path: string;
+      size?: number | null;
+    }>;
+    try {
+      entries = await this.fs.listDirectory(directory);
+    } catch {
+      return out;
+    }
+    for (const entry of entries) {
+      if (entry.kind === 'file') {
+        out.set(entry.path, entry.size ?? null);
+      } else if (entry.kind === 'directory' && !SWEEP_SKIPPED_DIRS.has(entry.name)) {
+        await this.collectAllFiles(entry.path, out);
+      }
+    }
+    return out;
+  }
+
+  // --- Hashing --------------------------------------------------------------
+
+  private async hashFast(inputs: ClassifiedInputs, filtering: string): Promise<string> {
+    const files = inputs.include.map(
+      path => `${path}|${inputs.sizeMap.get(stripRes(path)) ?? '?'}`
+    );
+    return this.hashPayload(files, filtering);
+  }
+
+  private async hashStrict(include: string[], filtering: string): Promise<string> {
+    const files: string[] = [];
+    for (const path of include) {
+      try {
+        const buffer = await (await this.fs.readBlob(stripRes(path))).arrayBuffer();
+        files.push(`${path}|${await sha256Hex(buffer)}`);
+      } catch {
+        files.push(`${path}|missing`);
+      }
+    }
+    return this.hashPayload(files, filtering);
+  }
+
+  private async hashPayload(files: string[], filtering: string): Promise<string> {
+    const payload = JSON.stringify({
+      v: PACKER_VERSION,
+      maxSheetSize: DEFAULT_MAX_SHEET_SIZE,
+      padding: DEFAULT_PADDING,
+      filtering,
+      files,
+    });
+    return sha256Hex(new TextEncoder().encode(payload));
+  }
+
+  // --- Packing & compositing ------------------------------------------------
+
+  private async pack(
+    include: string[],
+    preExcluded: string[],
+    hash: string,
+    filtering: string
+  ): Promise<PackOutput> {
+    const decoded: DecodedFrame[] = [];
+    const excluded = [...preExcluded];
+
+    for (const resourcePath of include) {
+      try {
+        const blob = await this.fs.readBlob(stripRes(resourcePath));
+        const bitmap = await createImageBitmap(blob);
+        const { width, height } = bitmap;
+        const tooLarge =
+          width > MAX_FRAME_SIZE ||
+          height > MAX_FRAME_SIZE ||
+          width * height > 0.25 * DEFAULT_MAX_SHEET_SIZE * DEFAULT_MAX_SHEET_SIZE;
+        if (tooLarge) {
+          bitmap.close?.();
+          excluded.push(resourcePath);
+          continue;
+        }
+        decoded.push({ resourcePath, bitmap, width, height });
+      } catch {
+        excluded.push(resourcePath);
+      }
+    }
+
+    const items: PackItem[] = decoded.map(frame => ({
+      id: frame.resourcePath,
+      width: frame.width,
+      height: frame.height,
+    }));
+    const { sheets, overflow } = packMaxRects(items, {
+      maxSheetSize: DEFAULT_MAX_SHEET_SIZE,
+      padding: DEFAULT_PADDING,
+    });
+    excluded.push(...overflow);
+
+    const byId = new Map(decoded.map(frame => [frame.resourcePath, frame]));
+    const canvases: OffscreenCanvas[] = [];
+    const manifestSheets: AtlasManifest['sheets'] = [];
+    const frames: AtlasManifest['frames'] = {};
+
+    sheets.forEach((sheet, index) => {
+      const sheetId = `sheet-${index}`;
+      const canvas = new OffscreenCanvas(sheet.width, sheet.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return;
+      }
+      for (const placement of sheet.placements) {
+        const frame = byId.get(placement.id);
+        if (!frame) {
+          continue;
+        }
+        ctx.drawImage(frame.bitmap, placement.x, placement.y);
+        extrudeEdges(ctx, frame.bitmap, placement.x, placement.y, sheet.width, sheet.height);
+        frames[placement.id] = {
+          sheet: sheetId,
+          x: placement.x,
+          y: placement.y,
+          w: frame.width,
+          h: frame.height,
+        };
+      }
+      canvases.push(canvas);
+      manifestSheets.push({
+        id: sheetId,
+        file: `${sheetId}.png`,
+        width: sheet.width,
+        height: sheet.height,
+      });
+    });
+
+    for (const frame of decoded) {
+      frame.bitmap.close?.();
+    }
+
+    const manifest: AtlasManifest = {
+      formatVersion: 1,
+      packerVersion: PACKER_VERSION,
+      contentHash: hash,
+      textureFiltering: filtering === 'nearest' ? 'nearest' : 'linear',
+      sheets: manifestSheets,
+      frames,
+      excluded: excluded.sort((a, b) => a.localeCompare(b)),
+    };
+    return { manifest, canvases };
+  }
+
+  // --- Installation ---------------------------------------------------------
+
+  private installFromCanvases(
+    assetLoader: AssetLoader,
+    manifest: AtlasManifest,
+    canvases: OffscreenCanvas[],
+    hash: string
+  ): void {
+    manifest.sheets.forEach((sheet, index) => {
+      const canvas = canvases[index];
+      if (!canvas) {
+        return;
+      }
+      const texture = new CanvasTexture(canvas);
+      configure2DTexture(texture);
+      assetLoader.seedTexture(sheetKey(hash, sheet.id), texture);
+    });
+    this.installResolver(assetLoader, manifest, hash);
+  }
+
+  private async installFromBlobs(
+    assetLoader: AssetLoader,
+    manifest: AtlasManifest,
+    blobs: Blob[],
+    hash: string
+  ): Promise<void> {
+    for (let index = 0; index < manifest.sheets.length; index++) {
+      const blob = blobs[index];
+      if (!blob) {
+        continue;
+      }
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+      bitmap.close?.();
+      const texture = new CanvasTexture(canvas);
+      configure2DTexture(texture);
+      assetLoader.seedTexture(sheetKey(hash, manifest.sheets[index].id), texture);
+    }
+    this.installResolver(assetLoader, manifest, hash);
+  }
+
+  private installResolver(assetLoader: AssetLoader, manifest: AtlasManifest, hash: string): void {
+    assetLoader.setAtlasResolver(createAtlasResolver(manifest, id => sheetKey(hash, id)));
+    // Evict any raw textures the shared loader cached before play (the editor's
+    // edit-mode viewport uses the same AssetLoader) so startScene re-resolves
+    // these paths to sheet views instead of reusing the stale raw texture.
+    for (const resourcePath of Object.keys(manifest.frames)) {
+      assetLoader.evictTexture(resourcePath);
+    }
+  }
+
+  dispose(): void {
+    // No long-lived resources; the cache store manages its own IDB handle.
+  }
+}
+
+function sheetKey(hash: string, sheetId: string): string {
+  return `${ATLAS_SHEET_SCHEME}${hash}/${sheetId}`;
+}
+
+function stripRes(path: string): string {
+  return path.startsWith('res://') ? path.slice(6) : path;
+}
+
+function matchAll(text: string, pattern: RegExp): string[] {
+  if (!text) {
+    return [];
+  }
+  return text.match(pattern) ?? [];
+}
+
+/** `Promise.all(items.map(fn))` with at most `limit` calls in flight; results stay index-aligned. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
+ * Duplicate a frame's 1px border outward into the surrounding padding gap so
+ * linear filtering at a frame edge samples the frame's own color, not a neighbor
+ * (or transparent). The UV rect uses the exact frame bounds, so these extruded
+ * pixels sit outside the sampled region. Strips that fall off the sheet are
+ * skipped.
+ */
+function extrudeEdges(
+  ctx: OffscreenCanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  x: number,
+  y: number,
+  sheetW: number,
+  sheetH: number
+): void {
+  const w = bitmap.width;
+  const h = bitmap.height;
+  // Left / right columns
+  if (x > 0) {
+    ctx.drawImage(bitmap, 0, 0, 1, h, x - 1, y, 1, h);
+  }
+  if (x + w < sheetW) {
+    ctx.drawImage(bitmap, w - 1, 0, 1, h, x + w, y, 1, h);
+  }
+  // Top / bottom rows
+  if (y > 0) {
+    ctx.drawImage(bitmap, 0, 0, w, 1, x, y - 1, w, 1);
+  }
+  if (y + h < sheetH) {
+    ctx.drawImage(bitmap, 0, h - 1, w, 1, x, y + h, w, 1);
+  }
+  // Corners
+  if (x > 0 && y > 0) {
+    ctx.drawImage(bitmap, 0, 0, 1, 1, x - 1, y - 1, 1, 1);
+  }
+  if (x + w < sheetW && y > 0) {
+    ctx.drawImage(bitmap, w - 1, 0, 1, 1, x + w, y - 1, 1, 1);
+  }
+  if (x > 0 && y + h < sheetH) {
+    ctx.drawImage(bitmap, 0, h - 1, 1, 1, x - 1, y + h, 1, 1);
+  }
+  if (x + w < sheetW && y + h < sheetH) {
+    ctx.drawImage(bitmap, w - 1, h - 1, 1, 1, x + w, y + h, 1, 1);
+  }
+}

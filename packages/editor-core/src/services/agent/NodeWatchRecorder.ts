@@ -1,0 +1,548 @@
+import { Vector3 } from 'three';
+import { componentToDTO, type Json } from '@/core/agent-introspection';
+
+/**
+ * Records what a live node *actually did* over a window — not just its endpoints.
+ *
+ * The endpoint-diff model (`game_input`'s before/after) is blind to the whole
+ * class of non-transform gameplay: a spawner/pool container never moves, and
+ * transient children (a cannonball that spawns, flies, and is destroyed inside
+ * the window) leave both endpoints identical. This recorder samples four
+ * orthogonal channels across the window and keeps peaks/cumulative counts, so
+ * "the shooting works" is provable even when the watched node's own transform
+ * is frozen at (0,0,0):
+ *
+ *  - self motion   — peak world displacement of the node itself
+ *  - structure     — child add/remove (exact via three's childadded/childremoved
+ *                    events; poll-diff fallback when the node has no event API)
+ *  - child liveness— visible-child count peak + peak displacement of any child
+ *                    (object pools recycle by toggling `visible`, never removal)
+ *  - state         — scalar component fields that changed (ammo/score/health)
+ *
+ * Decoupled from the runtime by design: it takes a resolver + a structural node
+ * view, so it unit-tests against plain fakes and never imports SceneRunner.
+ *
+ * **Sampling is frame-driven** (plan §5.1). The recorder subscribes to the
+ * runner's per-tick frame hook and samples every tick, because the old 100 ms
+ * timer was blind to anything shorter than ~6 frames (a bullet that lives 80 ms
+ * could miss every sample) and would have become useless under the time
+ * contract's speed-up — at ×10 a 100 ms timer is one sample per 60 ticks.
+ * Reading ≤8 transforms per tick is cheap; what the caps protect is the *output*
+ * size, and those are unchanged. A timer survives only as a watchdog for the
+ * windows where no tick arrives (runner absent, paused, or a host that exposes
+ * no frame hook) — see {@link NodeWatchRecorder.start}.
+ */
+
+/** Watchdog cadence used when no frame tick arrives (paused / no runner). */
+const IDLE_POLL_MS = 100;
+const MAX_WATCH_NODES = 8;
+const MAX_TRACKED_CHILDREN = 32;
+const MAX_LOG_ENTRIES = 10;
+const MAX_STATE_CHANGES = 10;
+/** World distance a node/child must travel to count as motion (matches GameInputService). */
+const MOVE_EPS = 0.5;
+/** Per-axis scale change that counts as "scaled" (matches GameInputService; duplicated by design). */
+const SCALE_EPS = 0.01;
+/** Opacity change that counts as a fade (matches GameInputService; duplicated by design). */
+const OPACITY_EPS = 0.05;
+
+export type WatchLogKind = 'spawn' | 'despawn' | 'show' | 'hide' | 'state' | 'scale' | 'fade';
+
+/**
+ * One aggregated changelog line. Entries are deduped **by kind**: the first
+ * occurrence keeps the stamps and the note, every later one bumps `count`. That
+ * is what makes the log frequency-independent — sampling every tick instead of
+ * every 100 ms multiplies raw events by ~6, and a plain append-until-capped log
+ * would degrade into ten entries from the first 150 ms of the window.
+ */
+export interface WatchLogEntry {
+  /** ms since the watch window started (first occurrence). */
+  at: number;
+  /**
+   * Ticks since the window started (first occurrence). Present only when the
+   * window was frame-driven — the stamp the plan's timeline is denominated in.
+   */
+  frame?: number;
+  kind: WatchLogKind;
+  note: string;
+  /** Occurrences of this kind during the window; omitted when it happened once. */
+  count?: number;
+}
+
+/** What a watched node did over the window (see {@link NodeWatchRecorder}). */
+export interface NodeActivity {
+  /** Direct children added during the window (cumulative — counts ones later removed). */
+  spawned: number;
+  /** Direct children removed during the window. */
+  removed: number;
+  /** Highest direct-child count seen during the window. */
+  childCountPeak: number;
+  /** Highest count of *visible* direct children — the object-pool signal. */
+  visibleChildPeak: number;
+  /** Peak world displacement of the node itself (catches out-and-back motion). */
+  maxDistanceFromStart: number;
+  /** Peak world displacement of any tracked direct child (projectiles fly; the pool doesn't). */
+  maxChildDistance: number;
+  /**
+   * Peak per-axis |scale − startScale| of the node itself during the window
+   * (absolute units, not a ratio — robust to a PopIn that starts at scale 0).
+   * A PunchScale that pulses and returns to rest still registers here.
+   */
+  maxScaleDelta: number;
+  /** Opacity extremes seen during the window; present only when the node exposes opacity. */
+  opacityRange?: { min: number; max: number };
+  /** Scalar component fields that changed over the window: 'GunController.mag' -> [3, 0]. */
+  stateChanges?: Record<string, [Json, Json]>;
+  /** Sparse changelog, entries only on a change (capped). */
+  log?: WatchLogEntry[];
+  /** True when ANY channel registered activity — the per-node headline. */
+  active: boolean;
+}
+
+/** Minimal structural view of a live child the recorder reads. `NodeBase`/`Object3D` satisfy it. */
+export interface WatchChildLike {
+  uuid?: string;
+  nodeId?: string;
+  visible?: boolean;
+  getWorldPosition(target: Vector3): { x: number; y: number; z: number };
+}
+
+/** Minimal structural view of a watched node. `NodeBase` (a three `Object3D`) satisfies it. */
+export interface WatchNodeLike {
+  nodeId?: string;
+  visible?: boolean;
+  scale?: { x: number; y: number; z: number };
+  opacity?: number;
+  children: readonly WatchChildLike[];
+  components?: readonly unknown[];
+  getWorldPosition(target: Vector3): { x: number; y: number; z: number };
+  addEventListener?(type: string, listener: (event: unknown) => void): void;
+  removeEventListener?(type: string, listener: (event: unknown) => void): void;
+}
+
+/** Resolves a watch query (node name or id) to a live node, or null if absent. */
+export type WatchResolver = (query: string) => WatchNodeLike | null;
+
+/** The per-tick sample the recorder needs; `SceneRunnerFrameSample` satisfies it. */
+export interface WatchFrameSample {
+  readonly frameNumber: number;
+}
+
+/**
+ * Anything that reports the end of each logic tick. `SceneRunner` satisfies it
+ * structurally — the recorder deliberately does not import it, so it keeps
+ * unit-testing against fakes.
+ */
+export interface WatchFrameSource {
+  subscribeFrameStats(listener: (sample: WatchFrameSample) => void): () => void;
+}
+
+export interface NodeWatchOptions {
+  /**
+   * The running runner. Given one, the window samples once per logic tick;
+   * without one (or if subscribing throws), it degrades to the watchdog timer.
+   */
+  frameSource?: WatchFrameSource | null;
+  /** Watchdog cadence in ms, used only for ticks that never arrive. */
+  idlePollMs?: number;
+}
+
+type Vec3 = { x: number; y: number; z: number };
+
+interface Tracked {
+  query: string;
+  node: WatchNodeLike;
+  startPos: Vec3;
+  startChildCount: number;
+  startVisibleChildCount: number;
+  childCountPeak: number;
+  visibleChildPeak: number;
+  maxDistanceFromStart: number;
+  maxChildDistance: number;
+  startScale: Vec3;
+  maxScaleDelta: number;
+  opacityMin: number | null;
+  opacityMax: number | null;
+  scaleLogged: boolean;
+  fadeLogged: boolean;
+  spawned: number;
+  removed: number;
+  lastVisibleCount: number;
+  /** child key -> first-seen world position, for displacement tracking. */
+  childStart: Map<string, Vec3>;
+  /** current child keys, for the poll-diff spawn/despawn fallback. */
+  lastKeys: Set<string>;
+  /** true when the node exposes addEventListener → exact spawn/despawn via three events. */
+  hasEvents: boolean;
+  startState: Map<string, Json>;
+  log: WatchLogEntry[];
+  /** kind -> its entry in `log`, so a repeat bumps a counter instead of appending. */
+  logByKind: Map<WatchLogKind, WatchLogEntry>;
+  onAdded?: (event: unknown) => void;
+  onRemoved?: (event: unknown) => void;
+}
+
+const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+const dist = (a: Vec3, b: Vec3): number => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const copyVec = (v: Vec3): Vec3 => ({ x: v.x, y: v.y, z: v.z });
+const sameJson = (a: Json, b: Json): boolean => JSON.stringify(a) === JSON.stringify(b);
+const childKey = (child: WatchChildLike, index: number): string =>
+  child.uuid ?? child.nodeId ?? `#${index}`;
+const childName = (child: WatchChildLike | undefined): string =>
+  child?.nodeId ? ` (${child.nodeId})` : '';
+const isVisible = (child: WatchChildLike): boolean => child.visible !== false;
+const countVisible = (children: readonly WatchChildLike[]): number =>
+  children.reduce((n, c) => n + (isVisible(c) ? 1 : 0), 0);
+
+/** Flatten a node's component scalar fields to `ClassName.field -> value` for diffing. */
+function flattenState(node: WatchNodeLike): Map<string, Json> {
+  const out = new Map<string, Json>();
+  const components = node.components ?? [];
+  components.forEach((component, index) => {
+    const dto = componentToDTO(component, index);
+    const state = dto.state;
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return;
+    for (const [key, value] of Object.entries(state)) {
+      if (
+        value === null ||
+        typeof value === 'number' ||
+        typeof value === 'boolean' ||
+        typeof value === 'string'
+      ) {
+        out.set(`${dto.className}.${key}`, value);
+      }
+    }
+  });
+  return out;
+}
+
+export class NodeWatchRecorder {
+  private readonly tracked: Tracked[] = [];
+  private readonly frameSource: WatchFrameSource | null;
+  private readonly idlePollMs: number;
+  private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeFrames: (() => void) | null = null;
+  private frameDriven = false;
+  private startedAt = 0;
+  /** Ticks sampled so far — also the frame stamp written into log entries. */
+  private framesSampled = 0;
+  /** `framesSampled` at the previous watchdog fire, to detect a runner that is not ticking. */
+  private framesAtLastWatchdog = -1;
+  private readonly scratch = new Vector3();
+  /** Number of queries dropped because more than {@link MAX_WATCH_NODES} were requested. */
+  readonly droppedWatchCount: number;
+
+  constructor(resolve: WatchResolver, queries: readonly string[], options: NodeWatchOptions = {}) {
+    this.frameSource = options.frameSource ?? null;
+    this.idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
+    const capped = queries.slice(0, MAX_WATCH_NODES);
+    this.droppedWatchCount = Math.max(0, queries.length - capped.length);
+    for (const query of capped) {
+      const node = resolve(query);
+      if (node) this.track(query, node, this.scratch);
+    }
+  }
+
+  /** True when at least one query resolved to a live node. */
+  get isWatching(): boolean {
+    return this.tracked.length > 0;
+  }
+
+  /**
+   * True when this window was driven by the runner's frame hook. Sticky on
+   * purpose — it must read the same after {@link stop} (which unsubscribes) as
+   * during the window, or the final sample's log entries would lose their frame
+   * stamps and the caller would misreport how the window was measured.
+   */
+  get isFrameDriven(): boolean {
+    return this.frameDriven;
+  }
+
+  /** Logic ticks observed during the window (0 when nothing ticked). */
+  get framesObserved(): number {
+    return this.framesSampled;
+  }
+
+  /**
+   * Begin capture: attach lifecycle listeners, take the baseline sample, then
+   * arm both drivers.
+   *
+   * The frame hook is the real sampler — one sample per logic tick. The timer
+   * behind it is a watchdog, not a second sampler: it fires every
+   * {@link IDLE_POLL_MS} and samples **only if no tick happened since it last
+   * fired**. That single mechanism covers every degradation in one place — no
+   * runner, a host with no `subscribeFrameStats`, a subscription that throws, a
+   * paused runner, a runner that is resumed halfway through the window — and it
+   * costs nothing while ticks are flowing.
+   */
+  start(): void {
+    if (!this.isWatching) return;
+    this.startedAt = Date.now();
+    for (const t of this.tracked) this.attach(t);
+    this.sample();
+    this.subscribeToFrames();
+    this.framesAtLastWatchdog = this.framesSampled;
+    this.intervalHandle = setInterval(() => {
+      if (this.framesSampled === this.framesAtLastWatchdog) this.sample();
+      this.framesAtLastWatchdog = this.framesSampled;
+    }, this.idlePollMs);
+  }
+
+  /** End capture: take a final sample, detach listeners, return per-query activity. */
+  stop(): Map<string, NodeActivity> {
+    if (this.intervalHandle !== null) {
+      clearInterval(this.intervalHandle);
+      this.intervalHandle = null;
+    }
+    if (this.unsubscribeFrames) {
+      try {
+        this.unsubscribeFrames();
+      } catch {
+        // A host that fails to unsubscribe must not sink the whole observation.
+      }
+      this.unsubscribeFrames = null;
+    }
+    this.sample();
+    for (const t of this.tracked) this.detach(t);
+    const out = new Map<string, NodeActivity>();
+    for (const t of this.tracked) out.set(t.query, this.finish(t));
+    return out;
+  }
+
+  /** Attach to the runner's per-tick hook; stays timer-driven if that is impossible. */
+  private subscribeToFrames(): void {
+    const source = this.frameSource;
+    if (!source || typeof source.subscribeFrameStats !== 'function') return;
+    try {
+      this.unsubscribeFrames = source.subscribeFrameStats(() => {
+        // Never throw into the runner's frame dispatch: one bad read here would
+        // take out every other frame listener (and the profiler with them).
+        try {
+          this.framesSampled += 1;
+          this.sample();
+        } catch {
+          // Ignore — a sample lost is a sample lost, the window continues.
+        }
+      });
+      this.frameDriven = true;
+    } catch {
+      this.unsubscribeFrames = null;
+      this.frameDriven = false;
+    }
+  }
+
+  private track(query: string, node: WatchNodeLike, scratch: Vector3): void {
+    const startPos = copyVec(node.getWorldPosition(scratch));
+    const children = node.children ?? [];
+    const visible = countVisible(children);
+    const t: Tracked = {
+      query,
+      node,
+      startPos,
+      startChildCount: children.length,
+      startVisibleChildCount: visible,
+      childCountPeak: children.length,
+      visibleChildPeak: visible,
+      maxDistanceFromStart: 0,
+      maxChildDistance: 0,
+      startScale: node.scale ? copyVec(node.scale) : { x: 1, y: 1, z: 1 },
+      maxScaleDelta: 0,
+      opacityMin: typeof node.opacity === 'number' ? node.opacity : null,
+      opacityMax: typeof node.opacity === 'number' ? node.opacity : null,
+      scaleLogged: false,
+      fadeLogged: false,
+      spawned: 0,
+      removed: 0,
+      lastVisibleCount: visible,
+      childStart: new Map(),
+      lastKeys: new Set(children.map((c, i) => childKey(c, i))),
+      hasEvents: typeof node.addEventListener === 'function',
+      startState: flattenState(node),
+      log: [],
+      logByKind: new Map(),
+    };
+    for (let i = 0; i < children.length && i < MAX_TRACKED_CHILDREN; i++) {
+      const key = childKey(children[i], i);
+      if (!t.childStart.has(key))
+        t.childStart.set(key, copyVec(children[i].getWorldPosition(scratch)));
+    }
+    this.tracked.push(t);
+  }
+
+  private attach(t: Tracked): void {
+    if (!t.hasEvents || !t.node.addEventListener) return;
+    const scratch = this.scratch;
+    t.onAdded = (event: unknown) => {
+      t.spawned += 1;
+      const child = (event as { child?: WatchChildLike }).child;
+      this.pushLog(t, 'spawn', `child added${childName(child)}`);
+      if (child) {
+        const key = childKey(child, t.childStart.size);
+        if (!t.childStart.has(key)) t.childStart.set(key, copyVec(child.getWorldPosition(scratch)));
+      }
+    };
+    t.onRemoved = (event: unknown) => {
+      t.removed += 1;
+      const child = (event as { child?: WatchChildLike }).child;
+      this.pushLog(t, 'despawn', `child removed${childName(child)}`);
+    };
+    t.node.addEventListener('childadded', t.onAdded);
+    t.node.addEventListener('childremoved', t.onRemoved);
+  }
+
+  private detach(t: Tracked): void {
+    if (!t.node.removeEventListener) return;
+    if (t.onAdded) t.node.removeEventListener('childadded', t.onAdded);
+    if (t.onRemoved) t.node.removeEventListener('childremoved', t.onRemoved);
+  }
+
+  /** One pass over every tracked node. Runs per logic tick — allocation-free by design. */
+  private sample(): void {
+    const scratch = this.scratch;
+    for (const t of this.tracked) {
+      const children = t.node.children ?? [];
+
+      const pos = t.node.getWorldPosition(scratch);
+      t.maxDistanceFromStart = Math.max(t.maxDistanceFromStart, dist(pos, t.startPos));
+
+      const s = t.node.scale;
+      if (s) {
+        const d = Math.max(
+          Math.abs(s.x - t.startScale.x),
+          Math.abs(s.y - t.startScale.y),
+          Math.abs(s.z - t.startScale.z)
+        );
+        if (d > t.maxScaleDelta) t.maxScaleDelta = d;
+        if (!t.scaleLogged && d > SCALE_EPS) {
+          t.scaleLogged = true;
+          this.pushLog(
+            t,
+            'scale',
+            `scale ${round3(s.x)}×${round3(s.y)} (was ${round3(t.startScale.x)}×${round3(t.startScale.y)})`
+          );
+        }
+      }
+      const op = t.node.opacity;
+      if (typeof op === 'number' && t.opacityMin !== null && t.opacityMax !== null) {
+        t.opacityMin = Math.min(t.opacityMin, op);
+        t.opacityMax = Math.max(t.opacityMax, op);
+        if (!t.fadeLogged && t.opacityMax - t.opacityMin > OPACITY_EPS) {
+          t.fadeLogged = true;
+          this.pushLog(t, 'fade', `opacity ${round3(t.opacityMin)}..${round3(t.opacityMax)}`);
+        }
+      }
+
+      t.childCountPeak = Math.max(t.childCountPeak, children.length);
+      const visible = countVisible(children);
+      t.visibleChildPeak = Math.max(t.visibleChildPeak, visible);
+      if (visible > t.lastVisibleCount) {
+        this.pushLog(
+          t,
+          'show',
+          `+${visible - t.lastVisibleCount} visible children (${visible} now)`
+        );
+      } else if (visible < t.lastVisibleCount) {
+        this.pushLog(
+          t,
+          'hide',
+          `-${t.lastVisibleCount - visible} visible children (${visible} now)`
+        );
+      }
+      t.lastVisibleCount = visible;
+
+      for (let i = 0; i < children.length && i < MAX_TRACKED_CHILDREN; i++) {
+        const key = childKey(children[i], i);
+        const cp = children[i].getWorldPosition(scratch);
+        const start = t.childStart.get(key);
+        if (!start) t.childStart.set(key, copyVec(cp));
+        else t.maxChildDistance = Math.max(t.maxChildDistance, dist(cp, start));
+      }
+
+      // Poll-diff spawn/despawn only when the node has no event API (else events are exact).
+      if (!t.hasEvents) {
+        const keys = new Set(children.map((c, i) => childKey(c, i)));
+        for (const key of keys) {
+          if (!t.lastKeys.has(key)) {
+            t.spawned += 1;
+            this.pushLog(t, 'spawn', 'child added');
+          }
+        }
+        for (const key of t.lastKeys) {
+          if (!keys.has(key)) {
+            t.removed += 1;
+            this.pushLog(t, 'despawn', 'child removed');
+          }
+        }
+        t.lastKeys = keys;
+      }
+    }
+  }
+
+  /**
+   * Record one change. Repeats of a kind bump a counter on the existing entry
+   * rather than appending: at tick cadence a spawner fires dozens of times a
+   * second, and an append-only log would spend its whole cap on the first
+   * fraction of the window. The stamps therefore mark the FIRST occurrence —
+   * "when did this start, and how often" — which is what the verdict needs.
+   */
+  private pushLog(t: Tracked, kind: WatchLogKind, note: string): void {
+    const existing = t.logByKind.get(kind);
+    if (existing) {
+      existing.count = (existing.count ?? 1) + 1;
+      return;
+    }
+    if (t.log.length >= MAX_LOG_ENTRIES) return;
+    const entry: WatchLogEntry = {
+      at: Math.max(0, Date.now() - this.startedAt),
+      ...(this.isFrameDriven ? { frame: this.framesSampled } : {}),
+      kind,
+      note,
+    };
+    t.log.push(entry);
+    t.logByKind.set(kind, entry);
+  }
+
+  private finish(t: Tracked): NodeActivity {
+    const endState = flattenState(t.node);
+    const stateChanges: Record<string, [Json, Json]> = {};
+    let stateCount = 0;
+    for (const key of new Set([...t.startState.keys(), ...endState.keys()])) {
+      if (stateCount >= MAX_STATE_CHANGES) break;
+      const before = t.startState.has(key) ? (t.startState.get(key) as Json) : null;
+      const after = endState.has(key) ? (endState.get(key) as Json) : null;
+      if (!sameJson(before, after)) {
+        stateChanges[key] = [before, after];
+        stateCount += 1;
+      }
+    }
+    const hasState = stateCount > 0;
+    const fadeRange =
+      t.opacityMin !== null && t.opacityMax !== null && t.opacityMax - t.opacityMin > OPACITY_EPS
+        ? { min: round3(t.opacityMin), max: round3(t.opacityMax) }
+        : undefined;
+    const active =
+      t.spawned > 0 ||
+      t.removed > 0 ||
+      t.childCountPeak > t.startChildCount ||
+      t.visibleChildPeak > t.startVisibleChildCount ||
+      t.maxDistanceFromStart > MOVE_EPS ||
+      t.maxChildDistance > MOVE_EPS ||
+      t.maxScaleDelta > SCALE_EPS ||
+      fadeRange !== undefined ||
+      hasState;
+    const activity: NodeActivity = {
+      spawned: t.spawned,
+      removed: t.removed,
+      childCountPeak: t.childCountPeak,
+      visibleChildPeak: t.visibleChildPeak,
+      maxDistanceFromStart: round3(t.maxDistanceFromStart),
+      maxChildDistance: round3(t.maxChildDistance),
+      maxScaleDelta: round3(t.maxScaleDelta),
+      ...(fadeRange ? { opacityRange: fadeRange } : {}),
+      active,
+    };
+    if (hasState) activity.stateChanges = stateChanges;
+    if (t.log.length) activity.log = t.log;
+    return activity;
+  }
+}

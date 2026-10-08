@@ -1,0 +1,288 @@
+:host {
+  display: block;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  background: var(--bg-0);
+}
+
+.game-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.top-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2.25rem;
+  padding: 0.18rem 0.35rem;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--fg-1);
+  padding: 0;
+  min-width: 26px;
+  height: 26px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.toolbar-icon-button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.toolbar-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.toolbar-svg-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.toolbar-button:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+.toolbar-button:active {
+  background: var(--bg-3);
+}
+
+.toolbar-button.active,
+.toolbar-button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  color: var(--accent);
+}
+
+.toolbar-button.active:hover,
+.toolbar-button[aria-pressed='true']:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--line-1);
+  margin: 0 0.25rem;
+}
+
+.aspect-preset-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.aspect-preset-button {
+  min-width: 2.25rem;
+  padding: 0 0.45rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.aspect-preset-button.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  color: var(--accent);
+}
+
+.viewport-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-0);
+}
+
+.game-host {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.game-placeholder {
+  position: absolute;
+  inset: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* The remote preview card is interactive (copy/stop/restart) and can exceed
+   small panels vertically. */
+.game-placeholder-remote {
+  pointer-events: auto;
+  overflow-y: auto;
+  align-items: safe center;
+}
+
+.game-placeholder-card {
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  text-align: center;
+}
+
+.game-placeholder-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+.game-placeholder-copy {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--fg-1);
+}
+
+.aspect-free {
+  width: 100%;
+  height: 100%;
+}
+
+.game-error-banner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-3);
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.game-error-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: var(--danger);
+}
+
+.game-error-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.game-error-title {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.game-error-location {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.game-error-message {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  color: var(--danger);
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 6.5em;
+  overflow-y: auto;
+}
+
+.game-error-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.game-error-button {
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  border-radius: var(--radius-2);
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease;
+}
+
+.game-error-button:hover {
+  background: var(--bg-3);
+}
+
+.game-error-button-primary {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.game-error-button-primary:hover {
+  background: var(--accent-line);
+}
+
+.game-error-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: var(--radius-2);
+}
+
+.game-error-dismiss:hover {
+  color: var(--fg-0);
+  background: var(--bg-2);
+}
+
+/* Multiplayer session card — floats over the running game (Play Online, plan step 1.5).
+   `pointer-events: none` on the wrapper keeps the game clickable around the card. */
+.online-session-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  pointer-events: none;
+  max-height: calc(100% - 24px);
+  overflow: auto;
+}

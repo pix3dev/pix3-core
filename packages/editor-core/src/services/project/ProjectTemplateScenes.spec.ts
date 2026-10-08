@@ -1,0 +1,211 @@
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
+import { Texture } from 'three';
+
+import {
+  AssetLoader,
+  AudioService,
+  ResourceManager,
+  SceneLoader,
+  NodeBase,
+  ScriptRegistry,
+  registerBuiltInScripts,
+} from '@pix3/runtime';
+
+/**
+ * Parse-check for the bundled project templates. Template scenes are
+ * hand-authored YAML copied verbatim into new projects, so this guards against
+ * schema drift breaking "New Project": every scene must load through the real
+ * SceneLoader, and every template must ship the startup scene.
+ */
+
+const TEMPLATES_ROOT = resolve(process.cwd(), 'src/templates/projects');
+const STARTUP_SCENE = 'files/scenes/main.pix3scene';
+
+function listTemplateDirs(): string[] {
+  return readdirSync(TEMPLATES_ROOT).filter(entry =>
+    statSync(join(TEMPLATES_ROOT, entry)).isDirectory()
+  );
+}
+
+function listSceneFiles(dir: string, collected: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const fullPath = join(dir, entry);
+    if (statSync(fullPath).isDirectory()) {
+      listSceneFiles(fullPath, collected);
+    } else if (entry.endsWith('.pix3scene')) {
+      collected.push(fullPath);
+    }
+  }
+  return collected;
+}
+
+function createLoader(preloadTextures: string[], templateFilesDir: string): SceneLoader {
+  // Serve res:// reads (prefab `instance:` references) from the template's
+  // files/ tree instead of the network.
+  const resourceManager = new ResourceManager('/');
+  resourceManager.readText = async (resourcePath: string): Promise<string> => {
+    const relativePath = resourcePath.replace(/^res:\/\//, '');
+    const filePath = join(templateFilesDir, relativePath);
+    // Placeholders are substituted at project-creation time.
+    return readFileSync(filePath, 'utf8').replaceAll('{{PROJECT_NAME}}', 'Test Project');
+  };
+
+  const assetLoader = new AssetLoader(resourceManager, new AudioService());
+  const cache = (assetLoader as unknown as { textureCache: Map<string, Texture> }).textureCache;
+  for (const url of preloadTextures) {
+    cache.set(url, new Texture());
+  }
+  const registry = new ScriptRegistry();
+  registerBuiltInScripts(registry);
+  return new SceneLoader(assetLoader, registry, resourceManager);
+}
+
+function collectTextureUrls(yamlText: string): string[] {
+  const urls = new Set<string>();
+  for (const match of yamlText.matchAll(/res:\/\/[^\s"')\]]+\.(?:png|jpg|jpeg|webp)/g)) {
+    urls.add(match[0]);
+  }
+  return Array.from(urls);
+}
+
+describe('bundled project templates', () => {
+  beforeAll(() => {
+    // happy-dom has no canvas 2D context; Label2D/Button2D render label text
+    // through it, so parseScene needs this minimal stub. It has to cover the glow
+    // and outline passes too (`save`/`restore`/`strokeText` + the shadow fields):
+    // a template that authors `glowStrength`/`outlineWidth` would otherwise fail
+    // here on a missing stub method rather than on anything wrong with the scene.
+    const canvasProto = HTMLCanvasElement.prototype as unknown as {
+      getContext: (id: string) => unknown;
+    };
+    canvasProto.getContext = vi.fn(() => ({
+      setTransform: () => undefined,
+      scale: () => undefined,
+      save: () => undefined,
+      restore: () => undefined,
+      fillRect: () => undefined,
+      clearRect: () => undefined,
+      fillText: () => undefined,
+      strokeText: () => undefined,
+      measureText: () => ({ width: 0 }),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      lineJoin: '',
+      shadowColor: '',
+      shadowBlur: 0,
+      font: '',
+      textBaseline: '',
+      textAlign: '',
+    }));
+  });
+
+  const templateDirs = listTemplateDirs();
+
+  it('has the expected template set', () => {
+    expect(templateDirs.sort()).toEqual([
+      'empty-2d',
+      'empty-3d',
+      'idea-blank',
+      'minigame-2d',
+      'playable-2d',
+      'playable-3d',
+      'recipe-arena-2d',
+      'recipe-blank-2d',
+      'recipe-bouncer-2d',
+      'recipe-grid-3d',
+      'recipe-tapper-2d',
+    ]);
+  });
+
+  for (const templateId of listTemplateDirs()) {
+    const templateDir = join(TEMPLATES_ROOT, templateId);
+
+    it(`${templateId}: has valid template.yaml and the startup scene`, () => {
+      const metaPath = join(templateDir, 'template.yaml');
+      expect(existsSync(metaPath)).toBe(true);
+
+      const meta = parseYaml(readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+      expect(meta.id).toBe(templateId);
+      expect(typeof meta.title).toBe('string');
+      expect(['2d', '3d']).toContain(meta.projectType);
+
+      expect(existsSync(join(templateDir, STARTUP_SCENE))).toBe(true);
+      // A hidden template is never drawn as a card (it is picked by a code path, not a user), so a
+      // cover would only be an eagerly bundled image nothing renders.
+      if (meta.hidden !== true) {
+        expect(existsSync(join(templateDir, 'cover.png'))).toBe(true);
+      }
+      expect(existsSync(join(templateDir, 'files/README.md'))).toBe(true);
+    });
+
+    /**
+     * The behavioural half of the overlay convention (`recipes.spec.ts` guards the YAML).
+     *
+     * `scenes/main.pix3scene` is what the editor opens for every project it creates or reopens
+     * (`ProjectService.STARTUP_SCENE_PATH`), so this asserts the thing the user actually sees:
+     * after a real load, with `instance:` references resolved, nothing that came out of an
+     * overlay file is on screen. Full-screen UI used to be authored inline here behind
+     * `initiallyVisible: false` — a PLAY-MODE flag the editor does not read — so every new
+     * project opened onto a TAP TO START dim or a GAME OVER card.
+     */
+    it(`${templateId}: main.pix3scene opens on the game, not on an overlay`, async () => {
+      const filesDir = join(templateDir, 'files');
+      const mainPath = join(templateDir, STARTUP_SCENE);
+      const rendered = readFileSync(mainPath, 'utf8').replaceAll(
+        '{{PROJECT_NAME}}',
+        'Test Project'
+      );
+      // Textures are preloaded across every scene in the template, not just this one: an
+      // overlay pulled in through `instance:` brings its own sprites with it.
+      const textures = listSceneFiles(filesDir).flatMap(path =>
+        collectTextureUrls(readFileSync(path, 'utf8'))
+      );
+      const loader = createLoader(textures, filesDir);
+      const graph = await loader.parseScene(rendered, { filePath: 'res://scenes/main.pix3scene' });
+
+      const onScreen: string[] = [];
+      const visit = (node: NodeBase): void => {
+        const marker = node.metadata?.__pix3Prefab as { sourcePath?: string } | undefined;
+        const source = (marker?.sourcePath ?? '').replace(/^res:\/\//i, '');
+        if (source.startsWith('scenes/ui/') && node.isVisibleInTree()) {
+          onScreen.push(`${node.nodeId} (${source})`);
+        }
+        for (const child of node.children) {
+          if (child instanceof NodeBase) {
+            visit(child);
+          }
+        }
+      };
+      for (const root of graph.rootNodes) {
+        visit(root);
+      }
+
+      expect(
+        onScreen,
+        `${templateId}: opening main.pix3scene draws ${onScreen.join(', ')} over the game. ` +
+          'Mark the instance `visible: false` (editor-only hide) and let `initiallyVisible` in ' +
+          'the overlay file decide what play mode shows.'
+      ).toEqual([]);
+    });
+
+    it(`${templateId}: all scenes parse through the real SceneLoader`, async () => {
+      const sceneFiles = listSceneFiles(join(templateDir, 'files'));
+      expect(sceneFiles.length).toBeGreaterThan(0);
+
+      for (const scenePath of sceneFiles) {
+        const yaml = readFileSync(scenePath, 'utf8');
+        // Placeholders are substituted at copy time; make the YAML parseable here.
+        const rendered = yaml.replaceAll('{{PROJECT_NAME}}', 'Test Project');
+        const loader = createLoader(collectTextureUrls(rendered), join(templateDir, 'files'));
+        const graph = await loader.parseScene(rendered, {
+          filePath: 'res://scenes/spec.pix3scene',
+        });
+        expect(graph.rootNodes.length).toBeGreaterThan(0);
+      }
+    });
+  }
+});

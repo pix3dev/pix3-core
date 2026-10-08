@@ -1,0 +1,143 @@
+pix3-viewport-visibility-popover {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 0.55rem;
+  border-radius: var(--radius-2);
+  background: var(--pix3-toolbar-button-background, var(--bg-2));
+  color: var(--pix3-toolbar-button-foreground, var(--fg-1));
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+pix3-viewport-visibility-popover:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+pix3-viewport-visibility-popover:hover {
+  background: var(--bg-2);
+}
+
+pix3-viewport-visibility-popover:active {
+  background: var(--bg-3);
+}
+
+.visibility-popover__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.visibility-popover__icon,
+.visibility-popover__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.visibility-popover__menu {
+  display: none;
+  min-width: 18rem;
+  padding: 0.5rem;
+  background: var(--pix3-dropdown-background, var(--bg-1));
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-pop);
+}
+
+.visibility-popover__menu--hidden {
+  display: none !important;
+}
+
+.visibility-popover__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.35rem;
+}
+
+.visibility-popover__title {
+  padding: 0.2rem 0.35rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-1);
+}
+
+.visibility-popover__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-0);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.visibility-popover__row:hover,
+.visibility-popover__row:focus-visible {
+  outline: none;
+  background: var(--bg-2);
+}
+
+.visibility-popover__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.visibility-popover__row-label {
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.visibility-popover__row-description {
+  font-size: 0.72rem;
+  color: var(--fg-2);
+}
+
+.visibility-popover__switch {
+  position: relative;
+  width: 2.15rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--bg-4);
+  flex-shrink: 0;
+  transition: background 120ms ease;
+}
+
+.visibility-popover__switch.is-on {
+  background: var(--accent);
+}
+
+.visibility-popover__switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--fg-0);
+  transition: transform 120ms ease;
+}
+
+.visibility-popover__switch.is-on .visibility-popover__switch-thumb {
+  transform: translateX(0.9rem);
+}
+
+.pix3-dropdown-portal .visibility-popover__menu {
+  display: block !important;
+  position: fixed;
+}

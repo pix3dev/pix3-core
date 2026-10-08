@@ -1,0 +1,156 @@
+pix3-script-creator .dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--pix3-z-modal);
+  animation: fadeIn 0.2s ease;
+}
+
+pix3-script-creator .dialog-content {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-float);
+  min-width: 480px;
+  max-width: 600px;
+  animation: slideUp 0.3s ease;
+}
+
+pix3-script-creator .dialog-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+pix3-script-creator .dialog-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg-0);
+}
+
+pix3-script-creator .dialog-body {
+  padding: 24px;
+}
+
+pix3-script-creator .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+pix3-script-creator .form-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-0);
+}
+
+pix3-script-creator .form-input {
+  padding: 8px 12px;
+  font-size: 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  color: var(--fg-0);
+  font-family: var(--font-mono);
+  transition: border-color 0.2s;
+}
+
+pix3-script-creator .form-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+pix3-script-creator .help-text {
+  font-size: 12px;
+  color: var(--fg-3);
+  line-height: 1.4;
+}
+
+pix3-script-creator .help-text code {
+  padding: 2px 6px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+pix3-script-creator .error-message {
+  padding: 8px 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-1);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+pix3-script-creator .dialog-actions {
+  padding: 16px 24px;
+  border-top: 1px solid var(--line-1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+pix3-script-creator .btn-secondary,
+pix3-script-creator .btn-primary {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius-2);
+  border: none;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+pix3-script-creator .btn-secondary {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+pix3-script-creator .btn-secondary:hover {
+  background: var(--bg-3);
+}
+
+pix3-script-creator .btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+pix3-script-creator .btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+pix3-script-creator .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

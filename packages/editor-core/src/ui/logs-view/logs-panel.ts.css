@@ -1,0 +1,266 @@
+.logs-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  background-color: var(--bg-1);
+  color: var(--fg-1);
+}
+
+.logs-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-1);
+  background-color: var(--bg-1);
+  flex-shrink: 0;
+}
+
+.logs-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.level-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.level-toggle input[type='checkbox'] {
+  cursor: pointer;
+}
+
+.level-toggle label {
+  cursor: pointer;
+  font-weight: 500;
+  user-select: none;
+}
+
+.level-toggle.debug label {
+  color: var(--fg-3);
+}
+
+.level-toggle.info label {
+  color: var(--fg-1);
+}
+
+.level-toggle.warn label {
+  color: var(--warn);
+}
+
+.level-toggle.error label {
+  color: var(--danger);
+}
+
+.source-filter {
+  margin-left: auto;
+  padding: 3px 6px;
+  background-color: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 12px;
+  max-width: 160px;
+}
+
+.clear-btn {
+  padding: 4px 8px;
+  background-color: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  color: var(--fg-1);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+  margin-left: auto;
+}
+
+.source-filter + .clear-btn {
+  margin-left: 0;
+}
+
+.clear-btn:hover {
+  background-color: var(--bg-3);
+}
+
+.logs-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+}
+
+.logs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.log-entry {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line-1);
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.log-entry.expandable {
+  cursor: pointer;
+}
+
+.log-entry:hover {
+  background-color: var(--bg-2);
+}
+
+.log-main {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.log-chevron {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-3);
+  margin-top: 1px;
+}
+
+.log-entry.debug {
+  color: var(--fg-3);
+}
+
+.log-entry.info {
+  color: var(--fg-1);
+}
+
+.log-entry.warn {
+  color: var(--warn);
+}
+
+.log-entry.error {
+  color: var(--danger);
+}
+
+.log-level {
+  flex-shrink: 0;
+  width: 40px;
+  font-weight: bold;
+  text-align: left;
+}
+
+.log-source {
+  flex-shrink: 0;
+  max-width: 120px;
+  padding: 0 6px;
+  border-radius: var(--radius-1);
+  background: var(--bg-3);
+  color: var(--fg-2);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.log-details {
+  flex: 1;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-1);
+  margin: 4px 0 4px 24px;
+  padding: 8px;
+  background-color: var(--bg-0);
+  border-radius: var(--radius-1);
+  white-space: pre-wrap;
+  border: 1px solid var(--line-1);
+}
+
+.log-timestamp {
+  flex-shrink: 0;
+  width: 80px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+
+.log-fix-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: currentcolor;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.log-entry:hover .log-fix-btn {
+  opacity: 0.7;
+}
+
+.log-fix-btn:hover {
+  opacity: 1;
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.log-fix-btn svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
+.logs-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--fg-3);
+  font-style: italic;
+}
+
+/* Scrollbar styling */
+.logs-content::-webkit-scrollbar {
+  width: 12px;
+}
+
+.logs-content::-webkit-scrollbar-track {
+  background: var(--bg-1);
+}
+
+.logs-content::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 6px;
+}
+
+.logs-content::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}

@@ -1,0 +1,53 @@
+:host {
+  display: flex;
+}
+
+.toolbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  gap: 6px;
+  background: var(--bg-1);
+  color: var(--fg-1);
+  border-bottom: 1px solid var(--line-1);
+  user-select: none;
+}
+
+:host([dense]) .toolbar {
+  min-height: 30px;
+}
+
+/* Panel variant — sits inside a panel header slot; the slot owns the border. */
+:host([variant='panel']) .toolbar {
+  align-items: center;
+  min-height: 30px;
+  padding: 2px 5px;
+  background: transparent;
+  border-bottom: none;
+}
+
+:host([variant='panel']) .toolbar__section {
+  gap: 1px;
+}
+
+.toolbar__section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar__section--start {
+  min-width: 0;
+}
+
+.toolbar__section--content {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar__section--actions {
+  gap: 4px;
+}

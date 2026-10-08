@@ -1,0 +1,596 @@
+pix3-animation-timeline-panel {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+/* `pix3-panel` must fill the pixel height Golden Layout gives the host, or the
+   panel's scroll container never gets one. Own scoped copy: this used to be
+   inherited from an unscoped rule in `scene-tree-panel.ts.css`. */
+pix3-animation-timeline-panel pix3-panel {
+  height: 100%;
+}
+
+pix3-animation-timeline-panel .atl-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  outline: none;
+}
+
+pix3-animation-timeline-panel .atl-root:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+
+/* ------------------------------- toolbar ------------------------------- */
+
+pix3-animation-timeline-panel .atl-toolbar-separator {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 0.35rem;
+  background: var(--line-1);
+  flex: 0 0 auto;
+}
+
+pix3-animation-timeline-panel .atl-select,
+pix3-animation-timeline-panel .atl-input {
+  background: var(--bg-2);
+  color: var(--fg-0);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  font-size: 12px;
+  padding: 0.15rem 0.35rem;
+  height: 1.6rem;
+}
+
+pix3-animation-timeline-panel .atl-select--clip,
+pix3-animation-timeline-panel .atl-input--rename {
+  min-width: 9rem;
+  max-width: 12rem;
+}
+
+pix3-animation-timeline-panel .atl-select--snap {
+  width: 4.2rem;
+}
+
+pix3-animation-timeline-panel .atl-select--easing {
+  width: 7rem;
+}
+
+pix3-animation-timeline-panel .atl-input--duration {
+  width: 4.5rem;
+}
+
+pix3-animation-timeline-panel .atl-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 12px;
+  color: var(--fg-2);
+  flex: 0 0 auto;
+}
+
+/* Autokey record toggle — red + filled dot while armed. */
+pix3-animation-timeline-panel
+  pix3-toolbar[variant='panel']
+  pix3-toolbar-button.atl-record[toggled] {
+  background: var(--danger);
+  color: var(--fg-0);
+}
+
+pix3-animation-timeline-panel
+  pix3-toolbar[variant='panel']
+  pix3-toolbar-button.atl-record[toggled]:hover:not([disabled]) {
+  background: var(--danger);
+}
+
+pix3-animation-timeline-panel pix3-toolbar-button.atl-record[toggled] .toolbar-icon svg {
+  fill: currentColor;
+}
+
+pix3-animation-timeline-panel .atl-time-readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--fg-2);
+  min-width: 3.6rem;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+/* ----------------------------- placeholders ---------------------------- */
+
+pix3-animation-timeline-panel .atl-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  padding: 1rem;
+  color: var(--fg-2);
+  font-size: 12px;
+  text-align: center;
+}
+
+pix3-animation-timeline-panel .atl-primary-button {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-1);
+  padding: 0.35rem 0.9rem;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+pix3-animation-timeline-panel .atl-primary-button:hover {
+  background: var(--accent-line);
+}
+
+/* ------------------------------- timeline ------------------------------ */
+
+pix3-animation-timeline-panel .atl-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+pix3-animation-timeline-panel .atl-grid {
+  display: grid;
+  grid-auto-rows: minmax(1.75rem, auto);
+  position: relative;
+  min-width: 100%;
+}
+
+pix3-animation-timeline-panel .atl-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  border-right: 1px solid var(--line-1);
+  display: flex;
+  align-items: center;
+  padding: 0 0.35rem;
+}
+
+/* Godot-style "+ Add Track" dropdown trigger in the top-left corner. */
+pix3-animation-timeline-panel .atl-add-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  color: var(--fg-0);
+  font-size: 12px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+pix3-animation-timeline-panel .atl-add-track:hover {
+  background: var(--accent-soft);
+}
+
+pix3-animation-timeline-panel .atl-add-track[aria-expanded='true'] {
+  background: var(--accent-soft);
+}
+
+pix3-animation-timeline-panel .atl-add-track-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+pix3-animation-timeline-panel .atl-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 1.75rem;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  cursor: ew-resize;
+  overflow: hidden;
+  touch-action: none;
+}
+
+pix3-animation-timeline-panel .atl-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 0.35rem;
+  background: var(--line-2);
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-tick--major {
+  height: 0.7rem;
+  background: var(--line-strong);
+}
+
+pix3-animation-timeline-panel .atl-tick-label {
+  position: absolute;
+  top: 0.1rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.62rem;
+  color: var(--fg-2);
+  pointer-events: none;
+  user-select: none;
+}
+
+pix3-animation-timeline-panel .atl-ruler-overflow,
+pix3-animation-timeline-panel .atl-lane-overflow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  /* functional out-of-range hatch, token-based */
+  background: repeating-linear-gradient(
+    -45deg,
+    oklch(1 0 0 / 0.03),
+    oklch(1 0 0 / 0.03) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-duration-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--line-strong);
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-playhead-handle {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: translateX(-5px);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid var(--accent);
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-playhead {
+  position: absolute;
+  top: 1.75rem;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 4;
+}
+
+pix3-animation-timeline-panel .atl-track-label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.4rem 0 0.6rem;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-1);
+  border-right: 1px solid var(--line-1);
+  font-size: 12px;
+  color: var(--fg-0);
+  overflow: hidden;
+}
+
+pix3-animation-timeline-panel .atl-track-label--muted .atl-track-name {
+  opacity: 0.45;
+}
+
+pix3-animation-timeline-panel .atl-track-label--empty {
+  color: var(--fg-2);
+}
+
+pix3-animation-timeline-panel .atl-track-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+pix3-animation-timeline-panel .atl-track-icon,
+pix3-animation-timeline-panel .atl-track-warning {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+pix3-animation-timeline-panel .atl-track-warning {
+  color: var(--warn);
+}
+
+pix3-animation-timeline-panel .atl-track-toggle {
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+pix3-animation-timeline-panel .atl-track-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  padding: 0.1rem;
+  border-radius: var(--radius-1);
+}
+
+pix3-animation-timeline-panel .atl-track-remove:hover {
+  color: var(--danger);
+  background: var(--bg-3);
+}
+
+pix3-animation-timeline-panel .atl-lane {
+  position: relative;
+  border-bottom: 1px solid var(--line-1);
+  /* functional beat grid (per-frame gridlines), token-based */
+  background: linear-gradient(to right, oklch(1 0 0 / 0.04) 1px, transparent 1px) 8px 0 / 120px 100%;
+  overflow: hidden;
+}
+
+pix3-animation-timeline-panel .atl-lane--audio {
+  background-color: color-mix(in oklab, var(--presence-5) 8%, transparent);
+}
+
+pix3-animation-timeline-panel .atl-lane--event {
+  background-color: color-mix(in oklab, var(--warn) 8%, transparent);
+}
+
+/* In-lane preview layer — value curves / color ramp / text chips, behind keys. */
+pix3-animation-timeline-panel .atl-lane-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-lane-text {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+pix3-animation-timeline-panel .atl-lane-text__chip {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding-left: 9px;
+  font-size: 0.62rem;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+pix3-animation-timeline-panel .atl-lane--empty {
+  display: flex;
+  align-items: center;
+}
+
+pix3-animation-timeline-panel .atl-lane-hint {
+  font-size: 12px;
+  color: var(--fg-2);
+  padding-left: 0.75rem;
+}
+
+pix3-animation-timeline-panel .atl-key {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--fg-1);
+  border: 1px solid var(--bg-0);
+  border-radius: 2px;
+  cursor: grab;
+  touch-action: none;
+}
+
+pix3-animation-timeline-panel .atl-key:hover {
+  background: var(--fg-0);
+}
+
+/* Per-key glyph encodes the outgoing easing (After Effects idiom):
+   filled diamond = eased, hollow diamond = linear, square = step. */
+pix3-animation-timeline-panel .atl-key--linear {
+  background: transparent;
+  border-color: var(--fg-1);
+}
+
+pix3-animation-timeline-panel .atl-key--linear:hover {
+  background: color-mix(in oklab, var(--fg-1) 30%, transparent);
+}
+
+pix3-animation-timeline-panel .atl-key--step {
+  transform: translate(-50%, -50%) rotate(0deg);
+  border-radius: 1px;
+}
+
+pix3-animation-timeline-panel .atl-key--selected {
+  background: var(--accent);
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+pix3-animation-timeline-panel .atl-key--audio {
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--presence-5);
+}
+
+pix3-animation-timeline-panel .atl-key--audio.atl-key--selected {
+  background: var(--accent);
+}
+
+/* Event keys: upright amber square, distinct from property diamonds and audio dots. */
+pix3-animation-timeline-panel .atl-key--event {
+  transform: translate(-50%, -50%) rotate(0deg);
+  border-radius: 2px;
+  background: var(--warn);
+}
+
+pix3-animation-timeline-panel .atl-key--event:hover {
+  background: var(--warn);
+}
+
+pix3-animation-timeline-panel .atl-key--event.atl-key--selected {
+  background: var(--accent);
+}
+
+/* Rubber-band (box) selection rectangle — fixed to the viewport. */
+.atl-marquee {
+  position: fixed;
+  z-index: 50;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* -------------------------------- menus -------------------------------- */
+
+/* The menu node lives (hidden) inside the panel and is moved into the
+   dropdown portal while open — visibility is determined by its location. */
+pix3-animation-timeline-panel .atl-menu {
+  display: none;
+}
+
+.pix3-dropdown-portal .atl-menu {
+  /* fixed => shrink-to-fit, so the portal measures content width, not body width
+     (same trick as .pix3-dropdown-portal .dropdown__menu) */
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-pop);
+  padding: 0.25rem;
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 14rem;
+}
+
+.pix3-dropdown-portal .atl-menu button[role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: none;
+  color: var(--fg-0);
+  font-size: 12px;
+  text-align: left;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pix3-dropdown-portal .atl-menu button[role='menuitem']:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.pix3-dropdown-portal .atl-menu button[role='menuitem']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pix3-dropdown-portal .atl-menu .atl-menu-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.pix3-dropdown-portal .atl-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--line-1);
+}
+
+.pix3-dropdown-portal .atl-menu-heading {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
+  padding: 0.3rem 0.75rem 0.15rem;
+}
+
+.pix3-dropdown-portal .atl-menu-hint {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--fg-2);
+}
+
+.pix3-dropdown-portal .atl-menu .atl-select,
+.pix3-dropdown-portal .atl-menu .atl-input {
+  margin: 0.15rem 0.75rem 0.3rem;
+  background: var(--bg-2);
+  color: var(--fg-0);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.pix3-dropdown-portal .atl-menu-color {
+  margin: 0.15rem 0.75rem 0.3rem;
+  height: 1.6rem;
+  width: 5rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pix3-dropdown-portal .atl-menu-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.75rem 0.3rem;
+  font-size: 12px;
+  color: var(--fg-0);
+}
+
+.pix3-dropdown-portal .atl-menu-vector {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.15rem 0.75rem 0.3rem;
+}
+
+.pix3-dropdown-portal .atl-menu-vector label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--fg-2);
+}
+
+.pix3-dropdown-portal .atl-menu-vector .atl-input {
+  width: 3.6rem;
+  margin: 0;
+}
+
+.pix3-dropdown-portal .atl-menu-back {
+  font-weight: 600;
+}
+
+.pix3-dropdown-portal .atl-menu .atl-menu-easing {
+  padding: 0.15rem 0.5rem 0.4rem;
+}

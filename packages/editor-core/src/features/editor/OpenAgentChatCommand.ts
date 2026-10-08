@@ -1,0 +1,32 @@
+import { inject } from '@/fw/di';
+import { EditorTabService } from '@/services/editor/EditorTabService';
+import { CommandBase, type CommandMetadata, type CommandExecutionResult } from '@/core/command';
+
+/**
+ * Reveals the in-editor AI agent chat, a docked panel to the right of the viewport. Revealing a
+ * panel is not an undoable state change, so this returns `didMutate: false` and never creates an
+ * Operation.
+ */
+export class OpenAgentChatCommand extends CommandBase<void, void> {
+  readonly metadata: CommandMetadata = {
+    id: 'editor.open-agent-chat',
+    title: 'Agent',
+    description: 'Open the AI agent chat to inspect and edit the project with natural language',
+    menuPath: 'window',
+    addToMenu: true,
+    menuOrder: 320,
+    keybinding: 'Mod+Shift+A',
+    keywords: ['ai', 'agent', 'chat', 'assistant', 'llm', 'copilot'],
+  };
+
+  @inject(EditorTabService)
+  private readonly editorTabService!: EditorTabService;
+
+  async execute(): Promise<CommandExecutionResult<void>> {
+    await this.editorTabService.focusOrOpenAgentChat();
+    return {
+      didMutate: false,
+      payload: undefined,
+    };
+  }
+}

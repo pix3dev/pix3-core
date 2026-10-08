@@ -1,0 +1,1158 @@
+import { injectable, inject } from '@/fw/di';
+import { subscribe } from 'valtio/vanilla';
+import {
+  AssetLoader,
+  AudioService,
+  collectRenderabilityIssues,
+  NetworkService,
+  RuntimeRenderer,
+  SceneManager,
+  SceneRunner,
+  setPhysicsDebugEnabled,
+  setDirectionAxesEnabled,
+} from '@pix3/runtime';
+import { appState } from '@/state';
+import type { FlowStageAspect, GameAspectRatio } from '@/state/AppState';
+import {
+  encodeCanvasScreenshot,
+  type CanvasScreenshot,
+  type CanvasScreenshotOptions,
+} from '@/core/canvas-screenshot';
+import { createDefaultQualitySettings, DEFAULT_TARGET_PLATFORM } from '@/core/ProjectManifest';
+import { OperationService } from '@/services/core/OperationService';
+import { ProfilerSessionService } from '@/services/play/ProfilerSessionService';
+import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
+import { TextureAtlasService } from '@/services/atlas/TextureAtlasService';
+import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
+import { isAtlas2DEnabled, isBatch2DEnabled } from '@/services/atlas/rendering-2d-flags';
+import { UpdateEditorSettingsOperation } from '@/features/editor/UpdateEditorSettingsOperation';
+import { SetGamePopoutWindowOpenOperation } from '@/features/scripts/SetGamePopoutWindowOpenOperation';
+import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
+import { SetPlayPausedOperation } from '@/features/scripts/SetPlayPausedOperation';
+import { isEditorActive, onEditorKeepAliveChange } from '@/services/core/page-activity';
+import { BackgroundTicker } from '@/services/core/background-ticker';
+import { PeekService } from '@/services/viewport/PeekService';
+
+type GameHostKind = 'tab' | 'popout';
+
+interface RegisteredGameHost {
+  kind: GameHostKind;
+  mount: HTMLElement;
+  windowRef: Window;
+  setRunningState?: (isRunning: boolean) => void;
+}
+
+interface PopoutShellElements {
+  host: HTMLElement;
+  viewport: HTMLElement;
+  placeholder: HTMLElement;
+  statusValue: HTMLElement;
+  aspectSelect: HTMLSelectElement;
+  restartButton: HTMLButtonElement;
+  pauseButton: HTMLButtonElement;
+}
+
+@injectable()
+export class GamePlaySessionService {
+  @inject(SceneManager)
+  private readonly sceneManager!: SceneManager;
+
+  @inject(AudioService)
+  private readonly audioService!: AudioService;
+
+  @inject(AssetLoader)
+  private readonly assetLoader!: AssetLoader;
+
+  @inject(OperationService)
+  private readonly operationService!: OperationService;
+
+  @inject(ProfilerSessionService)
+  private readonly profilerSessionService!: ProfilerSessionService;
+
+  @inject(RuntimeErrorBridgeService)
+  private readonly runtimeErrorBridge!: RuntimeErrorBridgeService;
+
+  @inject(TextureAtlasService)
+  private readonly textureAtlasService!: TextureAtlasService;
+
+  @inject(LocalizationEditorService)
+  private readonly localizationEditorService!: LocalizationEditorService;
+
+  @inject(PeekService)
+  private readonly peekService!: PeekService;
+
+  private initialized = false;
+  private disposeUiSubscription?: () => void;
+  private activeHostKind: GameHostKind | null = null;
+  private tabHost?: RegisteredGameHost;
+  private popoutHost?: RegisteredGameHost;
+  private popoutWindow: Window | null = null;
+  private popoutShell: PopoutShellElements | null = null;
+  private popoutWindowUnloadHandler?: () => void;
+  private popoutWindowResizeHandler?: () => void;
+  private runner?: SceneRunner;
+  private renderer?: RuntimeRenderer;
+  /**
+   * The multiplayer session (plan decision D5). Owned by this service rather than by a runner, so it
+   * outlives `changeScene` and every play/restart cycle; a stopped play session leaves the room but
+   * keeps the object, and "Play Online" (Phase 1.5) drives it from the Game tab. Nothing connects on
+   * its own.
+   */
+  private networkService?: NetworkService;
+  private focusCleanup?: () => void;
+  /**
+   * Frame source of every runner: rAF, or worker ticks in a hidden tab while an agent keeps the
+   * editor alive (a hidden tab has no rAF — `play_restart` for an agent used to crawl there).
+   */
+  private readonly frameTicker = new BackgroundTicker();
+  private disposeKeepAlive?: () => void;
+  private focusPauseSuppressed = false;
+  /**
+   * A pause the *host* asked for (automation's `pauseOnOutcome`, a future Pause
+   * button) as opposed to one the focus rule applied. It has to be a separate
+   * flag because {@link handleFocusPause} re-evaluates the whole pause decision
+   * on every focus/visibility event and on every suppression toggle, and its
+   * "should not pause" branch calls `resume()` — so a bare `runner.pause()` from
+   * outside lasts exactly until the next such event. That is not hypothetical:
+   * `game_run` pauses on its outcome frame and then drops its focus-pause
+   * suppression in the same `finally`, which used to un-pause the game
+   * milliseconds later while the report still claimed it was paused.
+   */
+  private hostPauseRequested = false;
+  /** True between a failed launch and the next one, so its banner is not cleared by its own stop. */
+  private startFailed = false;
+  private syncPromise: Promise<void> = Promise.resolve();
+  /**
+   * Bumped by every {@link detachRuntime}. A launch awaits a texture atlas and a scene clone, and
+   * anything that tears the session down in that window makes the launch stale — see
+   * {@link abandonStaleStart}.
+   */
+  private startGeneration = 0;
+  /**
+   * Pending "the tab host went away" teardown. Deferred by a turn because a Studio ⇄ Vibe swap
+   * unmounts one stage and mounts the other in *either* order; see {@link unregisterTabHost}.
+   */
+  private pendingTabHostRelease: ReturnType<typeof setTimeout> | null = null;
+  private readonly onPopoutAspectChange = (event: Event): void => {
+    const target = event.target as HTMLSelectElement;
+    const aspectRatio = target.value;
+    if (!this.isGameAspectRatio(aspectRatio)) {
+      return;
+    }
+
+    void this.setAspectRatio(aspectRatio);
+  };
+
+  private readonly onPopoutRestartClick = (): void => {
+    void this.restart();
+  };
+
+  private readonly onPopoutPauseClick = (): void => {
+    void this.togglePaused();
+  };
+
+  initialize(): void {
+    if (this.initialized) {
+      return;
+    }
+
+    this.initialized = true;
+    // Ensure runtime script/uncaught errors are bridged into the Logs panel and
+    // the Game-tab banner before any scene can be launched.
+    this.runtimeErrorBridge.initialize();
+    // Mirror the collider- and axes-debug toggles into the runtime's global
+    // flags, which the SceneRunner reads each frame. Set once up front so the
+    // current values apply even before any further UI change fires the subscription.
+    setPhysicsDebugEnabled(appState.ui.showPhysicsColliders);
+    setDirectionAxesEnabled(appState.ui.showDirectionAxes);
+    this.disposeUiSubscription = subscribe(appState.ui, () => {
+      setPhysicsDebugEnabled(appState.ui.showPhysicsColliders);
+      setDirectionAxesEnabled(appState.ui.showDirectionAxes);
+      this.queueSync();
+      this.updatePopoutPresentation();
+    });
+    // An agent attaching / leaving re-decides the focus pause (it never overrides a host pause).
+    this.disposeKeepAlive = onEditorKeepAliveChange(() => this.handleFocusPause());
+  }
+
+  dispose(): void {
+    this.disposeUiSubscription?.();
+    this.disposeUiSubscription = undefined;
+    this.disposeKeepAlive?.();
+    this.disposeKeepAlive = undefined;
+    this.cancelPendingTabHostRelease();
+    this.detachRuntime();
+    this.networkService?.dispose();
+    this.networkService = undefined;
+    this.closePopoutWindow();
+  }
+
+  /**
+   * The play session's multiplayer membership (plan decision D5).
+   *
+   * Exposed because "Play Online" has to join the room *before* the scene starts — a script's
+   * `onStart` must already see `net.isOnline`. Created lazily here and installed into whichever
+   * runner starts next, so the caller never has to care which order the two happen in.
+   */
+  getNetworkService(): NetworkService {
+    if (!this.networkService) {
+      this.networkService = new NetworkService();
+    }
+    this.runner?.setNetworkService(this.networkService);
+    return this.networkService;
+  }
+
+  getAspectRatio(): GameAspectRatio {
+    return appState.ui.gameAspectRatio;
+  }
+
+  async setAspectRatio(aspectRatio: GameAspectRatio): Promise<void> {
+    this.initialize();
+    await this.operationService.invoke(
+      new UpdateEditorSettingsOperation({ gameAspectRatio: aspectRatio })
+    );
+  }
+
+  /**
+   * Vibe's own stage shape. A separate setting from {@link getAspectRatio} on purpose — see
+   * `FlowStageAspect`: Studio's default means "fill the panel", Vibe's means "the authored
+   * viewport", and one value cannot carry both defaults.
+   */
+  getFlowStageAspect(): FlowStageAspect {
+    return appState.ui.flowStageAspect;
+  }
+
+  async setFlowStageAspect(aspect: FlowStageAspect): Promise<void> {
+    this.initialize();
+    await this.operationService.invoke(
+      new UpdateEditorSettingsOperation({ flowStageAspect: aspect })
+    );
+  }
+
+  registerTabHost(
+    mount: HTMLElement,
+    windowRef: Window,
+    setRunningState?: (isRunning: boolean) => void
+  ): void {
+    this.initialize();
+    const previous = this.tabHost;
+    // The outgoing stage may already have released the seat (see `unregisterTabHost`); claiming it
+    // here cancels that pending teardown so the live game can be handed over instead of killed.
+    this.cancelPendingTabHostRelease();
+    this.tabHost = { kind: 'tab', mount, windowRef, setRunningState };
+
+    if (previous?.mount === mount) {
+      // The same mount re-registering (a re-render, a resync): nothing moves.
+      this.queueSync();
+      return;
+    }
+
+    if (this.handOffLiveGame(previous)) {
+      return;
+    }
+
+    // No hand-off possible, but a runtime is still attached to the mount that is going away (a
+    // popout owns it, or the two stages live in different documents): detach it the way a
+    // tab ⇄ popout swap does, since `syncRuntimeToUiState` sees `activeHostKind === 'tab'` either
+    // way and would otherwise leave the game on an orphaned mount.
+    if (this.activeHostKind === 'tab' && (this.runner || this.renderer)) {
+      this.detachRuntime();
+    }
+    this.queueSync();
+  }
+
+  unregisterTabHost(mount: HTMLElement): void {
+    if (!this.tabHost || this.tabHost.mount !== mount) {
+      return;
+    }
+
+    const wasActive = this.activeHostKind === 'tab';
+    this.tabHost = undefined;
+    if (!wasActive) {
+      this.queueSync();
+      return;
+    }
+
+    // Give the incoming stage a turn to claim the seat before tearing the game down. A Studio ⇄ Vibe
+    // switch is a component swap, and the unmount can land before *or* after the new mount: stopping
+    // the runtime synchronously here would kill (and then have to restart) a session that is about
+    // to be handed over, which is exactly what threw away the player's progress.
+    this.cancelPendingTabHostRelease();
+    this.pendingTabHostRelease = setTimeout(() => {
+      this.pendingTabHostRelease = null;
+      if (this.tabHost) {
+        return;
+      }
+      this.detachRuntime();
+      this.queueSync();
+    }, 0);
+  }
+
+  /**
+   * Move a live tab-hosted game to the newly registered mount instead of restarting it.
+   *
+   * Studio's Game tab and the Vibe stage are two seats for one session, so re-parenting the canvas
+   * (which carries the WebGL context, the running scene graph, the score and the audio with it) is
+   * what makes the mode switch feel like a camera move rather than a reset. Only same-document moves
+   * qualify — a canvas cannot take its GL context into the popout window.
+   *
+   * @returns true when the game was handed over and no restart is needed.
+   */
+  private handOffLiveGame(previous: RegisteredGameHost | undefined): boolean {
+    const host = this.tabHost;
+    if (!host || !this.runner || !this.renderer || this.activeHostKind !== 'tab') {
+      return false;
+    }
+    const canvas = this.renderer.domElement;
+    if (canvas.ownerDocument !== host.mount.ownerDocument) {
+      return false;
+    }
+
+    // The seat changed hands: the old stage must stop claiming a game it no longer shows.
+    previous?.setRunningState?.(false);
+    this.renderer.attach(host.mount);
+    this.updateHostRunningState(this.runner.running);
+    this.handleFocusPause();
+    return true;
+  }
+
+  private cancelPendingTabHostRelease(): void {
+    if (this.pendingTabHostRelease !== null) {
+      clearTimeout(this.pendingTabHostRelease);
+      this.pendingTabHostRelease = null;
+    }
+  }
+
+  isPopoutOpen(): boolean {
+    return Boolean(this.popoutWindow && !this.popoutWindow.closed);
+  }
+
+  async openOrFocusPopoutWindow(): Promise<void> {
+    this.initialize();
+
+    if (this.isPopoutOpen() && this.popoutWindow) {
+      this.popoutWindow.focus();
+      this.updatePopoutPresentation();
+      return;
+    }
+
+    const popup = window.open('', 'pix3-game-window', 'popup=yes,width=1280,height=900');
+    if (!popup) {
+      throw new Error('Failed to open game window. The browser may have blocked the popup.');
+    }
+
+    this.popoutWindow = popup;
+    this.preparePopoutWindow(popup);
+    await this.operationService.invoke(new SetGamePopoutWindowOpenOperation({ isOpen: true }));
+    this.queueSync();
+  }
+
+  async restart(): Promise<void> {
+    this.initialize();
+    await this.enqueue(() => this.restartRuntime());
+  }
+
+  /**
+   * The live play-mode runtime, or null when nothing is running. For automation
+   * (the agent's `game_input`/`game_observe` tools and the debug bridge) that
+   * needs the running clone's nodes, the canvas to aim synthetic pointer events
+   * at, and the host window. The returned objects are live — treat as read-only.
+   *
+   * `renderer` is here so a caller can read the last frame's counters directly
+   * (`getStatsSnapshot`) instead of through {@link ProfilerSessionService}: the profiler
+   * only samples while a panel can show the numbers, so in Vibe its readings are null,
+   * and an agent's questions must not depend on which workspace the user is looking at.
+   */
+  getActiveRuntime(): {
+    runner: SceneRunner;
+    renderer: RuntimeRenderer;
+    canvas: HTMLCanvasElement;
+    windowRef: Window;
+  } | null {
+    if (!this.runner || !this.renderer) {
+      return null;
+    }
+    const host = this.activeHostKind === 'popout' ? this.popoutHost : this.tabHost;
+    return {
+      runner: this.runner,
+      renderer: this.renderer,
+      canvas: this.renderer.domElement,
+      windowRef: host?.windowRef ?? window,
+    };
+  }
+
+  /**
+   * Capture the RUNNING game's canvas as an encoded image, or null when no
+   * runtime is attached. Renders one frame synchronously first — the WebGL
+   * buffer does not survive compositing, and a focus-paused or background-tab
+   * runner may not have painted for a while. Works for both the Game-tab host
+   * and the popout window (same-origin canvases are drawable across windows).
+   */
+  captureScreenshot(options: CanvasScreenshotOptions = {}): CanvasScreenshot | null {
+    if (!this.runner || !this.renderer) {
+      return null;
+    }
+    if (!this.runner.renderOnce()) {
+      return null;
+    }
+    return encodeCanvasScreenshot(this.renderer.domElement, options);
+  }
+
+  /**
+   * Temporarily exempt the runner from the focus-pause rule
+   * (`pauseRenderingOnUnfocus`). Synthetic input from automation works without
+   * window focus (dispatchEvent doesn't need it), but a blurred window pauses
+   * the runner — so nothing would consume the events. Suppression re-evaluates
+   * immediately in both directions; callers MUST pair it with a `finally`.
+   * In a fully hidden tab rAF stops regardless; there only agent keepalive helps (the runner's
+   * frames then come from {@link BackgroundTicker}'s worker).
+   */
+  setFocusPauseSuppressed(suppressed: boolean): void {
+    this.focusPauseSuppressed = suppressed;
+    this.handleFocusPause();
+  }
+
+  /**
+   * Hold the running game paused (or release it) on the host's behalf. Unlike a
+   * direct `runner.pause()` this survives focus/visibility changes and
+   * suppression toggles — it is one of the two inputs the pause decision is made
+   * from — so a caller that pauses the game to inspect a frame keeps it paused
+   * until it (or the user) asks for the opposite. Idempotent.
+   */
+  setPauseRequested(paused: boolean): void {
+    this.hostPauseRequested = paused;
+    this.handleFocusPause();
+    // Fire-and-forget: `playModeStatus` is UI-only and the operation carries no undo entry, while
+    // every caller of this method (the agent's `game_time`, `game_run`'s outcome pause, the input
+    // service releasing one) is synchronous. Doing it here rather than in `setPaused` alone is what
+    // keeps the Pause buttons honest when something *else* pauses or releases the game.
+    void this.syncPauseStatus();
+  }
+
+  /**
+   * The user-facing pause: hold the game frozen (or let it run) *and* move `playModeStatus` with it,
+   * so the Game tab, the Flow stage bar, the popout window, `play_status` and the debug bridge all
+   * read the same thing. Every surface with a Pause button goes through here rather than through
+   * {@link setPauseRequested}, which is the plumbing underneath and leaves the UI unaware.
+   */
+  async setPaused(paused: boolean): Promise<void> {
+    if (!appState.ui.isPlaying) {
+      return;
+    }
+    this.hostPauseRequested = paused;
+    this.handleFocusPause();
+    await this.syncPauseStatus();
+  }
+
+  /** Flip the running game between paused and running. No-op while nothing is playing. */
+  async togglePaused(): Promise<void> {
+    await this.setPaused(!this.hostPauseRequested);
+  }
+
+  /** Move `playModeStatus` onto whatever the host pause flag now says. No-op while stopped. */
+  private async syncPauseStatus(): Promise<void> {
+    const paused = this.hostPauseRequested;
+    if (!appState.ui.isPlaying || appState.ui.playModeStatus === (paused ? 'paused' : 'playing')) {
+      return;
+    }
+    await this.operationService.invoke(new SetPlayPausedOperation({ paused }));
+  }
+
+  /** True while a host-requested pause is being held. */
+  get pauseRequested(): boolean {
+    return this.hostPauseRequested;
+  }
+
+  /** True when a scene is loaded and its runner is currently halted. */
+  get runnerPaused(): boolean {
+    return this.runner?.paused ?? false;
+  }
+
+  private queueSync(): void {
+    void this.enqueue(() => this.syncRuntimeToUiState()).catch(error => {
+      console.error('[GamePlaySessionService] Failed to sync runtime state', error);
+    });
+  }
+
+  /**
+   * Run `task` after every play-session task queued before it. EVERY launch goes through here —
+   * a restart used to bypass the queue, so the Vibe stage's own "restart the game I just mounted"
+   * could interleave with the launch its host registration had already queued. Two launches in
+   * flight at once means two runtimes: the loser is dropped from `this.runner` without ever being
+   * stopped, and keeps ticking (audio included) behind the visible game.
+   *
+   * The chain itself never rejects — one failed launch must not skip everything queued after it —
+   * while the returned promise still carries the real outcome to the caller.
+   */
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.syncPromise.then(task);
+    this.syncPromise = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  private async syncRuntimeToUiState(): Promise<void> {
+    if (!appState.ui.isPlaying) {
+      this.detachRuntime();
+      // Play mode ended (not a restart, not a host swap): leave the room. The session object stays
+      // so the Game tab can start a new one without re-wiring.
+      this.networkService?.disconnect();
+      this.updateHostRunningState(false);
+      // Play mode has ended; the banner ("the game may have stopped updating")
+      // no longer applies. The failure is retained in the Logs panel.
+      // Exception: a start that *failed* switches play mode back off itself, and that banner is the
+      // only thing telling the user why the stage is empty — it must survive its own stop.
+      if (!this.startFailed) {
+        this.runtimeErrorBridge.clearPlayModeError();
+      }
+      return;
+    }
+
+    const preferredHost = this.getPreferredHost();
+    if (!preferredHost) {
+      return;
+    }
+
+    if (this.activeHostKind !== preferredHost.kind || !this.runner || !this.renderer) {
+      await this.startRuntime(preferredHost);
+      return;
+    }
+
+    this.handleFocusPause();
+  }
+
+  private getPreferredHost(): RegisteredGameHost | null {
+    if (this.popoutHost) {
+      return this.popoutHost;
+    }
+
+    if (this.tabHost) {
+      return this.tabHost;
+    }
+
+    return null;
+  }
+
+  /**
+   * Undo a launch that never reached a scene. `isPlaying` is what the Game tab, the Flow stage,
+   * `play_start` and every agent verification read — leaving it on after a failed start makes a
+   * stopped runtime appear to be playing.
+   * Release the failed runtime and turn play mode back off so another start can retry cleanly.
+   */
+  private async abortFailedStart(): Promise<void> {
+    this.startFailed = true;
+    this.detachRuntime();
+    if (appState.ui.isPlaying) {
+      await this.operationService.invoke(
+        new SetPlayModeOperation({
+          isPlaying: false,
+          status: 'stopped',
+        })
+      );
+    }
+  }
+
+  private async restartRuntime(): Promise<void> {
+    const host = this.getPreferredHost();
+    if (!host) {
+      return;
+    }
+
+    await this.startRuntime(host);
+  }
+
+  private async startRuntime(host: RegisteredGameHost): Promise<void> {
+    this.detachRuntime();
+    const generation = this.startGeneration;
+    this.activeHostKind = host.kind;
+    this.updateHostRunningState(false);
+    this.startFailed = false;
+    // Each launch/restart begins with a clean slate — clear any banner from a
+    // previous run so a fresh attempt isn't shadowed by a stale error.
+    this.runtimeErrorBridge.clearPlayModeError();
+    this.profilerSessionService.beginSession(host.kind);
+
+    const quality =
+      appState.project.manifest?.quality ?? createDefaultQualitySettings(DEFAULT_TARGET_PLATFORM);
+    const renderer = new RuntimeRenderer({
+      antialias: quality.antialias,
+      shadows: quality.shadows,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio),
+    });
+    renderer.attach(host.mount);
+
+    const runner = new SceneRunner(
+      this.sceneManager,
+      renderer,
+      this.audioService,
+      this.assetLoader,
+      {
+        width: appState.project.manifest?.viewportBaseSize?.width ?? 1920,
+        height: appState.project.manifest?.viewportBaseSize?.height ?? 1080,
+      }
+    );
+
+    runner.setFrameScheduler(this.frameTicker);
+    this.renderer = renderer;
+    this.runner = runner;
+    if (!this.networkService) {
+      this.networkService = new NetworkService();
+    }
+    runner.setNetworkService(this.networkService);
+    // Phase 3: enable the 2D quad batcher for this run (flag-gated; off is
+    // byte-identical to individual-mesh rendering).
+    runner.setBatching2DEnabled(isBatch2DEnabled());
+    this.profilerSessionService.bindRuntime(runner, renderer, host.kind);
+
+    this.attachFocusListeners(host.windowRef);
+
+    const activeSceneId = appState.scenes.activeSceneId;
+    if (!activeSceneId) {
+      this.profilerSessionService.endSession();
+      this.updateHostRunningState(false);
+      this.runtimeErrorBridge.reportPlayModeFailure(
+        'Cannot start the game: no active scene is open.'
+      );
+      await this.abortFailedStart();
+      return;
+    }
+
+    // Phase 2: pack (or reuse cached) texture atlas and install the resolver on
+    // the shared AssetLoader BEFORE startScene, so the scene clone resolves every
+    // eligible texture to a view onto a packed sheet. Failures fall back to
+    // un-atlased loading inside prepareForPlay; when disabled we clear any
+    // resolver from a prior run so the path is byte-identical to pre-atlas.
+    if (isAtlas2DEnabled()) {
+      await this.textureAtlasService.prepareForPlay(this.assetLoader);
+      if (this.abandonStaleStart(generation, renderer, runner)) {
+        return;
+      }
+    } else {
+      this.assetLoader.setAtlasResolver(null);
+    }
+
+    // Editor Peek: the mask cannot ride along with the graph (it is not serialized, and this clone
+    // comes from serialize→parse), so it is pushed in from outside — BEFORE startScene, so the very
+    // first frame already honours it, and as a live sink so toggling a chip mid-game takes effect
+    // without a restart. That is the headline use case: hide the HUD to see the world under it.
+    this.peekService.setRuntimeSink(ids => runner.setEditorPeekMask(ids));
+
+    // The project's own web fonts, registered before the first frame — otherwise a caption in a
+    // family the manifest ships is drawn by a system substitute at a different width.
+    runner.setProjectFonts(appState.project.manifest?.fonts ?? null);
+
+    // Localization: hand the play instance the project's locale config and seed
+    // it with the editor's current preview locale (so "preview ru → Play" starts
+    // in ru). Null config ⇒ inert default; the game gets its own instance so a
+    // script `setLocale` never leaks back into the editor preview.
+    const localizationConfig = this.localizationEditorService.getRuntimeConfig();
+    runner.setLocalizationConfig(
+      localizationConfig,
+      localizationConfig ? this.localizationEditorService.getPreviewLocale() : undefined
+    );
+
+    try {
+      await runner.startScene(activeSceneId);
+      if (this.abandonStaleStart(generation, renderer, runner)) {
+        return;
+      }
+      this.updateHostRunningState(true);
+      this.handleFocusPause();
+      // `detachRuntime` dropped the host pause with the runner it belonged to (a restart must not
+      // hand the next scene a game that starts frozen), so the status has to follow it back.
+      await this.syncPauseStatus();
+      // The scene is live: check whether it can actually draw anything. A 3D scene with lit
+      // materials and no light starts perfectly and renders black, so the only moment this is
+      // catchable is right here, against the running graph.
+      this.runtimeErrorBridge.reportSceneIssues(
+        collectRenderabilityIssues(runner.getLiveRootNodes(), {
+          targetPlatform: appState.project.manifest?.targetPlatform,
+        })
+      );
+    } catch (error) {
+      if (this.abandonStaleStart(generation, renderer, runner)) {
+        return;
+      }
+      this.updateHostRunningState(false);
+      const detail = error instanceof Error ? error.message : String(error);
+      this.runtimeErrorBridge.reportPlayModeFailure(`Failed to start the scene: ${detail}`, error);
+      await this.abortFailedStart();
+      throw error;
+    }
+  }
+
+  /**
+   * True when this launch was superseded (by another launch, a stop, or a host release) while it was
+   * awaiting — in which case the runtime it built is torn down right here.
+   *
+   * It cannot be left to `detachRuntime`: that only knows about `this.runner`, which by then points
+   * at the newer session. An abandoned runner still holds an attached InputService and (once its
+   * `startScene` resolves) its own rAF loop, so what the user gets is a second, invisible game
+   * playing sounds behind the one on screen.
+   */
+  private abandonStaleStart(
+    generation: number,
+    renderer: RuntimeRenderer,
+    runner: SceneRunner
+  ): boolean {
+    if (generation === this.startGeneration) {
+      return false;
+    }
+    runner.stop();
+    renderer.dispose();
+    if (this.runner === runner) {
+      this.runner = undefined;
+    }
+    if (this.renderer === renderer) {
+      this.renderer = undefined;
+    }
+    return true;
+  }
+
+  private detachRuntime(): void {
+    this.startGeneration += 1;
+    this.focusCleanup?.();
+    this.focusCleanup = undefined;
+    // A host-requested pause belongs to the runner that is going away: a stop, a
+    // restart or a host swap must not hand the next scene a game that starts
+    // frozen for a reason nothing on screen explains.
+    this.hostPauseRequested = false;
+    this.profilerSessionService.endSession();
+    // Keep atlasing strictly play-mode-scoped: edit-mode texture loads on the
+    // shared AssetLoader must always get raw standalone textures.
+    this.assetLoader.setAtlasResolver(null);
+
+    // The room membership deliberately survives this: `detachRuntime` also runs on a restart and on
+    // a host swap (tab ⇄ popout), and dropping everyone out of the room because a level reloaded is
+    // exactly the bug D5 exists to prevent. Leaving is tied to play mode *ending* — see
+    // `syncRuntimeToUiState` — and to `dispose`. Entities the departing scene owned are despawned by
+    // each `core:NetworkedNode`'s `despawnOnDetach`, so no ghosts survive the reload.
+
+    // Drop the Peek sink with the runner it pointed at, or a chip toggled while nothing is playing
+    // would reach a stopped runner.
+    this.peekService.setRuntimeSink(null);
+
+    if (this.runner) {
+      this.runner.stop();
+      this.runner = undefined;
+    }
+
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer = undefined;
+    }
+
+    this.activeHostKind = null;
+  }
+
+  private attachFocusListeners(windowRef: Window): void {
+    const onFocus = (): void => {
+      this.handleFocusPause();
+    };
+    const onBlur = (): void => {
+      this.handleFocusPause();
+    };
+    const onVisibilityChange = (): void => {
+      this.handleFocusPause();
+    };
+    const onPageShow = (): void => {
+      this.handleFocusPause();
+    };
+    const onPageHide = (): void => {
+      this.handleFocusPause();
+    };
+
+    windowRef.addEventListener('focus', onFocus);
+    windowRef.addEventListener('blur', onBlur);
+    windowRef.addEventListener('pageshow', onPageShow);
+    windowRef.addEventListener('pagehide', onPageHide);
+    windowRef.document.addEventListener('visibilitychange', onVisibilityChange);
+
+    this.focusCleanup = () => {
+      windowRef.removeEventListener('focus', onFocus);
+      windowRef.removeEventListener('blur', onBlur);
+      windowRef.removeEventListener('pageshow', onPageShow);
+      windowRef.removeEventListener('pagehide', onPageHide);
+      windowRef.document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }
+
+  private handleFocusPause(): void {
+    if (!this.runner) {
+      return;
+    }
+
+    const host = this.activeHostKind === 'popout' ? this.popoutHost : this.tabHost;
+    if (!host) {
+      return;
+    }
+
+    const documentRef = host.windowRef.document;
+    // Active document, or an agent keeps the editor alive (`AgentKeepaliveService`).
+    const isVisible = isEditorActive(documentRef);
+    // Two independent reasons to be paused; either one holds the game. The host
+    // request comes first so a requested pause is not lifted by a focus event.
+    const shouldPause =
+      this.hostPauseRequested ||
+      (appState.ui.pauseRenderingOnUnfocus && !isVisible && !this.focusPauseSuppressed);
+    if (shouldPause) {
+      this.runner.pause();
+    } else {
+      this.runner.resume();
+    }
+  }
+
+  private updateHostRunningState(isRunning: boolean): void {
+    this.tabHost?.setRunningState?.(isRunning && this.activeHostKind === 'tab');
+    this.popoutHost?.setRunningState?.(isRunning && this.activeHostKind === 'popout');
+    this.updatePopoutPresentation();
+  }
+
+  private preparePopoutWindow(windowRef: Window): void {
+    const documentRef = windowRef.document;
+    documentRef.open();
+    documentRef.write(`<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pix3 Game</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Segoe UI", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: radial-gradient(circle at top, #2d3238 0%, #121518 55%, #0a0c0e 100%);
+        color: #f5f7fa;
+      }
+      .shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        min-height: 0;
+      }
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(6, 8, 10, 0.78);
+        backdrop-filter: blur(10px);
+      }
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .toolbar button,
+      .toolbar select {
+        min-height: 34px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(16, 20, 24, 0.96);
+        color: #f5f7fa;
+        padding: 0 12px;
+        font: inherit;
+      }
+      .toolbar select {
+        color-scheme: dark;
+      }
+      .toolbar select option {
+        background: #11161b;
+        color: #f5f7fa;
+      }
+      .toolbar button {
+        cursor: pointer;
+      }
+      .toolbar button:hover,
+      .toolbar select:hover {
+        background: rgba(255, 255, 255, 0.11);
+      }
+      .meta {
+        display: flex;
+        gap: 16px;
+        font-size: 12px;
+        color: rgba(245, 247, 250, 0.72);
+        flex-wrap: wrap;
+      }
+      .viewport {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        overflow: hidden;
+      }
+      .game-host {
+        position: relative;
+        flex: 0 0 auto;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      }
+      .placeholder {
+        position: absolute;
+        inset: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .placeholder-card {
+        width: min(420px, 100%);
+        padding: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        background: rgba(10, 13, 15, 0.82);
+        text-align: center;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+      }
+      .placeholder-title {
+        margin: 0 0 8px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .placeholder-copy {
+        margin: 0;
+        line-height: 1.5;
+        color: rgba(245, 247, 250, 0.72);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <strong>Game Window</strong>
+          <button id="pix3-game-window-pause" type="button">Pause</button>
+          <button id="pix3-game-window-restart" type="button">Restart</button>
+          <select id="pix3-game-window-aspect" aria-label="Game aspect ratio">
+            <option value="free">Free Aspect</option>
+            <option value="16:9-landscape">16:9 Landscape</option>
+            <option value="16:9-portrait">16:9 Portrait</option>
+            <option value="4:3">4:3</option>
+          </select>
+        </div>
+        <div class="meta">
+          <span>Status: <strong id="pix3-game-window-status">Stopped</strong></span>
+        </div>
+      </div>
+      <div class="viewport" id="pix3-game-window-viewport">
+        <div class="game-host" id="pix3-game-window-host"></div>
+        <div class="placeholder" id="pix3-game-window-placeholder">
+          <div class="placeholder-card">
+            <p class="placeholder-title">Game preview is idle</p>
+            <p class="placeholder-copy">Press Play in the editor to run the scene here. This window stays open between runs.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`);
+    documentRef.close();
+
+    const host = documentRef.getElementById('pix3-game-window-host');
+    const viewport = documentRef.getElementById('pix3-game-window-viewport');
+    const placeholder = documentRef.getElementById('pix3-game-window-placeholder');
+    const statusValue = documentRef.getElementById('pix3-game-window-status');
+    const aspectSelect = documentRef.getElementById('pix3-game-window-aspect');
+    const restartButton = documentRef.getElementById('pix3-game-window-restart');
+    const pauseButton = documentRef.getElementById('pix3-game-window-pause');
+
+    if (
+      !host ||
+      !viewport ||
+      !placeholder ||
+      !statusValue ||
+      !aspectSelect ||
+      !restartButton ||
+      !pauseButton
+    ) {
+      throw new Error('Failed to initialize the game popout window shell.');
+    }
+
+    this.popoutShell = {
+      host: host as HTMLElement,
+      viewport: viewport as HTMLElement,
+      placeholder: placeholder as HTMLElement,
+      statusValue: statusValue as HTMLElement,
+      aspectSelect: aspectSelect as HTMLSelectElement,
+      restartButton: restartButton as HTMLButtonElement,
+      pauseButton: pauseButton as HTMLButtonElement,
+    };
+
+    this.popoutShell.aspectSelect.addEventListener('change', this.onPopoutAspectChange);
+    this.popoutShell.restartButton.addEventListener('click', this.onPopoutRestartClick);
+    this.popoutShell.pauseButton.addEventListener('click', this.onPopoutPauseClick);
+
+    this.popoutHost = {
+      kind: 'popout',
+      mount: this.popoutShell.host,
+      windowRef,
+      setRunningState: isRunning => {
+        this.updatePopoutPresentation(isRunning);
+      },
+    };
+
+    this.popoutWindowUnloadHandler = () => {
+      void this.handlePopoutWindowClosed();
+    };
+    this.popoutWindowResizeHandler = () => {
+      this.updatePopoutPresentation();
+    };
+
+    windowRef.addEventListener('beforeunload', this.popoutWindowUnloadHandler);
+    windowRef.addEventListener('unload', this.popoutWindowUnloadHandler);
+    windowRef.addEventListener('resize', this.popoutWindowResizeHandler);
+    this.updatePopoutPresentation();
+  }
+
+  private updatePopoutPresentation(forcedRunningState?: boolean): void {
+    if (!this.popoutShell) {
+      return;
+    }
+
+    const aspectRatio = appState.ui.gameAspectRatio;
+    const isRunning =
+      forcedRunningState ?? (appState.ui.isPlaying && this.activeHostKind === 'popout');
+    const isPaused = appState.ui.playModeStatus === 'paused';
+    this.popoutShell.aspectSelect.value = aspectRatio;
+    this.popoutShell.statusValue.textContent = isRunning
+      ? isPaused
+        ? 'Paused'
+        : 'Playing'
+      : 'Stopped';
+    this.popoutShell.restartButton.disabled = !appState.ui.isPlaying;
+    this.popoutShell.pauseButton.disabled = !appState.ui.isPlaying;
+    this.popoutShell.pauseButton.textContent = isPaused ? 'Resume' : 'Pause';
+    this.popoutShell.placeholder.style.display = isRunning ? 'none' : 'flex';
+    this.applyAspectRatioToElement(this.popoutShell.host, this.popoutShell.viewport, aspectRatio);
+  }
+
+  private applyAspectRatioToElement(
+    host: HTMLElement,
+    viewport: HTMLElement,
+    aspectRatio: GameAspectRatio
+  ): void {
+    const { width: availableWidth, height: availableHeight } = this.getViewportInnerSize(
+      viewport,
+      host.ownerDocument.defaultView ?? window
+    );
+
+    if (availableWidth <= 0 || availableHeight <= 0) {
+      return;
+    }
+
+    if (aspectRatio === 'free') {
+      host.style.width = `${Math.floor(availableWidth)}px`;
+      host.style.height = `${Math.floor(availableHeight)}px`;
+      return;
+    }
+
+    const targetAspect = this.getAspectRatioValue(aspectRatio);
+
+    let fittedWidth = availableWidth;
+    let fittedHeight = fittedWidth / targetAspect;
+
+    if (fittedHeight > availableHeight) {
+      fittedHeight = availableHeight;
+      fittedWidth = fittedHeight * targetAspect;
+    }
+
+    host.style.width = `${Math.floor(fittedWidth)}px`;
+    host.style.height = `${Math.floor(fittedHeight)}px`;
+  }
+
+  private getViewportInnerSize(
+    viewport: HTMLElement,
+    windowRef: Window
+  ): { width: number; height: number } {
+    const rect = viewport.getBoundingClientRect();
+    const styles = windowRef.getComputedStyle(viewport);
+    const horizontalPadding =
+      Number.parseFloat(styles.paddingLeft || '0') + Number.parseFloat(styles.paddingRight || '0');
+    const verticalPadding =
+      Number.parseFloat(styles.paddingTop || '0') + Number.parseFloat(styles.paddingBottom || '0');
+
+    return {
+      width: Math.max(0, rect.width - horizontalPadding),
+      height: Math.max(0, rect.height - verticalPadding),
+    };
+  }
+
+  private getAspectRatioValue(aspectRatio: Exclude<GameAspectRatio, 'free'>): number {
+    switch (aspectRatio) {
+      case '16:9-landscape':
+        return 16 / 9;
+      case '16:9-portrait':
+        return 9 / 16;
+      case '4:3':
+        return 4 / 3;
+    }
+  }
+
+  private isGameAspectRatio(value: string): value is GameAspectRatio {
+    return (
+      value === 'free' || value === '16:9-landscape' || value === '16:9-portrait' || value === '4:3'
+    );
+  }
+
+  private async handlePopoutWindowClosed(): Promise<void> {
+    this.focusCleanup?.();
+    if (this.activeHostKind === 'popout') {
+      this.detachRuntime();
+      if (appState.ui.isPlaying) {
+        await this.operationService.invoke(
+          new SetPlayModeOperation({
+            isPlaying: false,
+            status: 'stopped',
+          })
+        );
+      }
+    }
+
+    this.popoutHost = undefined;
+    this.popoutShell = null;
+    this.closePopoutWindow(false);
+    await this.operationService.invoke(new SetGamePopoutWindowOpenOperation({ isOpen: false }));
+  }
+
+  private closePopoutWindow(shouldCloseWindow = true): void {
+    if (this.popoutShell) {
+      this.popoutShell.aspectSelect.removeEventListener('change', this.onPopoutAspectChange);
+      this.popoutShell.restartButton.removeEventListener('click', this.onPopoutRestartClick);
+      this.popoutShell.pauseButton.removeEventListener('click', this.onPopoutPauseClick);
+    }
+
+    if (this.popoutWindow && this.popoutWindowUnloadHandler) {
+      this.popoutWindow.removeEventListener('beforeunload', this.popoutWindowUnloadHandler);
+      this.popoutWindow.removeEventListener('unload', this.popoutWindowUnloadHandler);
+    }
+    if (this.popoutWindow && this.popoutWindowResizeHandler) {
+      this.popoutWindow.removeEventListener('resize', this.popoutWindowResizeHandler);
+    }
+
+    if (shouldCloseWindow && this.popoutWindow && !this.popoutWindow.closed) {
+      this.popoutWindow.close();
+    }
+
+    this.popoutWindowUnloadHandler = undefined;
+    this.popoutWindowResizeHandler = undefined;
+    this.popoutWindow = null;
+    this.popoutShell = null;
+  }
+}

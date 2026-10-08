@@ -1,0 +1,311 @@
+pix3-asset-import-dialog .dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 1200;
+}
+
+pix3-asset-import-dialog .dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.1rem;
+  border-radius: var(--radius-3);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-float);
+}
+
+pix3-asset-import-dialog .import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+pix3-asset-import-dialog .dialog-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+pix3-asset-import-dialog .import-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-1);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+pix3-asset-import-dialog .import-close:hover:not(:disabled) {
+  color: var(--fg-0);
+  background: var(--bg-2);
+}
+
+pix3-asset-import-dialog .import-close:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+pix3-asset-import-dialog .import-target {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--fg-1);
+}
+
+pix3-asset-import-dialog .import-target__path {
+  margin-left: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+pix3-asset-import-dialog .drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.75rem 1rem;
+  border: 2px dashed var(--line-2);
+  border-radius: var(--radius-2);
+  background: var(--bg-2);
+  text-align: center;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+pix3-asset-import-dialog .drop-zone--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+pix3-asset-import-dialog .drop-zone__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+pix3-asset-import-dialog .drop-zone__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+pix3-asset-import-dialog .drop-zone__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--fg-2);
+}
+
+pix3-asset-import-dialog .drop-zone__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+pix3-asset-import-dialog .import-error {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+pix3-asset-import-dialog .staged {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+pix3-asset-import-dialog .staged__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--fg-1);
+}
+
+pix3-asset-import-dialog .staged__clear {
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: var(--radius-1);
+}
+
+pix3-asset-import-dialog .staged__clear:hover:not(:disabled) {
+  color: var(--fg-0);
+  background: var(--bg-2);
+}
+
+pix3-asset-import-dialog .staged__clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+pix3-asset-import-dialog .staged__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+pix3-asset-import-dialog .staged-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+}
+
+pix3-asset-import-dialog .staged-item__preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-1);
+  overflow: hidden;
+  background: var(--bg-0);
+  color: var(--fg-1);
+}
+
+pix3-asset-import-dialog .staged-item__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+pix3-asset-import-dialog .staged-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+pix3-asset-import-dialog .staged-item__name {
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+pix3-asset-import-dialog .staged-item__meta {
+  font-size: 0.74rem;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+pix3-asset-import-dialog .staged-item__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0.3rem;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+pix3-asset-import-dialog .staged-item__remove:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--bg-2);
+}
+
+pix3-asset-import-dialog .staged-item__remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+pix3-asset-import-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+pix3-asset-import-dialog .btn-secondary,
+pix3-asset-import-dialog .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-1);
+  cursor: pointer;
+  font: inherit;
+}
+
+pix3-asset-import-dialog .btn-secondary {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+pix3-asset-import-dialog .btn-secondary:hover:not(:disabled) {
+  border-color: var(--line-2);
+}
+
+pix3-asset-import-dialog .btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+pix3-asset-import-dialog .btn-primary:disabled,
+pix3-asset-import-dialog .btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+pix3-asset-import-dialog .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -1,0 +1,2548 @@
+import * as THREE from 'three';
+import type { AnimationFrame, AnimationResource } from '@pix3/runtime';
+import { AnimatedSprite2D, resolveAnimatedSpriteFrameLayout } from '@pix3/runtime';
+import { NodeBase } from '@pix3/runtime';
+import { Node2D } from '@pix3/runtime';
+import { blendingForMode2D, normalizeBlendMode2D } from '@pix3/runtime';
+import { Group2D } from '@pix3/runtime';
+import {
+  findAnimationClip,
+  getAnimationFrameTexturePath,
+  isSequenceAnimationFrame,
+} from '@pix3/runtime';
+import {
+  applyTextureRegionToTexture,
+  composeTextureRegion,
+  type TextureRegion,
+} from '@pix3/runtime';
+import { atlasSizeOf, baseRegionOf, copyAtlasMetadata } from '@pix3/runtime';
+import { Sprite2D } from '@pix3/runtime';
+import { TiledSprite2D } from '@pix3/runtime';
+import { ColorRect2D } from '@pix3/runtime';
+import { SpineSkeleton2D, SpineSkeletonView } from '@pix3/runtime';
+import type { AssetLoader } from '@pix3/runtime';
+import { buildTiledSpriteGeometry, type TiledSpriteGeometryParams } from '@pix3/runtime';
+import {
+  buildSkinGeometry,
+  isSliceBorderEmpty,
+  ZERO_SLICE_BORDER,
+  type SliceBorder2D,
+} from '@pix3/runtime';
+import { UIControl2D } from '@pix3/runtime';
+import { Button2D } from '@pix3/runtime';
+import { Label2D } from '@pix3/runtime';
+import {
+  LABEL_AUTO_SIZE_BLEED,
+  applyTextStyle,
+  drawStyledText,
+  labelDecorationPadding,
+  layoutLabelText,
+  paintLabelCanvas,
+  styledTextPadding,
+  type LabelLayout,
+} from '@pix3/runtime';
+import { Slider2D } from '@pix3/runtime';
+import { Bar2D } from '@pix3/runtime';
+import { Checkbox2D } from '@pix3/runtime';
+import { InventorySlot2D } from '@pix3/runtime';
+import { getProjectTextureFiltering } from '@pix3/runtime';
+import { appState } from '@/state';
+import { isPeekDimmedInTree, PEEK_DIM_OPACITY } from './peek-gating';
+import {
+  deriveAnimationDocumentId,
+  parseAnimationResourceText,
+} from '@/features/scene/animation-asset-utils';
+
+const LAYER_2D = 1;
+/** Marks a UIControl2D proxy skin as the plain unit quad (no 9-slice patch). */
+const UNIT_SKIN_SIGNATURE = 'unit';
+/** sRGB of the accent token oklch(0.8 0.15 75) — keep in sync with --accent in src/index.css. */
+const EDITOR_ACCENT_COLOR = 0xf5ae39;
+
+/**
+ * Configure a texture for 2D/sprite display: sRGB color space with mipmaps
+ * disabled.
+ *
+ * Mipmap generation for these (frequently non-power-of-two) sprite textures is
+ * broken on some ANGLE/D3D11 backends (notably Qualcomm Adreno on Windows on
+ * ARM): the first GPU upload samples as transparent black and three.js caches
+ * that empty upload (the texture version never changes afterwards), so the
+ * sprite stays permanently invisible — with the apparent opacity varying by
+ * the sampled mip level, i.e. by camera zoom or sprite size. Sprites are drawn
+ * roughly 1:1 in the orthographic viewport, so mipmaps add no value here.
+ *
+ * Pure (no instance state) so it is a module-level function shared by the proxy
+ * registry and the facade's remaining 3D texture-sync paths.
+ */
+/**
+ * Identity of the Spine files a node points at, plus the one flag that is baked
+ * into the view at construction (`twoColorTint`). A change means the proxy has to
+ * rebuild its view from scratch.
+ */
+function spineAssetSignature(node: SpineSkeleton2D): string {
+  return [
+    node.skeletonPath ?? '',
+    node.atlasPath ?? '',
+    node.texturePath ?? '',
+    node.twoColorTint ? 'dark' : 'plain',
+  ].join('|');
+}
+
+/** Everything that changes a Spine proxy's pose without rebuilding its view. */
+function spinePlaybackSignature(node: SpineSkeleton2D, opacity: number): string {
+  return [
+    node.animation,
+    node.skin,
+    node.loop ? '1' : '0',
+    node.timeScale,
+    node.defaultMix,
+    node.color,
+    opacity.toFixed(3),
+  ].join('|');
+}
+
+/** `#rrggbb` → three.js linear-space RGB components for spine's skeleton color. */
+function hexToRgb01(hex: string): { r: number; g: number; b: number } {
+  const color = new THREE.Color(hex);
+  return { r: color.r, g: color.g, b: color.b };
+}
+
+export function configureSpriteTexture(texture: THREE.Texture): void {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  const filter =
+    getProjectTextureFiltering() === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+  texture.minFilter = filter;
+  texture.magFilter = filter;
+}
+
+/**
+ * World-space pixel thickness for 1px-wide screen features at a given ortho
+ * zoom. Pure (only reads devicePixelRatio) so it is a module-level function
+ * shared by the proxy registry and the facade's remaining frame builders.
+ */
+export function getFrameThicknessWorldPx(zoom: number): number {
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const safeZoom = Math.max(0.0001, zoom);
+  return dpr / safeZoom;
+}
+
+/**
+ * Dependencies the proxy registry borrows from {@link ViewportRendererService}.
+ * Scoped to exactly what this collaborator needs; the facade owns the resource
+ * manager, the render-request path, the shader-effect install/uninstall pair
+ * (its `uninstall` half is used by the facade's `disposeObject3D`), the generic
+ * `disposeObject3D`, and the orthographic camera, and passes them in via
+ * closures so the registry never reaches back into the facade directly.
+ */
+export interface Viewport2DProxyRegistryDeps {
+  readBlob(path: string): Promise<Blob>;
+  readText(path: string): Promise<string>;
+  /** Shared asset loader — Spine proxies resolve through its SpineAsset cache. */
+  getAssetLoader(): AssetLoader;
+  requestRender(): void;
+  installProxyEffects(node: NodeBase, material: THREE.Material): void;
+  disposeObject3D(root: THREE.Object3D): void;
+  getOrthographicCamera(): THREE.OrthographicCamera | undefined;
+  /**
+   * An AnimatedSprite2D proxy's drawn quad moved or resized (its `.pix3anim` or a
+   * frame texture finished loading, or the frame changed size). Selection frames
+   * are measured off that quad, so a frame built before the load — e.g. the
+   * selection restored on page reload — must be re-measured. Optional.
+   */
+  onAnimatedSprite2DLayoutChanged?(nodeId: string): void;
+}
+
+/**
+ * Owns every 2D node type's editor "proxy visual": the separate THREE.js meshes
+ * the editor draws in place of the runtime 2D nodes (Group2D, Sprite2D,
+ * ColorRect2D, AnimatedSprite2D, TiledSprite2D, UIControl2D). Extracted from
+ * ViewportRendererService (decomposition steps 6-7/13). Not `@injectable()` — it
+ * is an owned collaborator constructed by the facade with borrowed dependencies.
+ *
+ * The six visual maps are public mutable fields because the facade's node
+ * dispatchers (processNodeForRendering / updateNodeTransform / syncAll2DVisuals /
+ * dispose paths) read and write them directly at many call sites; wrapping them
+ * behind a method API would buy no behavioral benefit and much more diff risk.
+ */
+/** One sprite a control draws over its base skin in the editor proxy. */
+interface UIControlOverlaySpec {
+  key: 'fill' | 'thumb' | 'mark';
+  texturePath: string;
+  /** Centre of the quad in the control's local space (origin centre, y up). */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  border: SliceBorder2D | null;
+}
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+/** A bar's filled fraction, however the node spells its range. */
+function barFillRatio(node: Bar2D): number {
+  const min = typeof node.minValue === 'number' ? node.minValue : 0;
+  const max = typeof node.maxValue === 'number' ? node.maxValue : 1;
+  const span = max - min;
+  return span === 0 ? 0 : (node.value - min) / span;
+}
+
+function sliderRatio(node: Slider2D): number {
+  const min = typeof node.minValue === 'number' ? node.minValue : 0;
+  const max = typeof node.maxValue === 'number' ? node.maxValue : 1;
+  const span = max - min;
+  return span === 0 ? 0 : (node.value - min) / span;
+}
+
+function sliderHandleSize(node: Slider2D, fallback: number): number {
+  const size = (node as unknown as { handleSize?: number }).handleSize;
+  return typeof size === 'number' && size > 0 ? size : fallback;
+}
+
+export class Viewport2DProxyRegistry {
+  readonly group2DVisuals = new Map<string, THREE.Group>();
+  readonly animatedSprite2DVisuals = new Map<string, THREE.Group>();
+  readonly sprite2DVisuals = new Map<string, THREE.Group>();
+  readonly colorRect2DVisuals = new Map<string, THREE.Group>();
+  readonly tiledSprite2DVisuals = new Map<string, THREE.Group>();
+  readonly uiControl2DVisuals = new Map<string, THREE.Group>();
+  readonly spineSkeleton2DVisuals = new Map<string, THREE.Group>();
+  /** Live Spine views owned by the proxies above, keyed by nodeId. */
+  private readonly spineViews = new Map<string, SpineSkeletonView>();
+  // Shared 2D context for Label2D text measurement (layout mirroring the runtime).
+  private labelMeasureCtx: CanvasRenderingContext2D | null = null;
+
+  constructor(private readonly deps: Viewport2DProxyRegistryDeps) {}
+
+  getVisualRoot(nodeId: string): THREE.Group | undefined {
+    return (
+      this.group2DVisuals.get(nodeId) ??
+      this.sprite2DVisuals.get(nodeId) ??
+      this.colorRect2DVisuals.get(nodeId) ??
+      this.animatedSprite2DVisuals.get(nodeId) ??
+      this.tiledSprite2DVisuals.get(nodeId) ??
+      this.spineSkeleton2DVisuals.get(nodeId) ??
+      this.uiControl2DVisuals.get(nodeId)
+    );
+  }
+
+  /**
+   * Editor-side counterpart of the runtime's `assign2DRenderOrder`: assigns
+   * contiguous `renderOrder` to the 2D proxy-visual meshes in scene-tree DFS
+   * order so viewport stacking matches the authored hierarchy. The runtime 2D
+   * nodes are never added to the editor scene — only these proxies are drawn —
+   * so without this pass three.js falls back to its transparent sort (view z,
+   * then object creation id), which reshuffles stacking whenever a visual is
+   * recreated (texture load, label change, tree edits).
+   *
+   * Editor adornments (anchor markers, Group2D outlines, selection/hover
+   * frames) sit under `THREE.Group`s with a non-zero `renderOrder`; three.js
+   * uses a group's `renderOrder` as `groupOrder`, which sorts before per-mesh
+   * `renderOrder`, so they keep floating above scene content and are skipped
+   * here. Within one visual, meshes keep their authored stacking (e.g. control
+   * skin below its label) because the rebase sorts by the previous values —
+   * the same idempotency argument as the runtime pass.
+   *
+   * `Node2D.zIndex` overrides the hierarchy order here exactly as it does in the
+   * runtime: visuals are bucketed by effective z, DFS order breaks ties.
+   */
+  assignRenderOrder(rootNodes: readonly NodeBase[]): void {
+    const visualRoots = new Set<THREE.Object3D>([
+      ...this.group2DVisuals.values(),
+      ...this.sprite2DVisuals.values(),
+      ...this.colorRect2DVisuals.values(),
+      ...this.animatedSprite2DVisuals.values(),
+      ...this.tiledSprite2DVisuals.values(),
+      ...this.spineSkeleton2DVisuals.values(),
+      ...this.uiControl2DVisuals.values(),
+    ]);
+    let next = 0;
+
+    const collectContentMeshes = (object: THREE.Object3D, content: THREE.Object3D[]): void => {
+      for (const child of object.children) {
+        if (visualRoots.has(child)) {
+          continue; // Another node's visual — it is ordered at its own tree position.
+        }
+        if ((child as THREE.Group).isGroup && child.renderOrder !== 0) {
+          continue; // Floating adornment — stays above content via groupOrder.
+        }
+        if ((child as THREE.Mesh).isMesh) {
+          content.push(child);
+        }
+        collectContentMeshes(child, content);
+      }
+    };
+
+    const assignVisual = (visualRoot: THREE.Group): void => {
+      const content: THREE.Object3D[] = [];
+      collectContentMeshes(visualRoot, content);
+      content
+        .map((mesh, index) => ({ mesh, index }))
+        .sort((a, b) => a.mesh.renderOrder - b.mesh.renderOrder || a.index - b.index)
+        .forEach(entry => {
+          entry.mesh.renderOrder = next++;
+        });
+    };
+
+    // Collect the visuals in DFS order first, tagged with each node's effective
+    // z, then stamp them in paint order. With every node at the default z the
+    // sort is skipped and this is the plain DFS walk it has always been.
+    const ordered: Array<{ visualRoot: THREE.Group; z: number }> = [];
+    let needsSort = false;
+
+    const visitNode = (node: NodeBase, parentZ: number): void => {
+      let z = parentZ;
+      if (node instanceof Node2D) {
+        z = node.zAsRelative ? parentZ + node.zIndex : node.zIndex;
+        if (z !== 0) {
+          needsSort = true;
+        }
+        const visualRoot = this.getVisualRoot(node.nodeId);
+        if (visualRoot) {
+          ordered.push({ visualRoot, z });
+        }
+      }
+      for (const child of node.children) {
+        if (child instanceof NodeBase) {
+          visitNode(child, z);
+        }
+      }
+    };
+
+    for (const node of rootNodes) {
+      visitNode(node, 0);
+    }
+
+    if (needsSort) {
+      // Stable sort — equal-z visuals keep their DFS order.
+      ordered.sort((a, b) => a.z - b.z);
+    }
+
+    for (const entry of ordered) {
+      assignVisual(entry.visualRoot);
+    }
+  }
+
+  /**
+   * Forget the decoded copy of a texture file whose pixels changed on disk, so
+   * the next visual sync re-reads it (§9.5 step 4).
+   *
+   * Proxies cache the path they last loaded (`userData.texturePath` for
+   * Sprite2D / TiledSprite2D / UIControl2D, `userData.animationTexturePath` for
+   * AnimatedSprite2D) and only reload when it *differs* — which an in-place
+   * overwrite never makes it do. Clearing the cached path (and, for animated
+   * sprites, the cached resource that gates their reload) turns the next sync
+   * into a reload. Returns the affected node ids so the caller can drive that
+   * sync; it is the facade that owns the per-node-type update dispatch.
+   */
+  invalidateTexture(texturePath: string): string[] {
+    const normalizedTexturePath = texturePath.trim();
+    if (!normalizedTexturePath) {
+      return [];
+    }
+
+    const affectedNodeIds: string[] = [];
+    const pathCachingVisuals = [
+      this.sprite2DVisuals,
+      this.tiledSprite2DVisuals,
+      this.uiControl2DVisuals,
+    ];
+
+    for (const visuals of pathCachingVisuals) {
+      for (const [nodeId, visualRoot] of visuals) {
+        if ((visualRoot.userData.texturePath as string | null) === normalizedTexturePath) {
+          // Guaranteed mismatch on the next compare: the live path is this
+          // non-empty string, the cached one is now null.
+          visualRoot.userData.texturePath = null;
+          affectedNodeIds.push(nodeId);
+        }
+      }
+    }
+
+    for (const [nodeId, visualRoot] of this.animatedSprite2DVisuals) {
+      if ((visualRoot.userData.animationTexturePath as string | null) !== normalizedTexturePath) {
+        continue;
+      }
+      // `animationTexturePath` is the *frame's* file (or the resource-level
+      // spritesheet for sheet-backed clips), so this now matches the per-frame
+      // write-back that C7 introduced. Clearing the path — rather than dropping
+      // the texture — is what forces the reload: the stale pixels keep drawing
+      // for the one microtask the re-read takes instead of flashing the
+      // placeholder colour, and the swap disposes them.
+      visualRoot.userData.animationTexturePath = null;
+      delete visualRoot.userData.animationTextureLoadPath;
+      // The resource may itself have been rewritten alongside the pixels (a crop
+      // restamps `sourceSize`); its reload is gated on a missing resource.
+      visualRoot.userData.animationResource = null;
+      affectedNodeIds.push(nodeId);
+    }
+
+    return affectedNodeIds;
+  }
+
+  private getCrisp2DPosition(position: THREE.Vector3): { x: number; y: number; z: number } {
+    return {
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+      z: position.z,
+    };
+  }
+
+  apply2DVisualTransform(node: Node2D, visualRoot: THREE.Group): void {
+    const crispPosition = this.getCrisp2DPosition(node.position);
+    visualRoot.position.set(crispPosition.x, crispPosition.y, crispPosition.z);
+    visualRoot.rotation.copy(node.rotation);
+    visualRoot.scale.set(node.scale.x, node.scale.y, 1);
+    visualRoot.visible = node.visible;
+  }
+
+  /**
+   * Show a Sprite2D's anchor/pivot marker only while its node is selected. The
+   * marker is created hidden and only meaningful for the node being edited, so
+   * this keeps the pivot cross off every other sprite in the scene.
+   */
+  updateSprite2DAnchorMarkerVisibility(): void {
+    const selectedIds = new Set(appState.selection.nodeIds);
+    for (const [nodeId, visualRoot] of [...this.sprite2DVisuals, ...this.animatedSprite2DVisuals]) {
+      const anchorMarker = visualRoot.userData.anchorMarker as THREE.Group | undefined;
+      if (anchorMarker) {
+        anchorMarker.visible = selectedIds.has(nodeId);
+      }
+    }
+  }
+
+  /**
+   * Create a rectangle outline visual representation for a Group2D node.
+   */
+  createGroup2DVisual(node: Group2D): THREE.Group {
+    // Visual hierarchy:
+    // - root group: position/rotation/scale (transform scale)
+    // - size group: width/height only (does NOT affect children)
+    // - frame: four meshes representing the border with actual thickness in screen space
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+
+    const sizeGroup = new THREE.Group();
+    sizeGroup.scale.set(node.width, node.height, 1);
+    sizeGroup.layers.set(LAYER_2D);
+    // groupOrder: keeps the outline above hierarchy-ordered 2D content meshes.
+    sizeGroup.renderOrder = 410;
+
+    // Create four border lines as actual meshes with thickness.
+    // Border mesh lives in normalized space (sizeGroup scales to node width/height),
+    // so convert world-pixel thickness into normalized local units.
+    const thickness = getFrameThicknessWorldPx(1);
+    const safeWidth = Math.max(1, Math.abs(node.width));
+    const safeHeight = Math.max(1, Math.abs(node.height));
+    const thicknessX = Math.min(1, thickness / safeWidth);
+    const thicknessY = Math.min(1, thickness / safeHeight);
+
+    // Top border
+    const topGeometry = new THREE.PlaneGeometry(1, 1);
+    const topMaterial = new THREE.MeshBasicMaterial({
+      color: 0x96cbf6,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    });
+    topMaterial.userData.baseOpacity = 1;
+    const topBorder = new THREE.Mesh(topGeometry, topMaterial);
+    topBorder.position.set(0, 0.5 - thicknessY / 2, 0); // Align top edge
+    topBorder.scale.set(1, thicknessY, 1);
+    topBorder.layers.set(LAYER_2D);
+    topBorder.renderOrder = 410;
+    topBorder.userData.isGroup2DVisual = true;
+    topBorder.userData.nodeId = node.nodeId;
+    topBorder.userData.lineMaterial = topMaterial; // Store reference for color updates
+    topBorder.userData.edge = 'top';
+
+    // Bottom border
+    const bottomGeometry = new THREE.PlaneGeometry(1, 1);
+    const bottomMaterial = new THREE.MeshBasicMaterial({
+      color: 0x96cbf6,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    });
+    bottomMaterial.userData.baseOpacity = 1;
+    const bottomBorder = new THREE.Mesh(bottomGeometry, bottomMaterial);
+    bottomBorder.position.set(0, -0.5 + thicknessY / 2, 0); // Align bottom edge
+    bottomBorder.scale.set(1, thicknessY, 1);
+    bottomBorder.layers.set(LAYER_2D);
+    bottomBorder.renderOrder = 410;
+    bottomBorder.userData.isGroup2DVisual = true;
+    bottomBorder.userData.nodeId = node.nodeId;
+    bottomBorder.userData.lineMaterial = bottomMaterial; // Store reference for color updates
+    bottomBorder.userData.edge = 'bottom';
+
+    // Left border
+    const leftGeometry = new THREE.PlaneGeometry(1, 1);
+    const leftMaterial = new THREE.MeshBasicMaterial({
+      color: 0x96cbf6,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    });
+    leftMaterial.userData.baseOpacity = 1;
+    const leftBorder = new THREE.Mesh(leftGeometry, leftMaterial);
+    leftBorder.position.set(-0.5 + thicknessX / 2, 0, 0); // Align left edge
+    leftBorder.scale.set(thicknessX, 1, 1);
+    leftBorder.layers.set(LAYER_2D);
+    leftBorder.renderOrder = 410;
+    leftBorder.userData.isGroup2DVisual = true;
+    leftBorder.userData.nodeId = node.nodeId;
+    leftBorder.userData.lineMaterial = leftMaterial; // Store reference for color updates
+    leftBorder.userData.edge = 'left';
+
+    // Right border
+    const rightGeometry = new THREE.PlaneGeometry(1, 1);
+    const rightMaterial = new THREE.MeshBasicMaterial({
+      color: 0x96cbf6,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    });
+    rightMaterial.userData.baseOpacity = 1;
+    const rightBorder = new THREE.Mesh(rightGeometry, rightMaterial);
+    rightBorder.position.set(0.5 - thicknessX / 2, 0, 0); // Align right edge
+    rightBorder.scale.set(thicknessX, 1, 1);
+    rightBorder.layers.set(LAYER_2D);
+    rightBorder.renderOrder = 410;
+    rightBorder.userData.isGroup2DVisual = true;
+    rightBorder.userData.nodeId = node.nodeId;
+    rightBorder.userData.lineMaterial = rightMaterial; // Store reference for color updates
+    rightBorder.userData.edge = 'right';
+
+    sizeGroup.add(topBorder, bottomBorder, leftBorder, rightBorder);
+    root.add(sizeGroup);
+
+    // Keep references for updates
+    root.userData.isGroup2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.sizeGroup = sizeGroup;
+    this.apply2DVisualMaterialState(node, root);
+
+    return root;
+  }
+
+  /**
+   * Create a visual representation for an AnimatedSprite2D node.
+   */
+  createAnimatedSprite2DVisual(node: AnimatedSprite2D): THREE.Group {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    geometry.computeBoundingBox();
+
+    const material = new THREE.MeshBasicMaterial({
+      color: node.color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+    });
+    material.userData.baseOpacity = 1;
+    this.deps.installProxyEffects(node, material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.layers.set(LAYER_2D);
+    mesh.userData.isAnimatedSprite2DVisual = true;
+    mesh.userData.nodeId = node.nodeId;
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+
+    const sizeGroup = new THREE.Group();
+    sizeGroup.scale.set(node.width ?? 64, node.height ?? 64, 1);
+    sizeGroup.layers.set(LAYER_2D);
+    sizeGroup.add(mesh);
+    root.add(sizeGroup);
+
+    // Pivot marker at the node origin — where the node's position is, which with a
+    // frame anchor (a character's feet) is NOT the centre of the drawn quad. It
+    // lives on the root, not on the laid-out sizeGroup, so the frame layout's
+    // offset/scale never moves it. Hidden until the node is selected.
+    const anchorMarker = this.createSprite2DAnchorMarker(node, 1, 1);
+    root.add(anchorMarker);
+    root.userData.anchorMarker = anchorMarker;
+
+    root.userData.isAnimatedSprite2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.sizeGroup = sizeGroup;
+    root.userData.spriteMesh = mesh;
+    root.userData.animationResourcePath = node.animationResourcePath ?? null;
+    root.userData.currentClip = node.currentClip;
+    root.userData.currentFrame = node.currentFrame;
+    root.userData.color = node.color;
+
+    this.syncAnimatedSprite2DVisual(node, root);
+    return root;
+  }
+
+  /**
+   * Create a visual representation for a Sprite2D node.
+   * Renders the texture if available, or a placeholder rectangle if not.
+   */
+  createSprite2DVisual(node: Sprite2D): THREE.Group {
+    // Visual hierarchy:
+    // - root group: position/rotation/scale (transform scale)
+    // - size group: width/height only (does NOT affect children)
+    // - mesh: normalized quad
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    geometry.computeBoundingBox();
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xcccccc,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+    });
+    material.userData.baseOpacity = 1;
+    this.applyTextureToSprite2DMaterial(node, material);
+    this.deps.installProxyEffects(node, material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+
+    const anchor = this.getSprite2DAnchor(node);
+    mesh.position.set(0.5 - anchor.x, 0.5 - anchor.y, 0);
+
+    mesh.layers.set(LAYER_2D);
+    mesh.userData.isSprite2DVisual = true;
+    mesh.userData.nodeId = node.nodeId;
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+
+    const sizeGroup = new THREE.Group();
+    const w = node.width ?? node.originalWidth ?? 64;
+    const h = node.height ?? node.originalHeight ?? (96 / 217) * 64; // arbitrary but consistent
+    sizeGroup.scale.set(w, h, 1);
+    sizeGroup.layers.set(LAYER_2D);
+    sizeGroup.add(mesh);
+
+    const anchorMarker = this.createSprite2DAnchorMarker(node, w, h);
+    sizeGroup.add(anchorMarker);
+    root.add(sizeGroup);
+
+    root.userData.isSprite2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.sizeGroup = sizeGroup;
+    root.userData.spriteMesh = mesh;
+    root.userData.anchorMarker = anchorMarker;
+    root.userData.texturePath = node.getEffectiveTexturePath() ?? null;
+    this.apply2DVisualMaterialState(node, root);
+
+    return root;
+  }
+
+  /**
+   * Create a solid-fill proxy visual for a ColorRect2D node. Mirrors the
+   * Sprite2D proxy structure (root transform group → size group → normalized
+   * quad) but paints the node's authored color instead of a texture and is
+   * always center-origin (no anchor pivot / marker). Without this, ColorRect2D
+   * had no editor proxy at all, so the rectangle was invisible in the viewport
+   * and could not be picked or framed for selection.
+   */
+  createColorRect2DVisual(node: ColorRect2D): THREE.Group {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    geometry.computeBoundingBox();
+
+    const material = new THREE.MeshBasicMaterial({
+      color: node.color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+    });
+    material.userData.baseOpacity = 1;
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 0);
+    mesh.layers.set(LAYER_2D);
+    mesh.userData.isColorRect2DVisual = true;
+    mesh.userData.nodeId = node.nodeId;
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+
+    const sizeGroup = new THREE.Group();
+    sizeGroup.scale.set(node.width, node.height, 1);
+    sizeGroup.layers.set(LAYER_2D);
+    sizeGroup.add(mesh);
+    root.add(sizeGroup);
+
+    root.userData.isColorRect2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.sizeGroup = sizeGroup;
+    root.userData.colorRectMesh = mesh;
+    this.apply2DVisualMaterialState(node, root);
+
+    return root;
+  }
+
+  /**
+   * Sync the ColorRect2D proxy mesh color from the node's authored `color`.
+   * `Color.set` applies the same sRGB → linear conversion the runtime uses, so
+   * the editor swatch matches play mode.
+   */
+  applyColorRect2DColor(node: ColorRect2D, visualRoot: THREE.Group): void {
+    const mesh = visualRoot.userData.colorRectMesh as THREE.Mesh | undefined;
+    if (mesh && mesh.material instanceof THREE.MeshBasicMaterial) {
+      mesh.material.color.set(node.color);
+      mesh.material.needsUpdate = true;
+    }
+  }
+
+  private createSprite2DAnchorMarker(
+    _node: Sprite2D | AnimatedSprite2D,
+    width: number,
+    height: number
+  ): THREE.Group {
+    const marker = new THREE.Group();
+    marker.position.set(0, 0, 0.01);
+    marker.layers.set(LAYER_2D);
+    marker.renderOrder = 420;
+    marker.userData.isSprite2DAnchorMarker = true;
+    // Anchor/pivot markers are only meaningful for the node the user is editing,
+    // so they stay hidden until selection turns them on (see
+    // updateSprite2DAnchorMarkerVisibility). Otherwise every sprite in the scene
+    // shows a pivot cross, which is visual noise.
+    marker.visible = false;
+
+    const horizontal = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0x13161b,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      })
+    );
+    horizontal.layers.set(LAYER_2D);
+    horizontal.renderOrder = 420;
+    horizontal.material.userData.baseOpacity = 1;
+    horizontal.userData.anchorMarkerPart = 'horizontal';
+    marker.add(horizontal);
+
+    const vertical = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0x13161b,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      })
+    );
+    vertical.layers.set(LAYER_2D);
+    vertical.renderOrder = 420;
+    vertical.material.userData.baseOpacity = 1;
+    vertical.userData.anchorMarkerPart = 'vertical';
+    marker.add(vertical);
+
+    const center = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5, 16),
+      new THREE.MeshBasicMaterial({
+        color: EDITOR_ACCENT_COLOR,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+      })
+    );
+    center.layers.set(LAYER_2D);
+    center.renderOrder = 421;
+    center.material.userData.baseOpacity = 1;
+    center.userData.anchorMarkerPart = 'center';
+    marker.add(center);
+
+    this.updateSprite2DAnchorMarker(
+      marker,
+      Math.abs(width),
+      Math.abs(height),
+      getFrameThicknessWorldPx(this.deps.getOrthographicCamera()?.zoom ?? 1)
+    );
+
+    return marker;
+  }
+
+  updateSprite2DAnchorMarker(
+    marker: THREE.Group,
+    width: number,
+    height: number,
+    thickness: number
+  ): void {
+    const safeWidth = Math.max(1, width);
+    const safeHeight = Math.max(1, height);
+    const localThicknessX = Math.min(0.3, thickness / safeWidth);
+    const localThicknessY = Math.min(0.3, thickness / safeHeight);
+    const horizontalLength = Math.min(0.45, (thickness * 10) / safeWidth);
+    const verticalLength = Math.min(0.45, (thickness * 10) / safeHeight);
+    const centerSizeX = Math.min(0.2, (thickness * 4) / safeWidth);
+    const centerSizeY = Math.min(0.2, (thickness * 4) / safeHeight);
+
+    marker.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) {
+        return;
+      }
+
+      const part = child.userData.anchorMarkerPart as
+        | 'horizontal'
+        | 'vertical'
+        | 'center'
+        | undefined;
+
+      if (part === 'horizontal') {
+        child.scale.set(horizontalLength * 2, localThicknessY, 1);
+      } else if (part === 'vertical') {
+        child.scale.set(localThicknessX, verticalLength * 2, 1);
+      } else if (part === 'center') {
+        child.scale.set(centerSizeX, centerSizeY, 1);
+      }
+    });
+  }
+
+  getSprite2DAnchor(node: Sprite2D): { x: number; y: number } {
+    const rawAnchor = (node as unknown as { anchor?: { x?: number; y?: number } }).anchor;
+    const x = Number(rawAnchor?.x);
+    const y = Number(rawAnchor?.y);
+    return {
+      x: Number.isFinite(x) ? x : 0.5,
+      y: Number.isFinite(y) ? y : 0.5,
+    };
+  }
+
+  /**
+   * Re-apply the project's 2D texture filtering mode to every live 2D proxy
+   * texture. Called when the project setting changes so the crisp/smoothed look
+   * updates immediately without reloading textures. 3D textures are untouched.
+   */
+  reapplyTextureFiltering(): void {
+    const filter =
+      getProjectTextureFiltering() === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+    const applyToRoot = (root: THREE.Object3D): void => {
+      root.traverse(child => {
+        if (!(child instanceof THREE.Mesh)) {
+          return;
+        }
+        const material = child.material;
+        const map = material instanceof THREE.MeshBasicMaterial ? material.map : null;
+        if (map) {
+          map.minFilter = filter;
+          map.magFilter = filter;
+          map.needsUpdate = true;
+        }
+      });
+    };
+
+    const registries = [
+      this.sprite2DVisuals,
+      this.animatedSprite2DVisuals,
+      this.tiledSprite2DVisuals,
+      this.uiControl2DVisuals,
+    ];
+    for (const registry of registries) {
+      for (const root of registry.values()) {
+        applyToRoot(root);
+      }
+    }
+
+    this.deps.requestRender();
+  }
+
+  applyTextureToSprite2DMaterial(node: Sprite2D, material: THREE.MeshBasicMaterial): void {
+    // Effective = localized (textureKey via the preview locale) else authored.
+    const texturePath = node.getEffectiveTexturePath();
+    if (!texturePath) {
+      return;
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+
+    void (async () => {
+      try {
+        const blob = await this.deps.readBlob(texturePath);
+        const blobUrl = URL.createObjectURL(blob);
+
+        textureLoader.load(
+          blobUrl,
+          texture => {
+            try {
+              configureSpriteTexture(texture);
+              material.map = texture;
+              material.color.set(0xffffff);
+              material.transparent = true;
+              material.needsUpdate = true;
+            } finally {
+              URL.revokeObjectURL(blobUrl);
+            }
+          },
+          undefined,
+          () => {
+            URL.revokeObjectURL(blobUrl);
+          }
+        );
+      } catch {
+        const schemeMatch = /^([a-z]+[a-z0-9+.-]*):\/\//i.exec(texturePath);
+        const scheme = schemeMatch ? schemeMatch[1].toLowerCase() : '';
+
+        if (scheme === 'http' || scheme === 'https' || scheme === '') {
+          try {
+            const texture = textureLoader.load(texturePath);
+            configureSpriteTexture(texture);
+            material.map = texture;
+            material.color.set(0xffffff);
+            material.transparent = true;
+            material.needsUpdate = true;
+          } catch {
+            // Keep placeholder material
+          }
+        }
+      }
+    })();
+  }
+
+  /**
+   * Create a visual representation for a TiledSprite2D node. Unlike the Sprite2D
+   * proxy (a unit quad scaled by a size group), the geometry is size-baked because
+   * its UVs depend on the rect size, borders, and texture — so it is rebuilt via
+   * the shared {@link buildTiledSpriteGeometry} whenever any of those change.
+   */
+  createTiledSprite2DVisual(node: TiledSprite2D): THREE.Group {
+    const texWidth = node.textureWidth || 0;
+    const texHeight = node.textureHeight || 0;
+    const geometry = buildTiledSpriteGeometry(
+      this.tiledSprite2DGeometryParams(node, texWidth, texHeight)
+    );
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      depthWrite: false,
+    });
+    material.userData.baseOpacity = 1;
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set((0.5 - node.anchor.x) * node.width, (0.5 - node.anchor.y) * node.height, 0);
+    mesh.layers.set(LAYER_2D);
+    mesh.userData.isTiledSprite2DVisual = true;
+    mesh.userData.nodeId = node.nodeId;
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+    root.add(mesh);
+
+    root.userData.isTiledSprite2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.tiledMesh = mesh;
+    root.userData.texturePath = node.texturePath ?? null;
+    root.userData.textureWidth = texWidth;
+    root.userData.textureHeight = texHeight;
+    root.userData.geometrySignature = this.tiledSprite2DSignature(node, texWidth, texHeight);
+
+    this.applyTextureToTiledSprite2DVisual(node, root);
+    this.apply2DVisualMaterialState(node, root);
+
+    return root;
+  }
+
+  private tiledSprite2DGeometryParams(
+    node: TiledSprite2D,
+    textureWidth: number,
+    textureHeight: number
+  ): TiledSpriteGeometryParams {
+    return {
+      mode: node.patchMode,
+      width: node.width,
+      height: node.height,
+      textureWidth,
+      textureHeight,
+      border: { ...node.sliceBorder },
+      drawCenter: node.drawCenter,
+      axisStretchHorizontal: node.axisStretchHorizontal,
+      axisStretchVertical: node.axisStretchVertical,
+      tileScale: { x: node.tileScale.x, y: node.tileScale.y },
+      tileOffset: { x: node.tileOffset.x, y: node.tileOffset.y },
+    };
+  }
+
+  private tiledSprite2DSignature(
+    node: TiledSprite2D,
+    textureWidth: number,
+    textureHeight: number
+  ): string {
+    const b = node.sliceBorder;
+    return [
+      node.patchMode,
+      node.width,
+      node.height,
+      b.left,
+      b.right,
+      b.top,
+      b.bottom,
+      node.drawCenter,
+      node.axisStretchHorizontal,
+      node.axisStretchVertical,
+      node.tileScale.x,
+      node.tileScale.y,
+      node.tileOffset.x,
+      node.tileOffset.y,
+      textureWidth,
+      textureHeight,
+    ].join('|');
+  }
+
+  private rebuildTiledSprite2DGeometry(node: TiledSprite2D, visualRoot: THREE.Group): void {
+    const mesh = visualRoot.userData.tiledMesh as THREE.Mesh | undefined;
+    if (!mesh) {
+      return;
+    }
+    const texWidth = (visualRoot.userData.textureWidth as number) ?? 0;
+    const texHeight = (visualRoot.userData.textureHeight as number) ?? 0;
+    const geometry = buildTiledSpriteGeometry(
+      this.tiledSprite2DGeometryParams(node, texWidth, texHeight)
+    );
+    mesh.geometry.dispose();
+    mesh.geometry = geometry;
+    mesh.position.set((0.5 - node.anchor.x) * node.width, (0.5 - node.anchor.y) * node.height, 0);
+    visualRoot.userData.geometrySignature = this.tiledSprite2DSignature(node, texWidth, texHeight);
+  }
+
+  private applyTextureToTiledSprite2DVisual(node: TiledSprite2D, visualRoot: THREE.Group): void {
+    const mesh = visualRoot.userData.tiledMesh as THREE.Mesh | undefined;
+    if (!mesh || !(mesh.material instanceof THREE.MeshBasicMaterial)) {
+      return;
+    }
+    const material = mesh.material;
+    const texturePath = node.texturePath;
+    if (!texturePath) {
+      material.map = null;
+      material.needsUpdate = true;
+      return;
+    }
+
+    const onTextureReady = (texture: THREE.Texture) => {
+      // Latest-wins + liveness guard: a load can resolve after the proxy was
+      // disposed (leaking a rebuilt geometry) or after the node's texture was
+      // swapped again (a stale load overwriting a newer one). Bail in both cases.
+      if (
+        this.tiledSprite2DVisuals.get(node.nodeId) !== visualRoot ||
+        node.texturePath !== texturePath
+      ) {
+        texture.dispose();
+        return;
+      }
+
+      configureSpriteTexture(texture);
+      material.map = texture;
+      material.color.set(0xffffff);
+      material.transparent = true;
+      material.needsUpdate = true;
+
+      const img = texture.image as
+        | { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number }
+        | undefined;
+      const w = img?.naturalWidth ?? img?.width;
+      const h = img?.naturalHeight ?? img?.height;
+      if (w && h) {
+        visualRoot.userData.textureWidth = w;
+        visualRoot.userData.textureHeight = h;
+        // UVs (9-slice) and tile counts depend on the natural size — rebuild now.
+        this.rebuildTiledSprite2DGeometry(node, visualRoot);
+      }
+    };
+
+    const textureLoader = new THREE.TextureLoader();
+
+    void (async () => {
+      try {
+        const blob = await this.deps.readBlob(texturePath);
+        const blobUrl = URL.createObjectURL(blob);
+        textureLoader.load(
+          blobUrl,
+          texture => {
+            try {
+              onTextureReady(texture);
+            } finally {
+              URL.revokeObjectURL(blobUrl);
+            }
+          },
+          undefined,
+          () => {
+            URL.revokeObjectURL(blobUrl);
+          }
+        );
+      } catch {
+        const schemeMatch = /^([a-z]+[a-z0-9+.-]*):\/\//i.exec(texturePath);
+        const scheme = schemeMatch ? schemeMatch[1].toLowerCase() : '';
+        if (scheme === 'http' || scheme === 'https' || scheme === '') {
+          try {
+            textureLoader.load(texturePath, texture => onTextureReady(texture));
+          } catch {
+            // Keep placeholder material
+          }
+        }
+      }
+    })();
+  }
+
+  syncTiledSprite2DVisual(node: TiledSprite2D, visualRoot: THREE.Group): void {
+    this.apply2DVisualTransform(node, visualRoot);
+    visualRoot.visible = node.visible;
+
+    // React to a texture swap before rebuilding geometry (natural size may change).
+    const mesh = visualRoot.userData.tiledMesh as THREE.Mesh | undefined;
+    if (mesh && mesh.material instanceof THREE.MeshBasicMaterial) {
+      const currentTexturePath = node.texturePath ?? null;
+      const previousTexturePath = (visualRoot.userData.texturePath as string | null) ?? null;
+      if (currentTexturePath !== previousTexturePath) {
+        mesh.material.map = null;
+        mesh.material.needsUpdate = true;
+        visualRoot.userData.texturePath = currentTexturePath;
+        visualRoot.userData.textureWidth = 0;
+        visualRoot.userData.textureHeight = 0;
+        this.applyTextureToTiledSprite2DVisual(node, visualRoot);
+      }
+    }
+
+    const signature = this.tiledSprite2DSignature(
+      node,
+      (visualRoot.userData.textureWidth as number) ?? 0,
+      (visualRoot.userData.textureHeight as number) ?? 0
+    );
+    if (signature !== visualRoot.userData.geometrySignature) {
+      this.rebuildTiledSprite2DGeometry(node, visualRoot);
+    } else if (mesh) {
+      // Pivot can change without altering geometry.
+      mesh.position.set((0.5 - node.anchor.x) * node.width, (0.5 - node.anchor.y) * node.height, 0);
+    }
+
+    this.apply2DVisualMaterialState(node, visualRoot);
+  }
+
+  syncAnimatedSprite2DVisual(node: AnimatedSprite2D, visualRoot: THREE.Group): void {
+    this.apply2DVisualTransform(node, visualRoot);
+
+    visualRoot.visible = node.visible;
+    // Material sync resolves the frame + texture the layout depends on, so run it
+    // before sizing the quad.
+    this.syncAnimatedSprite2DMaterial(node, visualRoot);
+    this.applyAnimatedSprite2DFrameLayout(node, visualRoot);
+    this.apply2DVisualMaterialState(node, visualRoot);
+  }
+
+  /**
+   * Editor-side counterpart to `AnimatedSprite2D.updateSize` — the viewport draws
+   * separate proxy meshes, so the per-frame anchor / `sizeMode` math must be
+   * applied here too, from the same shared resolver, or the editor and the
+   * running game disagree about where a frame sits.
+   */
+  private applyAnimatedSprite2DFrameLayout(node: AnimatedSprite2D, visualRoot: THREE.Group): void {
+    const sizeGroup = visualRoot.userData.sizeGroup as THREE.Object3D | undefined;
+    if (!sizeGroup) {
+      return;
+    }
+
+    const resource = (visualRoot.userData.animationResource as AnimationResource | null) ?? null;
+    const clip = findAnimationClip(resource, node.currentClip);
+    const frames = clip?.frames ?? [];
+    const frame =
+      frames.length > 0
+        ? (frames[Math.max(0, Math.min(node.currentFrame, frames.length - 1))] ?? null)
+        : null;
+
+    const layout = resolveAnimatedSpriteFrameLayout({
+      nodeWidth: node.width ?? 64,
+      nodeHeight: node.height ?? 64,
+      anchor: node.anchor,
+      sizeMode: node.sizeMode,
+      frame,
+      frameSourceSize: this.resolveProxyFrameSourceSize(
+        frame,
+        this.getAnimatedSprite2DFrameTexture(visualRoot, resource, frame)
+      ),
+      clipFirstFrameSourceSize: this.resolveProxyFrameSourceSize(
+        frames[0] ?? null,
+        this.getAnimatedSprite2DFrameTexture(visualRoot, resource, frames[0] ?? null)
+      ),
+    });
+
+    const changed =
+      sizeGroup.scale.x !== layout.width ||
+      sizeGroup.scale.y !== layout.height ||
+      sizeGroup.position.x !== layout.offsetX ||
+      sizeGroup.position.y !== layout.offsetY;
+    sizeGroup.scale.set(layout.width, layout.height, 1);
+    sizeGroup.position.set(layout.offsetX, layout.offsetY, 0);
+    if (changed) {
+      this.deps.onAnimatedSprite2DLayoutChanged?.(node.nodeId);
+    }
+  }
+
+  /**
+   * The rectangle an AnimatedSprite2D's proxy actually draws, in node-local space
+   * (y up): the laid-out quad after `sizeMode`, node anchor and per-frame anchor.
+   * `null` before the node has a proxy. Selection frames and hover outlines use
+   * this so they wrap the visible frame instead of a centred `width × height` box.
+   */
+  getAnimatedSprite2DLocalRect(
+    node: AnimatedSprite2D
+  ): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    const visualRoot = this.animatedSprite2DVisuals.get(node.nodeId);
+    const sizeGroup = visualRoot?.userData.sizeGroup as THREE.Object3D | undefined;
+    if (!sizeGroup) {
+      return null;
+    }
+    const halfWidth = Math.abs(sizeGroup.scale.x) / 2;
+    const halfHeight = Math.abs(sizeGroup.scale.y) / 2;
+    return {
+      minX: sizeGroup.position.x - halfWidth,
+      minY: sizeGroup.position.y - halfHeight,
+      maxX: sizeGroup.position.x + halfWidth,
+      maxY: sizeGroup.position.y + halfHeight,
+    };
+  }
+
+  /**
+   * Frame pixel size for proxy layout: the authored `sourceSize` first, then an
+   * atlas view's recorded source size, then the loaded texture's own image
+   * dimensions — the same order as `AnimatedSprite2D.resolveFrameSourceSize`.
+   * The atlas branch matters because proxies now resolve their textures through
+   * the shared {@link AssetLoader}, whose cache can hold sheet views while play
+   * mode has an atlas resolver installed.
+   */
+  private resolveProxyFrameSourceSize(
+    frame: AnimationFrame | null,
+    texture: THREE.Texture | null
+  ): { width: number; height: number } | null {
+    const authored = frame?.sourceSize;
+    if (authored && authored.width > 0 && authored.height > 0) {
+      return authored;
+    }
+
+    const atlasSize = atlasSizeOf(texture);
+    if (atlasSize && atlasSize.width > 0 && atlasSize.height > 0) {
+      return atlasSize;
+    }
+
+    const image = texture?.image as { width?: number; height?: number } | undefined;
+    if (image && Number(image.width) > 0 && Number(image.height) > 0) {
+      return { width: Number(image.width), height: Number(image.height) };
+    }
+
+    return null;
+  }
+
+  /**
+   * The proxy's cached texture, but only when it is the one this frame actually
+   * wants. A frame swap resolves its file asynchronously, so during that gap the
+   * cached texture still belongs to the previous frame — sizing off it would
+   * flash the wrong native size.
+   */
+  private getAnimatedSprite2DFrameTexture(
+    visualRoot: THREE.Object3D,
+    resource: AnimationResource | null,
+    frame: AnimationFrame | null
+  ): THREE.Texture | null {
+    const texturePath = getAnimationFrameTexturePath(resource, frame);
+    if (!texturePath) {
+      return null;
+    }
+    if ((visualRoot.userData.animationTexturePath as string | null) !== texturePath) {
+      return null;
+    }
+    return (visualRoot.userData.animationTexture as THREE.Texture | null) ?? null;
+  }
+
+  private syncAnimatedSprite2DMaterial(node: AnimatedSprite2D, visualRoot: THREE.Group): void {
+    const mesh = visualRoot.userData.spriteMesh as THREE.Mesh | undefined;
+    if (!mesh || !(mesh.material instanceof THREE.MeshBasicMaterial)) {
+      return;
+    }
+
+    const material = mesh.material;
+    const currentResourcePath = node.animationResourcePath?.trim() || null;
+    const previousResourcePath =
+      (visualRoot.userData.animationResourcePath as string | null) ?? null;
+    const openResource = currentResourcePath
+      ? this.getLoadedAnimationResource(currentResourcePath)
+      : null;
+    const cachedResource =
+      (visualRoot.userData.animationResource as AnimationResource | null) ?? null;
+
+    visualRoot.userData.animationResourcePath = currentResourcePath;
+    visualRoot.userData.currentClip = node.currentClip;
+    visualRoot.userData.currentFrame = node.currentFrame;
+    visualRoot.userData.color = node.color;
+
+    if (openResource && openResource !== cachedResource) {
+      // The Sprite Editor holds this .pix3anim open and just mutated it — adopt
+      // the live object. Whether that changed the *pixels* on screen is decided
+      // by the presentation pass, which resolves the current frame's own file
+      // and reloads only when that path differs from the cached one.
+      visualRoot.userData.animationResource = openResource;
+      this.applyAnimatedSprite2DPresentation(node, visualRoot, material);
+      return;
+    }
+
+    if (currentResourcePath !== previousResourcePath) {
+      void this.loadAnimatedSprite2DVisualAsset(node, visualRoot);
+      this.applyAnimatedSprite2DPresentation(node, visualRoot, material);
+      return;
+    }
+
+    if (
+      currentResourcePath &&
+      !visualRoot.userData.animationResource &&
+      !visualRoot.userData.animationLoadToken
+    ) {
+      void this.loadAnimatedSprite2DVisualAsset(node, visualRoot);
+    }
+
+    this.applyAnimatedSprite2DPresentation(node, visualRoot, material);
+  }
+
+  private applyAnimatedSprite2DPresentation(
+    node: AnimatedSprite2D,
+    visualRoot: THREE.Group,
+    material?: THREE.MeshBasicMaterial
+  ): void {
+    const mesh = visualRoot.userData.spriteMesh as THREE.Mesh | undefined;
+    const resolvedMaterial =
+      material ?? (mesh?.material instanceof THREE.MeshBasicMaterial ? mesh.material : undefined);
+    if (!resolvedMaterial) {
+      return;
+    }
+
+    const resource = (visualRoot.userData.animationResource as AnimationResource | null) ?? null;
+    const clip = findAnimationClip(resource, node.currentClip);
+    const frames = clip?.frames ?? [];
+    const frameIndex =
+      frames.length > 0 ? Math.max(0, Math.min(node.currentFrame, frames.length - 1)) : 0;
+    const frame = frames[frameIndex] ?? null;
+
+    // The current frame's own file when it has one, else the resource-level
+    // spritesheet — `getAnimationFrameTexturePath` is the single precedence rule,
+    // shared with the runtime loader, the asset previews and the Sprite Editor.
+    const frameTexturePath = getAnimationFrameTexturePath(resource, frame);
+    this.ensureAnimatedSprite2DFrameTexture(node, visualRoot, frameTexturePath);
+
+    const texture = (visualRoot.userData.animationTexture as THREE.Texture | null) ?? null;
+    const isCurrentFrameTexture =
+      texture !== null &&
+      frameTexturePath.length > 0 &&
+      (visualRoot.userData.animationTexturePath as string | null) === frameTexturePath;
+
+    if (texture) {
+      if (resolvedMaterial.map !== texture) {
+        resolvedMaterial.map = texture;
+      }
+
+      // While a frame swap's file is in flight the cached texture still shows the
+      // previous frame; leave its UVs alone rather than blanking the sprite for
+      // the microtask it takes to resolve.
+      if (isCurrentFrameTexture) {
+        // A sequence frame *is* the whole file (its UV window was baked into the
+        // pixels when the frame was written out), so only a sheet frame carries a
+        // local rect. Both compose against an atlas view's base region so the
+        // sampled sub-rect lands inside the packed frame — identity for the plain
+        // textures edit mode normally loads.
+        const localRegion: TextureRegion | null =
+          frame && !isSequenceAnimationFrame(frame)
+            ? {
+                x: frame.offset.x,
+                y: frame.offset.y,
+                width: frame.repeat.x,
+                height: frame.repeat.y,
+              }
+            : null;
+        applyTextureRegionToTexture(
+          texture,
+          composeTextureRegion(baseRegionOf(texture), localRegion)
+        );
+      }
+
+      resolvedMaterial.color.set('#ffffff');
+    } else {
+      if (resolvedMaterial.map) {
+        resolvedMaterial.map = null;
+      }
+
+      resolvedMaterial.color.set(node.color);
+    }
+
+    resolvedMaterial.transparent = true;
+    resolvedMaterial.needsUpdate = true;
+  }
+
+  private async loadAnimatedSprite2DVisualAsset(
+    node: AnimatedSprite2D,
+    visualRoot: THREE.Group
+  ): Promise<void> {
+    const animationResourcePath = node.animationResourcePath?.trim() || '';
+    const token = Number(visualRoot.userData.animationLoadToken ?? 0) + 1;
+    visualRoot.userData.animationLoadToken = token;
+
+    if (!animationResourcePath) {
+      visualRoot.userData.animationResource = null;
+      this.disposeAnimatedSprite2DTexture(visualRoot);
+      this.applyAnimatedSprite2DPresentation(node, visualRoot);
+      delete visualRoot.userData.animationLoadToken;
+      return;
+    }
+
+    try {
+      const resource =
+        this.getLoadedAnimationResource(animationResourcePath) ??
+        parseAnimationResourceText(await this.deps.readText(animationResourcePath));
+
+      if (visualRoot.userData.animationLoadToken !== token) {
+        return;
+      }
+
+      visualRoot.userData.animationResource = resource;
+      // The frame's texture is resolved (and loaded) from here — a `.pix3anim`
+      // authored the §8.2 way has no resource-level spritesheet at all.
+      this.applyAnimatedSprite2DPresentation(node, visualRoot);
+      this.applyAnimatedSprite2DFrameLayout(node, visualRoot);
+      // Reading the resource file marks nothing dirty (CLAUDE.md render-on-demand).
+      this.deps.requestRender();
+    } catch {
+      if (visualRoot.userData.animationLoadToken !== token) {
+        return;
+      }
+
+      visualRoot.userData.animationResource = null;
+      this.disposeAnimatedSprite2DTexture(visualRoot);
+      this.applyAnimatedSprite2DPresentation(node, visualRoot);
+    } finally {
+      if (visualRoot.userData.animationLoadToken === token) {
+        delete visualRoot.userData.animationLoadToken;
+      }
+    }
+  }
+
+  /**
+   * Make sure the proxy holds the texture for the frame it is about to draw.
+   *
+   * A §8.2 clip is N files, so this runs on every frame change (including while
+   * an editor preview is playing). The *decode* cache is the shared
+   * {@link AssetLoader}'s — deliberately not a per-proxy map: one decode per file
+   * for the whole editor, evictable from one place (`evictTexture`, which the
+   * Sprite Editor's write-back fan-out already calls), and no proxy pinning 60
+   * frames of its clip forever. What the proxy keeps is exactly one *clone* of
+   * the current frame's texture, because `offset`/`repeat` are per-node state and
+   * two nodes on the same sheet at different frames would otherwise fight over
+   * them; a clone shares the GPU upload with its source, so this costs no VRAM.
+   */
+  private ensureAnimatedSprite2DFrameTexture(
+    node: AnimatedSprite2D,
+    visualRoot: THREE.Group,
+    texturePath: string
+  ): void {
+    const cachedTexturePath = (visualRoot.userData.animationTexturePath as string | null) ?? null;
+    if (cachedTexturePath === (texturePath || null)) {
+      return;
+    }
+
+    if (!texturePath) {
+      this.disposeAnimatedSprite2DTexture(visualRoot);
+      return;
+    }
+
+    if (visualRoot.userData.animationTextureLoadPath === texturePath) {
+      return; // Already in flight for this exact file.
+    }
+    visualRoot.userData.animationTextureLoadPath = texturePath;
+
+    void (async () => {
+      let texture: THREE.Texture | null = null;
+      try {
+        texture = await this.loadAnimationFrameTexture(texturePath);
+      } catch {
+        texture = null;
+      }
+
+      // Latest-wins + liveness guard: the frame (or the whole proxy) may have
+      // moved on while the file resolved.
+      if (visualRoot.userData.animationTextureLoadPath !== texturePath) {
+        texture?.dispose();
+        return;
+      }
+      delete visualRoot.userData.animationTextureLoadPath;
+
+      const previousTexture =
+        (visualRoot.userData.animationTexture as THREE.Texture | null) ?? null;
+      previousTexture?.dispose();
+      visualRoot.userData.animationTexture = texture;
+      // Recorded even when the load failed, so a broken frame shows the
+      // placeholder instead of re-requesting its file on every sync.
+      visualRoot.userData.animationTexturePath = texturePath;
+
+      this.applyAnimatedSprite2DPresentation(node, visualRoot);
+      // `sizeMode: 'native'` reads the texture's own dimensions when the frame
+      // carries no authored sourceSize, so re-run the layout too.
+      this.applyAnimatedSprite2DFrameLayout(node, visualRoot);
+      // An async texture load is outside every dirty-marking path — without this
+      // the new frame would only appear on the ≤500 ms heartbeat.
+      this.deps.requestRender();
+    })();
+  }
+
+  /**
+   * A private clone of the shared decoded texture, treated for 2D display
+   * (sRGB + no mipmaps — see {@link configureSpriteTexture}) and re-stamped with
+   * any atlas metadata so the region composition in the presentation pass can
+   * find its packed frame.
+   */
+  private async loadAnimationFrameTexture(texturePath: string): Promise<THREE.Texture | null> {
+    const shared = await this.deps.getAssetLoader().loadTexture(texturePath);
+    const texture = shared.clone();
+    configureSpriteTexture(texture);
+    copyAtlasMetadata(shared, texture);
+    return texture;
+  }
+
+  private getLoadedAnimationResource(resourcePath: string): AnimationResource | null {
+    const animationId = deriveAnimationDocumentId(resourcePath);
+    const descriptor = appState.animations.descriptors[animationId];
+    if (!descriptor || descriptor.filePath !== resourcePath) {
+      return null;
+    }
+
+    return appState.animations.resources[animationId] ?? null;
+  }
+
+  disposeAnimatedSprite2DTexture(visualRoot: THREE.Object3D): void {
+    const texture = (visualRoot.userData.animationTexture as THREE.Texture | null) ?? null;
+    if (texture) {
+      texture.dispose();
+    }
+
+    visualRoot.userData.animationTexture = null;
+    visualRoot.userData.animationTexturePath = null;
+    // Any in-flight frame load now fails its liveness check and disposes itself.
+    delete visualRoot.userData.animationTextureLoadPath;
+  }
+
+  /**
+   * Create the editor proxy for a SpineSkeleton2D node.
+   *
+   * Unlike the other 2D proxies this one does not rebuild the node's geometry by
+   * hand: it instantiates the SAME {@link SpineSkeletonView} the runtime node
+   * uses, from the same cached `SpineAsset`, so edit mode and play mode render
+   * identically. Until the asset resolves (or when the paths are unset/broken) a
+   * placeholder frame stands in so the node stays visible and selectable.
+   */
+  createSpineSkeleton2DVisual(node: SpineSkeleton2D): THREE.Group {
+    const root = new THREE.Group();
+    root.layers.set(LAYER_2D);
+    this.apply2DVisualTransform(node, root);
+
+    const placeholder = this.createSpineSkeleton2DPlaceholder(node);
+    root.add(placeholder);
+
+    root.userData.isSpineSkeleton2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.placeholder = placeholder;
+    root.userData.assetSignature = spineAssetSignature(node);
+    root.userData.viewSignature = null;
+
+    void this.loadSpineSkeleton2DAsset(node, root);
+    return root;
+  }
+
+  /**
+   * Dashed-looking outline shown while the skeleton is unresolved. Sized to the
+   * node's setup bounds when known, else a neutral 100×100 box, and kept as a
+   * floating adornment (non-zero group renderOrder) so it never joins the
+   * hierarchy content ordering.
+   */
+  private createSpineSkeleton2DPlaceholder(node: SpineSkeleton2D): THREE.Group {
+    const group = new THREE.Group();
+    group.layers.set(LAYER_2D);
+    group.renderOrder = 405;
+
+    const bounds = node.getSetupBounds();
+    const width = Math.max(8, Math.abs(bounds?.width ?? 100));
+    const height = Math.max(8, Math.abs(bounds?.height ?? 100));
+
+    const material = new THREE.MeshBasicMaterial({
+      color: EDITOR_ACCENT_COLOR,
+      transparent: true,
+      opacity: 0.18,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    material.userData.baseOpacity = 0.18;
+
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    mesh.scale.set(width, height, 1);
+    mesh.position.set(
+      (bounds?.x ?? -width / 2) + width / 2,
+      (bounds?.y ?? -height / 2) + height / 2,
+      0
+    );
+    mesh.layers.set(LAYER_2D);
+    mesh.renderOrder = 405;
+    mesh.userData.nodeId = node.nodeId;
+    group.add(mesh);
+
+    return group;
+  }
+
+  private async loadSpineSkeleton2DAsset(
+    node: SpineSkeleton2D,
+    visualRoot: THREE.Group
+  ): Promise<void> {
+    const request = node.getAssetRequest();
+    if (!request) {
+      return;
+    }
+
+    const signature = spineAssetSignature(node);
+    try {
+      const asset = await this.deps.getAssetLoader().loadSpineAsset(request);
+
+      // Latest-wins + liveness guard: the proxy may have been disposed while we
+      // awaited, or the node may point at different files by now.
+      if (
+        this.spineSkeleton2DVisuals.get(node.nodeId) !== visualRoot ||
+        spineAssetSignature(node) !== signature
+      ) {
+        return;
+      }
+
+      const view = new SpineSkeletonView({ asset, twoColorTint: node.twoColorTint });
+      this.disposeSpineView(node.nodeId, visualRoot);
+      this.spineViews.set(node.nodeId, view);
+      visualRoot.userData.spineView = view;
+      visualRoot.userData.viewSignature = signature;
+
+      const placeholder = visualRoot.userData.placeholder as THREE.Group | undefined;
+      if (placeholder) {
+        placeholder.visible = false;
+      }
+
+      visualRoot.add(view.object);
+      this.syncSpineSkeleton2DPlayback(node, view);
+      visualRoot.userData.playbackSignature = spinePlaybackSignature(
+        node,
+        this.getEffective2DOpacity(node)
+      );
+      this.stampSpineLayers(view);
+
+      // The node itself needs the asset too — its per-instance schema is what
+      // turns the inspector's `animation`/`skin` fields into dropdowns of the
+      // skeleton's real names. In the editor the SceneLoader's own load may not
+      // have landed yet (or may have failed to run at all for a node created
+      // interactively), and both paths share this cached asset, so whichever
+      // arrives first installs it and the other skips.
+      if (!node.isLoaded) {
+        node.setSpineAsset(asset);
+      }
+      // Nudge the inspector so the freshly available animation/skin lists render.
+      appState.scenes.nodeDataChangeSignal += 1;
+      this.deps.requestRender();
+    } catch (error) {
+      console.warn(`[Viewport] Failed to load Spine asset for node ${node.nodeId}:`, error);
+    }
+  }
+
+  /** Push authored animation/skin/mix/tint state into a (re)built view. */
+  private syncSpineSkeleton2DPlayback(node: SpineSkeleton2D, view: SpineSkeletonView): void {
+    view.setDefaultMix(node.defaultMix);
+    view.setTimeScale(node.timeScale);
+    if (node.skin) {
+      view.setSkin(node.skin);
+    }
+    view.setTint(hexToRgb01(node.color), this.getEffective2DOpacity(node));
+    if (node.animation) {
+      view.play(node.animation, { loop: node.loop });
+    }
+    view.refresh();
+  }
+
+  /**
+   * Spine adds its batch meshes lazily as slots/materials change, and three.js
+   * layers are per-object (not inherited), so freshly created batches would be
+   * invisible to the layer-filtered 2D camera. Re-stamp after every update.
+   */
+  private stampSpineLayers(view: SpineSkeletonView): void {
+    for (const child of view.object.children) {
+      child.layers.set(LAYER_2D);
+    }
+  }
+
+  syncSpineSkeleton2DVisual(node: SpineSkeleton2D, visualRoot: THREE.Group): void {
+    this.apply2DVisualTransform(node, visualRoot);
+    visualRoot.visible = node.visible;
+
+    // Asset paths changed → drop the current view and reload.
+    const signature = spineAssetSignature(node);
+    if (signature !== visualRoot.userData.assetSignature) {
+      visualRoot.userData.assetSignature = signature;
+      this.disposeSpineView(node.nodeId, visualRoot);
+      const placeholder = visualRoot.userData.placeholder as THREE.Group | undefined;
+      if (placeholder) {
+        placeholder.visible = true;
+      }
+      void this.loadSpineSkeleton2DAsset(node, visualRoot);
+      return;
+    }
+
+    const view = this.spineViews.get(node.nodeId);
+    if (!view) {
+      return;
+    }
+
+    // Only rebuild the pose when something that affects it actually changed: a
+    // refresh() re-skins the whole skeleton, and this runs on every layout pass.
+    const playbackSignature = spinePlaybackSignature(node, this.getEffective2DOpacity(node));
+    if (playbackSignature === visualRoot.userData.playbackSignature) {
+      return;
+    }
+    visualRoot.userData.playbackSignature = playbackSignature;
+    this.syncSpineSkeleton2DPlayback(node, view);
+    this.stampSpineLayers(view);
+  }
+
+  /** The live Spine view for a node's proxy, if it has loaded. */
+  getSpineView(nodeId: string): SpineSkeletonView | undefined {
+    return this.spineViews.get(nodeId);
+  }
+
+  /**
+   * Advance the editor preview for one Spine proxy. Called by the preview ticker
+   * for nodes with `previewInEditor` enabled.
+   */
+  advanceSpinePreview(nodeId: string, dt: number): boolean {
+    const view = this.spineViews.get(nodeId);
+    if (!view) {
+      return false;
+    }
+    view.update(dt);
+    this.stampSpineLayers(view);
+    return true;
+  }
+
+  /**
+   * Rewind one Spine proxy's view to the first frame of its current animation.
+   * Pose-only; the authored playback state is untouched.
+   */
+  resetSpinePreview(nodeId: string): boolean {
+    const view = this.spineViews.get(nodeId);
+    if (!view) {
+      return false;
+    }
+    view.rewind();
+    this.stampSpineLayers(view);
+    return true;
+  }
+
+  /**
+   * Dispose the Spine view attached to a proxy (if any). Safe to call before the
+   * generic `disposeObject3D` walk, which then only sees the placeholder.
+   */
+  disposeSpineView(nodeId: string, visualRoot?: THREE.Object3D): void {
+    const view = this.spineViews.get(nodeId);
+    if (view) {
+      view.dispose();
+      this.spineViews.delete(nodeId);
+    }
+    if (visualRoot) {
+      delete visualRoot.userData.spineView;
+      visualRoot.userData.viewSignature = null;
+    }
+  }
+
+  /** Dispose the Spine view owned by a proxy root, resolving its nodeId. */
+  disposeSpineSkeleton2DVisual(visualRoot: THREE.Object3D): void {
+    const nodeId = visualRoot.userData.nodeId as string | undefined;
+    if (nodeId) {
+      this.disposeSpineView(nodeId, visualRoot);
+    }
+  }
+
+  createUIControl2DVisual(node: UIControl2D): THREE.Group {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    geometry.computeBoundingBox();
+
+    const material = new THREE.MeshBasicMaterial({
+      color: this.getUIControlDefaultColor(node),
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+    });
+    material.userData.baseOpacity = node instanceof Label2D ? 0 : 1;
+
+    // Only Button2D hosts effects among UIControl2D; installs on the SKIN mesh.
+    this.deps.installProxyEffects(node, material);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.layers.set(LAYER_2D);
+    mesh.userData.isUIControl2DVisual = true;
+    mesh.userData.nodeId = node.nodeId;
+
+    const root = new THREE.Group();
+    root.position.copy(node.position);
+    root.rotation.copy(node.rotation);
+    root.scale.set(node.scale.x, node.scale.y, 1);
+    root.visible = node.visible;
+    root.layers.set(LAYER_2D);
+
+    const sizeGroup = new THREE.Group();
+    sizeGroup.layers.set(LAYER_2D);
+    sizeGroup.add(mesh);
+
+    root.add(sizeGroup);
+
+    if (node.getDisplayText().trim().length > 0) {
+      const labelMesh = this.createUIControlLabelMesh(node);
+      root.add(labelMesh);
+    }
+
+    root.userData.isUIControl2DVisualRoot = true;
+    root.userData.nodeId = node.nodeId;
+    root.userData.sizeGroup = sizeGroup;
+    root.userData.controlMesh = mesh;
+    root.userData.texturePath = this.getUIControlSkinTextureUrl(node);
+    root.userData.skinGeometrySignature = UNIT_SKIN_SIGNATURE;
+    root.userData.skinTextureWidth = 0;
+    root.userData.skinTextureHeight = 0;
+    // Sizes the size group (unsliced) or bakes a 9-slice patch into the mesh.
+    this.applyUIControlSkinGeometry(node, root);
+    // After the root exists: the load callback needs it to record the skin's
+    // natural size and re-cut a 9-slice patch.
+    this.applyTextureTo2DMaterial(node, material, root);
+    this.apply2DVisualMaterialState(node, root);
+
+    return root;
+  }
+
+  /**
+   * The 9-slice insets the proxy should cut its skin with. Only the controls that
+   * expose the property carry one; everything else stretches as before.
+   */
+  getUIControlSliceBorder(node: UIControl2D): SliceBorder2D {
+    if (node instanceof Button2D || node instanceof Slider2D || node instanceof Bar2D) {
+      return node.sliceBorder;
+    }
+    return ZERO_SLICE_BORDER;
+  }
+
+  /**
+   * Size the proxy skin, the way the runtime node sizes its own.
+   *
+   * Unsliced (the default) keeps the historical arrangement: a 1x1 quad inside a
+   * size group scaled to width x height. A non-zero `sliceBorder` bakes pixel
+   * positions into the mesh instead, so the size group has to go back to unit
+   * scale or the patch would be scaled a second time. The geometry is rebuilt only
+   * when the size, the border, or the skin's natural pixel size actually moved —
+   * this runs on every viewport sync.
+   */
+  applyUIControlSkinGeometry(node: UIControl2D, visualRoot: THREE.Group): void {
+    const sizeGroup = visualRoot.userData.sizeGroup as THREE.Object3D | undefined;
+    const mesh = visualRoot.userData.controlMesh as THREE.Mesh | undefined;
+    if (!sizeGroup || !mesh) {
+      return;
+    }
+
+    const { width, height } = this.getUIControlDimensions(node);
+    const border = this.getUIControlSliceBorder(node);
+
+    if (isSliceBorderEmpty(border)) {
+      sizeGroup.scale.set(width, height, 1);
+      if (visualRoot.userData.skinGeometrySignature !== UNIT_SKIN_SIGNATURE) {
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(1, 1);
+        visualRoot.userData.skinGeometrySignature = UNIT_SKIN_SIGNATURE;
+      }
+      return;
+    }
+
+    const textureWidth = (visualRoot.userData.skinTextureWidth as number) ?? 0;
+    const textureHeight = (visualRoot.userData.skinTextureHeight as number) ?? 0;
+    const signature = [
+      width,
+      height,
+      border.left,
+      border.right,
+      border.top,
+      border.bottom,
+      textureWidth,
+      textureHeight,
+    ].join('|');
+
+    sizeGroup.scale.set(1, 1, 1);
+    if (visualRoot.userData.skinGeometrySignature === signature) {
+      return;
+    }
+    mesh.geometry.dispose();
+    mesh.geometry = buildSkinGeometry({ width, height, textureWidth, textureHeight, border });
+    visualRoot.userData.skinGeometrySignature = signature;
+  }
+
+  getUIControlDimensions(node: UIControl2D): { width: number; height: number } {
+    if (node instanceof Button2D) {
+      return { width: node.width, height: node.height };
+    }
+
+    if (node instanceof Label2D) {
+      const box = this.measureLabel2DBox(node);
+      return { width: box.width, height: box.height };
+    }
+
+    if (node instanceof Slider2D) {
+      return { width: node.width, height: Math.max(node.height, node.handleSize) };
+    }
+
+    if (node instanceof Bar2D) {
+      return { width: node.width, height: node.height };
+    }
+
+    if (node instanceof InventorySlot2D) {
+      return { width: node.width, height: node.height };
+    }
+
+    if (node instanceof Checkbox2D) {
+      return { width: node.size, height: node.size };
+    }
+
+    return { width: 100, height: 40 };
+  }
+
+  getUIControlDefaultColor(node: UIControl2D): number {
+    if (node instanceof Button2D) {
+      return new THREE.Color(node.backgroundColor).getHex();
+    }
+    if (node instanceof Slider2D) {
+      return new THREE.Color(node.trackBackgroundColor).getHex();
+    }
+    if (node instanceof Bar2D) {
+      return new THREE.Color(node.backBackgroundColor).getHex();
+    }
+    if (node instanceof InventorySlot2D) {
+      return new THREE.Color(node.backdropColor).getHex();
+    }
+    if (node instanceof Checkbox2D) {
+      return new THREE.Color(node.checked ? node.checkedColor : node.uncheckedColor).getHex();
+    }
+    return 0x96cbf6;
+  }
+
+  /**
+   * The skin texture URL the editor proxy should display. Button2D exposes
+   * per-state sprites; the proxy shows the effective-normal one (its explicit
+   * normal sprite, else the legacy single skin). Other controls use texturePath.
+   */
+  getUIControlSkinTextureUrl(node: UIControl2D): string | null {
+    if (node instanceof Button2D) {
+      // Effective-normal: localized state key (preview locale), else the explicit
+      // normal sprite, else the legacy single skin.
+      return node.getEffectiveStateTexturePath('normal') ?? node.texturePath ?? null;
+    }
+    // The controls below draw several sprites at runtime (fill, thumb, mark); the
+    // proxy is one quad, so it shows the BASE one — the box / track / trough —
+    // which is what an author positions and sizes against.
+    if (node instanceof Checkbox2D) {
+      const box = node.checked
+        ? (node.getSlotTexturePath('boxChecked') ?? node.getSlotTexturePath('box'))
+        : node.getSlotTexturePath('box');
+      return box ?? node.texturePath ?? null;
+    }
+    if (node instanceof Slider2D) {
+      return node.getSlotTexturePath('track') ?? node.texturePath ?? null;
+    }
+    if (node instanceof Bar2D) {
+      return node.getSlotTexturePath('trough') ?? node.texturePath ?? null;
+    }
+    return node.texturePath ?? null;
+  }
+
+  /**
+   * The sprites a control draws ON TOP of its base skin, and where they go.
+   *
+   * The proxy is one quad by construction, so it used to show only the base picture: a bar's
+   * trough with no fill, a slider with no thumb, a ticked checkbox with no tick. That is fine
+   * for positioning and wrong for judging a kit — the editor and play mode disagreed about the
+   * same scene. Each overlay is a quad of its own, in the control's local space (origin at the
+   * centre, y up), sized and placed exactly as the runtime node sizes its own.
+   *
+   * Returns `null` when this control has no overlay, so nothing is created for the common case.
+   */
+  getUIControlOverlaySpecs(node: UIControl2D): UIControlOverlaySpec[] | null {
+    const { width, height } = this.getUIControlDimensions(node);
+    if (node instanceof Checkbox2D) {
+      const mark = node.getSlotTexturePath('mark');
+      if (!mark || !node.checked) return null;
+      return [{ key: 'mark', texturePath: mark, x: 0, y: 0, width, height, border: null }];
+    }
+    if (node instanceof Bar2D) {
+      const fill = node.getSlotTexturePath('fill');
+      if (!fill) return null;
+      const ratio = clamp01(barFillRatio(node));
+      if (ratio <= 0) return null;
+      const fillWidth = width * ratio;
+      return [
+        {
+          key: 'fill',
+          texturePath: fill,
+          // Grows from the left edge: the quad's centre moves with its own width.
+          x: -width / 2 + fillWidth / 2,
+          y: 0,
+          width: fillWidth,
+          height,
+          border: node.sliceBorder,
+        },
+      ];
+    }
+    if (node instanceof Slider2D) {
+      const specs: UIControlOverlaySpec[] = [];
+      const ratio = clamp01(sliderRatio(node));
+      const fill = node.getSlotTexturePath('fill');
+      if (fill && ratio > 0) {
+        const fillWidth = width * ratio;
+        specs.push({
+          key: 'fill',
+          texturePath: fill,
+          x: -width / 2 + fillWidth / 2,
+          y: 0,
+          width: fillWidth,
+          height,
+          border: node.sliceBorder,
+        });
+      }
+      const thumb = node.getSlotTexturePath('thumb');
+      if (thumb) {
+        const size = sliderHandleSize(node, height);
+        specs.push({
+          key: 'thumb',
+          texturePath: thumb,
+          x: -width / 2 + width * ratio,
+          y: 0,
+          width: size,
+          height: size,
+          // A thumb is drawn at its own size and never stretched, so it is never sliced.
+          border: null,
+        });
+      }
+      return specs.length > 0 ? specs : null;
+    }
+    return null;
+  }
+
+  /**
+   * Bring a proxy's overlay quads in step with the node: create what appeared, drop what went
+   * away, and re-place what moved. Called from the viewport sync, so it runs on every change of
+   * `value` / `checked` as well as on a re-skin.
+   */
+  syncUIControlOverlays(node: UIControl2D, visualRoot: THREE.Group): void {
+    const specs = this.getUIControlOverlaySpecs(node) ?? [];
+    const existing =
+      (visualRoot.userData.overlayMeshes as Map<UIControlOverlaySpec['key'], THREE.Mesh>) ??
+      new Map<UIControlOverlaySpec['key'], THREE.Mesh>();
+    const wanted = new Set(specs.map(spec => spec.key));
+
+    for (const [key, mesh] of existing) {
+      if (wanted.has(key)) continue;
+      visualRoot.remove(mesh);
+      mesh.geometry.dispose();
+      if (mesh.material instanceof THREE.MeshBasicMaterial) {
+        mesh.material.map?.dispose();
+        mesh.material.dispose();
+      }
+      existing.delete(key);
+    }
+
+    for (const spec of specs) {
+      let mesh = existing.get(spec.key);
+      if (!mesh) {
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide,
+          transparent: true,
+          depthTest: false,
+        });
+        mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+        mesh.layers.set(LAYER_2D);
+        mesh.userData.isUIControl2DOverlay = true;
+        mesh.userData.nodeId = node.nodeId;
+        // Above the base skin of the SAME control. `assignRenderOrder` rebases every content
+        // mesh by (renderOrder, add order), so the overlay starts at the skin's CURRENT order —
+        // a fixed small number would sort under a skin that has already been rebased — and wins
+        // the tie by being added later; the label (added last, higher order) stays on top.
+        const controlMesh = visualRoot.userData.controlMesh as THREE.Object3D | undefined;
+        mesh.renderOrder = controlMesh?.renderOrder ?? 0;
+        visualRoot.add(mesh);
+        existing.set(spec.key, mesh);
+      }
+
+      mesh.position.set(spec.x, spec.y, 0);
+      mesh.scale.set(Math.max(spec.width, 0.0001), Math.max(spec.height, 0.0001), 1);
+
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      if (mesh.userData.texturePath !== spec.texturePath) {
+        mesh.userData.texturePath = spec.texturePath;
+        material.map = null;
+        material.needsUpdate = true;
+        this.loadOverlayTexture(mesh, material, spec.texturePath);
+      }
+    }
+
+    visualRoot.userData.overlayMeshes = existing;
+  }
+
+  /**
+   * Read one overlay sprite through the project's blob seam — the same route the base skin
+   * takes, so an editor-only `res://` path resolves identically. A stale load (the node was
+   * re-skinned while the read was in flight) is dropped rather than painted.
+   */
+  private loadOverlayTexture(
+    mesh: THREE.Mesh,
+    material: THREE.MeshBasicMaterial,
+    texturePath: string
+  ): void {
+    void (async () => {
+      try {
+        const blob = await this.deps.readBlob(texturePath);
+        const blobUrl = URL.createObjectURL(blob);
+        new THREE.TextureLoader().load(
+          blobUrl,
+          texture => {
+            try {
+              if (mesh.userData.texturePath !== texturePath) {
+                texture.dispose();
+                return;
+              }
+              configureSpriteTexture(texture);
+              material.map = texture;
+              material.color.setHex(0xffffff);
+              material.needsUpdate = true;
+              // An async load marks nothing dirty; without this the overlay would only appear
+              // on the next 500 ms heartbeat.
+              this.deps.requestRender();
+            } finally {
+              URL.revokeObjectURL(blobUrl);
+            }
+          },
+          undefined,
+          () => URL.revokeObjectURL(blobUrl)
+        );
+      } catch {
+        // No sprite: the control keeps its base skin, which is what it showed before.
+      }
+    })();
+  }
+
+  applyTextureTo2DMaterial(
+    node: UIControl2D,
+    material: THREE.MeshBasicMaterial,
+    visualRoot?: THREE.Group
+  ): void {
+    const texturePath = this.getUIControlSkinTextureUrl(node);
+    if (!texturePath) {
+      return;
+    }
+
+    const textureLoader = new THREE.TextureLoader();
+
+    /**
+     * Latest-wins guard plus the two things a 9-slice skin needs once its pixels
+     * land: the natural size (9-slice UVs are anchored in SOURCE pixels, so the
+     * patch can only be cut correctly after the image resolves) and an explicit
+     * repaint — an async load marks nothing dirty, so without it the skin would
+     * only appear on the next 500 ms heartbeat.
+     */
+    const onTextureReady = (texture: THREE.Texture): void => {
+      if (visualRoot && this.uiControl2DVisuals.get(node.nodeId) !== visualRoot) {
+        texture.dispose();
+        return;
+      }
+      configureSpriteTexture(texture);
+      material.map = texture;
+      material.color.set(0xffffff);
+      material.transparent = true;
+      material.needsUpdate = true;
+
+      if (visualRoot) {
+        const image = texture.image as
+          | { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number }
+          | undefined;
+        const width = image?.naturalWidth ?? image?.width ?? 0;
+        const height = image?.naturalHeight ?? image?.height ?? 0;
+        if (width && height) {
+          visualRoot.userData.skinTextureWidth = width;
+          visualRoot.userData.skinTextureHeight = height;
+          this.applyUIControlSkinGeometry(node, visualRoot);
+        }
+      }
+      this.deps.requestRender();
+    };
+
+    void (async () => {
+      try {
+        const blob = await this.deps.readBlob(texturePath);
+        const blobUrl = URL.createObjectURL(blob);
+
+        textureLoader.load(
+          blobUrl,
+          texture => {
+            try {
+              onTextureReady(texture);
+            } finally {
+              URL.revokeObjectURL(blobUrl);
+            }
+          },
+          undefined,
+          () => {
+            URL.revokeObjectURL(blobUrl);
+          }
+        );
+      } catch {
+        const schemeMatch = /^([a-z]+[a-z0-9+.-]*):\/\//i.exec(texturePath);
+        const scheme = schemeMatch ? schemeMatch[1].toLowerCase() : '';
+        if (scheme === 'http' || scheme === 'https' || scheme === '') {
+          try {
+            textureLoader.load(texturePath, texture => {
+              onTextureReady(texture);
+            });
+          } catch {
+            // Keep flat color fallback
+          }
+        }
+      }
+    })();
+  }
+
+  /**
+   * Mirror of the runtime Label2D box sizing: a fixed width wraps the text,
+   * zero sizes auto-fit the laid-out lines. Keeps the editor proxy
+   * pixel-consistent with what play mode renders.
+   */
+  private measureLabel2DBox(node: Label2D): { width: number; height: number; layout: LabelLayout } {
+    const fontSize = Math.max(1, node.labelFontSize || 16);
+    this.labelMeasureCtx ??= document.createElement('canvas').getContext('2d');
+    const measureCtx = this.labelMeasureCtx;
+    if (measureCtx) {
+      // Same font AND tracking as the paint, or the wrap is measured for a narrower text.
+      applyTextStyle(measureCtx, {
+        fontSize,
+        fontFamily: node.labelFontFamily,
+        fontWeight: node.labelFontWeight,
+        letterSpacing: node.labelLetterSpacing,
+      });
+    }
+    const layout = layoutLabelText(
+      node.getDisplayText(),
+      line => (measureCtx ? measureCtx.measureText(line).width : line.length * fontSize * 0.6),
+      { fontSize, maxWidth: node.width > 0 ? node.width : 0 }
+    );
+    return {
+      width: node.width > 0 ? node.width : Math.ceil(layout.textWidth) + LABEL_AUTO_SIZE_BLEED,
+      height: node.height > 0 ? node.height : Math.ceil(layout.textHeight) + LABEL_AUTO_SIZE_BLEED,
+      layout,
+    };
+  }
+
+  private createLabel2DLabelMesh(node: Label2D): THREE.Mesh {
+    const dprRaw = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const dpr = Math.max(1, Math.min(3, dprRaw));
+
+    const { width: boxWidth, height: boxHeight, layout } = this.measureLabel2DBox(node);
+    // Mirror of the runtime's decoration bleed: glow/outline grow the canvas and
+    // the mesh, never the authored box the text aligns to.
+    const fontSize = Math.max(1, node.labelFontSize || 16);
+    const pad = labelDecorationPadding(fontSize, node.glowStrength ?? 0, node.outlineWidth ?? 0);
+    const width = boxWidth + pad * 2;
+    const height = boxHeight + pad * 2;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      const fallbackGeometry = new THREE.PlaneGeometry(0.1, 0.1);
+      const fallbackMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+      fallbackMaterial.userData.baseOpacity = 0;
+      return new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    paintLabelCanvas(ctx, {
+      layout,
+      fontFamily: node.labelFontFamily,
+      fontSize,
+      color: node.labelColor,
+      align: node.labelAlign,
+      vAlign: node.labelVAlign,
+      width,
+      height,
+      paddingX: pad,
+      paddingY: pad,
+      glowColor: node.glowColor,
+      glowStrength: node.glowStrength ?? 0,
+      outlineColor: node.outlineColor,
+      outlineWidth: node.outlineWidth ?? 0,
+      fontWeight: node.labelFontWeight,
+      shadowColor: node.labelShadowColor,
+      shadowOffsetX: node.labelShadowOffsetX,
+      shadowOffsetY: node.labelShadowOffsetY,
+      letterSpacing: node.labelLetterSpacing,
+    });
+
+    const texture = new THREE.CanvasTexture(canvas);
+    configureSpriteTexture(texture);
+    texture.needsUpdate = true;
+
+    const geometry = new THREE.PlaneGeometry(width, height);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+    material.userData.baseOpacity = 1;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.isUIControlLabel = true;
+    mesh.renderOrder = 1002;
+    mesh.position.z = 0.5;
+    mesh.layers.set(LAYER_2D);
+    return mesh;
+  }
+
+  private createUIControlLabelMesh(node: UIControl2D): THREE.Mesh {
+    if (node instanceof Label2D) {
+      return this.createLabel2DLabelMesh(node);
+    }
+
+    const dprRaw = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const dpr = Math.max(1, Math.min(3, dprRaw));
+
+    const paddingX = 12;
+    const paddingY = 8;
+    const fontSize = Math.max(8, node.labelFontSize || 16);
+
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    if (!measureCtx) {
+      const fallbackGeometry = new THREE.PlaneGeometry(0.1, 0.1);
+      const fallbackMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+      fallbackMaterial.userData.baseOpacity = 0;
+      return new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+    }
+    const textStyle = {
+      fontSize,
+      fontFamily: node.labelFontFamily,
+      fontWeight: node.labelFontWeight,
+      letterSpacing: node.labelLetterSpacing,
+    };
+    applyTextStyle(measureCtx, textStyle);
+    const displayText = node.getDisplayText();
+    const measured = measureCtx.measureText(displayText || ' ');
+    const decoration = styledTextPadding({
+      outlineWidth: node.labelOutlineWidth,
+      shadowColor: node.labelShadowColor,
+      shadowOffsetX: node.labelShadowOffsetX,
+      shadowOffsetY: node.labelShadowOffsetY,
+    });
+    const logicalWidth = Math.max(32, Math.ceil(measured.width + (paddingX + decoration) * 2));
+    const logicalHeight = Math.max(20, Math.ceil(fontSize + (paddingY + decoration) * 2));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(logicalWidth * dpr));
+    canvas.height = Math.max(1, Math.round(logicalHeight * dpr));
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      const fallbackGeometry = new THREE.PlaneGeometry(0.1, 0.1);
+      const fallbackMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+      fallbackMaterial.userData.baseOpacity = 0;
+      return new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+
+    ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+    ctx.fillStyle = node.labelColor;
+    applyTextStyle(ctx, textStyle);
+    ctx.textBaseline = 'middle';
+
+    let x = logicalWidth / 2;
+    if (node.labelAlign === 'left') {
+      ctx.textAlign = 'left';
+      x = paddingX;
+    } else if (node.labelAlign === 'right') {
+      ctx.textAlign = 'right';
+      x = logicalWidth - paddingX;
+    } else {
+      ctx.textAlign = 'center';
+    }
+
+    drawStyledText(ctx, displayText, x, logicalHeight / 2, {
+      color: node.labelColor,
+      outlineWidth: node.labelOutlineWidth,
+      outlineColor: node.labelOutlineColor,
+      shadowColor: node.labelShadowColor,
+      shadowOffsetX: node.labelShadowOffsetX,
+      shadowOffsetY: node.labelShadowOffsetY,
+    });
+
+    const texture = new THREE.CanvasTexture(canvas);
+    configureSpriteTexture(texture);
+    texture.needsUpdate = true;
+
+    const geometry = new THREE.PlaneGeometry(logicalWidth, logicalHeight);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+    material.userData.baseOpacity = 1;
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.isUIControlLabel = true;
+    mesh.renderOrder = 1002;
+    mesh.position.z = 0.5;
+    // A checkbox reads as "[box] Label": lay the label out to the right of the
+    // box rather than centered on it (matches the runtime Checkbox2D layout).
+    if (node instanceof Checkbox2D) {
+      mesh.position.x = node.size / 2 + logicalWidth / 2 + 6;
+    }
+    mesh.layers.set(LAYER_2D);
+    return mesh;
+  }
+
+  updateUIControlLabelVisual(visualRoot: THREE.Group, node: UIControl2D): void {
+    const existingLabel = visualRoot.children.find(child =>
+      Boolean((child as THREE.Object3D).userData?.isUIControlLabel)
+    );
+
+    if (node.getDisplayText().trim().length === 0) {
+      if (existingLabel) {
+        visualRoot.remove(existingLabel);
+        this.deps.disposeObject3D(existingLabel);
+      }
+      return;
+    }
+
+    if (existingLabel) {
+      visualRoot.remove(existingLabel);
+      this.deps.disposeObject3D(existingLabel);
+    }
+
+    const labelMesh = this.createUIControlLabelMesh(node);
+    // Never below the skin or its overlays, however far `assignRenderOrder` has rebased them.
+    const controlMesh = visualRoot.userData.controlMesh as THREE.Object3D | undefined;
+    labelMesh.renderOrder = Math.max(labelMesh.renderOrder, (controlMesh?.renderOrder ?? 0) + 1);
+    visualRoot.add(labelMesh);
+  }
+
+  private getEffective2DOpacity(node: Node2D): number {
+    const effective = node.computedOpacity;
+    const authored = Number.isFinite(effective) ? Math.max(0, Math.min(1, effective)) : 1;
+    // Peek solo fades the branches the author is NOT looking at rather than hiding them, which is
+    // what makes solo recoverable — "everything vanished" stops being a reachable state. The fade
+    // is an editor-view multiplier only: `Node2D.opacity` is untouched, so nothing about it is
+    // saved or shipped.
+    return isPeekDimmedInTree(node) ? authored * PEEK_DIM_OPACITY : authored;
+  }
+
+  /**
+   * Mirrors the runtime's per-node material state (opacity + blend mode) onto
+   * the editor's proxy visuals. The viewport does NOT render the runtime nodes,
+   * so anything `Node2D` applies to its own materials has to be reproduced here
+   * or the canvas disagrees with play mode.
+   */
+  apply2DVisualMaterialState(node: Node2D, visualRoot: THREE.Object3D): void {
+    const nodeOpacity = this.getEffective2DOpacity(node);
+    const blendMode = normalizeBlendMode2D(node.blendMode);
+
+    visualRoot.traverse(obj => {
+      const applyToMaterial = (material: THREE.Material): void => {
+        if (
+          !(material instanceof THREE.MeshBasicMaterial) &&
+          !(material instanceof THREE.LineBasicMaterial)
+        ) {
+          return;
+        }
+
+        const baseOpacityRaw = material.userData.baseOpacity;
+        const baseOpacity =
+          typeof baseOpacityRaw === 'number' && Number.isFinite(baseOpacityRaw)
+            ? Math.max(0, Math.min(1, baseOpacityRaw))
+            : 1;
+
+        if (material.userData.originalTransparent === undefined) {
+          material.userData.originalTransparent = material.transparent;
+        }
+
+        material.opacity = baseOpacity * nodeOpacity;
+        material.transparent =
+          material.userData.originalTransparent ||
+          material.opacity < 1 ||
+          baseOpacity < 1 ||
+          blendMode !== 'normal';
+        // Only touch `blending` for a material this pass owns. Spine's batch
+        // meshes carry per-slot blend modes assigned by the spine runtime, and
+        // stamping NormalBlending over them would flatten an additive slot.
+        if (blendMode !== 'normal' || material.userData.pix3BlendModeApplied === true) {
+          material.userData.pix3BlendModeApplied = blendMode !== 'normal';
+          material.blending = blendingForMode2D(blendMode);
+        }
+        material.needsUpdate = true;
+      };
+
+      if (
+        obj instanceof THREE.Mesh ||
+        obj instanceof THREE.Line ||
+        obj instanceof THREE.LineSegments
+      ) {
+        if (obj.material instanceof THREE.Material) {
+          applyToMaterial(obj.material);
+        } else if (Array.isArray(obj.material)) {
+          for (const material of obj.material) {
+            applyToMaterial(material);
+          }
+        }
+      }
+    });
+  }
+}

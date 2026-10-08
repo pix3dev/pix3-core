@@ -1,0 +1,350 @@
+pix3-create-project-dialog {
+  display: contents;
+}
+
+pix3-create-project-dialog .create-project-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--pix3-z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+}
+
+pix3-create-project-dialog .create-project-content {
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  padding: 28px;
+  border-radius: var(--radius-3);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  box-shadow: var(--shadow-float);
+}
+
+pix3-create-project-dialog .create-project-content--wide {
+  width: min(100%, 880px);
+}
+
+pix3-create-project-dialog .create-project-title {
+  margin: 0 0 18px;
+  font-size: 1.4rem;
+}
+
+pix3-create-project-dialog .template-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  max-height: min(56vh, 560px);
+  overflow-y: auto;
+  padding: 2px;
+}
+
+pix3-create-project-dialog .template-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+pix3-create-project-dialog .template-card:hover {
+  border-color: var(--line-2);
+  background: var(--bg-3);
+}
+
+pix3-create-project-dialog .template-card--selected {
+  border-color: var(--accent);
+}
+
+pix3-create-project-dialog .template-card__cover {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+pix3-create-project-dialog .template-card__cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+pix3-create-project-dialog .template-card__cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-weight: 700;
+  color: var(--fg-2);
+}
+
+pix3-create-project-dialog .template-card__body {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px 14px;
+}
+
+pix3-create-project-dialog .template-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+pix3-create-project-dialog .template-card__badge {
+  padding: 2px 7px;
+  border-radius: var(--radius-1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+pix3-create-project-dialog .template-card__description {
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--fg-2);
+}
+
+pix3-create-project-dialog .selected-template {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+
+pix3-create-project-dialog .selected-template__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+pix3-create-project-dialog .selected-template__value {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+pix3-create-project-dialog .selected-template__change {
+  padding: 5px 10px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+pix3-create-project-dialog .selected-template__change:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-3);
+}
+
+pix3-create-project-dialog .settings-form {
+  display: grid;
+  gap: 16px;
+}
+
+pix3-create-project-dialog .settings-field {
+  display: grid;
+  gap: 8px;
+}
+
+pix3-create-project-dialog .settings-field label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+pix3-create-project-dialog .settings-field input,
+pix3-create-project-dialog .settings-field select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  outline: none;
+}
+
+pix3-create-project-dialog .settings-field input:focus,
+pix3-create-project-dialog .settings-field select:focus {
+  border-color: var(--accent);
+}
+
+pix3-create-project-dialog .settings-grid-2col {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+pix3-create-project-dialog .backend-toggle {
+  display: inline-flex;
+  gap: 8px;
+}
+
+pix3-create-project-dialog .backend-option {
+  box-sizing: border-box;
+  min-width: 110px;
+  padding: 10px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+pix3-create-project-dialog .backend-option:hover {
+  border-color: var(--line-2);
+  background: var(--bg-3);
+}
+
+pix3-create-project-dialog .backend-option--active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+pix3-create-project-dialog .backend-copy {
+  color: var(--fg-2);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+pix3-create-project-dialog .backend-copy p {
+  margin: 0;
+}
+
+pix3-create-project-dialog .cloud-auth-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+}
+
+pix3-create-project-dialog .cloud-auth-status__label {
+  color: var(--fg-1);
+  font-size: 0.92rem;
+}
+
+pix3-create-project-dialog .cloud-auth-status__button {
+  flex-shrink: 0;
+  padding: 9px 14px;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+pix3-create-project-dialog .cloud-auth-status__button:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+pix3-create-project-dialog .cloud-auth-status__hint {
+  color: var(--accent);
+  font-size: 0.88rem;
+}
+
+pix3-create-project-dialog .create-project-error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+pix3-create-project-dialog .create-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+pix3-create-project-dialog .btn-cancel,
+pix3-create-project-dialog .btn-confirm {
+  box-sizing: border-box;
+  min-width: 120px;
+  padding: 11px 16px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+pix3-create-project-dialog .btn-cancel {
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+pix3-create-project-dialog .btn-confirm {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+pix3-create-project-dialog .btn-confirm:hover:not([disabled]) {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+pix3-create-project-dialog .btn-confirm[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  pix3-create-project-dialog .create-project-content {
+    padding: 20px;
+  }
+
+  pix3-create-project-dialog .settings-grid-2col {
+    grid-template-columns: 1fr;
+  }
+
+  pix3-create-project-dialog .create-project-actions {
+    flex-direction: column-reverse;
+  }
+
+  pix3-create-project-dialog .btn-cancel,
+  pix3-create-project-dialog .btn-confirm {
+    width: 100%;
+  }
+
+  pix3-create-project-dialog .cloud-auth-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

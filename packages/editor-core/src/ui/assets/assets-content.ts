@@ -1,0 +1,1374 @@
+import { ComponentBase, customElement, html, inject, state } from '@/fw';
+import {
+  AssetFileActivationService,
+  type AssetActivation,
+} from '@/services/assets/AssetFileActivationService';
+import {
+  AssetsPreviewService,
+  type AnimationPreviewData,
+  type AssetPreviewItem,
+  type AssetsPreviewSnapshot,
+} from '@/services/assets/AssetsPreviewService';
+import { IconService, IconSize } from '@/services/editor/IconService';
+import { ProjectService } from '@/services/project/ProjectService';
+import {
+  ASSET_PATH_LIST_MIME,
+  ASSET_PATH_MIME,
+  ASSET_RESOURCE_LIST_MIME,
+  ASSET_RESOURCE_MIME,
+  getDraggedAssetPaths,
+  getLibraryItemDragData,
+  hasAssetDragData,
+  hasGenerationDragData,
+  hasLibraryItemDragData,
+  toProjectResourcePath,
+} from '@/ui/shared/asset-drag-drop';
+import { EditorTabService } from '@/services/editor/EditorTabService';
+import { GeneratedAssetDropService } from '@/services/image-gen/GeneratedAssetDropService';
+import { LibraryInsertService } from '@/services/library/LibraryInsertService';
+import { DropdownPortal } from '@/ui/shared/dropdown-portal';
+import { appState } from '@/state';
+import { subscribe } from 'valtio/vanilla';
+import './assets-content.ts.css';
+
+/** Content-pane layout mode. */
+type ContentView = 'grid' | 'list';
+
+const MIN_THUMBNAIL_SIZE = 56;
+const MAX_THUMBNAIL_SIZE = 160;
+const DEFAULT_THUMBNAIL_SIZE = 104;
+
+function clampThumbnailSize(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_THUMBNAIL_SIZE;
+  }
+  return Math.min(MAX_THUMBNAIL_SIZE, Math.max(MIN_THUMBNAIL_SIZE, Math.round(value)));
+}
+
+@customElement('pix3-assets-content')
+export class AssetsContent extends ComponentBase {
+  @inject(AssetsPreviewService)
+  private readonly assetsPreviewService!: AssetsPreviewService;
+
+  @inject(AssetFileActivationService)
+  private readonly assetFileActivationService!: AssetFileActivationService;
+
+  @inject(IconService)
+  private readonly iconService!: IconService;
+
+  @inject(EditorTabService)
+  private readonly editorTabService!: EditorTabService;
+
+  @inject(GeneratedAssetDropService)
+  private readonly generatedAssetDropService!: GeneratedAssetDropService;
+
+  @inject(LibraryInsertService)
+  private readonly libraryInsertService!: LibraryInsertService;
+
+  @inject(ProjectService)
+  private readonly projectService!: ProjectService;
+
+  @state()
+  private snapshot: AssetsPreviewSnapshot = {
+    selectedFolderPath: null,
+    displayPath: 'res://',
+    isLoading: false,
+    errorMessage: null,
+    selectedItemPath: null,
+    selectedItem: null,
+    items: [],
+    folderItemCount: null,
+    folderSizeBytes: null,
+  };
+
+  @state()
+  private contextMenu: { item: AssetPreviewItem; x: number; y: number } | null = null;
+
+  @state()
+  private contentView: ContentView = 'grid';
+
+  /** Managed sprite folders render as one sprite card (design §8.5). */
+  @state()
+  private collapseSpriteFolders = true;
+
+  @state()
+  private thumbnailSize = DEFAULT_THUMBNAIL_SIZE;
+
+  @state()
+  private isGenerationDropActive = false;
+
+  /**
+   * Folder path (or `.` for a breadcrumb pointing at the project root) currently hovered
+   * by an in-editor asset drag; dropping there moves the dragged items into it.
+   */
+  @state()
+  private dropTargetPath: string | null = null;
+
+  /** Path of the audio asset currently previewing (null = none). */
+  @state()
+  private playingAudioPath: string | null = null;
+
+  /** Playhead of the running preview, seconds (drives the progress bar + clock). */
+  @state()
+  private playbackSeconds = 0;
+
+  /** Duration of the running preview, seconds (0 until known). */
+  @state()
+  private playbackDuration = 0;
+
+  /** Path of the flipbook asset currently playing (null = none). */
+  @state()
+  private playingAnimationPath: string | null = null;
+
+  /** Frame shown by the running flipbook preview. */
+  @state()
+  private animationFrameIndex = 0;
+
+  /** Timer of the running flipbook preview; one clip plays at a time. */
+  private animationTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Ping-pong direction of the running flipbook preview (+1 forward, -1 back). */
+  private animationStep = 1;
+
+  private disposePreviewSubscription?: () => void;
+  private disposeProjectSubscription?: () => void;
+  private lastProjectId: string | null = null;
+  private selectedPaths = new Set<string>();
+  /** Focused item: the last item clicked, whatever the modifier (drives Space preview + Inspector). */
+  private lastSelectedPath: string | null = null;
+  /**
+   * Fixed end of a shift-range: the last item picked *without* Shift. Kept separate from
+   * {@link lastSelectedPath} so repeated shift-clicks re-stretch the same range instead of
+   * walking the anchor along with each click.
+   */
+  private selectionAnchorPath: string | null = null;
+  /** Last service-driven selected item we mirrored, so unrelated snapshot updates don't clobber local selection. */
+  private lastSyncedSelectedItemPath: string | null | undefined = undefined;
+  /** True while we are pushing our own selection into the service (see {@link syncSelectionToService}). */
+  private isPushingSelection = false;
+  /** Shared element for asset-browser audio preview; reused across items. */
+  private audioPreviewEl: HTMLAudioElement | null = null;
+  private lastPreviewFolderPath: string | null = null;
+  private readonly contextMenuPortal = new DropdownPortal({ minWidth: '13rem' });
+  private readonly onGlobalPointerDown = (event: PointerEvent): void => {
+    if (this.contextMenu && !this.contextMenuPortal.contains(event.target as Node)) {
+      this.closeContextMenu();
+    }
+  };
+  private readonly onGlobalKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      this.closeContextMenu();
+      return;
+    }
+    if (event.key === ' ' || event.key === 'Spacebar') {
+      this.onSpaceKey(event);
+    }
+  };
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.disposePreviewSubscription = this.assetsPreviewService.subscribe(snapshot => {
+      // Stop preview when the folder changes (its blob URLs get revoked) or the
+      // playing item disappears from the listing.
+      if (snapshot.selectedFolderPath !== this.lastPreviewFolderPath) {
+        this.lastPreviewFolderPath = snapshot.selectedFolderPath;
+        this.stopAudioPreview();
+        this.stopAnimationPreview();
+      } else {
+        if (
+          this.playingAudioPath &&
+          !snapshot.items.some(entry => entry.path === this.playingAudioPath)
+        ) {
+          this.stopAudioPreview();
+        }
+        if (
+          this.playingAnimationPath &&
+          !snapshot.items.some(entry => entry.path === this.playingAnimationPath)
+        ) {
+          this.stopAnimationPreview();
+        }
+      }
+      // Mirror an externally-driven selection (reveal from Scene Tree / selection in Asset
+      // Browser) into the local highlight set. Only react when the service's selected item
+      // actually changes, so local multi-selection made inside this panel isn't clobbered by
+      // unrelated snapshot updates (e.g. thumbnails becoming ready).
+      if (this.isPushingSelection) {
+        // Our own `selectItem` echo: record it so the next external change is still
+        // detected, but never collapse the multi-selection we just built locally.
+        this.lastSyncedSelectedItemPath = snapshot.selectedItemPath;
+      } else if (snapshot.selectedItemPath !== this.lastSyncedSelectedItemPath) {
+        this.lastSyncedSelectedItemPath = snapshot.selectedItemPath;
+        if (snapshot.selectedItemPath) {
+          this.selectedPaths = new Set([snapshot.selectedItemPath]);
+          this.lastSelectedPath = snapshot.selectedItemPath;
+          this.selectionAnchorPath = snapshot.selectedItemPath;
+        } else {
+          this.selectedPaths = new Set();
+          this.lastSelectedPath = null;
+          this.selectionAnchorPath = null;
+        }
+      }
+      this.snapshot = snapshot;
+      this.requestUpdate();
+    });
+    window.addEventListener('pointerdown', this.onGlobalPointerDown, true);
+    window.addEventListener('keydown', this.onGlobalKeyDown);
+
+    // Restore persisted view/thumbnail-size prefs and re-restore on project switch.
+    this.restoreContentPrefs();
+    this.lastProjectId = appState.project.id;
+    this.disposeProjectSubscription = subscribe(appState.project, () => {
+      if (appState.project.id !== this.lastProjectId) {
+        this.lastProjectId = appState.project.id;
+        this.restoreContentPrefs();
+      }
+    });
+  }
+
+  disconnectedCallback(): void {
+    this.disposePreviewSubscription?.();
+    this.disposePreviewSubscription = undefined;
+    this.disposeProjectSubscription?.();
+    this.disposeProjectSubscription = undefined;
+    window.removeEventListener('pointerdown', this.onGlobalPointerDown, true);
+    window.removeEventListener('keydown', this.onGlobalKeyDown);
+    this.contextMenuPortal.close();
+    this.stopAudioPreview();
+    this.stopAnimationPreview();
+    this.audioPreviewEl = null;
+    super.disconnectedCallback();
+  }
+
+  protected updated(): void {
+    if (this.contextMenu && !this.contextMenuPortal.isOpen()) {
+      const menu = this.querySelector<HTMLElement>('.assets-preview-context-menu');
+      if (menu) {
+        this.contextMenuPortal.openAt(this.contextMenu.x, this.contextMenu.y, menu);
+      }
+    } else if (!this.contextMenu && this.contextMenuPortal.isOpen()) {
+      this.contextMenuPortal.close();
+    }
+  }
+
+  /** Current grid multi-selection as an array (used by the Phase 4 toolbar). */
+  getSelectedPaths(): string[] {
+    return Array.from(this.selectedPaths);
+  }
+
+  private restoreContentPrefs(): void {
+    const persisted = this.projectService.loadAssetBrowserState();
+    const thumbnailSize = clampThumbnailSize(
+      persisted?.thumbnailSize ?? appState.project.assetsThumbnailSize
+    );
+    const contentView: ContentView =
+      (persisted?.contentView ?? appState.project.assetsContentView) === 'list' ? 'list' : 'grid';
+    this.collapseSpriteFolders = persisted?.collapseSpriteFolders ?? true;
+    void this.assetsPreviewService.setCollapseSpriteFolders(this.collapseSpriteFolders);
+    this.thumbnailSize = thumbnailSize;
+    this.contentView = contentView;
+    appState.project.assetsThumbnailSize = thumbnailSize;
+    appState.project.assetsContentView = contentView;
+    this.style.setProperty('--assets-thumb-size', `${thumbnailSize}px`);
+  }
+
+  private setContentView(view: ContentView): void {
+    if (this.contentView === view) {
+      return;
+    }
+    this.contentView = view;
+    appState.project.assetsContentView = view;
+    this.projectService.saveAssetBrowserState({ contentView: view });
+  }
+
+  private onToggleCollapseSpriteFolders = (): void => {
+    this.collapseSpriteFolders = !this.collapseSpriteFolders;
+    void this.assetsPreviewService.setCollapseSpriteFolders(this.collapseSpriteFolders);
+    this.projectService.saveAssetBrowserState({
+      collapseSpriteFolders: this.collapseSpriteFolders,
+    });
+  };
+
+  private onThumbnailSizeInput(event: Event): void {
+    const value = clampThumbnailSize(Number((event.target as HTMLInputElement).value));
+    this.thumbnailSize = value;
+    this.style.setProperty('--assets-thumb-size', `${value}px`);
+    appState.project.assetsThumbnailSize = value;
+    this.projectService.saveAssetBrowserState({ thumbnailSize: value });
+  }
+
+  protected render() {
+    return html`
+      ${this.renderHeader()}
+      <div
+        class="preview-root ${this.isGenerationDropActive ? 'is-generation-drop' : ''}"
+        @dragover=${this.onGenerationDragOver}
+        @dragleave=${this.onGenerationDragLeave}
+        @drop=${this.onGenerationDrop}
+      >
+        ${this.isGenerationDropActive
+          ? html`<div class="generation-drop-overlay">
+              Drop to save into ${this.snapshot.displayPath}
+            </div>`
+          : null}
+        ${this.renderBody()}
+      </div>
+      ${this.renderContextMenu()}
+    `;
+  }
+
+  private renderBody() {
+    if (this.snapshot.isLoading) {
+      return html`<p class="preview-status">Loading folder preview...</p>`;
+    }
+    if (this.snapshot.errorMessage) {
+      return html`<p class="preview-status preview-error">${this.snapshot.errorMessage}</p>`;
+    }
+    if (this.snapshot.items.length === 0) {
+      return html`<p class="preview-status">No files found in this folder.</p>`;
+    }
+    return this.contentView === 'list'
+      ? html`<div class="assets-list">
+          ${this.snapshot.items.map(item => this.renderListRow(item))}
+        </div>`
+      : html`<div class="assets-preview-grid">
+          ${this.snapshot.items.map(item => this.renderItem(item))}
+        </div>`;
+  }
+
+  private renderHeader() {
+    return html`
+      <div class="assets-content-header">
+        ${this.renderBreadcrumbs()} ${this.renderStats()}
+        <span class="assets-header-spacer"></span>
+        ${this.renderViewControls()}
+      </div>
+    `;
+  }
+
+  private renderBreadcrumbs() {
+    const rootLabel = appState.project.projectName ?? 'Assets';
+    const folderPath = this.snapshot.selectedFolderPath;
+    const parts =
+      folderPath && folderPath !== '.' ? folderPath.split('/').filter(part => part.length > 0) : [];
+    const isRootActive = parts.length === 0;
+    return html`
+      <nav class="assets-breadcrumbs" aria-label="Folder path">
+        <button
+          type="button"
+          class="crumb ${isRootActive ? 'is-active' : ''} ${this.dropTargetPath === '.'
+            ? 'is-drop-target'
+            : ''}"
+          ?disabled=${isRootActive}
+          @click=${() => this.onBreadcrumbClick('.')}
+          @dragover=${(event: DragEvent) => this.onMoveDragOver(event, '.')}
+          @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, '.')}
+          @drop=${(event: DragEvent) => this.onMoveDrop(event, '.', rootLabel)}
+        >
+          ${rootLabel}
+        </button>
+        ${parts.map((part, index) => {
+          const path = parts.slice(0, index + 1).join('/');
+          const isLast = index === parts.length - 1;
+          return html`
+            <span class="crumb-sep" aria-hidden="true"
+              >${this.iconService.getIcon('chevron-right', IconSize.SMALL)}</span
+            >
+            <button
+              type="button"
+              class="crumb ${isLast ? 'is-active' : ''} ${this.dropTargetPath === path
+                ? 'is-drop-target'
+                : ''}"
+              ?disabled=${isLast}
+              @click=${() => this.onBreadcrumbClick(path)}
+              @dragover=${(event: DragEvent) => this.onMoveDragOver(event, path)}
+              @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, path)}
+              @drop=${(event: DragEvent) => this.onMoveDrop(event, path, part)}
+            >
+              ${part}
+            </button>
+          `;
+        })}
+      </nav>
+    `;
+  }
+
+  private renderStats() {
+    const { folderItemCount, folderSizeBytes } = this.snapshot;
+    if (folderItemCount === null) {
+      return html`<span class="assets-folder-stats is-placeholder" aria-hidden="true"></span>`;
+    }
+    const itemLabel = `${folderItemCount} ${folderItemCount === 1 ? 'item' : 'items'}`;
+    const sizeLabel = folderSizeBytes !== null ? ` · ${this.formatFileSize(folderSizeBytes)}` : '';
+    return html`<span class="assets-folder-stats">${itemLabel}${sizeLabel}</span>`;
+  }
+
+  private renderViewControls() {
+    return html`
+      <div class="assets-view-controls">
+        ${this.contentView === 'grid'
+          ? html`<input
+              class="assets-thumb-slider"
+              type="range"
+              min=${MIN_THUMBNAIL_SIZE}
+              max=${MAX_THUMBNAIL_SIZE}
+              step="8"
+              aria-label="Thumbnail size"
+              .value=${String(this.thumbnailSize)}
+              @input=${this.onThumbnailSizeInput}
+            />`
+          : null}
+        <button
+          type="button"
+          class="assets-view-btn ${this.collapseSpriteFolders ? 'is-active' : ''}"
+          aria-label="Collapse sprite folders"
+          title=${this.collapseSpriteFolders
+            ? 'Sprite folders shown as single sprites — click to show their files'
+            : 'Sprite folders shown as folders — click to collapse them into sprites'}
+          aria-pressed=${this.collapseSpriteFolders}
+          @click=${this.onToggleCollapseSpriteFolders}
+        >
+          ${this.iconService.getIcon('film', IconSize.SMALL)}
+        </button>
+        <button
+          type="button"
+          class="assets-view-btn ${this.contentView === 'grid' ? 'is-active' : ''}"
+          aria-label="Grid view"
+          aria-pressed=${this.contentView === 'grid'}
+          @click=${() => this.setContentView('grid')}
+        >
+          ${this.iconService.getIcon('grid', IconSize.SMALL)}
+        </button>
+        <button
+          type="button"
+          class="assets-view-btn ${this.contentView === 'list' ? 'is-active' : ''}"
+          aria-label="List view"
+          aria-pressed=${this.contentView === 'list'}
+          @click=${() => this.setContentView('list')}
+        >
+          ${this.iconService.getIcon('list', IconSize.SMALL)}
+        </button>
+      </div>
+    `;
+  }
+
+  private onBreadcrumbClick(path: string): void {
+    this.dispatchEvent(
+      new CustomEvent('folder-navigate', { detail: { path }, bubbles: true, composed: true })
+    );
+  }
+
+  private renderContextMenu() {
+    // The menu element is ALWAYS present in the template (gated by `hidden`) so its
+    // ChildPart stays stable. DropdownPortal physically moves this node to document.body
+    // while open and restores it on close; if Lit ever rendered it as null the portal
+    // would orphan the detached node at the bottom of the panel on close.
+    const item = this.contextMenu?.item ?? null;
+    const isImage = !!item && item.kind === 'file' && item.previewType === 'image';
+    return html`
+      <div
+        class="assets-preview-context-menu"
+        role="menu"
+        ?hidden=${!this.contextMenu}
+        @click=${(event: Event) => event.stopPropagation()}
+      >
+        ${item
+          ? html`
+              ${isImage
+                ? html`
+                    <button
+                      type="button"
+                      role="menuitem"
+                      @click=${() => this.openInSpriteEditor(item)}
+                    >
+                      Open in Sprite Editor
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      @click=${() => this.addToSceneAsSprite(item)}
+                    >
+                      Add to Scene as Sprite2D
+                    </button>
+                    <div class="menu-separator" role="separator"></div>
+                  `
+                : null}
+              ${item.spriteFolderPath
+                ? html`
+                    <button
+                      type="button"
+                      role="menuitem"
+                      @click=${() => this.showSpriteFolderFiles(item)}
+                    >
+                      Show Files
+                    </button>
+                    <div class="menu-separator" role="separator"></div>
+                  `
+                : null}
+              <button type="button" role="menuitem" @click=${() => this.requestRename(item)}>
+                Rename
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="is-danger"
+                @click=${() => this.requestDelete(item)}
+              >
+                Delete
+              </button>
+            `
+          : null}
+      </div>
+    `;
+  }
+
+  private onItemContextMenu(event: MouseEvent, item: AssetPreviewItem): void {
+    event.preventDefault();
+    event.stopPropagation();
+    // Right-clicking an item outside the current selection selects just it; right-clicking a
+    // member of a multi-selection keeps the selection intact (so Delete acts on all of them).
+    if (!this.selectedPaths.has(item.path)) {
+      this.updateSelectionFromClick(event, item);
+      this.syncSelectionToService(item.path);
+    }
+    this.contextMenu = { item, x: event.clientX, y: event.clientY };
+  }
+
+  /** Emits a rename request the panel (Phase 4) routes to the DialogService rename flow. */
+  private requestRename(item: AssetPreviewItem): void {
+    this.closeContextMenu();
+    this.dispatchEvent(
+      new CustomEvent('content-rename-request', {
+        detail: { path: item.path },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  /** Emits a delete request for the multi-selection (or the clicked item alone). */
+  private requestDelete(item: AssetPreviewItem): void {
+    this.closeContextMenu();
+    const paths = this.selectedPaths.has(item.path) ? Array.from(this.selectedPaths) : [item.path];
+    this.dispatchEvent(
+      new CustomEvent('content-delete-request', {
+        detail: { paths },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private closeContextMenu(): void {
+    if (this.contextMenu) {
+      this.contextMenu = null;
+    }
+  }
+
+  /** Escape hatch out of the collapsed sprite card: browse the folder's real files. */
+  private showSpriteFolderFiles(item: AssetPreviewItem): void {
+    this.closeContextMenu();
+    if (!item.spriteFolderPath) {
+      return;
+    }
+    void this.assetsPreviewService.syncFromAssetSelection(item.spriteFolderPath, 'directory');
+  }
+
+  private openInSpriteEditor(item: AssetPreviewItem): void {
+    this.closeContextMenu();
+    void this.editorTabService.focusOrOpenSpriteEditor(toProjectResourcePath(item.path));
+  }
+
+  /** Explicit "create a node from this image" — the old double-click behavior, now on the menu. */
+  private addToSceneAsSprite(item: AssetPreviewItem): void {
+    this.closeContextMenu();
+    void this.assetFileActivationService.createSpriteFromImage(this.toActivation(item));
+  }
+
+  private toActivation(item: AssetPreviewItem): AssetActivation {
+    return {
+      name: item.name,
+      path: item.path,
+      kind: item.kind,
+      resourcePath: toProjectResourcePath(item.path),
+      extension: item.extension,
+    };
+  }
+
+  private renderItem(item: AssetPreviewItem) {
+    const isSelected = this.selectedPaths.has(item.path);
+    const isDropTarget = this.dropTargetPath === item.path && this.isDropTargetItem(item);
+    return html`
+      <button
+        class="assets-preview-item ${isSelected ? 'is-selected' : ''} ${isDropTarget
+          ? 'is-drop-target'
+          : ''}"
+        title=${this.buildTooltip(item)}
+        draggable="true"
+        @click=${(event: MouseEvent) => this.onItemSelected(event, item)}
+        @dblclick=${(event: MouseEvent) => {
+          void this.onItemDoubleClick(event, item);
+        }}
+        @contextmenu=${(event: MouseEvent) => this.onItemContextMenu(event, item)}
+        @dragstart=${(event: DragEvent) => this.onItemDragStart(event, item)}
+        @dragend=${() => this.onItemDragEnd()}
+        @dragover=${(event: DragEvent) => {
+          if (this.isDropTargetItem(item)) {
+            this.onMoveDragOver(event, item.path);
+          }
+        }}
+        @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, item.path)}
+        @drop=${(event: DragEvent) => {
+          if (this.isDropTargetItem(item)) {
+            this.onMoveDrop(event, item.path, item.name);
+          }
+        }}
+      >
+        <span class="thumb">
+          ${item.previewType === 'text' && item.previewText
+            ? html`<span class="text-thumb">${item.previewText}</span>`
+            : this.isAnimationPreviewable(item)
+              ? this.renderAnimationFrame(item)
+              : item.thumbnailUrl
+                ? html`<img src=${item.thumbnailUrl} alt=${item.name} loading="lazy" />`
+                : html`
+                    <span class="icon">${this.iconService.getIcon(item.iconName, 24)}</span>
+                    ${(item.previewType === 'model' || item.previewType === 'scene') &&
+                    item.thumbnailStatus === 'loading'
+                      ? html`<span class="thumb-spinner" aria-hidden="true"></span>`
+                      : null}
+                  `}
+          ${this.isAudioPreviewable(item)
+            ? html`${this.renderAudioToggle(item, '')}
+              ${this.playingAudioPath === item.path
+                ? this.renderAudioProgress('audio-progress')
+                : null}`
+            : null}
+          ${this.isAnimationPreviewable(item) ? this.renderAnimationToggle(item, '') : null}
+          ${item.spriteFolderPath
+            ? html`<span class="sprite-badge" title="Managed sprite folder"
+                >${item.spriteFrameCount ?? 0}f</span
+              >`
+            : null}
+        </span>
+        <span class="name">${item.name}</span>
+        ${this.renderItemMeta(item)}
+      </button>
+    `;
+  }
+
+  /** Card footer line: `0:03 / 0:12 · 24.0 KB` for audio, plain size otherwise. */
+  private renderItemMeta(item: AssetPreviewItem) {
+    if (item.kind !== 'file') {
+      return null;
+    }
+    const sizeLabel = item.sizeBytes !== null ? this.formatFileSize(item.sizeBytes) : '';
+    const timeLabel =
+      item.previewType === 'audio'
+        ? this.buildAudioTimeLabel(item)
+        : item.animation
+          ? this.buildAnimationLabel(item.animation)
+          : '';
+    const label = [timeLabel, sizeLabel].filter(part => part.length > 0).join(' · ');
+    return label ? html`<span class="meta">${label}</span>` : null;
+  }
+
+  private renderListRow(item: AssetPreviewItem) {
+    const isSelected = this.selectedPaths.has(item.path);
+    const isAudio = this.isAudioPreviewable(item);
+    const isAnimation = this.isAnimationPreviewable(item);
+    const isPlaying = this.playingAudioPath === item.path;
+    // Audio/animation rows have no pixel dimensions, so the same column carries
+    // the clock / the clip summary.
+    const dimensions = isAudio
+      ? this.buildAudioTimeLabel(item)
+      : item.animation
+        ? this.buildAnimationLabel(item.animation)
+        : item.width !== null && item.height !== null
+          ? `${item.width}×${item.height}`
+          : '';
+    const isDropTarget = this.dropTargetPath === item.path && this.isDropTargetItem(item);
+    return html`
+      <button
+        class="assets-list-row ${isSelected ? 'is-selected' : ''} ${isPlaying
+          ? 'is-playing'
+          : ''} ${isDropTarget ? 'is-drop-target' : ''}"
+        title=${this.buildTooltip(item)}
+        draggable="true"
+        @click=${(event: MouseEvent) => this.onItemSelected(event, item)}
+        @dblclick=${(event: MouseEvent) => {
+          void this.onItemDoubleClick(event, item);
+        }}
+        @contextmenu=${(event: MouseEvent) => this.onItemContextMenu(event, item)}
+        @dragstart=${(event: DragEvent) => this.onItemDragStart(event, item)}
+        @dragend=${() => this.onItemDragEnd()}
+        @dragover=${(event: DragEvent) => {
+          if (this.isDropTargetItem(item)) {
+            this.onMoveDragOver(event, item.path);
+          }
+        }}
+        @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, item.path)}
+        @drop=${(event: DragEvent) => {
+          if (this.isDropTargetItem(item)) {
+            this.onMoveDrop(event, item.path, item.name);
+          }
+        }}
+      >
+        ${isAudio ? this.renderAudioToggle(item, 'is-inline') : null}
+        ${isAnimation ? this.renderAnimationToggle(item, 'is-inline') : null}
+        <span class="row-thumb">
+          ${isAnimation
+            ? this.renderAnimationFrame(item)
+            : item.thumbnailUrl
+              ? html`<img src=${item.thumbnailUrl} alt=${item.name} loading="lazy" />`
+              : html`<span class="icon"
+                  >${this.iconService.getIcon(item.iconName, IconSize.MEDIUM)}</span
+                >`}
+        </span>
+        <span class="row-name">${item.name}</span>
+        <span class="row-dim">${dimensions}</span>
+        <span class="row-size"
+          >${item.kind === 'file' && item.sizeBytes !== null
+            ? this.formatFileSize(item.sizeBytes)
+            : ''}</span
+        >
+        ${isPlaying ? this.renderAudioProgress('row-audio-progress') : null}
+      </button>
+    `;
+  }
+
+  private onItemSelected(event: MouseEvent, item: AssetPreviewItem): void {
+    // Click on the audio play/stop affordance toggles preview (detected on the
+    // parent item button so we avoid a nested interactive element).
+    if (
+      item.previewType === 'audio' &&
+      (event.target as HTMLElement | null)?.closest('.audio-play-btn')
+    ) {
+      this.toggleAudioPreview(item);
+      return;
+    }
+    if (
+      item.previewType === 'animation' &&
+      (event.target as HTMLElement | null)?.closest('.anim-play-btn')
+    ) {
+      this.toggleAnimationPreview(item);
+      return;
+    }
+    this.updateSelectionFromClick(event, item);
+    this.syncSelectionToService(item.path);
+    if (item.previewType === 'model' || item.previewType === 'scene') {
+      this.assetsPreviewService.requestThumbnail(item.path);
+    }
+  }
+
+  /**
+   * Space toggles the preview of the selected audio asset (Unity/Godot-style), and
+   * stops whatever is playing when the selection isn't previewable. Only handled while
+   * focus is inside the panel and not in a text field; the default must be suppressed
+   * because the asset cards are `<button>`s and Space would re-activate the focused one.
+   */
+  private onSpaceKey(event: KeyboardEvent): void {
+    // `instanceof HTMLElement`, not a cast: this listener is on `window`, so a key
+    // event dispatched AT the window (which is what synthetic input does — the agent
+    // harness, a trace replay, a bot policy pressing `Key_Space`) arrives with
+    // `event.target === window`. That is truthy but not a `Node`, so the old
+    // `this.contains(target)` threw `Failed to execute 'contains' on 'Node'` and the
+    // throw surfaced as an uncaught runtime error — measured: two entries in the
+    // editor's error ring per synthetic Space, which a gameplay run then counted
+    // against the game.
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !this.contains(target)) {
+      return;
+    }
+    if (target.closest('input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    const selected = this.findSelectedAudioItem();
+    if (selected) {
+      event.preventDefault();
+      this.toggleAudioPreview(selected);
+      return;
+    }
+    const selectedAnimation = this.findSelectedAnimationItem();
+    if (selectedAnimation) {
+      event.preventDefault();
+      this.toggleAnimationPreview(selectedAnimation);
+      return;
+    }
+    if (this.playingAudioPath || this.playingAnimationPath) {
+      event.preventDefault();
+      this.stopAudioPreview();
+      this.stopAnimationPreview();
+    }
+  }
+
+  /** The single selected item, when it is a previewable flipbook animation. */
+  private findSelectedAnimationItem(): AssetPreviewItem | null {
+    if (!this.lastSelectedPath) {
+      return null;
+    }
+    const item = this.snapshot.items.find(candidate => candidate.path === this.lastSelectedPath);
+    return item && this.isAnimationPreviewable(item) ? item : null;
+  }
+
+  /** The single selected item, when it is a previewable audio file. */
+  private findSelectedAudioItem(): AssetPreviewItem | null {
+    if (!this.lastSelectedPath) {
+      return null;
+    }
+    const item = this.snapshot.items.find(candidate => candidate.path === this.lastSelectedPath);
+    if (!item || item.kind !== 'file' || item.previewType !== 'audio' || !item.previewUrl) {
+      return null;
+    }
+    return item;
+  }
+
+  private toggleAudioPreview(item: AssetPreviewItem): void {
+    if (this.playingAudioPath === item.path) {
+      this.stopAudioPreview();
+      return;
+    }
+    if (!item.previewUrl) {
+      return;
+    }
+    const audio = this.ensureAudioElement();
+    audio.src = item.previewUrl;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Autoplay policies / unsupported codec: drop back to the idle state.
+      this.playingAudioPath = null;
+      this.playbackSeconds = 0;
+    });
+    this.playingAudioPath = item.path;
+    // Seed from the analyzed metadata so the progress bar is live from frame one;
+    // `loadedmetadata` refines it once the element decodes the header.
+    this.playbackDuration = item.durationSeconds ?? 0;
+    this.playbackSeconds = 0;
+  }
+
+  /** Lazily creates the shared preview element; one element = one sound at a time. */
+  private ensureAudioElement(): HTMLAudioElement {
+    if (this.audioPreviewEl) {
+      return this.audioPreviewEl;
+    }
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.addEventListener('timeupdate', () => {
+      this.playbackSeconds = audio.currentTime;
+    });
+    audio.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        this.playbackDuration = audio.duration;
+      }
+    });
+    audio.addEventListener('ended', () => this.stopAudioPreview());
+    audio.addEventListener('error', () => this.stopAudioPreview());
+    this.audioPreviewEl = audio;
+    return audio;
+  }
+
+  private stopAudioPreview(): void {
+    if (this.audioPreviewEl) {
+      this.audioPreviewEl.pause();
+      this.audioPreviewEl.removeAttribute('src');
+      this.audioPreviewEl.load();
+    }
+    if (this.playingAudioPath !== null) {
+      this.playingAudioPath = null;
+    }
+    this.playbackSeconds = 0;
+    this.playbackDuration = 0;
+  }
+
+  /** 0..1 playhead of the running preview (0 when the duration is still unknown). */
+  private getPlaybackFraction(): number {
+    if (this.playbackDuration <= 0) {
+      return 0;
+    }
+    return Math.min(1, Math.max(0, this.playbackSeconds / this.playbackDuration));
+  }
+
+  private isAudioPreviewable(item: AssetPreviewItem): boolean {
+    return item.kind === 'file' && item.previewType === 'audio' && !!item.previewUrl;
+  }
+
+  private isAnimationPreviewable(item: AssetPreviewItem): boolean {
+    return (
+      item.kind === 'file' &&
+      item.previewType === 'animation' &&
+      (item.animation?.frames.length ?? 0) > 0
+    );
+  }
+
+  /**
+   * One flipbook frame as a cropped background: sequence clips carry a full-image
+   * rect, sheet clips a UV sub-rect. UV origin is bottom-left (GL), CSS's is
+   * top-left, hence the flipped Y.
+   */
+  private renderAnimationFrame(item: AssetPreviewItem) {
+    const animation = item.animation;
+    const frames = animation?.frames ?? [];
+    if (frames.length === 0) {
+      return html`<span class="icon">${this.iconService.getIcon(item.iconName, 24)}</span>`;
+    }
+    const isPlaying = this.playingAnimationPath === item.path;
+    const frame = frames[isPlaying ? this.animationFrameIndex % frames.length : 0];
+    const sizeX = frame.repeatX > 0 ? 100 / frame.repeatX : 100;
+    const sizeY = frame.repeatY > 0 ? 100 / frame.repeatY : 100;
+    // background-position in percent positions the scaled image so the wanted
+    // sub-rect lands in the box: p = offset / (1 - repeat) in UV terms.
+    const posX = frame.repeatX < 1 ? (frame.offsetX / (1 - frame.repeatX)) * 100 : 0;
+    const uvTop = 1 - frame.offsetY - frame.repeatY;
+    const posY = frame.repeatY < 1 ? (uvTop / (1 - frame.repeatY)) * 100 : 0;
+    return html`<span
+      class="anim-frame"
+      role="img"
+      aria-label=${item.name}
+      style=${`background-image:url("${frame.url}");background-size:${sizeX}% ${sizeY}%;background-position:${posX}% ${posY}%`}
+    ></span>`;
+  }
+
+  /** Play/stop affordance for a flipbook asset (shares the audio pill styling). */
+  private renderAnimationToggle(item: AssetPreviewItem, extraClass: string) {
+    const isPlaying = this.playingAnimationPath === item.path;
+    return html`<span
+      class="anim-play-btn ${extraClass} ${isPlaying ? 'is-playing' : ''}"
+      aria-hidden="true"
+      title=${isPlaying ? 'Stop preview' : 'Play preview (Space)'}
+      >${this.iconService.getIcon(isPlaying ? 'stop' : 'play', 18)}</span
+    >`;
+  }
+
+  /** `walk · 12 fps · 8 frames` under the card. */
+  private buildAnimationLabel(animation: AnimationPreviewData): string {
+    const frames = `${animation.frameCount} ${animation.frameCount === 1 ? 'frame' : 'frames'}`;
+    return [animation.clipName, `${animation.fps} fps`, frames].filter(Boolean).join(' · ');
+  }
+
+  private toggleAnimationPreview(item: AssetPreviewItem): void {
+    if (this.playingAnimationPath === item.path) {
+      this.stopAnimationPreview();
+      return;
+    }
+    this.stopAnimationPreview();
+    this.playingAnimationPath = item.path;
+    this.animationFrameIndex = 0;
+    this.animationStep = 1;
+    // Frames past the first are fetched on demand; the preview starts on the
+    // frames already loaded and picks up the rest when the snapshot lands.
+    void this.assetsPreviewService.requestAnimationFrames(item.path);
+    this.scheduleAnimationFrame();
+  }
+
+  /**
+   * Advances the running clip. Re-reads the item from the snapshot each tick so
+   * the lazily-loaded frames join the playback as soon as they arrive; the delay
+   * honours the clip fps and the frame's duration multiplier.
+   */
+  private scheduleAnimationFrame(): void {
+    if (this.animationTimer !== null) {
+      clearTimeout(this.animationTimer);
+      this.animationTimer = null;
+    }
+    const item = this.snapshot.items.find(entry => entry.path === this.playingAnimationPath);
+    const animation = item?.animation;
+    if (!animation || animation.frames.length === 0) {
+      this.stopAnimationPreview();
+      return;
+    }
+
+    const frames = animation.frames;
+    const current = frames[Math.min(this.animationFrameIndex, frames.length - 1)];
+    const fps = animation.fps > 0 ? animation.fps : 12;
+    const delayMs = (1000 / fps) * Math.max(0.001, current.durationMultiplier);
+
+    this.animationTimer = setTimeout(() => {
+      this.animationTimer = null;
+      const nextIndex = this.animationFrameIndex + this.animationStep;
+      if (nextIndex >= frames.length || nextIndex < 0) {
+        if (!animation.loop) {
+          this.stopAnimationPreview();
+          return;
+        }
+        if (animation.pingPong && frames.length > 1) {
+          this.animationStep = -this.animationStep;
+          this.animationFrameIndex = Math.min(
+            frames.length - 1,
+            Math.max(0, this.animationFrameIndex + this.animationStep)
+          );
+        } else {
+          this.animationFrameIndex = 0;
+        }
+      } else {
+        this.animationFrameIndex = nextIndex;
+      }
+      this.scheduleAnimationFrame();
+    }, delayMs);
+  }
+
+  private stopAnimationPreview(): void {
+    if (this.animationTimer !== null) {
+      clearTimeout(this.animationTimer);
+      this.animationTimer = null;
+    }
+    if (this.playingAnimationPath !== null) {
+      this.playingAnimationPath = null;
+    }
+    this.animationFrameIndex = 0;
+    this.animationStep = 1;
+  }
+
+  /** Play/stop affordance drawn over an audio thumbnail (grid) or inline (list). */
+  private renderAudioToggle(item: AssetPreviewItem, extraClass: string) {
+    const isPlaying = this.playingAudioPath === item.path;
+    return html`<span
+      class="audio-play-btn ${extraClass} ${isPlaying ? 'is-playing' : ''}"
+      aria-hidden="true"
+      title=${isPlaying ? 'Stop preview' : 'Play preview (Space)'}
+      >${this.iconService.getIcon(isPlaying ? 'stop' : 'play', 18)}</span
+    >`;
+  }
+
+  private renderAudioProgress(className: string) {
+    return html`<span
+      class=${className}
+      aria-hidden="true"
+      style="--audio-progress:${this.getPlaybackFraction()}"
+    ></span>`;
+  }
+
+  /** `0:03 / 0:12` while previewing, plain duration otherwise. */
+  private buildAudioTimeLabel(item: AssetPreviewItem): string {
+    const total = item.durationSeconds;
+    if (this.playingAudioPath === item.path) {
+      const duration = this.playbackDuration > 0 ? this.playbackDuration : (total ?? 0);
+      return `${this.formatDuration(this.playbackSeconds)} / ${this.formatDuration(duration)}`;
+    }
+    return total !== null ? this.formatDuration(total) : '';
+  }
+
+  /**
+   * Pushes the last-clicked item into the preview service (drives the Inspector and the
+   * external-reveal mirror) without the resulting snapshot notification collapsing the
+   * multi-selection we just built locally.
+   */
+  private syncSelectionToService(path: string): void {
+    this.isPushingSelection = true;
+    try {
+      this.assetsPreviewService.selectItem(path);
+    } finally {
+      this.isPushingSelection = false;
+    }
+  }
+
+  private onItemDragStart(event: DragEvent, item: AssetPreviewItem): void {
+    if (!event.dataTransfer) {
+      return;
+    }
+
+    if (!this.selectedPaths.has(item.path)) {
+      this.selectedPaths = new Set([item.path]);
+      this.lastSelectedPath = item.path;
+      this.selectionAnchorPath = item.path;
+      this.requestUpdate();
+    }
+
+    // Drag the whole multi-selection (folders included, so they can be moved too), in the
+    // order shown in the pane.
+    const selectedItems = this.snapshot.items.filter(candidate =>
+      this.selectedPaths.has(candidate.path)
+    );
+    const itemsToDrag = selectedItems.length > 0 ? selectedItems : [item];
+    const plainPaths = itemsToDrag.map(candidate => candidate.path);
+    // Only files carry `res://` resource MIMEs — those are what the viewport / scene tree
+    // read to create nodes, and a folder is not an asset resource.
+    const resourcePaths = itemsToDrag
+      .filter(candidate => candidate.kind === 'file')
+      .map(candidate => toProjectResourcePath(candidate.path));
+    // `copyMove`, not `copy`: the drop targets that move assets (folder cards here, the
+    // Asset Tree) request `dropEffect = 'move'`, which the browser rejects outright — no
+    // drop event at all — when the source only allows copying.
+    event.dataTransfer.effectAllowed = 'copyMove';
+    event.dataTransfer.setData('text/plain', plainPaths.join('\n'));
+    event.dataTransfer.setData(ASSET_PATH_MIME, plainPaths[0] ?? item.path);
+    event.dataTransfer.setData(ASSET_PATH_LIST_MIME, JSON.stringify(plainPaths));
+    if (resourcePaths.length > 0) {
+      event.dataTransfer.setData(ASSET_RESOURCE_MIME, resourcePaths[0]);
+      event.dataTransfer.setData(ASSET_RESOURCE_LIST_MIME, JSON.stringify(resourcePaths));
+      event.dataTransfer.setData('text/uri-list', resourcePaths[0]);
+    }
+    this.setMultiDragImage(event, itemsToDrag.length);
+  }
+
+  /**
+   * Shows a `N items` chip as the drag image for a multi-selection so it is obvious the
+   * whole selection travels (the browser default only pictures the grabbed card).
+   */
+  private setMultiDragImage(event: DragEvent, count: number): void {
+    if (count < 2 || !event.dataTransfer?.setDragImage) {
+      return;
+    }
+    const chip = document.createElement('div');
+    chip.textContent = `${count} items`;
+    // Styled inline, not in the stylesheet: the element has to live on `document.body`
+    // (Lit owns this host's children, and the drag image must be attached + laid out), so
+    // a class here would mean an unscoped global rule.
+    chip.style.cssText = [
+      'position:fixed',
+      'top:-1000px',
+      'left:-1000px',
+      'padding:0.2rem 0.5rem',
+      'border-radius:var(--radius-1, 4px)',
+      'background:var(--accent, #f5ae39)',
+      'color:var(--bg-0, #14161a)',
+      'font:600 12px/1.4 system-ui, sans-serif',
+      'white-space:nowrap',
+    ].join(';');
+    document.body.appendChild(chip);
+    try {
+      event.dataTransfer.setDragImage(chip, 12, 12);
+    } catch {
+      // Older engines can refuse a freshly-attached element; the default image is fine.
+    }
+    // The browser snapshots the element synchronously, so it can go away right after.
+    requestAnimationFrame(() => chip.remove());
+  }
+
+  private onItemDragEnd(): void {
+    this.dropTargetPath = null;
+  }
+
+  /** True when `item` can receive a move drop (folder cards only). */
+  private isDropTargetItem(item: AssetPreviewItem): boolean {
+    return item.kind === 'directory';
+  }
+
+  private onMoveDragOver(event: DragEvent, targetPath: string): void {
+    if (appState.collaboration.isReadOnly || !hasAssetDragData(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    if (this.dropTargetPath !== targetPath) {
+      this.dropTargetPath = targetPath;
+    }
+  }
+
+  private onMoveDragLeave(event: DragEvent, targetPath: string): void {
+    if (this.dropTargetPath !== targetPath) {
+      return;
+    }
+    const related = event.relatedTarget as Node | null;
+    if (related && (event.currentTarget as HTMLElement).contains(related)) {
+      return;
+    }
+    this.dropTargetPath = null;
+  }
+
+  /**
+   * Drop on a folder card / breadcrumb: hand the dragged paths to the panel, which routes
+   * them through the Asset Tree's move flow (one confirmation, reference rewrite, refresh).
+   */
+  private onMoveDrop(event: DragEvent, targetPath: string, targetLabel: string): void {
+    this.dropTargetPath = null;
+    if (appState.collaboration.isReadOnly || !hasAssetDragData(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const paths = getDraggedAssetPaths(event.dataTransfer).filter(path => path !== targetPath);
+    if (paths.length === 0) {
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent('content-move-request', {
+        detail: { paths, targetPath, targetLabel },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private onGenerationDragOver(event: DragEvent): void {
+    if (!hasGenerationDragData(event.dataTransfer) && !hasLibraryItemDragData(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    this.isGenerationDropActive = true;
+  }
+
+  private onGenerationDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as Node | null;
+    if (related && this.contains(related)) {
+      return;
+    }
+    this.isGenerationDropActive = false;
+  }
+
+  private async onGenerationDrop(event: DragEvent): Promise<void> {
+    // A Library card imports its files into the project (no scene node); a generation entry
+    // saves into the current folder. Both refresh the preview via the write signal.
+    if (hasLibraryItemDragData(event.dataTransfer)) {
+      event.preventDefault();
+      this.isGenerationDropActive = false;
+      const drag = getLibraryItemDragData(event.dataTransfer);
+      if (!drag) {
+        return;
+      }
+      try {
+        await this.libraryInsertService.copyBundleIntoProject(drag.itemId);
+      } catch (error) {
+        console.error('[AssetsContent] Failed to import library item:', error);
+      }
+      return;
+    }
+    if (!hasGenerationDragData(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    this.isGenerationDropActive = false;
+    const targetDirectory = this.snapshot.selectedFolderPath ?? '.';
+    await this.generatedAssetDropService.handleDrop(event.dataTransfer, targetDirectory);
+    // The preview refreshes automatically once the write signals a directory change.
+  }
+
+  private updateSelectionFromClick(event: MouseEvent, item: AssetPreviewItem): void {
+    const orderedPaths = this.snapshot.items.map(candidate => candidate.path);
+    const nextSelectedPaths = new Set(this.selectedPaths);
+
+    const anchorPath = this.selectionAnchorPath;
+    if (event.shiftKey && anchorPath && orderedPaths.includes(anchorPath)) {
+      const startIndex = orderedPaths.indexOf(anchorPath);
+      const endIndex = orderedPaths.indexOf(item.path);
+      const [rangeStart, rangeEnd] =
+        startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+      nextSelectedPaths.clear();
+      for (let index = rangeStart; index <= rangeEnd; index += 1) {
+        const path = orderedPaths[index];
+        if (path) {
+          nextSelectedPaths.add(path);
+        }
+      }
+      // The anchor deliberately stays put: successive shift-clicks re-stretch the range
+      // from the item where the selection started, they don't walk it forward.
+    } else if (event.ctrlKey || event.metaKey) {
+      if (nextSelectedPaths.has(item.path)) {
+        nextSelectedPaths.delete(item.path);
+      } else {
+        nextSelectedPaths.add(item.path);
+      }
+      this.selectionAnchorPath = item.path;
+    } else {
+      nextSelectedPaths.clear();
+      nextSelectedPaths.add(item.path);
+      this.selectionAnchorPath = item.path;
+    }
+
+    if (nextSelectedPaths.size === 0) {
+      nextSelectedPaths.add(item.path);
+    }
+
+    this.selectedPaths = nextSelectedPaths;
+    this.lastSelectedPath = item.path;
+    this.requestUpdate();
+  }
+
+  private async onItemDoubleClick(event: MouseEvent, item: AssetPreviewItem): Promise<void> {
+    // The play/stop affordances handle their own clicks; don't also activate.
+    if ((event.target as HTMLElement | null)?.closest('.anim-play-btn')) {
+      return;
+    }
+    if (
+      item.previewType === 'audio' &&
+      (event.target as HTMLElement | null)?.closest('.audio-play-btn')
+    ) {
+      return;
+    }
+    if (item.kind === 'directory') {
+      this.dispatchEvent(
+        new CustomEvent('folder-navigate', {
+          detail: { path: item.path },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      return;
+    }
+
+    await this.onItemActivate(item);
+  }
+
+  private async onItemActivate(item: AssetPreviewItem): Promise<void> {
+    if (item.kind !== 'file') {
+      return;
+    }
+
+    await this.assetFileActivationService.handleActivation(this.toActivation(item));
+  }
+
+  private buildTooltip(item: AssetPreviewItem): string {
+    const lines: string[] = [item.name];
+
+    if (item.previewType === 'text' && item.previewText) {
+      lines.push('');
+      lines.push(item.previewText);
+    }
+
+    if (item.width !== null && item.height !== null) {
+      lines.push(`Resolution: ${item.width} x ${item.height}`);
+    }
+
+    if (item.durationSeconds !== null) {
+      lines.push(`Duration: ${this.formatDuration(item.durationSeconds)}`);
+    }
+
+    if (item.channelCount !== null) {
+      lines.push(`Channels: ${item.channelCount}`);
+    }
+
+    if (item.sampleRate !== null) {
+      lines.push(`Sample rate: ${this.formatSampleRate(item.sampleRate)}`);
+    }
+
+    if (item.sizeBytes !== null) {
+      lines.push(`Size: ${this.formatFileSize(item.sizeBytes)}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private formatFileSize(sizeBytes: number): string {
+    if (sizeBytes < 1024) {
+      return `${sizeBytes} B`;
+    }
+    const kb = sizeBytes / 1024;
+    if (kb < 1024) {
+      return `${kb.toFixed(1)} KB`;
+    }
+    const mb = kb / 1024;
+    return `${mb.toFixed(2)} MB`;
+  }
+
+  private formatDuration(durationSeconds: number): string {
+    const totalSeconds = Math.round(durationSeconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  private formatSampleRate(sampleRate: number): string {
+    const khz = sampleRate / 1000;
+    return `${khz % 1 === 0 ? khz.toFixed(0) : khz.toFixed(1)} kHz`;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'pix3-assets-content': AssetsContent;
+  }
+}

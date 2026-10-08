@@ -1,0 +1,226 @@
+pix3-confirm-dialog {
+  display: contents;
+}
+
+pix3-confirm-dialog .dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: oklch(0 0 0 / 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--pix3-z-modal);
+}
+
+pix3-confirm-dialog .dialog-content {
+  /* Explicitly reset layout props so a sibling Light-DOM dialog's bare
+     `.dialog-content` rule (e.g. the settings dialog's fixed height: 640px)
+     can't leak in — specificity is resolved per-property, so undeclared
+     props would still cascade from those lower-specificity rules. */
+  display: block;
+  height: auto;
+  max-height: 85vh;
+  overflow: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-3);
+  padding: 1.5rem;
+  max-width: 400px;
+  width: min(100%, 400px);
+  box-shadow: var(--shadow-float);
+  animation: slideUp 0.2s ease-out;
+}
+
+pix3-confirm-dialog .dialog-content--with-expandable {
+  max-width: 640px;
+  width: min(100%, 640px);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+pix3-confirm-dialog .dialog-title {
+  margin: 0 0 1rem 0;
+  font-size: 1.2em;
+  color: var(--fg-0);
+}
+
+pix3-confirm-dialog .dialog-message {
+  margin: 0.5rem 0;
+  color: var(--fg-1);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+pix3-confirm-dialog .dialog-disclaimer {
+  margin: 0.9rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+pix3-confirm-dialog .dialog-expandable {
+  margin-top: 1rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-2);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+pix3-confirm-dialog .dialog-expandable__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+  color: var(--fg-0);
+  font-weight: 600;
+  user-select: none;
+}
+
+pix3-confirm-dialog .dialog-expandable__summary:hover {
+  background: var(--bg-3);
+}
+
+pix3-confirm-dialog .dialog-expandable__title {
+  min-width: 0;
+}
+
+pix3-confirm-dialog .dialog-expandable__count {
+  flex: 0 0 auto;
+  min-width: 1.8rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--fg-0);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+pix3-confirm-dialog .dialog-expandable__body {
+  max-height: var(--dialog-expandable-max-height, 240px);
+  overflow: auto;
+  border-top: 1px solid var(--line-1);
+}
+
+pix3-confirm-dialog .dialog-expandable__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+pix3-confirm-dialog .dialog-expandable__item {
+  padding: 0.65rem 0.9rem;
+  color: var(--fg-1);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+pix3-confirm-dialog .dialog-expandable__item + .dialog-expandable__item {
+  border-top: 1px solid var(--line-1);
+}
+
+pix3-confirm-dialog .dialog-confirmation {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+pix3-confirm-dialog .dialog-confirmation__label {
+  color: var(--fg-0);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+pix3-confirm-dialog .dialog-confirmation__input {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font-size: 0.95rem;
+}
+
+pix3-confirm-dialog .dialog-confirmation__input:focus {
+  border-color: var(--accent);
+}
+
+pix3-confirm-dialog .dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+pix3-confirm-dialog .dialog-actions button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 500;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+pix3-confirm-dialog .btn-cancel {
+  background: var(--bg-2);
+  color: var(--fg-0);
+  border: 1px solid var(--line-1);
+}
+
+pix3-confirm-dialog .btn-cancel:hover {
+  background: var(--bg-3);
+}
+
+pix3-confirm-dialog .btn-confirm {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+pix3-confirm-dialog .btn-confirm:hover {
+  background: var(--accent);
+}
+
+pix3-confirm-dialog .btn-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+pix3-confirm-dialog .btn-confirm:hover:disabled {
+  background: var(--accent);
+}
+
+pix3-confirm-dialog .btn-confirm.dangerous {
+  background: var(--danger);
+  color: var(--fg-0);
+}
+
+pix3-confirm-dialog .btn-confirm.dangerous:hover {
+  background: var(--danger);
+}
+
+pix3-confirm-dialog .btn-confirm.dangerous:hover:disabled {
+  background: var(--danger);
+}
