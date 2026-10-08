@@ -1,0 +1,31 @@
+{
+  // Editor sources and specs. `useDefineForClassFields: false` on purpose: Lit's `@property`
+  // decorators need set semantics (the runtime is type-checked the other way, as consumers compile it).
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "vitest", "node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@pix3/runtime": ["../runtime/src/index.ts"],
+      "@pix3/runtime/*": ["../runtime/src/*"]
+    },
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"],
+  "exclude": ["src/templates/projects/*/files"]
+}

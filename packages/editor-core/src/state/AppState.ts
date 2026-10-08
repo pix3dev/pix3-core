@@ -1,4 +1,3 @@
-import type { MergeConflict } from '@/services/project/external-merge/merge-external-version';
 import type { ProjectManifest } from '@/core/ProjectManifest';
 import type { AnimationResource } from '@pix3/runtime';
 
@@ -15,25 +14,7 @@ export type EditorTabType =
   | 'script'
   | 'texture'
   | 'animation'
-  | 'game'
-  | 'code'
-  | 'sprite-editor'
-  | 'model-lab'
-  | 'uikit-forge';
-
-export interface CodeEditorSelectionState {
-  startLineNumber: number;
-  startColumn: number;
-  endLineNumber: number;
-  endColumn: number;
-}
-
-export interface CodeEditorContextState {
-  selection?: CodeEditorSelectionState;
-  scrollTop?: number;
-  scrollLeft?: number;
-  monacoViewState?: unknown;
-}
+  | 'game';
 
 export interface CameraState {
   position: { x: number; y: number; z: number };
@@ -60,7 +41,6 @@ export interface EditorTab {
     /** 2D navigation camera; kept here so it survives a reload via the persisted tab session. */
     camera2D?: CameraState;
     selection?: TabSelectionState;
-    codeEditor?: CodeEditorContextState;
     [key: string]: unknown;
   };
 }
@@ -78,8 +58,6 @@ export interface SceneDescriptor {
   version: string;
   isDirty: boolean;
   lastSavedAt: number | null;
-  /** File system handle for opened scene files (from File System Access API). */
-  fileHandle?: FileSystemFileHandle | null;
   /** Last known modification time of the file (ms), for change detection polling. */
   lastModifiedTime?: number | null;
 }
@@ -159,208 +137,37 @@ export type ProjectStatus = 'idle' | 'selecting' | 'opening' | 'ready' | 'error'
  * Where the open project's files live. `workspace` is a folder served by `pix3 serve` over HTTP +
  * WebSocket (no File System Access); see `src/services/project/workspace/`.
  */
-export type ProjectBackend = 'local' | 'cloud' | 'browser' | 'workspace';
+/** Where the project lives: always the plugin's file API in 2.x (plan §F, D3). */
+export type ProjectBackend = 'host';
 
-/** Transport state of a `pix3 serve` workspace connection (owned by `WorkspaceSessionService`). */
-export type WorkspaceConnectionStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting';
-
-/**
- * Edit lease of the workspace. Only the holder edits; `busy` / `lost` windows stay read-only
- * until the user takes the lease over.
- */
-export type WorkspaceLeaseState = 'none' | 'pending' | 'held' | 'busy' | 'lost';
-
-export interface WorkspaceConnectionState {
-  status: WorkspaceConnectionStatus;
-  lease: WorkspaceLeaseState;
-  /** `busy` while the other holder is disconnected but may still come back. */
-  leaseInGrace: boolean;
-  /** Normalised server address as this browser reaches it (a forwarded port may differ). */
-  endpoint: string | null;
-  workspaceId: string | null;
-  /** Absolute project root on the server's machine (display only). */
-  root: string | null;
-  serverSession: string | null;
-  errorMessage: string | null;
-  /**
-   * A `pix3 mcp --workspace` process is alive for this workspace (the server's `agent-presence`
-   * frame / `hello.agentPresence`); last known value while the socket is down.
-   */
-  agentAttached: boolean;
-  /** Its self-declared name (never verified). */
-  agentName: string | null;
+/** The editor tab's link to the dev server (`EditorHost`), see `.plans/editor-core-port.md` §2.5. */
+export interface HostConnectionState {
+  connection: 'open' | 'closed';
+  /** Whether this tab may write: it holds the writer claim, another tab does, or nobody claimed. */
+  writer: 'self' | 'other' | 'none';
+  /** Open scenes changed on disk while dirty here (merge is plan §C.3, later). */
+  staleScenes: string[];
 }
 
-export const createInitialWorkspaceConnectionState = (): WorkspaceConnectionState => ({
-  status: 'disconnected',
-  lease: 'none',
-  leaseInGrace: false,
-  endpoint: null,
-  workspaceId: null,
-  root: null,
-  serverSession: null,
-  errorMessage: null,
-  agentAttached: false,
-  agentName: null,
-});
-/**
- * Autosave of the co-authoring mode (`src/services/project/autosave/AutosaveService.ts`):
- * - `off`: not enabled for this project (see `CoauthoringState.autosaveReason`);
- * - `not-owner`: enabled, but another window owns editing (Web Lock / workspace lease);
- * - `saved`: every open scene is on disk; `dirty`: a save is scheduled; `saving`: writing;
- * - `held`: an unmerged external version (or a gesture) holds the save back;
- * - `error`: the last write failed (`autosaveReason` says why); the next edit retries.
- */
-export type AutosaveStatus = 'off' | 'not-owner' | 'saved' | 'dirty' | 'saving' | 'held' | 'error';
-
-/**
- * Co-authoring with an external writer (an agent writing project files) — plan
- * `.plans/external-agent-authoring.md` §4.3 / §5 C. Session state, owned by the co-authoring
- * services (`AutosaveService`, `ExternalChangeService`), written outside the command gateway.
- */
-export interface CoauthoringState {
-  autosaveEnabled: boolean;
-  autosaveStatus: AutosaveStatus;
-  /** Human-readable reason for `off` / `held` / `error` / `not-owner`. */
-  autosaveReason: string | null;
-  /** The project carries an agent kit (`AGENTS.md` at the root or a `.pix3/` directory). */
-  hasAgentKit: boolean;
-  /** This window owns editing (Web Lock `pix3-project:<id>` for local folders, lease for workspaces). */
-  isOwner: boolean;
-  lastAutosavedAt: number | null;
-  /** Paths (`scenes/a.pix3scene`, no `res://`) with an external version not applied yet. */
-  pendingExternalPaths: string[];
-  /** Pending paths whose content has failed to parse for a while ("file not readable"). */
-  unreadablePaths: string[];
-  /** An external change arrived during play mode: the editor graph is behind the disk. */
-  stale: boolean;
-  /**
-   * `{ path: sha256 }` the running game was verified against by the agent channel's sync barrier
-   * (`WorkspaceAgentToolBridge`), or null when play was not started through it. Cleared on stop.
-   */
-  playRevision: Record<string, string> | null;
-  /**
-   * Merge outcomes that need the human (plan §4.3 conflict banner), keyed by project path:
-   * `conflicts` — the merge kept human values over the agent's; `rejected` — the agent's version
-   * could not be merged and the last good graph stays until the human decides.
-   */
-  merges: Record<string, MergeBannerState>;
-  /** Nodes an external version changed; the scene tree highlights them briefly (~3 s). */
-  recentlyChangedNodeIds: string[];
-  /** Last time a scene-mutating command was refused because this window is not the owner. */
-  editBlockedAt: number | null;
-  /** Local folder hand-over: this window asked the owner to let go and waits for the lock. */
-  takeOverPending: boolean;
-  /**
-   * An agent is working with this editor, so background pauses are off (`AgentKeepaliveService`):
-   * presence attached, a call in flight or recent, or a game the agent started still running.
-   */
-  agentKeepalive: boolean;
-}
-
-export interface MergeBannerState {
-  /** Project path without a scheme (`scenes/main.pix3scene`). */
-  path: string;
-  sceneId: string;
-  status: 'conflicts' | 'rejected';
-  conflicts: MergeConflict[];
-  /** Why the agent's version could not be merged (`rejected`). */
-  reason: string | null;
-  /** Byte hash of the agent's version the banner is about. */
-  externalHash: string;
-  /** Journal record (`RecoveryRecord.ref`) of the human version right before the merge. */
-  restoreRef: string | null;
-  at: number;
-}
-
-export const createInitialCoauthoringState = (): CoauthoringState => ({
-  autosaveEnabled: false,
-  autosaveStatus: 'off',
-  autosaveReason: null,
-  hasAgentKit: false,
-  isOwner: true,
-  lastAutosavedAt: null,
-  pendingExternalPaths: [],
-  unreadablePaths: [],
-  stale: false,
-  playRevision: null,
-  merges: {},
-  recentlyChangedNodeIds: [],
-  editBlockedAt: null,
-  takeOverPending: false,
-  agentKeepalive: false,
+export const createInitialHostConnectionState = (): HostConnectionState => ({
+  connection: 'closed',
+  writer: 'none',
+  staleScenes: [],
 });
 
 export type AssetBrowserViewMode = 'folders' | 'by-type';
-export type HybridSyncStatus =
-  | 'unlinked'
-  | 'checking'
-  | 'up-to-date'
-  | 'local-changes'
-  | 'cloud-changes'
-  | 'conflict'
-  | 'syncing'
-  | 'auth-required'
-  | 'error';
-
 export type ScriptLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
-
-export type ProjectOpenPhase =
-  | 'idle'
-  | 'fetching-access'
-  | 'loading-manifest'
-  | 'hydrating-cache'
-  | 'connecting-collaboration'
-  | 'compiling-scripts'
-  | 'opening-scene';
-
-export interface ProjectOpenProgressState {
-  phase: ProjectOpenPhase;
-  message: string | null;
-  currentPath: string | null;
-  processedFileCount: number;
-  totalFileCount: number;
-  processedBytes: number | null;
-  totalBytes: number | null;
-}
-
-export interface ProjectHybridSyncState {
-  linkedCloudProjectId: string | null;
-  linkedLocalSessionId: string | null;
-  linkedLocalPath: string | null;
-  status: HybridSyncStatus;
-  lastSyncAt: number | null;
-  localChangeCount: number;
-  cloudChangeCount: number;
-  conflictCount: number;
-  processedFileCount: number;
-  totalFileCount: number;
-  issues: Array<{
-    path: string;
-    size: number | null;
-    reason: string;
-  }>;
-  errorMessage: string | null;
-}
 
 export interface ProjectState {
   /** Unique ID for the project (used for persistence). */
   id: string | null;
   /** Active project storage backend. */
   backend: ProjectBackend;
-  /** Active project directory handle retrieved via the File System Access API. */
-  directoryHandle: FileSystemDirectoryHandle | null;
   projectName: string | null;
   /** Absolute path on the local file system (e.g. /home/user/project). Used for VS Code integration. */
   localAbsolutePath: string | null;
   status: ProjectStatus;
   errorMessage: string | null;
-  /** Recently opened project identifiers (storage implementation TBD). */
-  recentProjects: string[];
   /** Last opened scene file relative to the project root. */
   lastOpenedScenePath: string | null;
   /** Asset browser expanded folder paths (persisted per project). */
@@ -385,14 +192,8 @@ export interface ProjectState {
   lastModifiedDirectoryPath: string | null;
   /** Project manifest loaded from pix3project.yaml. */
   manifest: ProjectManifest | null;
-  /** Progress of the current project opening/hydration pipeline. */
-  openProgress: ProjectOpenProgressState;
-  /** Hybrid sync state between the local folder and linked cloud project. */
-  hybridSync: ProjectHybridSyncState;
-  /** Connection to a `pix3 serve` workspace (meaningful only while `backend === 'workspace'`). */
-  workspace: WorkspaceConnectionState;
-  /** Autosave / external-version bookkeeping of the co-authoring mode. */
-  coauthoring: CoauthoringState;
+  /** Connection to the dev server and the writer claim. */
+  host: HostConnectionState;
 }
 
 export interface SelectionState {
@@ -430,7 +231,6 @@ export interface PanelVisibilityState {
   sceneTree: boolean;
   viewport: boolean;
   inspector: boolean;
-  profiler: boolean;
   assets: boolean;
   animationTimeline: boolean;
   logs: boolean;
@@ -457,19 +257,6 @@ export interface Navigation2DSettings {
 export type GameAspectRatio = 'free' | '16:9-landscape' | '16:9-portrait' | '4:3';
 
 /**
- * Shape Vibe letterboxes its game stage to.
- *
- * Deliberately its own setting rather than a second reader of {@link GameAspectRatio}: the two
- * differ in what "no opinion" means. Studio defaults to `free` (stretch to fill the panel, which is
- * what a dock full of tabs wants); Vibe defaults to `project` — the authored `viewportBaseSize` —
- * because what Vibe shows is meant to be the shape the exported HTML will have. Sharing one value
- * would let a `16:9-landscape` picked once in the Game tab silently letterbox a 1080x1920 game into
- * a wide box, which is the bug the stage's fit logic used to guard against by ignoring the setting
- * outright.
- */
-export type FlowStageAspect = 'project' | 'free' | '16:9-landscape' | '16:9-portrait' | '4:3';
-
-/**
  * Details of the most recent runtime/script failure raised while the game was
  * launching or playing. Surfaced in the Game tab and the Logs panel so a broken
  * script no longer fails silently. Ephemeral UI state — never part of undo
@@ -489,83 +276,8 @@ export interface PlayModeError {
   at: number;
 }
 
-/**
- * Which shell the editor renders. `studio` is the full Golden-Layout editor (docks, tabs, menus);
- * `flow` is the prompt-first shell — chat + a live game stage and nothing else. Both drive the SAME
- * DI graph, project and undo stack, so switching is a component swap, never a reload.
- */
-export type WorkspaceMode = 'flow' | 'studio';
-
-/**
- * How much of the Flow the supervisor is allowed to drive (autopilot plan §3.1).
- *
- * `armed` is the Assisted mode the "Continue autonomously" button turns on: the agent still ends a
- * turn on a real fork, and the supervisor picks the next increment once a countdown runs out.
- * `autonomous` additionally answers `ask_user` inside the turn instead of ending it.
- */
-export type FlowAutopilotMode = 'off' | 'armed' | 'autonomous';
-
-/**
- * Where the supervisor is in its own cycle — deliberately NOT a mirror of the chat's status.
- * `running` means the autopilot itself started the turn on screen; a turn the user sent keeps the
- * autopilot at `idle`, which is what tells `AgentChatService` that a human is at the keyboard and
- * a question should end the turn for them to answer.
- */
-export type FlowAutopilotPhase = 'idle' | 'countdown' | 'running' | 'testing' | 'paused' | 'done';
-
-/**
- * Live state of one autopilot run.
- *
- * Session state written directly by `FlowAutopilotService`, for the same reason as
- * {@link UIState.flowSceneViewVisible}: it is neither undoable nor worth surviving a reload — a run
- * that the page load interrupted is over, and resuming one the user cannot see would be the exact
- * surprise the arming step exists to prevent.
- */
-export interface FlowAutopilotState {
-  mode: FlowAutopilotMode;
-  phase: FlowAutopilotPhase;
-  /** Epoch ms the current countdown fires at; null while paused by user activity or not counting. */
-  countdownEndsAt: number | null;
-  /** Identity of the current run — a new one resets every budget counter below. */
-  runId: string | null;
-  /** Epoch ms the run started (0 when there is no run), for the wall-clock budget. */
-  startedAt: number;
-  /** Agent turns the supervisor has started, including answers to open questions. */
-  increments: number;
-  /** Tool calls observed across the run — the hop budget (§5). */
-  toolIterations: number;
-  /** Cumulative UNCACHED prompt tokens the run has spent — `inputTokens` minus the cached share. */
-  inputTokens: number;
-  /** Why the run paused or finished, in the user's words. Null while it is going fine. */
-  stopReason: string | null;
-}
-
 export interface UIState {
   theme: ThemeName;
-  /** Active shell. Golden Layout is only initialized once this reaches `studio`. */
-  workspaceMode: WorkspaceMode;
-  /**
-   * True while Vibe's edit-mode scene view is the stage on screen.
-   *
-   * The editor viewport is a single shared canvas, and Flow normally suppresses it outright (see
-   * `ViewportRendererService.isWorkspaceHidden`) because nobody there can see it. This flag is how
-   * the one Flow surface that CAN see it says so — without it the Vibe viewport renders black.
-   *
-   * Session UI state, written directly by the view that owns it: the Command/Operation gateway
-   * covers scene and project mutation (the things that belong in undo history), not a transient
-   * "is this stage on screen" flag that must neither survive a reload nor be undoable.
-   */
-  flowSceneViewVisible: boolean;
-  /**
-   * Whether Vibe's scene view shows its properties drawer.
-   *
-   * Session UI state for the same reasons as {@link flowSceneViewVisible}: the view is remounted on
-   * every stage switch, so a per-component flag would close the drawer each time the user went to
-   * the game and back. Not persisted — it is a working posture, not a preference.
-   */
-  flowInspectorOpen: boolean;
-  /** The Flow autopilot's own state — see {@link FlowAutopilotState}. Flow mode only. */
-  flowAutopilot: FlowAutopilotState;
   isLayoutReady: boolean;
   focusedPanelId: string | null;
   commandPaletteOpen: boolean;
@@ -614,11 +326,6 @@ export interface UIState {
   showDirectionAxes: boolean;
   /** Warn before leaving the page with unsaved changes */
   warnOnUnsavedUnload: boolean;
-  /**
-   * Autosave scenes of local-folder projects that carry no agent kit (a kit — `AGENTS.md` or
-   * `.pix3/` — turns autosave on by itself; workspaces always autosave).
-   */
-  autosaveLocalProjects: boolean;
   /** Pause rendering when the window is unfocused for battery economy */
   pauseRenderingOnUnfocus: boolean;
   /**
@@ -628,11 +335,6 @@ export interface UIState {
   keepEditorRunningForAgent: boolean;
   /** Preferred aspect ratio for the runtime preview surface */
   gameAspectRatio: GameAspectRatio;
-  /**
-   * Shape Vibe's game stage is letterboxed to. Persisted alongside the other editor settings —
-   * a deliberate, visible choice about the game's shape should outlive the session that made it.
-   */
-  flowStageAspect: FlowStageAspect;
   /** True when the scene is in play mode (scripts running) */
   isPlaying: boolean;
   /** True when a dedicated external game preview window is open */
@@ -640,6 +342,12 @@ export interface UIState {
   playModeStatus: 'stopped' | 'playing' | 'paused';
   /** Most recent runtime/script failure while playing, or null when clean. */
   playModeError: PlayModeError | null;
+  /** Who started the running play session (plan §B.3): the agent may stop only its own. */
+  playOwner: 'agent' | 'designer' | null;
+  /** Epoch ms the current play session started, or null when stopped. */
+  playStartedAt: number | null;
+  /** True between pointerdown and pointerup of a viewport drag; a flush waits for it (§C.1). */
+  gestureInProgress: boolean;
 }
 
 export interface OperationState {
@@ -651,56 +359,6 @@ export interface OperationState {
   lastCommandId: string | null;
   /** Identifier of the last command that produced undo data. */
   lastUndoableCommandId: string | null;
-}
-
-export interface CollabRemoteUser {
-  clientId: number;
-  name: string;
-  color: string;
-  selection: string[];
-}
-
-export interface CollabParticipant {
-  clientId: number | null;
-  name: string;
-  color: string;
-}
-
-export type CollabConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'synced';
-export type CollabAccessMode = 'local' | 'cloud-edit' | 'cloud-view';
-export type CollabAuthSource = 'none' | 'member' | 'share-token';
-export type CollabRole = 'owner' | 'editor' | 'viewer' | null;
-
-export interface CollaborationState {
-  connectionStatus: CollabConnectionStatus;
-  roomName: string | null;
-  remoteUsers: CollabRemoteUser[];
-  localUser: CollabParticipant | null;
-  accessMode: CollabAccessMode;
-  authSource: CollabAuthSource;
-  role: CollabRole;
-  isReadOnly: boolean;
-  shareToken: string | null;
-  shareEnabled: boolean;
-}
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  username: string;
-  is_admin: boolean;
-  token?: string;
-}
-
-export interface AuthState {
-  user: AuthUser | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-}
-
-export interface TelemetryState {
-  lastEventName: string | null;
-  unsentEventCount: number;
 }
 
 /**
@@ -718,32 +376,7 @@ export interface LocalizationState {
   revision: number;
 }
 
-export type RouterStatus =
-  | 'idle'
-  | 'authenticating'
-  | 'fetchingMetadata'
-  | 'loadingAssets'
-  | 'reactivationRequired'
-  | 'error';
-
-export interface RouteParams {
-  projectId: string | null;
-  sceneId: string | null;
-  nodeId: string | null;
-  localSessionId: string | null;
-  shareToken: string | null;
-}
-
-export interface RouterState {
-  status: RouterStatus;
-  currentParams: RouteParams;
-  targetParams: RouteParams | null;
-  errorMessage: string | null;
-}
-
 export interface AppState {
-  auth: AuthState;
-  router: RouterState;
   project: ProjectState;
   scenes: ScenesState;
   animations: AnimationsState;
@@ -752,63 +385,17 @@ export interface AppState {
   editorContext: EditorContextState;
   ui: UIState;
   operations: OperationState;
-  collaboration: CollaborationState;
-  telemetry: TelemetryState;
   localization: LocalizationState;
 }
 
-export const createInitialHybridSyncState = (): ProjectHybridSyncState => ({
-  linkedCloudProjectId: null,
-  linkedLocalSessionId: null,
-  linkedLocalPath: null,
-  status: 'unlinked',
-  lastSyncAt: null,
-  localChangeCount: 0,
-  cloudChangeCount: 0,
-  conflictCount: 0,
-  processedFileCount: 0,
-  totalFileCount: 0,
-  issues: [],
-  errorMessage: null,
-});
-
-export const createInitialProjectOpenProgressState = (): ProjectOpenProgressState => ({
-  phase: 'idle',
-  message: null,
-  currentPath: null,
-  processedFileCount: 0,
-  totalFileCount: 0,
-  processedBytes: null,
-  totalBytes: null,
-});
-
 export const createInitialAppState = (): AppState => ({
-  auth: {
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-  },
-  router: {
-    status: 'idle',
-    currentParams: {
-      projectId: null,
-      sceneId: null,
-      nodeId: null,
-      localSessionId: null,
-      shareToken: null,
-    },
-    targetParams: null,
-    errorMessage: null,
-  },
   project: {
     id: null,
-    backend: 'local',
-    directoryHandle: null,
+    backend: 'host',
     projectName: null,
     localAbsolutePath: null,
     status: 'idle',
     errorMessage: null,
-    recentProjects: [],
     lastOpenedScenePath: null,
     assetBrowserExpandedPaths: [],
     assetBrowserSelectedPath: null,
@@ -821,10 +408,7 @@ export const createInitialAppState = (): AppState => ({
     scriptRefreshSignal: 0,
     lastModifiedDirectoryPath: null,
     manifest: null,
-    openProgress: createInitialProjectOpenProgressState(),
-    hybridSync: createInitialHybridSyncState(),
-    workspace: createInitialWorkspaceConnectionState(),
-    coauthoring: createInitialCoauthoringState(),
+    host: createInitialHostConnectionState(),
   },
   scenes: {
     activeSceneId: null,
@@ -866,20 +450,6 @@ export const createInitialAppState = (): AppState => ({
   },
   ui: {
     theme: DEFAULT_THEME,
-    workspaceMode: 'studio',
-    flowSceneViewVisible: false,
-    flowInspectorOpen: false,
-    flowAutopilot: {
-      mode: 'off',
-      phase: 'idle',
-      countdownEndsAt: null,
-      runId: null,
-      startedAt: 0,
-      increments: 0,
-      toolIterations: 0,
-      inputTokens: 0,
-      stopReason: null,
-    },
     isLayoutReady: false,
     focusedPanelId: null,
     commandPaletteOpen: false,
@@ -887,7 +457,6 @@ export const createInitialAppState = (): AppState => ({
       sceneTree: true,
       viewport: true,
       inspector: true,
-      profiler: true,
       assets: true,
       animationTimeline: true,
       logs: true,
@@ -911,37 +480,22 @@ export const createInitialAppState = (): AppState => ({
     polygonEditing: null,
     showDirectionAxes: false,
     warnOnUnsavedUnload: true,
-    autosaveLocalProjects: false,
     pauseRenderingOnUnfocus: true,
     keepEditorRunningForAgent: true,
     gameAspectRatio: 'free',
-    flowStageAspect: 'project',
     isPlaying: false,
     isGamePopoutOpen: false,
     playModeStatus: 'stopped',
     playModeError: null,
+    playOwner: null,
+    playStartedAt: null,
+    gestureInProgress: false,
   },
   operations: {
     isExecuting: false,
     pendingCommandCount: 0,
     lastCommandId: null,
     lastUndoableCommandId: null,
-  },
-  collaboration: {
-    connectionStatus: 'disconnected',
-    roomName: null,
-    remoteUsers: [],
-    localUser: null,
-    accessMode: 'local',
-    authSource: 'none',
-    role: null,
-    isReadOnly: false,
-    shareToken: null,
-    shareEnabled: false,
-  },
-  telemetry: {
-    lastEventName: null,
-    unsentEventCount: 0,
   },
   localization: {
     locales: [],

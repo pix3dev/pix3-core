@@ -1,403 +1,260 @@
-import { injectable, inject } from '@/fw/di';
-import { ServiceContainer } from '@/fw/di';
+import { inject, injectable, ServiceContainer } from '@/fw/di';
+import { hostFailureOf, type HostFsFrame, type HostManifestEntry } from '@/host/EditorHost';
+import { HostService } from '@/host/HostService';
 import { appState } from '@/state';
-import { subscribe } from 'valtio/vanilla';
-import type * as Y from 'yjs';
-import { FileSystemAPIService, type FileDescriptor } from '@/services/project/FileSystemAPIService';
-import { CloudProjectCacheService } from '@/services/cloud/CloudProjectCacheService';
-import { CollaborationService } from '@/services/collab/CollaborationService';
-import * as ApiClient from '@/services/cloud/ApiClient';
-import { WorkspaceClient } from '@/services/project/workspace/WorkspaceClient';
-import { WorkspaceError } from '@/services/project/workspace/workspace-protocol';
-import { isPix3InternalPath } from '@/services/project/coauthoring/coauthoring-paths';
 
-type CloudManifestEntry = ApiClient.ManifestEntry;
-export type StorageBackendKind = 'local' | 'cloud' | 'workspace';
-type AssetMutationKind = 'create-directory' | 'write-file' | 'delete-entry' | 'move-entry';
+import type { FileDescriptor } from './file-descriptor';
+import { ReadOnlyTabError, SceneWriteConflictError } from './write-errors';
 
-interface AssetMutationEvent {
-  readonly id: string;
-  readonly kind: AssetMutationKind;
-  readonly path: string;
-  readonly directories: readonly string[];
-  readonly occurredAt: number;
-}
+export type { FileDescriptor } from './file-descriptor';
+export type StorageBackendKind = 'host';
 
+/**
+ * The project's files for the editor (plan §F.1 `ProjectStorageService` → ~250), over
+ * `EditorHost.files`. Paths are project paths (`res://` optional); `HostService` maps them to the
+ * plugin's wire paths. Listings come from the plugin's manifest, cached and patched by `pix3:fs`
+ * frames; every write is conditional on the hash this editor last saw (`If-Match`).
+ */
 @injectable()
 export class ProjectStorageService {
-  @inject(FileSystemAPIService)
-  private readonly fileSystem!: FileSystemAPIService;
+  @inject(HostService)
+  private readonly hostService!: HostService;
 
-  @inject(CloudProjectCacheService)
-  private readonly cloudCache!: CloudProjectCacheService;
-
-  @inject(WorkspaceClient)
-  private readonly workspace!: WorkspaceClient;
-
-  private cachedProjectId: string | null = null;
-  private cachedManifest: CloudManifestEntry[] | null = null;
-  private disposeCollaborationSubscription?: () => void;
-  private observedAssetEventsMap: Y.Map<string> | null = null;
-  private assetEventsObserver?: (event: Y.YMapEvent<string>) => void;
+  /** Wire path → manifest entry; null until first needed. */
+  private manifest: Map<string, HostManifestEntry> | null = null;
+  private manifestLoad: Promise<void> | null = null;
+  /** Wire path → sha256 of the bytes this editor last read or wrote. */
+  private readonly knownHashes = new Map<string, string>();
+  private unsubscribeFs: (() => void) | null = null;
   /** Open {@link batchMutations} scopes; while > 0 listing refresh signals are coalesced. */
   private mutationBatchDepth = 0;
   private batchedDirectories: string[] = [];
 
-  constructor() {
-    this.disposeCollaborationSubscription = subscribe(appState.collaboration, () => {
-      this.rebindCollaborationAssetEvents();
-    });
-    this.rebindCollaborationAssetEvents();
+  getBackend(): StorageBackendKind {
+    return 'host';
   }
 
-  getBackend(): StorageBackendKind {
-    // Browser-storage projects live in an OPFS FileSystemDirectoryHandle, so
-    // they route through the same on-disk path as 'local'. 'cloud' uses the
-    // manifest/cache path; 'workspace' is a `pix3 serve` folder over HTTP.
-    const backend = appState.project.backend;
-    if (backend === 'cloud' || backend === 'workspace') {
-      return backend;
-    }
-    return 'local';
+  private get files() {
+    return this.hostService.host.files;
   }
+
+  private wire(path: string): string {
+    return this.hostService.wirePath(path);
+  }
+
+  normalizeResourcePath(path: string): string {
+    return HostService.normalize(path);
+  }
+
+  // --- Manifest ------------------------------------------------------------------------------
+
+  private async ensureManifest(): Promise<Map<string, HostManifestEntry>> {
+    if (!this.unsubscribeFs) {
+      this.unsubscribeFs = this.hostService.host.events.onFs(frame => this.applyFrame(frame));
+    }
+    if (this.manifest) return this.manifest;
+    this.manifestLoad ??= this.refreshManifest();
+    await this.manifestLoad;
+    return this.manifest ?? new Map();
+  }
+
+  async refreshManifest(): Promise<void> {
+    const { files } = await this.files.manifest();
+    this.manifest = new Map(files.map(entry => [entry.path, entry]));
+    this.manifestLoad = null;
+  }
+
+  /** Patch the cached manifest from a `pix3:fs` frame and signal the asset browser. */
+  applyFrame(frame: HostFsFrame): void {
+    const manifest = this.manifest;
+    const directories: string[] = [];
+    for (const event of frame.events) {
+      const parent = (path: string): string => {
+        const slash = path.lastIndexOf('/');
+        return slash < 0 ? '.' : path.slice(0, slash);
+      };
+      if (event.op === 'delete' || event.op === 'rename') {
+        const gone = event.op === 'rename' ? (event.from ?? '') : event.path;
+        if (manifest) {
+          for (const key of [...manifest.keys()]) {
+            if (key === gone || key.startsWith(`${gone}/`)) manifest.delete(key);
+          }
+        }
+        this.knownHashes.delete(gone);
+        directories.push(parent(gone));
+      }
+      if (event.op !== 'delete') {
+        manifest?.set(event.path, {
+          path: event.path,
+          kind: event.kind,
+          size: manifest.get(event.path)?.size ?? 0,
+          mtime: Date.now(),
+          ...(event.sha256 ? { sha256: event.sha256 } : {}),
+        });
+        directories.push(parent(event.path));
+      }
+    }
+    const projectDirs = directories
+      .map(dir => (dir === '.' ? '.' : this.hostService.projectPath(dir)))
+      .filter((dir): dir is string => dir !== null && !dir.startsWith('.pix3'));
+    if (projectDirs.length > 0) this.signalDirectories(projectDirs);
+  }
+
+  // --- Reads ---------------------------------------------------------------------------------
 
   async listDirectory(path = '.'): Promise<FileDescriptor[]> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      return this.fileSystem.listDirectory(path);
+    const manifest = await this.ensureManifest();
+    const dir = this.wire(path);
+    const entries: FileDescriptor[] = [];
+    for (const entry of manifest.values()) {
+      const relative =
+        dir === '.' ? entry.path : entry.path.startsWith(`${dir}/`) ? entry.path.slice(dir.length + 1) : null;
+      if (!relative || relative.includes('/')) continue;
+      const projectPath = this.hostService.projectPath(entry.path);
+      if (projectPath === null) continue;
+      entries.push({
+        name: relative,
+        kind: entry.kind === 'dir' ? 'directory' : 'file',
+        path: projectPath,
+        size: entry.kind === 'file' ? entry.size : null,
+      });
     }
-    if (backend === 'workspace') {
-      return this.listWorkspaceDirectory(path);
-    }
-
-    const normalizedPath = this.normalizePath(path);
-    const manifest = await this.getManifestEntries();
-    const entries = new Map<string, FileDescriptor>();
-
-    for (const entry of manifest) {
-      const relative = this.getRelativeToDirectory(entry.path, normalizedPath);
-      if (!relative) {
-        continue;
-      }
-
-      const [head, ...rest] = relative.split('/');
-      if (!head) {
-        continue;
-      }
-
-      const childPath = normalizedPath === '.' ? head : `${normalizedPath}/${head}`;
-      const kind: FileSystemHandleKind = rest.length > 0 ? 'directory' : entry.kind;
-      const existing = entries.get(childPath);
-      const size = rest.length === 0 ? (entry.kind === 'file' ? entry.size : 0) : null;
-
-      if (!existing || existing.kind === 'file') {
-        entries.set(childPath, {
-          name: head,
-          kind,
-          path: childPath,
-          size,
-        });
-      }
-    }
-
-    return Array.from(entries.values());
+    return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
   async readTextFile(path: string): Promise<string> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      return this.fileSystem.readTextFile(path);
-    }
-    if (backend === 'workspace') {
-      return this.workspace.readText(this.normalizePath(path));
-    }
-
-    const projectId = this.requireProjectId();
-    const normalizedPath = this.normalizePath(path);
-    const cached = await this.cloudCache.readTextFile(projectId, normalizedPath);
-    if (cached !== null) {
-      return cached;
-    }
-
-    const response = await ApiClient.downloadFile(
-      projectId,
-      normalizedPath,
-      appState.collaboration.shareToken ?? undefined
-    );
-    const contents = await response.text();
-    await this.cloudCache.storeTextFile(
-      projectId,
-      normalizedPath,
-      contents,
-      this.getManifestEntryMetadata(normalizedPath)
-    );
-    return contents;
+    const read = await this.files.read(this.wire(path));
+    if (!read) throw new Error(`File not found: ${HostService.normalize(path)}`);
+    this.knownHashes.set(this.wire(path), read.sha256);
+    return new TextDecoder().decode(read.bytes);
   }
 
   async readBlob(path: string): Promise<Blob> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      return this.fileSystem.readBlob(path);
-    }
-    if (backend === 'workspace') {
-      return this.workspace.readBlob(this.normalizePath(path));
-    }
+    const read = await this.files.read(this.wire(path));
+    if (!read) throw new Error(`File not found: ${HostService.normalize(path)}`);
+    this.knownHashes.set(this.wire(path), read.sha256);
+    return new Blob([read.bytes as BlobPart]);
+  }
 
-    const projectId = this.requireProjectId();
-    const normalizedPath = this.normalizePath(path);
-    const cached = await this.cloudCache.readBlob(projectId, normalizedPath);
-    if (cached) {
-      return cached;
-    }
+  /** Whether a FILE exists at `path` (directories answer false). */
+  async fileExists(path: string): Promise<boolean> {
+    return (await this.ensureManifest()).get(this.wire(path))?.kind === 'file';
+  }
 
-    const response = await ApiClient.downloadFile(
-      projectId,
-      normalizedPath,
-      appState.collaboration.shareToken ?? undefined
-    );
-    const blob = await response.blob();
-    await this.cloudCache.storeBlobFile(
-      projectId,
-      normalizedPath,
-      blob,
-      this.getManifestEntryMetadata(normalizedPath)
-    );
-    return blob;
+  async getLastModified(path: string): Promise<number | null> {
+    return (await this.ensureManifest()).get(this.wire(path))?.mtime ?? null;
+  }
+
+  /** sha256 of the bytes this editor last read or wrote at `path`, or null. */
+  getKnownContentHash(path: string): string | null {
+    return this.knownHashes.get(this.wire(path)) ?? null;
   }
 
   /**
-   * `options.unconditional`: on a workspace, write without an `If-Match` base. Only for files the
-   * editor owns outright (`.pix3/protected.json`) — never for project content, where the base is
-   * what stops a save from overwriting an agent's newer version.
-   *
-   * `options.baseHash`: on a workspace, the `If-Match` base to use instead of the client's known
-   * hash. A scene save passes the version the editor ACCEPTED into its graph: the client's known
-   * hash also moves on background reads of an external version not merged yet, and a save based
-   * on that would overwrite the agent's version with the old graph.
+   * sha256 of `path` in the cached manifest (the disk as of the last scan plus pushed frames).
+   * `undefined` before the manifest loaded or when it carries no hash; `null` when there is no file.
+   */
+  getManifestContentHash(path: string): string | null | undefined {
+    if (!this.manifest) return undefined;
+    const entry = this.manifest.get(this.wire(path));
+    if (!entry || entry.kind !== 'file') return null;
+    return entry.sha256 ?? undefined;
+  }
+
+  /** sha256 → project paths (sorted) of every file in the manifest, `.pix3/` excluded. */
+  async getContentHashIndex(): Promise<ReadonlyMap<string, readonly string[]>> {
+    const index = new Map<string, string[]>();
+    const entries = [...(await this.ensureManifest()).values()].sort((a, b) =>
+      a.path.localeCompare(b.path)
+    );
+    for (const entry of entries) {
+      const projectPath = this.hostService.projectPath(entry.path);
+      if (entry.kind !== 'file' || !entry.sha256 || !projectPath || projectPath.startsWith('.pix3')) continue;
+      const paths = index.get(entry.sha256);
+      if (paths) paths.push(projectPath);
+      else index.set(entry.sha256, [projectPath]);
+    }
+    return index;
+  }
+
+  // --- Writes --------------------------------------------------------------------------------
+
+  /**
+   * `options.baseHash`: the `If-Match` base instead of the last hash this editor saw — a scene save
+   * passes the version it accepted into its graph. `options.unconditional`: no base at all, only
+   * for files the editor owns outright.
    */
   async writeTextFile(
     path: string,
     contents: string,
     options: { readonly unconditional?: boolean; readonly baseHash?: string } = {}
   ): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
-    await this.writeTextFileInternal(
-      normalizedPath,
-      contents,
-      options.unconditional === true ? null : options.baseHash
-    );
-    await this.publishAssetMutation({
-      kind: 'write-file',
-      path: normalizedPath,
-      directories: [this.getParentDirectory(normalizedPath)],
-    });
+    await this.write(path, contents, options);
   }
 
   async writeBinaryFile(path: string, data: ArrayBuffer): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
-    await this.writeBinaryFileInternal(normalizedPath, data);
-    await this.publishAssetMutation({
-      kind: 'write-file',
-      path: normalizedPath,
-      directories: [this.getParentDirectory(normalizedPath)],
-    });
+    await this.write(path, new Uint8Array(data), {});
+  }
+
+  private async write(
+    path: string,
+    data: Uint8Array | string,
+    options: { readonly unconditional?: boolean; readonly baseHash?: string }
+  ): Promise<void> {
+    const wirePath = this.wire(path);
+    const base = options.unconditional ? undefined : (options.baseHash ?? this.knownHashes.get(wirePath));
+    try {
+      const result = await this.files.write(wirePath, data, base ? { ifMatch: base } : {});
+      this.knownHashes.set(wirePath, result.sha256);
+    } catch (error) {
+      throw this.translate(wirePath, error);
+    }
+    this.signalDirectories([this.parentOf(HostService.normalize(path))]);
   }
 
   async deleteEntry(path: string): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
-    const entry = await this.getEntryDescriptor(normalizedPath);
-
-    await this.deleteEntryInternal(normalizedPath);
-    await this.publishAssetMutation({
-      kind: 'delete-entry',
-      path: normalizedPath,
-      directories: this.getDirectoriesAffectedByDeletion(normalizedPath, entry?.kind),
-    });
+    const wirePath = this.wire(path);
+    try {
+      await this.files.delete(wirePath, { recursive: true });
+    } catch (error) {
+      throw this.translate(wirePath, error);
+    }
+    this.knownHashes.delete(wirePath);
+    const normalized = HostService.normalize(path);
+    this.signalDirectories([this.parentOf(normalized), normalized]);
   }
 
   async createDirectory(path: string): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
-    await this.createDirectoryInternal(normalizedPath);
-    await this.publishAssetMutation({
-      kind: 'create-directory',
-      path: normalizedPath,
-      directories: [this.getParentDirectory(normalizedPath), normalizedPath],
-    });
+    try {
+      await this.files.mkdir(this.wire(path));
+    } catch (error) {
+      throw this.translate(this.wire(path), error);
+    }
+    const normalized = HostService.normalize(path);
+    this.signalDirectories([this.parentOf(normalized), normalized]);
   }
 
   async moveEntry(sourcePath: string, targetPath: string): Promise<void> {
-    const normalizedSourcePath = this.normalizePath(sourcePath);
-    const normalizedTargetPath = this.normalizePath(targetPath);
-
-    if (normalizedSourcePath === normalizedTargetPath) {
-      return;
+    const from = this.wire(sourcePath);
+    const to = this.wire(targetPath);
+    if (from === to) return;
+    try {
+      await this.files.move(from, to);
+    } catch (error) {
+      throw this.translate(from, error);
     }
-
-    if (this.getBackend() === 'workspace') {
-      // The server moves atomically (rename), keeps bytes and creates missing parents.
-      this.ensureWriteAllowed();
-      await this.workspace.move(normalizedSourcePath, normalizedTargetPath);
-      await this.publishAssetMutation({
-        kind: 'move-entry',
-        path: normalizedTargetPath,
-        directories: this.getUniqueDirectories([
-          this.getParentDirectory(normalizedSourcePath),
-          this.getParentDirectory(normalizedTargetPath),
-        ]),
-      });
-      return;
-    }
-
-    const sourceEntry = await this.getEntryDescriptor(normalizedSourcePath);
-    if (!sourceEntry) {
-      throw new Error(`Source entry not found: ${sourcePath}`);
-    }
-
-    if (sourceEntry.kind === 'file') {
-      const blob = await this.readBlob(normalizedSourcePath);
-      await this.writeBinaryFileInternal(normalizedTargetPath, await blob.arrayBuffer());
-      await this.deleteEntryInternal(normalizedSourcePath);
-      await this.refreshManifest();
-      await this.publishAssetMutation({
-        kind: 'move-entry',
-        path: normalizedTargetPath,
-        directories: this.getUniqueDirectories([
-          this.getParentDirectory(normalizedSourcePath),
-          this.getParentDirectory(normalizedTargetPath),
-        ]),
-      });
-      return;
-    }
-
-    await this.copyDirectory(normalizedSourcePath, normalizedTargetPath);
-    await this.deleteEntryInternal(normalizedSourcePath);
-    await this.refreshManifest();
-    await this.publishAssetMutation({
-      kind: 'move-entry',
-      path: normalizedTargetPath,
-      directories: this.getUniqueDirectories([
-        this.getParentDirectory(normalizedSourcePath),
-        this.getParentDirectory(normalizedTargetPath),
-      ]),
-    });
-  }
-
-  async getFileHandle(path: string): Promise<FileSystemFileHandle | null> {
-    if (this.getBackend() === 'local') {
-      return this.fileSystem.getFileHandle(path);
-    }
-    void path;
-    return null;
-  }
-
-  async getLastModified(path: string): Promise<number | null> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      const fileHandle = await this.fileSystem.getFileHandle(path);
-      const file = await fileHandle.getFile();
-      return file.lastModified;
-    }
-    if (backend === 'workspace') {
-      await this.ensureWorkspaceManifest();
-      return this.workspace.getManifestEntry(this.normalizePath(path))?.mtime ?? null;
-    }
-
-    const normalizedPath = this.normalizePath(path);
-    const manifest = await this.getManifestEntries();
-    const entry = manifest.find(item => item.path === normalizedPath);
-    if (!entry) {
-      return null;
-    }
-
-    const parsed = Date.parse(entry.modified);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  /** Whether a FILE exists at `path` (directories answer false). */
-  async fileExists(path: string): Promise<boolean> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      try {
-        await this.fileSystem.getFileHandle(path);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    if (backend === 'workspace') {
-      await this.ensureWorkspaceManifest();
-      return this.workspace.getManifestEntry(this.normalizePath(path))?.kind === 'file';
-    }
-    const manifest = await this.getManifestEntries();
-    const normalizedPath = this.normalizePath(path);
-    return manifest.some(entry => entry.path === normalizedPath && entry.kind === 'file');
+    const known = this.knownHashes.get(from);
+    this.knownHashes.delete(from);
+    if (known) this.knownHashes.set(to, known);
+    this.signalDirectories([
+      this.parentOf(HostService.normalize(sourcePath)),
+      this.parentOf(HostService.normalize(targetPath)),
+    ]);
   }
 
   /**
-   * `pix3 serve` workspace only: sha256 of the bytes this editor last read or wrote at `path` (the
-   * server's ETag of that exchange). Null on other backends, or when the path was never exchanged.
-   * Lets a reader know the hash of exactly what it read without hashing or reading again.
-   */
-  getKnownContentHash(path: string): string | null {
-    if (this.getBackend() !== 'workspace') return null;
-    return this.workspace.getKnownHash(this.normalizePath(path));
-  }
-
-  /**
-   * `pix3 serve` workspace only: `sha256` of `path` in the cached manifest (as of the last
-   * `rescan` plus pushed change events) — the disk's current hash without a request. `undefined`
-   * on other backends or when the manifest carries no hash for it; `null` when the manifest has no
-   * such file.
-   */
-  getManifestContentHash(path: string): string | null | undefined {
-    if (this.getBackend() !== 'workspace' || !this.workspace.getCachedManifest()) return undefined;
-    const entry = this.workspace.getManifestEntry(this.normalizePath(path));
-    if (!entry || entry.kind !== 'file') return null;
-    return entry.sha256 ?? undefined;
-  }
-
-  /**
-   * sha256 (hex) → project paths (sorted) of every file whose hash the backend's manifest already
-   * carries (`pix3 serve` workspace, cloud) — content lookup without reading a byte. `null` on the
-   * local FSA backend, which has no hashed manifest: callers hash their own candidates there.
-   * Editor bookkeeping under `.pix3/` is excluded. All paths are kept because equal content is
-   * common (a looping flipbook repeats frames), and a caller should prefer the path it expects.
-   */
-  async getContentHashIndex(): Promise<ReadonlyMap<string, readonly string[]> | null> {
-    const backend = this.getBackend();
-    let entries: { path: string; hash: string | undefined }[];
-    if (backend === 'workspace') {
-      await this.ensureWorkspaceManifest();
-      entries = this.workspace
-        .getManifestEntries()
-        .filter(entry => entry.kind === 'file')
-        .map(entry => ({ path: entry.path, hash: entry.sha256 }));
-    } else if (backend === 'cloud') {
-      entries = (await this.getManifestEntries())
-        .filter(entry => entry.kind === 'file')
-        .map(entry => ({ path: entry.path, hash: entry.hash }));
-    } else {
-      return null;
-    }
-    const index = new Map<string, string[]>();
-    for (const { path, hash } of entries.sort((a, b) => a.path.localeCompare(b.path))) {
-      if (hash && !isPix3InternalPath(path)) {
-        const paths = index.get(hash);
-        if (paths) {
-          paths.push(path);
-        } else {
-          index.set(hash, [path]);
-        }
-      }
-    }
-    return index;
-  }
-
-  /**
-   * Run `fn` with this editor's asset-listing refresh signals coalesced: every write inside still
-   * lands (and still reaches collaborators) immediately, but the asset browser refreshes once when
-   * the outermost batch settles instead of once per file. A 137-frame library insert used to
-   * re-list the tree 137 times — over a remote workspace, each one a round trip.
+   * Run `fn` with asset-listing refresh signals coalesced: every write still lands immediately,
+   * but the asset browser refreshes once when the outermost batch settles.
    */
   async batchMutations<T>(fn: () => Promise<T>): Promise<T> {
     this.mutationBatchDepth += 1;
@@ -408,435 +265,41 @@ export class ProjectStorageService {
       if (this.mutationBatchDepth === 0 && this.batchedDirectories.length > 0) {
         const directories = this.batchedDirectories;
         this.batchedDirectories = [];
-        this.applyAssetMutationSignal(directories);
+        this.signalDirectories(directories);
       }
-    }
-  }
-
-  normalizeResourcePath(path: string): string {
-    if (this.getBackend() === 'local') {
-      return this.fileSystem.normalizeResourcePath(path);
-    }
-    return this.normalizePath(path);
-  }
-
-  async getManifestEntries(forceRefresh = false): Promise<CloudManifestEntry[]> {
-    if (this.getBackend() !== 'cloud') {
-      return [];
-    }
-
-    const projectId = this.requireProjectId();
-    if (!forceRefresh && this.cachedManifest && this.cachedProjectId === projectId) {
-      return this.cachedManifest;
-    }
-
-    const { files } = await ApiClient.getManifestWithAccess(
-      projectId,
-      appState.collaboration.shareToken ?? undefined
-    );
-    this.cachedProjectId = projectId;
-    this.cachedManifest = files;
-    await this.cloudCache.reconcileManifest(projectId, files);
-    return files;
-  }
-
-  async refreshManifest(): Promise<void> {
-    const backend = this.getBackend();
-    if (backend === 'cloud') {
-      await this.getManifestEntries(true);
-    } else if (backend === 'workspace') {
-      await this.workspace.getManifest(true);
     }
   }
 
   dispose(): void {
-    this.disposeCollaborationSubscription?.();
-    this.disposeCollaborationSubscription = undefined;
-    this.detachAssetEventsObserver();
+    this.unsubscribeFs?.();
+    this.unsubscribeFs = null;
   }
 
-  private async ensureWorkspaceManifest(): Promise<void> {
-    if (!this.workspace.getCachedManifest()) {
-      await this.workspace.getManifest();
+  // --- Helpers -------------------------------------------------------------------------------
+
+  private translate(wirePath: string, error: unknown): Error {
+    const failure = hostFailureOf(error);
+    if (failure?.code === 'base_mismatch' || failure?.code === 'exists') {
+      return new SceneWriteConflictError(wirePath, failure);
     }
+    if (failure?.code === 'writer_superseded') return new ReadOnlyTabError();
+    return error instanceof Error ? error : new Error(String(error));
   }
 
-  /** Direct children of `path` from the (cached, event-patched) workspace manifest. */
-  private async listWorkspaceDirectory(path: string): Promise<FileDescriptor[]> {
-    await this.ensureWorkspaceManifest();
-    const normalizedPath = this.normalizePath(path);
-    const entries: FileDescriptor[] = [];
-    for (const entry of this.workspace.getManifestEntries()) {
-      const relative = this.getRelativeToDirectory(entry.path, normalizedPath);
-      if (!relative || relative.includes('/')) {
-        continue;
-      }
-      entries.push({
-        name: relative,
-        kind: entry.kind === 'dir' ? 'directory' : 'file',
-        path: entry.path,
-        size: entry.kind === 'file' ? entry.size : null,
-      });
-    }
-    return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  }
-
-  private async getEntryDescriptor(path: string): Promise<FileDescriptor | null> {
-    const parentPath = this.getParentDirectory(path);
-    const name = this.getBaseName(path);
-    const entries = await this.listDirectory(parentPath);
-    return entries.find(entry => entry.name === name) ?? null;
-  }
-
-  private async copyDirectory(sourcePath: string, targetPath: string): Promise<void> {
-    await this.createDirectoryInternal(targetPath);
-    const entries = await this.listDirectory(sourcePath);
-    for (const entry of entries) {
-      const childSourcePath = `${sourcePath}/${entry.name}`;
-      const childTargetPath = `${targetPath}/${entry.name}`;
-      if (entry.kind === 'directory') {
-        await this.copyDirectory(childSourcePath, childTargetPath);
-        continue;
-      }
-
-      const blob = await this.readBlob(childSourcePath);
-      await this.writeBinaryFileInternal(childTargetPath, await blob.arrayBuffer());
-    }
-  }
-
-  private async writeTextFileInternal(
-    path: string,
-    contents: string,
-    /** Workspace `If-Match` base: `null` = unconditional, `undefined` = the client's known hash. */
-    baseHash?: string | null
-  ): Promise<void> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      await this.fileSystem.writeTextFile(path, contents);
-      return;
-    }
-    if (backend === 'workspace') {
-      this.ensureWriteAllowed();
-      if (baseHash === undefined) {
-        await this.workspace.writeFile(path, contents);
-      } else {
-        await this.workspace.writeFile(path, contents, { baseHash });
-      }
-      return;
-    }
-
-    this.ensureWriteAllowed();
-    const projectId = this.requireProjectId();
-    await ApiClient.uploadFile(projectId, path, contents);
-    await this.refreshManifest();
-    await this.cloudCache.storeTextFile(
-      projectId,
-      path,
-      contents,
-      this.getManifestEntryMetadata(path)
-    );
-  }
-
-  private async writeBinaryFileInternal(path: string, data: ArrayBuffer): Promise<void> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      await this.fileSystem.writeBinaryFile(path, data);
-      return;
-    }
-    if (backend === 'workspace') {
-      this.ensureWriteAllowed();
-      await this.workspace.writeFile(path, data);
-      return;
-    }
-
-    this.ensureWriteAllowed();
-    const projectId = this.requireProjectId();
-    await ApiClient.uploadFile(projectId, path, data);
-    await this.refreshManifest();
-    await this.cloudCache.storeBlobFile(
-      projectId,
-      path,
-      new Blob([data]),
-      this.getManifestEntryMetadata(path)
-    );
-  }
-
-  private async deleteEntryInternal(path: string): Promise<void> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      await this.fileSystem.deleteEntry(path);
-      return;
-    }
-    if (backend === 'workspace') {
-      this.ensureWriteAllowed();
-      // Same semantics as the FSA path (`removeEntry(..., { recursive: true })`).
-      await this.workspace.delete(path, { recursive: true });
-      return;
-    }
-
-    this.ensureWriteAllowed();
-    const projectId = this.requireProjectId();
-    await ApiClient.deleteFile(projectId, path);
-    await this.cloudCache.invalidatePath(projectId, path, { recursive: true });
-    await this.refreshManifest();
-  }
-
-  private async createDirectoryInternal(path: string): Promise<void> {
-    const backend = this.getBackend();
-    if (backend === 'local') {
-      await this.fileSystem.createDirectory(path);
-      return;
-    }
-    if (backend === 'workspace') {
-      this.ensureWriteAllowed();
-      await this.workspace.mkdir(path);
-      return;
-    }
-
-    this.ensureWriteAllowed();
-    await ApiClient.createDirectory(this.requireProjectId(), path);
-    await this.refreshManifest();
-  }
-
-  private async publishAssetMutation(
-    event: Omit<AssetMutationEvent, 'id' | 'occurredAt'>
-  ): Promise<void> {
-    const normalizedDirectories = this.getUniqueDirectories(event.directories);
-    const mutation: AssetMutationEvent = {
-      id: this.createMutationId(),
-      occurredAt: Date.now(),
-      ...event,
-      directories: normalizedDirectories,
-    };
-
-    if (this.getBackend() === 'cloud') {
-      const collaborationService = this.tryGetCollaborationService();
-      const ydoc = collaborationService?.getYDoc();
-      if (collaborationService && ydoc) {
-        const assetEvents = ydoc.getMap<string>('asset-events');
-        ydoc.transact(() => {
-          assetEvents.set('lastMutation', JSON.stringify(mutation));
-        }, collaborationService.getLocalOrigin());
-      }
-    }
-
-    this.applyAssetMutationSignal(mutation.directories);
-  }
-
-  private applyAssetMutationSignal(directories: readonly string[]): void {
-    // `.pix3/` is editor bookkeeping (recovery journal, protected set): the asset browser hides it,
-    // and an autosave every second must not make every listing refresh.
-    if (directories.length > 0 && directories.every(directory => isPix3InternalPath(directory))) {
-      return;
-    }
+  private signalDirectories(directories: readonly string[]): void {
+    if (directories.length > 0 && directories.every(dir => dir.startsWith('.pix3'))) return;
     if (this.mutationBatchDepth > 0) {
       this.batchedDirectories.push(...directories);
       return;
     }
-    appState.project.lastModifiedDirectoryPath = this.coalesceDirectories(directories);
+    const unique = [...new Set(directories)];
+    appState.project.lastModifiedDirectoryPath = unique.length === 1 ? unique[0] : '.';
     appState.project.fileRefreshSignal = (appState.project.fileRefreshSignal || 0) + 1;
   }
 
-  private coalesceDirectories(directories: readonly string[]): string {
-    const normalized = this.getUniqueDirectories(directories);
-    if (normalized.length === 0) {
-      return '.';
-    }
-
-    return normalized.length === 1 ? normalized[0] : '.';
-  }
-
-  private getDirectoriesAffectedByDeletion(
-    path: string,
-    kind: FileSystemHandleKind | undefined
-  ): string[] {
-    if (kind === 'directory') {
-      return [this.getParentDirectory(path), path];
-    }
-    return [this.getParentDirectory(path)];
-  }
-
-  private getUniqueDirectories(directories: readonly string[]): string[] {
-    return Array.from(new Set(directories.map(path => this.normalizePath(path))));
-  }
-
-  private createMutationId(): string {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-
-    return `asset-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-
-  private rebindCollaborationAssetEvents(): void {
-    const collaborationService = this.tryGetCollaborationService();
-    const ydoc = collaborationService?.getYDoc();
-    const assetEvents = ydoc?.getMap<string>('asset-events') ?? null;
-
-    if (assetEvents === this.observedAssetEventsMap) {
-      return;
-    }
-
-    this.detachAssetEventsObserver();
-
-    if (!assetEvents) {
-      return;
-    }
-
-    this.assetEventsObserver = event => {
-      void this.handleAssetEventsUpdated(event);
-    };
-    this.observedAssetEventsMap = assetEvents;
-    assetEvents.observe(this.assetEventsObserver);
-  }
-
-  private detachAssetEventsObserver(): void {
-    if (this.observedAssetEventsMap && this.assetEventsObserver) {
-      this.observedAssetEventsMap.unobserve(this.assetEventsObserver);
-    }
-
-    this.observedAssetEventsMap = null;
-    this.assetEventsObserver = undefined;
-  }
-
-  private async handleAssetEventsUpdated(event: Y.YMapEvent<string>): Promise<void> {
-    const collaborationService = this.tryGetCollaborationService();
-    if (
-      !collaborationService ||
-      event.transaction.origin === collaborationService.getLocalOrigin()
-    ) {
-      return;
-    }
-
-    if (!event.keysChanged.has('lastMutation')) {
-      return;
-    }
-
-    const rawMutation = event.target.get('lastMutation');
-    if (!rawMutation) {
-      return;
-    }
-
-    try {
-      const mutation = JSON.parse(rawMutation) as AssetMutationEvent;
-      if (this.getBackend() === 'cloud') {
-        const projectId = this.requireProjectId();
-        await this.refreshManifest();
-        await this.cloudCache.invalidatePath(projectId, mutation.path, {
-          recursive: mutation.kind === 'delete-entry',
-        });
-      }
-      this.applyAssetMutationSignal(mutation.directories);
-    } catch (error) {
-      console.warn('[ProjectStorageService] Failed to process remote asset mutation', error);
-    }
-  }
-
-  private getManifestEntryMetadata(path: string): {
-    hash?: string | null;
-    modified?: string | null;
-    size?: number | null;
-  } {
-    const manifest = this.cachedManifest;
-    if (!manifest || this.cachedProjectId !== appState.project.id) {
-      return {};
-    }
-
-    const normalizedPath = this.normalizePath(path);
-    const entry = manifest.find(item => item.path === normalizedPath);
-    if (!entry || entry.kind !== 'file') {
-      return {};
-    }
-
-    return {
-      hash: entry.hash,
-      modified: entry.modified,
-      size: entry.size,
-    };
-  }
-
-  private tryGetCollaborationService(): CollaborationService | null {
-    try {
-      return ServiceContainer.getInstance().getService<CollaborationService>(
-        ServiceContainer.getInstance().getOrCreateToken(CollaborationService)
-      );
-    } catch {
-      return null;
-    }
-  }
-
-  private requireProjectId(): string {
-    const projectId = appState.project.id;
-    if (!projectId) {
-      throw new Error('Project ID is not available.');
-    }
-    return projectId;
-  }
-
-  private ensureWriteAllowed(): void {
-    if (this.getBackend() === 'workspace') {
-      const lease = appState.project.workspace.lease;
-      if (lease === 'busy' || lease === 'lost') {
-        throw new WorkspaceError(
-          'read_only',
-          'This window is read-only: another Pix3 window holds the workspace edit lease. ' +
-            'Use "Take over" to edit here.'
-        );
-      }
-      return;
-    }
-    if (appState.collaboration.isReadOnly) {
-      throw new Error('Project is open in read-only collaboration mode.');
-    }
-  }
-
-  private normalizePath(path: string): string {
-    if (!path || path === '.') {
-      return '.';
-    }
-
-    return (
-      path
-        .replace(/^res:\/\//i, '')
-        .replace(/^\.\/+/, '')
-        .replace(/^\/+/, '')
-        .replace(/\/+$/, '')
-        .replace(/\\+/g, '/') || '.'
-    );
-  }
-
-  private getRelativeToDirectory(filePath: string, directoryPath: string): string | null {
-    if (directoryPath === '.') {
-      return filePath;
-    }
-
-    if (filePath === directoryPath) {
-      return '';
-    }
-
-    if (!filePath.startsWith(`${directoryPath}/`)) {
-      return null;
-    }
-
-    return filePath.slice(directoryPath.length + 1);
-  }
-
-  private getParentDirectory(path: string): string {
-    if (!path || path === '.') {
-      return '.';
-    }
-
-    const segments = path.split('/').filter(Boolean);
-    if (segments.length <= 1) {
-      return '.';
-    }
-
-    return segments.slice(0, -1).join('/');
-  }
-
-  private getBaseName(path: string): string {
-    const segments = path.split('/').filter(Boolean);
-    return segments[segments.length - 1] ?? path;
+  private parentOf(path: string): string {
+    const slash = path.lastIndexOf('/');
+    return slash < 0 ? '.' : path.slice(0, slash);
   }
 }
 

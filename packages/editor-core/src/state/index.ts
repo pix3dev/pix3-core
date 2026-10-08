@@ -16,7 +16,6 @@ export const getAppStateSnapshot = (): AppStateSnapshot => snapshot(appState);
  */
 export const resetAppState = (): void => {
   const defaults = createInitialAppState();
-  appState.auth = defaults.auth;
   appState.project = defaults.project;
   appState.scenes = defaults.scenes;
   appState.animations = defaults.animations;
@@ -24,44 +23,27 @@ export const resetAppState = (): void => {
   appState.selection = defaults.selection;
   appState.ui = defaults.ui;
   appState.operations = defaults.operations;
-  appState.collaboration = defaults.collaboration;
-  appState.telemetry = defaults.telemetry;
-  appState.router = defaults.router;
+  appState.localization = defaults.localization;
+  appState.editorContext = defaults.editorContext;
 };
 
-export {
-  createInitialCoauthoringState,
-  createInitialHybridSyncState,
-  createInitialProjectOpenProgressState,
-  createInitialWorkspaceConnectionState,
-} from './AppState';
+export { createInitialHostConnectionState } from './AppState';
 
 export type {
-  AutosaveStatus,
-  CoauthoringState,
-  MergeBannerState,
   AnimationDescriptor,
   AnimationLoadState,
   AnimationsState,
   AppState,
   AssetBrowserViewMode,
   CameraState,
-  CodeEditorContextState,
-  CodeEditorSelectionState,
-  CollabConnectionStatus,
-  CollabRemoteUser,
-  CollaborationState,
   EditorCameraProjection,
   EditorTab,
-  HybridSyncStatus,
+  HostConnectionState,
   EditorTabType,
   NavigationMode,
   OperationState,
   PanelVisibilityState,
   ProjectBackend,
-  ProjectHybridSyncState,
-  ProjectOpenPhase,
-  ProjectOpenProgressState,
   ProjectState,
   ProjectStatus,
   SceneDescriptor,
@@ -70,14 +52,7 @@ export type {
   ScenesState,
   SelectionState,
   TabsState,
-  TelemetryState,
   TransformMode,
   ThemeName,
   UIState,
-  WorkspaceConnectionState,
-  WorkspaceConnectionStatus,
-  WorkspaceLeaseState,
-  RouterState,
-  RouterStatus,
-  RouteParams,
 } from './AppState';
