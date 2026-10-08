@@ -1,0 +1,29 @@
+{
+  // Type-checks the package sources and the template specs (and, through them, the template scripts
+  // they import). The template payloads under `templates/*/files` compile in generated projects
+  // against the published runtime; here they only get checked where a spec reaches them.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "paths": {
+      "@pix3/runtime": ["../runtime/src/index.ts"],
+      "@pix3/runtime/*": ["../runtime/src/*"]
+    }
+  },
+  "include": ["src", "templates/*.spec.ts"],
+  // `recipes.spec.ts` imports `parseRoutine` from editor-core, whose types reach the whole editor;
+  // vitest still runs it. Put it back once editor-core compiles (plan §G.2, port).
+  "exclude": ["templates/recipes.spec.ts"]
+}

@@ -1,5 +1,5 @@
 // Copies the editor's project templates into `<package>/templates/` for the published tarball
-// (plan §5 A, risk #7: templates stay in `src/templates/projects/`, one source; the package gets a
+// (plan §5 A, risk #7: templates stay in `packages/create-pix3/templates/`, one source; the package gets a
 // build-time copy). Only what `pix3 new` reads is copied — `template.yaml` and `files/` — never the
 // wizard's `cover.png` or the editor specs that sit beside them. The output is gitignored.
 import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const source = resolve(packageRoot, '../../src/templates/projects');
+const source = resolve(packageRoot, '../create-pix3/templates');
 const target = join(packageRoot, 'templates');
 
 if (!existsSync(source)) {

@@ -1,0 +1,13 @@
+{
+  "name": "@pix3/editor-core",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "description": "Prebuilt Pix3 editor (Lit), mounted by @pix3/vite-plugin through EditorHost.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pix3dev/pix3-core.git",
+    "directory": "packages/editor-core"
+  },
+  "license": "Apache-2.0"
+}

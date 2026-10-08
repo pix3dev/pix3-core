@@ -165,7 +165,7 @@ interface VectorFile {
 
 const VECTORS = JSON.parse(
   readFileSync(
-    resolve(process.cwd(), 'packages/pix3-runtime/src/net/protocol/fixtures/protocol-vectors.json'),
+    resolve(process.cwd(), 'packages/runtime/src/net/protocol/fixtures/protocol-vectors.json'),
     'utf8'
   )
 ) as VectorFile;

@@ -11,7 +11,7 @@ import type { Plugin } from 'esbuild';
  * imports), which Node cannot load. So:
  * - the published package runs a bundle prebuilt by `scripts/build-validate.mjs` at `prepack`
  *   (`dist/validate/prebuilt/`), and needs neither the runtime nor TypeScript at run time;
- * - a repo checkout (`node packages/pix3-cli/src/index.ts validate`) builds it on the fly into a
+ * - a repo checkout (`node packages/cli/src/index.ts validate`) builds it on the fly into a
  *   temp folder (`entry.ts`), so edits to the runtime are picked up with no build step.
  * `@pix3/runtime` resolves through `tsconfig.json` `paths` (esbuild honours them), the same mapping
  * `tsc` and the root vitest alias use.

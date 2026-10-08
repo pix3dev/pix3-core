@@ -14,7 +14,7 @@ import type { WorkspaceAuth } from './auth.ts';
  *
  * Kept apart from the file routes so a later `pix3 mcp --workspace` can drive the same lease and
  * relay (`enqueueCall`) without knowing anything about HTTP. Frames are documented in
- * `packages/pix3-cli/README.md`.
+ * `packages/cli/README.md`.
  */
 
 export type Frame = Record<string, unknown>;

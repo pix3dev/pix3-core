@@ -27,7 +27,7 @@ import { CLI_VERSION } from '../version.ts';
  * `scripts/build-runtime-types.mjs`, and on demand in a repo checkout when the runtime sources are
  * newer than the last build):
  *
- * - `@pix3/runtime/**` — `tsc -p packages/pix3-runtime/tsconfig.types.json` (declarations of what
+ * - `@pix3/runtime/**` — `tsc -p packages/runtime/tsconfig.types.json` (declarations of what
  *   `src/index.ts` reaches; specs, `testing/`, `main.ts` never), plus a `package.json` with the
  *   version;
  * - `@types/three/**` — the runtime's public types extend three.js (`NodeBase extends Object3D`),
@@ -76,9 +76,9 @@ interface RuntimeTypesArchive {
   readonly files: readonly (readonly [string, string])[];
 }
 
-/** `<repo>/packages/pix3-runtime` when this CLI runs from a checkout of the pix3 repo, else null. */
+/** `<repo>/packages/runtime` when this CLI runs from a checkout of the pix3 repo, else null. */
 export const repoRuntimePackage = (): string | null => {
-  const runtime = join(packageRoot(), '..', 'pix3-runtime');
+  const runtime = join(packageRoot(), '..', 'runtime');
   return existsSync(join(runtime, 'tsconfig.types.json')) &&
     existsSync(join(packageRoot(), 'scripts', 'build-runtime-types.mjs'))
     ? runtime
@@ -148,7 +148,7 @@ export const buildRuntimeTypes = (
     );
     if (result.status !== 0) {
       throw new Error(
-        `tsc -p packages/pix3-runtime/tsconfig.types.json failed:\n${result.stdout}${result.stderr}`
+        `tsc -p packages/runtime/tsconfig.types.json failed:\n${result.stdout}${result.stderr}`
       );
     }
     const runtimeVersion =

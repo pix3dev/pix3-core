@@ -32,7 +32,7 @@
  *   return. The outer call still performs the refresh.
  * - **Per-instance, not per-prototype.** Accessors on the prototype would be shadowed by the very
  *   field declarations they replace under `useDefineForClassFields: true` (which is what
- *   `packages/pix3-runtime/tsconfig.json` sets), and this package's sources are compiled by
+ *   `packages/runtime/tsconfig.json` sets), and this package's sources are compiled by
  *   consumers under configs we do not control. Defining on the instance works under both class-field
  *   semantics.
  *

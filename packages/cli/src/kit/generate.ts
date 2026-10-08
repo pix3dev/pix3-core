@@ -3,7 +3,7 @@ import { dirname, join, relative, sep } from 'node:path';
 
 /**
  * The agent-kit generator (plan §5 B: "Генерируется из существующих источников, а не копируется
- * руками"). Hand-written prose lives in `packages/pix3-cli/kit-src/` as templates; everything that
+ * руками"). Hand-written prose lives in `packages/cli/kit-src/` as templates; everything that
  * already has a source of truth elsewhere in the repo is pulled in at build time:
  *
  * - `{{include:<repo path>}}` — a whole file;

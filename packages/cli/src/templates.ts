@@ -8,16 +8,16 @@ import { cliPackageRoot } from './package-root.ts';
  * Project templates, read straight from disk.
  *
  * One source of truth (plan §5 A, risk #7 — "copy at build time"): the editor bundles
- * `src/templates/projects/` through Vite globs, and this package reads the same folders.
+ * `packages/create-pix3/templates/` through Vite globs, and this package reads the same folders.
  *  - Published package: `prepack` copies each template's `template.yaml` + `files/` into
  *    `<package>/templates/` (gitignored), which is what ships in the tarball.
- *  - Repo checkout (`node packages/pix3-cli/src/index.ts`): the templates are read from
- *    `<repo>/src/templates/projects/` directly, so editing a recipe needs no rebuild, and a
+ *  - Repo checkout (`node packages/cli/src/index.ts`): the templates are read from
+ *    `<repo>/packages/create-pix3/templates/` directly, so editing a recipe needs no rebuild, and a
  *    leftover `templates/` copy in the checkout can never shadow the source.
  *
  * The metadata parsing mirrors `ProjectTemplateService.buildTemplates` in the editor (same
  * defaults, same `hidden`, same `entryScene` → `defaultExportScenePath` handling);
- * `src/templates/projects/cli-manifest.spec.ts` holds the two to the same answer.
+ * `packages/create-pix3/templates/cli-manifest.spec.ts` holds the two to the same answer.
  */
 
 type ProjectType = '2d' | '3d';
@@ -50,18 +50,18 @@ export interface TemplateInfo {
 const packageRootDir = (): string => cliPackageRoot();
 
 /**
- * `<repo>/src/templates/projects` when this package runs from inside the pix3 monorepo, else null.
+ * `<repo>/packages/create-pix3/templates` when this package runs from inside the pix3 monorepo, else null.
  * "Inside" is proven, not guessed from a relative path: the repo root must hold
- * `packages/pix3-cli` = this package. An installed copy under `node_modules/@pix3/cli` never
+ * `packages/cli` = this package. An installed copy under `node_modules/@pix3/cli` never
  * matches, whatever happens to sit two levels up.
  */
 const repoTemplatesDir = (): string | null => {
   const packageRoot = packageRootDir();
   const repoRoot = join(packageRoot, '..', '..');
-  const templates = join(repoRoot, 'src', 'templates', 'projects');
+  const templates = join(repoRoot, 'packages', 'create-pix3', 'templates');
   const isRepoCheckout =
-    resolve(repoRoot, 'packages', 'pix3-cli') === resolve(packageRoot) &&
-    existsSync(join(repoRoot, 'packages', 'pix3-runtime'));
+    resolve(repoRoot, 'packages', 'cli') === resolve(packageRoot) &&
+    existsSync(join(repoRoot, 'packages', 'runtime'));
   return isRepoCheckout && existsSync(templates) ? templates : null;
 };
 

@@ -159,7 +159,7 @@ sliding) in an in-process `Map` (`preview-service.ts:63`). A loop exhausts serve
 
 #### M3 — Detached `.finally()` in `AssetLoader` raises a phantom uncaught error on every failed load
 
-`packages/pix3-runtime/src/core/AssetLoader.ts:239, 271, 322, 377`
+`packages/runtime/src/core/AssetLoader.ts:239, 271, 322, 377`
 
 ```ts
 this.audioLoadInFlight.set(resourcePath, loadPromise);
@@ -282,7 +282,7 @@ Nothing here touched the `@pix3/runtime` public API or the scene format: fix 6 i
 ## Appendix — floating promises found (22)
 
 ```
-packages/pix3-runtime/src/core/AssetLoader.ts:239, 271, 322, 377   ← M3
+packages/runtime/src/core/AssetLoader.ts:239, 271, 322, 377   ← M3
 src/services/core/RouterService.ts:24, 40
 src/services/viewport/Viewport2DProxyRegistry.ts:1823
 src/services/viewport/ViewportRenderService.ts:797, 1039

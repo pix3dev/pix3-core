@@ -1,0 +1,21 @@
+node_modules
+dist
+*.log
+*.local
+.env
+.env.local
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Per-project editor metadata written by the plugin (`.pix3/dev.json`, local keys).
+.pix3/
+
+# @pix3/cli build outputs (scripts/copy-templates.mjs, build-kit.mjs, build-runtime-types.mjs);
+# packages/runtime/tsconfig.types.json emits here first.
+packages/cli/templates/
+packages/cli/kit/
+packages/cli/kit.tmp-*/
+packages/cli/runtime-types/
+packages/runtime/dist-types/

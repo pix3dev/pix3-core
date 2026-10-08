@@ -25,8 +25,8 @@
     // The runtime, from source — the same path esbuild resolves when bundling `validate`, and the
     // one the root vitest config aliases for the specs.
     "paths": {
-      "@pix3/runtime": ["../pix3-runtime/src/index.ts"],
-      "@pix3/runtime/node": ["../pix3-runtime/src/node/index.ts"]
+      "@pix3/runtime": ["../runtime/src/index.ts"],
+      "@pix3/runtime/node": ["../runtime/src/node/index.ts"]
     }
   },
   "include": ["src"]

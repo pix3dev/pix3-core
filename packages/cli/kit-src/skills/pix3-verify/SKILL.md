@@ -240,11 +240,11 @@ causes the behaviour:
 
 The contract, as the CLI documents it:
 
-{{include:packages/pix3-cli/README.md#`pix3 mcp --workspace` — the live channel}}
+{{include:packages/cli/README.md#`pix3 mcp --workspace` — the live channel}}
 
 ### MCP configuration
 
-{{include:packages/pix3-cli/README.md#MCP configuration and `pix3 setup`|only}}
+{{include:packages/cli/README.md#MCP configuration and `pix3 setup`|only}}
 
 ## 4. Report honestly
 

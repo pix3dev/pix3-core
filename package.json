@@ -1,0 +1,44 @@
+{
+  "name": "pix3-core",
+  "private": true,
+  "version": "2.0.0-alpha.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "workspaces": [
+    "packages/runtime",
+    "packages/cli",
+    "packages/vite-plugin",
+    "packages/editor-core",
+    "packages/create-pix3"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint packages/runtime/src packages/cli/src",
+    "lint:fix": "eslint packages/runtime/src packages/cli/src --fix",
+    "type-check": "tsc --noEmit -p packages/runtime && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/cli/tsconfig.build.json && tsc --noEmit -p packages/create-pix3",
+    "format": "prettier --write \"packages/{runtime,cli}/src/**/*.ts\"",
+    "format:check": "prettier --check \"packages/{runtime,cli}/src/**/*.ts\"",
+    "version:sync": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.5.2",
+    "@types/three": "^0.183.1",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "happy-dom": "^20.7.0",
+    "lit": "^3.3.1",
+    "postprocessing": "^6.39.2",
+    "prettier": "3.6.2",
+    "three": "~0.183.2",
+    "typescript": "~5.8.3",
+    "vitest": "^4.0.18",
+    "yaml": "^2.6.0"
+  },
+  "license": "Apache-2.0"
+}

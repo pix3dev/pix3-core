@@ -15,7 +15,7 @@ import { createHeadlessGame, type HeadlessGame } from './index';
  * striker placement had an inverted sign.
  */
 
-const SAMPLE = resolve(process.cwd(), 'samples/Carrom');
+const SAMPLE = resolve(process.cwd(), 'packages/runtime/fixtures/carrom');
 
 /** Text project files, keyed project-relative. Art is skipped: nothing here asserts on pixels. */
 function readProjectFiles(root: string): Record<string, string> {
@@ -44,12 +44,12 @@ async function bootCarrom(): Promise<HeadlessGame> {
     { AimGuide },
     { StrikerTrail },
   ] = await Promise.all([
-    import('../../../../samples/Carrom/scripts/GameController'),
-    import('../../../../samples/Carrom/scripts/CarromAI'),
-    import('../../../../samples/Carrom/scripts/Disc'),
-    import('../../../../samples/Carrom/scripts/ShotInput'),
-    import('../../../../samples/Carrom/scripts/AimGuide'),
-    import('../../../../samples/Carrom/scripts/StrikerTrail'),
+    import('../../fixtures/carrom/scripts/GameController'),
+    import('../../fixtures/carrom/scripts/CarromAI'),
+    import('../../fixtures/carrom/scripts/Disc'),
+    import('../../fixtures/carrom/scripts/ShotInput'),
+    import('../../fixtures/carrom/scripts/AimGuide'),
+    import('../../fixtures/carrom/scripts/StrikerTrail'),
   ]);
 
   const game = await createHeadlessGame({

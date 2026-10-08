@@ -12,8 +12,8 @@ import { CLI_VERSION } from './version.ts';
  * exact CLI version that wrote it, never a bare `@pix3/cli` (npx would then take whatever its cache
  * or the registry has, and the server would drift from the kit and the cached editor).
  *
- * **Dev mode.** From a repo checkout (the CLI runs from its `src/`, next to `packages/pix3-runtime`)
- * or with `PIX3_CLI_DEV=1`, the command is `node <repo>/packages/pix3-cli/src/index.ts mcp
+ * **Dev mode.** From a repo checkout (the CLI runs from its `src/`, next to `packages/runtime`)
+ * or with `PIX3_CLI_DEV=1`, the command is `node <repo>/packages/cli/src/index.ts mcp
  * --workspace` instead, so the channel can be tried before that version is on npm.
  */
 
@@ -44,7 +44,7 @@ export const isDevCheckout = (): boolean => {
   return (
     existsSync(entry) &&
     import.meta.url.endsWith('.ts') &&
-    existsSync(join(packageDir, '..', 'pix3-runtime', 'package.json'))
+    existsSync(join(packageDir, '..', 'runtime', 'package.json'))
   );
 };
 

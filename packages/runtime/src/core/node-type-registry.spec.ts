@@ -10,10 +10,7 @@ import {
 
 /** The `case` labels of `SceneLoader.createNodeFromDefinition`'s switch, read from source. */
 const loaderCaseLabels = (): string[] => {
-  const source = readFileSync(
-    `${process.cwd()}/packages/pix3-runtime/src/core/SceneLoader.ts`,
-    'utf8'
-  );
+  const source = readFileSync(`${process.cwd()}/packages/runtime/src/core/SceneLoader.ts`, 'utf8');
   const start = source.indexOf('async createNodeFromDefinition');
   expect(start, 'createNodeFromDefinition not found in SceneLoader').toBeGreaterThan(-1);
   // The switch ends at its `default:` arm — the method calls other loaders by name before that,

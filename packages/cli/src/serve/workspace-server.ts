@@ -84,7 +84,7 @@ import { TreeWatcher } from './watcher.ts';
  * - WebSocket `/ws/events`: auth frame first, then `hello`, `change` batches from the watcher,
  *   ping/pong, the single editing lease, and MCP calls relayed to the lease holder.
  *
- * The wire contract is documented in `packages/pix3-cli/README.md`; keep the two in step.
+ * The wire contract is documented in `packages/cli/README.md`; keep the two in step.
  */
 
 export interface WorkspaceServerOptions {

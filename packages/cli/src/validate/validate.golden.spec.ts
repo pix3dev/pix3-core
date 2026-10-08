@@ -21,7 +21,9 @@ import { validateProject } from './validate.ts';
 const scratch = mkdtempSync(join(tmpdir(), 'pix3-validate-golden-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-const EDITOR_TEMPLATES_DIR = fileURLToPath(new URL('../../../../src/templates/', import.meta.url));
+const EDITOR_TEMPLATES_DIR = fileURLToPath(
+  new URL('../../../editor-core/src/templates/', import.meta.url)
+);
 
 const summarize = (label: string, diagnostics: readonly Diagnostic[]): void => {
   const warnings = diagnostics.filter(d => d.severity === 'warning');
@@ -61,12 +63,12 @@ describe('pix3 validate golden: shipped templates have no errors', () => {
 
   const editorScenes = readdirSync(EDITOR_TEMPLATES_DIR).filter(f => f.endsWith('.pix3scene'));
 
-  it('finds the editor-level template scenes (src/templates/*.pix3scene)', () => {
+  it('finds the editor-level template scenes (editor-core/src/templates/*.pix3scene)', () => {
     expect(editorScenes).toContain('startup-scene.pix3scene');
   });
 
   for (const scene of editorScenes) {
-    it(`src/templates/${scene} validates clean`, async () => {
+    it(`editor-core/src/templates/${scene} validates clean`, async () => {
       const report = await validateProject({ projectRoot: EDITOR_TEMPLATES_DIR, files: [scene] });
       summarize(scene, report.diagnostics);
       expect(errorLines(report.diagnostics)).toEqual([]);

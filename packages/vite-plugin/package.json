@@ -1,0 +1,20 @@
+{
+  "name": "@pix3/vite-plugin",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "description": "Pix3 editor, file API, sync barrier and build as a Vite plugin.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pix3dev/pix3-core.git",
+    "directory": "packages/vite-plugin"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "peerDependencies": {
+    "vite": "^7 || ^8",
+    "@pix3/runtime": "2.0.0-alpha.0"
+  },
+  "license": "Apache-2.0"
+}

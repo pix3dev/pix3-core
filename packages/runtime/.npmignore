@@ -2,3 +2,4 @@
 **/*.test.ts
 **/__tests__/**
 **/__mocks__/**
+fixtures/

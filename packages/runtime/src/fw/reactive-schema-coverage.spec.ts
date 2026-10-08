@@ -105,7 +105,7 @@ describe('reactive schema coverage', () => {
   it('lists every node type the SceneLoader can build', () => {
     // Closes the drift loop: adding a `case` to SceneLoader without adding it here fails this test.
     const loaderSource = readFileSync(
-      `${process.cwd()}/packages/pix3-runtime/src/core/SceneLoader.ts`,
+      `${process.cwd()}/packages/runtime/src/core/SceneLoader.ts`,
       'utf8'
     );
     const cases = [...loaderSource.matchAll(/case '([A-Za-z0-9_]+)':/g)].map(m => m[1]);

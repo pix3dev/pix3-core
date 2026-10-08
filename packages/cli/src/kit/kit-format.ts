@@ -21,7 +21,7 @@ export interface CoreComponentInfo {
 export interface GenerateKitOptions {
   /** The pix3 repo root (include paths are relative to it). */
   readonly repoRoot: string;
-  /** The templates (`packages/pix3-cli/kit-src`). */
+  /** The templates (`packages/cli/kit-src`). */
   readonly kitSrcDir: string;
   readonly outDir: string;
   readonly version: string;

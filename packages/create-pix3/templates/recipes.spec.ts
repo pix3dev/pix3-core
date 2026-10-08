@@ -1,18 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 
 import * as runtime from '@pix3/runtime';
 import { normalizeNodeTypeName } from '@pix3/runtime';
 import type { PropertySchema } from '@pix3/runtime';
-import { parseRoutine } from '@/services/agent/game-routines';
-import { RECIPE_CATALOG, RECIPE_TEMPLATE_ALIASES } from '@/services/flow/PrototypeBootstrapService';
-import {
-  IDEA_PRESERVED_PATHS,
-  MAX_RECIPE_MD_CHARS,
-  RECIPE_MD_HEADROOM_CHARS,
-} from '@/services/flow/recipe-contract';
+// The routine parser lives with the editor's game-test service; only its runtime-free value chain
+// is loaded here, so this spec runs before editor-core compiles (see ../tsconfig.json).
+import { parseRoutine } from '../../editor-core/src/services/agent/game-routines';
+import { MAX_RECIPE_MD_CHARS, RECIPE_CATALOG, RECIPE_MD_HEADROOM_CHARS } from '../src/recipes';
 
 /**
  * Contract drift guard for the Flow "recipe" templates (`.plans/done/flow-recipes-contract.md`).
@@ -25,7 +22,7 @@ import {
  * failure is silent in the field — so it fails here instead.
  */
 
-const TEMPLATES_ROOT = resolve(process.cwd(), 'src/templates/projects');
+const TEMPLATES_ROOT = resolve(process.cwd(), 'packages/create-pix3/templates');
 
 /** Templates that ship a `design/recipe.md` and are therefore part of the catalog. */
 const CATALOG_TEMPLATES = [
@@ -202,7 +199,7 @@ async function loadSchemaProperties(templateId: string, componentType: string): 
   return (ctor?.getPropertySchema?.().properties ?? []).map(property => property.name);
 }
 
-describe('flow recipe contract', () => {
+describe('recipe contract', () => {
   /**
    * Both directions of catalog↔template, because each gap fails silently in a different way.
    *
@@ -219,16 +216,12 @@ describe('flow recipe contract', () => {
     );
 
     for (const recipe of RECIPE_CATALOG) {
-      const templateId = RECIPE_TEMPLATE_ALIASES[recipe.id] ?? recipe.id;
-      expect(
-        shipped.has(templateId),
-        `catalog id "${recipe.id}" resolves to template "${templateId}", which is not shipped`
-      ).toBe(true);
+      expect(shipped.has(recipe.id), `catalog id "${recipe.id}" is not a shipped template`).toBe(
+        true
+      );
     }
 
-    const catalogTemplates = new Set(
-      RECIPE_CATALOG.map(recipe => RECIPE_TEMPLATE_ALIASES[recipe.id] ?? recipe.id)
-    );
+    const catalogTemplates = new Set(RECIPE_CATALOG.map(recipe => recipe.id));
     for (const templateId of shipped) {
       if (!templateId.startsWith('recipe-')) continue;
       expect(
@@ -527,70 +520,6 @@ describe('template testability contract', () => {
   }
 });
 
-/**
- * The Flow idea→prototype transition lays a recipe over a project that is ALREADY the user's
- * (`.plans/done/vibe-idea-stage.md` §3.1): the design document, the decisions log, the source documents
- * they attached and the whole references folder are theirs, and `applyTemplateFiles(…, { skip })`
- * refuses to overwrite them.
- *
- * That skip list is a safety net over a contract this spec is the enforcement of: no template ships
- * those paths. Should one ever start to, the file would be quietly dropped on transition (worse: a
- * recipe author would think it shipped) — so it fails here, at the moment the file is added, rather
- * than in a project nobody can recover.
- */
-describe('idea-stage files a recipe may not ship', () => {
-  const listAllFiles = (dir: string, base = dir, collected: string[] = []): string[] => {
-    if (!existsSync(dir)) {
-      return collected;
-    }
-    for (const entry of readdirSync(dir)) {
-      const fullPath = join(dir, entry);
-      if (statSync(fullPath).isDirectory()) {
-        listAllFiles(fullPath, base, collected);
-      } else {
-        collected.push(relative(base, fullPath).split(sep).join('/'));
-      }
-    }
-    return collected;
-  };
-
-  const ALL_TEMPLATES = readdirSync(TEMPLATES_ROOT)
-    .filter(entry => statSync(join(TEMPLATES_ROOT, entry)).isDirectory())
-    .sort();
-
-  it('the preserved-path list is not empty', () => {
-    // A typo that emptied the list would make every assertion below pass while the transition
-    // overwrote everything.
-    expect(IDEA_PRESERVED_PATHS.length).toBeGreaterThan(0);
-    expect(IDEA_PRESERVED_PATHS).toContain('design/gdd.md');
-  });
-
-  for (const templateId of ALL_TEMPLATES) {
-    it(`${templateId}: ships no file the transition would have to skip`, () => {
-      const shipped = listAllFiles(join(TEMPLATES_ROOT, templateId, 'files'));
-      for (const preserved of IDEA_PRESERVED_PATHS) {
-        const prefix = preserved.replace(/\/+$/, '');
-        const offenders = shipped.filter(path => path === prefix || path.startsWith(`${prefix}/`));
-        expect(
-          offenders,
-          `${templateId} ships ${offenders.join(', ')}, which the idea→prototype transition ` +
-            `refuses to overwrite — the user's own "${preserved}" would win and this file would ` +
-            'never reach a project that came through the idea stage'
-        ).toEqual([]);
-      }
-    });
-  }
-
-  it('the agent overlay ships none of them either', () => {
-    // The overlay (AGENTS.md, CLAUDE.md, design/README.md, .claude/skills/**) is written into every
-    // project by the same call, so it is under the same rule.
-    const overlay = listAllFiles(resolve(process.cwd(), 'src/templates/agent'));
-    for (const preserved of IDEA_PRESERVED_PATHS) {
-      const prefix = preserved.replace(/\/+$/, '');
-      expect(overlay.filter(path => path === prefix || path.startsWith(`${prefix}/`))).toEqual([]);
-    }
-  });
-});
 /**
  * Where full-screen UI is allowed to live.
  *

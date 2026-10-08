@@ -1,5 +1,5 @@
 {{# Template of the kit's AGENTS.md. Generated into projects by `pix3 kit` / `pix3 new`; see }}
-{{# packages/pix3-cli/src/kit/generate.ts for the directive syntax. }}
+{{# packages/cli/src/kit/generate.ts for the directive syntax. }}
 <!-- Pix3 agent kit {{version}} — written by `pix3 kit`. You may edit it: `pix3 kit --update` never overwrites a kit file you changed. -->
 # AGENTS.md — Pix3 game project
 

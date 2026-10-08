@@ -171,8 +171,8 @@ describe('kit drift', () => {
         'docs/pix3-specification.md',
         'docs/node-types-reference.md',
         'docs/nodes-and-systems.md',
-        'src/services/agent/agent-skills/engine-api-map.md',
-        'packages/pix3-cli/README.md',
+        'packages/cli/kit-includes/engine-api-map.md',
+        'packages/cli/README.md',
       ])
     );
   });
@@ -243,7 +243,7 @@ describe('kit drift', () => {
     // sends it after a tool it does not have. (The scene-format skill's recipe table and the
     // included spec name in-editor tools on purpose: they translate them into file edits.)
     const registry = readFileSync(
-      join(repoRootOfCheckout(), 'src/services/agent/AgentToolRegistry.ts'),
+      join(repoRootOfCheckout(), 'packages/editor-core/src/services/agent/AgentToolRegistry.ts'),
       'utf8'
     );
     const editorTools = new Set(

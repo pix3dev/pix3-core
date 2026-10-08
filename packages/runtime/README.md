@@ -1,14 +1,10 @@
-### yalc workflow
+# @pix3/runtime
 
-# after changes in runtime 
-cd pix3/packages/pix3-runtime && npm run yalc:publish
-# in target game project:
-yalc update
-# or npm install - yalc will update automatically
+The Pix3 engine. Ships TypeScript sources; projects compile them with their own bundler (Vite).
 
 ### Hybrid ECS runtime hooks
 
-`pix3-runtime` stays scene-graph-first, but now exposes `ECSService` for project-owned ECS worlds.
+The runtime stays scene-graph-first, but now exposes `ECSService` for project-owned ECS worlds.
 
 - `SceneService.getECSService()` returns the active runtime ECS coordinator.
 - Systems can register `update` and `fixedUpdate` phases.

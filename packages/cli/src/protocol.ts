@@ -51,7 +51,7 @@ export const CALL_TIMEOUT_MS = 60_000;
 /**
  * Integer version of the workspace protocol (`serve/`: `/ws/*` routes and `/ws/events` frames),
  * separate from {@link LINK_PROTOCOL} and from the lockstep product version. Bump on any
- * incompatible change to a route, header or frame documented in `packages/pix3-cli/README.md`.
+ * incompatible change to a route, header or frame documented in `packages/cli/README.md`.
  */
 export const WORKSPACE_PROTOCOL = 1;
 

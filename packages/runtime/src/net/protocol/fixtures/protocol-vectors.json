@@ -8,7 +8,7 @@
     "would only prove that the code agrees with itself; these fail the moment an offset, a width, an",
     "endianness or a rounding mode drifts away from the published contract.",
     "Verified from two sides: tests/Pix3.Rooms.Tests/Protocol/GoldenVectorFileTests.cs checks the C#",
-    "codec against this file, and packages/pix3-runtime/src/net/protocol/protocol.spec.ts (in the pix3",
+    "codec against this file, and packages/runtime/src/net/protocol/protocol.spec.ts (in the pix3",
     "repo, which holds a stamped copy) checks the hand-written TypeScript codec against the same bytes.",
     "Hex strings ignore whitespace. Float inputs are written as decimals that are exactly representable",
     "in float32, so widening them to double is lossless and both languages read the same number; the",

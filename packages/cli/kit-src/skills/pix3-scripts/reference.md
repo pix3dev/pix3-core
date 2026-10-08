@@ -1,4 +1,4 @@
-<!-- Pix3 agent kit {{version}} — generated from docs/nodes-and-systems.md, src/services/agent/agent-skills/engine-api-map.md and the runtime's component registry. Do not edit: pix3 kit --update regenerates it. -->
+<!-- Pix3 agent kit {{version}} — generated from docs/nodes-and-systems.md, packages/cli/kit-includes/engine-api-map.md and the runtime's component registry. Do not edit: pix3 kit --update regenerates it. -->
 # Script API reference
 
 Generated from the engine's own documentation and code. Grep a heading instead of reading it
@@ -16,23 +16,23 @@ exist for you — the runtime's declarations are in `.pix3/types/@pix3/runtime/`
 
 ### A `Script`
 
-{{include:src/services/agent/agent-skills/engine-api-map.md#A `Script`}}
+{{include:packages/cli/kit-includes/engine-api-map.md#A `Script`}}
 
 ### Nodes
 
-{{include:src/services/agent/agent-skills/engine-api-map.md#Nodes}}
+{{include:packages/cli/kit-includes/engine-api-map.md#Nodes}}
 
 ### `this.scene`
 
-{{include:src/services/agent/agent-skills/engine-api-map.md#`this.scene`}}
+{{include:packages/cli/kit-includes/engine-api-map.md#`this.scene`}}
 
 ### `this.input`
 
-{{include:src/services/agent/agent-skills/engine-api-map.md#`this.input`}}
+{{include:packages/cli/kit-includes/engine-api-map.md#`this.input`}}
 
 ### Traps
 
-{{include:src/services/agent/agent-skills/engine-api-map.md#Traps}}
+{{include:packages/cli/kit-includes/engine-api-map.md#Traps}}
 
 ## Capability catalog — nodes
 

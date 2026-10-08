@@ -29,7 +29,7 @@ import { ScriptRegistry } from './ScriptRegistry';
  *
  * This is the golden test for `pix3 validate` level 2 (`.plans/external-agent-authoring.md`, §5 A;
  * measurements in `.plans/measurements/external-agent-phase0-strict-profile.md`). Every scene and
- * prefab shipped under `src/templates/projects/` must hydrate through the real loader, with the
+ * prefab shipped under `packages/create-pix3/templates/` must hydrate through the real loader, with the
  * built-in `core:*` behaviours AND the template's own `user:*` scripts registered, and come out
  * with nothing parked, nothing inert, no missing `res://` texture and no loader warning.
  *
@@ -47,7 +47,7 @@ import { ScriptRegistry } from './ScriptRegistry';
  */
 
 const TEMPLATES_ROOT = fileURLToPath(
-  new URL('../../../../src/templates/projects/', import.meta.url)
+  new URL('../../../../packages/create-pix3/templates/', import.meta.url)
 );
 
 /** Placeholders the project scaffolder substitutes on copy. */

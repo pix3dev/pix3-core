@@ -1,14 +1,14 @@
 {
   "name": "@pix3/runtime",
-  "version": "1.6.3",
+  "version": "2.0.0-alpha.0",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pix3dev/pix3.git",
-    "directory": "packages/pix3-runtime"
+    "url": "git+https://github.com/pix3dev/pix3-core.git",
+    "directory": "packages/runtime"
   },
   "engines": {
-    "node": ">=24.15.0 <25"
+    "node": ">=20.19"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -27,22 +27,21 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "yalc:publish": "yalc publish --force"
+    "build": "tsc"
   },
   "dependencies": {
-    "yaml": "^2.3.4"
+    "lit": "^3.3.1",
+    "yaml": "^2.6.0"
   },
   "peerDependencies": {
     "postprocessing": ">=6.39.0",
-    "three": ">=0.183.0",
+    "three": "~0.183.0",
     "@esotericsoftware/spine-threejs": "~4.3"
   },
   "devDependencies": {
     "@types/three": "^0.183.1",
     "postprocessing": "^6.39.2",
-    "three": "^0.183.2",
-    "typescript": "^5.2.2"
+    "three": "~0.183.2"
   },
   "peerDependenciesMeta": {
     "@esotericsoftware/spine-threejs": {

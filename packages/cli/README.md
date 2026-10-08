@@ -263,19 +263,19 @@ as edited.
 `kit/` automatically whenever an input changed) expands the templates in `kit-src/`: hand-written
 prose plus `{{include:<repo path>#<heading>}}` / `{{include:<repo path>@<paragraph>}}` directives
 over `docs/pix3-specification.md`, `docs/node-types-reference.md`, `docs/nodes-and-systems.md`,
-`src/services/agent/agent-skills/engine-api-map.md` and this README, and `{{generated:…}}` blocks
+`packages/cli/kit-includes/engine-api-map.md` and this README, and `{{generated:…}}` blocks
 computed from code (the `core:` component table from the runtime's registry, the MCP tool list,
 the barrier error codes). Syntax: `src/kit/generate.ts`. `src/kit.spec.ts` builds the kit and fails
 on drift: an unresolved directive, a `pix3` command or flag not in the usage text, a tool name
 outside the 14, a diagnostic code no command emits, a node type the loader does not know, a
 property in the nodes skill's tables that the disk-format descriptor
-(`packages/pix3-runtime/src/core/scene-disk-format.ts`) does not accept, a `core:` component that
+(`packages/runtime/src/core/scene-disk-format.ts`) does not accept, a `core:` component that
 does not exist.
 
 ### Script types (`.pix3/types/`)
 
 `scripts/build-runtime-types.mjs` (at `prepack`; rebuilt on demand in a checkout when the runtime
-sources change) runs `tsc -p packages/pix3-runtime/tsconfig.types.json` (declarations of what
+sources change) runs `tsc -p packages/runtime/tsconfig.types.json` (declarations of what
 `src/index.ts` reaches — no specs, samples or `testing/`) into `runtime-types/@pix3/runtime/`, and
 copies `@types/three` (without its `node_modules`) to `runtime-types/@types/three/` — the runtime's
 public types extend three.js. The tarball carries that tree packed into one file,
@@ -746,8 +746,8 @@ for Codex a `~/.codex/config.toml` block — `[mcp_servers.pix3]` with `command`
 the ones `tools/pix3-agent-bridge` passes to `codex exec -c mcp_servers.pix3.*`; the file form is
 best-effort, check `codex mcp --help` of your Codex version.
 
-**Dev mode.** From a checkout of the pix3 repo (the CLI runs from `packages/pix3-cli/src/`), or
-with `PIX3_CLI_DEV=1`, both write `node <repo>/packages/pix3-cli/src/index.ts mcp --workspace`
+**Dev mode.** From a checkout of the pix3 repo (the CLI runs from `packages/cli/src/`), or
+with `PIX3_CLI_DEV=1`, both write `node <repo>/packages/cli/src/index.ts mcp --workspace`
 instead, so the channel can be tried before that version is on npm. `PIX3_CLI_DEV=0` forces the
 pinned form.
 
@@ -765,7 +765,7 @@ dist/smoke/prebuilt/        smoke worker + tree defaults + @pix3/runtime + three
 dist/runtime-types.json     runtime-types/ packed into one file (scripts/build-runtime-types.mjs):
                             ~1 100 small .d.ts cost npm over a second to unpack on every npx run
 kit/                        the agent kit (scripts/build-kit.mjs)
-templates/                  copy of src/templates/projects (scripts/copy-templates.mjs; removed at postpack)
+templates/                  copy of packages/create-pix3/templates (scripts/copy-templates.mjs; removed at postpack)
 ```
 
 Left out of the bin on purpose: Node built-ins; `esbuild` (an `optionalDependency` — level 2 of
@@ -785,4 +785,4 @@ a `runtime-vX.Y.Z` tag publishes `@pix3/runtime` and `@pix3/cli` together, `cli-
 alone, or run the workflow manually. The job runs `npm ci` at the repo root (the build needs the
 runtime sources, the root TypeScript and esbuild), checks the lockstep version against the root
 and the tag, type-checks, runs the CLI specs and `npm publish`es. Try the tarball locally with
-`npm pack -w packages/pix3-cli` at the repo root, then `npx -y --package ./pix3-cli-X.Y.Z.tgz pix3 …`.
+`npm pack -w packages/cli` at the repo root, then `npx -y --package ./pix3-cli-X.Y.Z.tgz pix3 …`.

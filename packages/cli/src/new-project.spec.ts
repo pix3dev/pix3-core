@@ -174,7 +174,7 @@ describe('MCP configuration', () => {
     expect(project.files).toContain('.mcp.json');
     const dev = mcpLaunch({ dev: true });
     expect(dev.command).toBe('node');
-    expect(dev.args[0]).toMatch(/packages[\\/]pix3-cli[\\/]src[\\/]index\.ts$/);
+    expect(dev.args[0]).toMatch(/packages[\\/]cli[\\/]src[\\/]index\.ts$/);
     expect(dev.args.slice(1)).toEqual(['mcp', '--workspace']);
   });
 
