@@ -1,6 +1,6 @@
 ---
 name: pix3-game-dev
-description: Guidance for building a GAME on the Pix3 engine — implementing gameplay/features, adding a node, script component, or system, wiring scenes, or answering "how do I do X with the engine/editor". Use BEFORE writing custom game logic so you reach for an existing engine capability (nodes, core:* behaviors, juice, audio buses, camera brain, cutscene director, keyframe animation, shader effects, post-processing, ECS, input, signals) and use it correctly, and so you apply the engine-vs-game decision, the Script-component pattern, and the mutation gateway. Covers both in-editor user scripts and consumer projects that import @pix3/runtime (e.g. DeepCore). NOT for debugging the running editor (use debug-running-game) or generating art (use generate-sprites-in-editor).
+description: Guidance for building a GAME on the Pix3 engine — implementing gameplay/features, adding a node, script component, or system, wiring scenes, or answering "how do I do X with the engine/editor". Use BEFORE writing custom game logic so you reach for an existing engine capability (nodes, core:* behaviors, juice, audio buses, camera brain, cutscene director, keyframe animation, shader effects, post-processing, ECS, input, signals) and use it correctly, and so you apply the engine-vs-game decision, the Script-component pattern, and the mutation gateway. Covers both in-editor user scripts and consumer projects that import @pix3/runtime (e.g. DeepCore). NOT for editor UI work (use pix3-ui-conventions).
 ---
 
 # Building a game on Pix3
@@ -19,7 +19,8 @@ capability inventory is the catalog — start there every time.
 2. **Apply the engine-vs-game decision** (catalog §0):
    - *Would Godot/Unity ship this as a built-in?* → **engine-level** (runtime +
      editor: schema, `Create*Command`, registry, YAML, inspector) — **state the
-     plan and confirm with the user first**, then `yalc:publish` to consumers.
+     plan and confirm with the user first**; consumers take it with the next
+     `@pix3/runtime` version.
    - Game-specific rules/content/balancing → **game-level script**.
    - Engine code must not reference game concepts (shop, coins, enemies).
 
@@ -66,8 +67,8 @@ capability inventory is the catalog — start there every time.
 4. **Use the right build path** (catalog §1):
    - **In-editor user script** — `export class X extends Script` in `scripts/`,
      referenced as `type: user:X`; reach the engine via `this.scene` /
-     `this.input` / `this.node`. Model:
-     [samples/HelloWorld/scripts/CutsceneTrigger.ts](../../../samples/HelloWorld/scripts/CutsceneTrigger.ts).
+     `this.input` / `this.node`. Model: the `scripts/` of any template under
+     `packages/create-pix3/templates/*/files/` (e.g. `recipe-tapper-2d`'s `Spawner.ts`).
    - **Consumer project** (`@pix3/runtime`) — you own `SceneRunner`; same runtime
      APIs, no editor/command layer.
 
@@ -104,17 +105,15 @@ capability inventory is the catalog — start there every time.
      real scene, registers user scripts, advances fixed steps and hands back
      state, in about a second with no browser. See
      `packages/runtime/src/testing/headless-game.spec.ts` for a worked
-     example against `samples/Carrom`. Renders nothing, so it answers logic,
-     physics, rules, signals and commands — not "does it look right".
-   - **In the editor** — the **debug-running-game** skill (attach, `play.start()`,
-     read `errors()`, screenshot). Required for anything visual, and for
-     anything about the editor's own tool layer. Drive it through
-     `agentTools.execute(...)`, not around it.
-   - For UI/sprite art, use **generate-sprites-in-editor**.
+     example against `packages/runtime/fixtures/carrom`. Renders nothing, so it
+     answers logic, physics, rules, signals and commands — not "does it look right".
+   - **In the editor** — the open `/__pix3/` tab through chrome-devtools MCP
+     (`__PIX3_DEBUG__.play.start()`, read the errors, screenshot). Required for
+     anything visual, and for anything about the editor's own tool layer.
 
    Two things a green run can still hide: a component that throws in
    `onStart`/`onUpdate` is **auto-disabled** and the game keeps running looking
-   fine, so always read the error channel (`game.errors`, or `read_errors`); and
+   fine, so always read the error channel (`game.errors`); and
    `scene.time.hitstop(ms)` is **edge-triggered** — calling it every frame while
    an overlap lasts freezes `dt` to 0, so the contact can never separate.
 

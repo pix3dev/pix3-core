@@ -29,9 +29,9 @@ export default defineConfig({
     // breaks `instanceof` across the seam.
     dedupe: ['three'],
     alias: {
-      '@pix3/runtime': resolve(__dirname, 'packages/runtime/src'),
+      '@pix3/runtime': resolve(import.meta.dirname, 'packages/runtime/src'),
       // editor-core's own alias, for the few editor modules template specs load (`parseRoutine`).
-      '@': resolve(__dirname, 'packages/editor-core/src'),
+      '@': resolve(import.meta.dirname, 'packages/editor-core/src'),
     },
   },
 });

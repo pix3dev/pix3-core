@@ -1,6 +1,6 @@
 ---
 name: pix3-ui-conventions
-description: Conventions for building or restyling EDITOR UI in Pix3 — Lit panels, dialogs, toolbars, popovers, inspector rows, or any `pix3-*` component and its `.ts.css`. Use BEFORE writing or editing a component so the result matches the rest of the app: vector icons via IconService (never emoji), Light-DOM Lit on ComponentBase, sibling `.ts.css`, theme tokens instead of hardcoded colors, DI for services, and the mutation gateway for state. NOT for game/runtime logic (use pix3-game-dev) or debugging the running editor (use debug-running-game).
+description: Conventions for building or restyling EDITOR UI in Pix3 — Lit panels, dialogs, toolbars, popovers, inspector rows, or any `pix3-*` component and its `.ts.css`. Use BEFORE writing or editing a component so the result matches the rest of the app: vector icons via IconService (never emoji), Light-DOM Lit on ComponentBase, sibling `.ts.css`, theme tokens instead of hardcoded colors, DI for services, and the mutation gateway for state. NOT for game/runtime logic (use pix3-game-dev).
 ---
 
 # Building editor UI on Pix3
@@ -73,8 +73,8 @@ html`<button class="my-icon-btn" aria-label="Refresh">
   - borders `1px solid rgba(255, 255, 255, 0.12)`,
   - radius ~`0.25rem`, focus `outline: 2px solid rgba(var(--pix3-accent-rgb), 0.6)`.
   - status green `#5ec27a`, error red `#e05c5c`.
-- Copy an existing recent panel (`runtime-panel.ts.css`,
-  `pix3-agent-chat-panel.ts.css`) rather than eyeballing new values.
+- Copy an existing recent panel (`runtime-panel.ts.css`) rather than eyeballing
+  new values.
 
 ## 4. State & mutations go through the gateway
 
@@ -116,7 +116,7 @@ The main menu is generated from command metadata — there is no menu file to ed
 - The menu title supplies context: under `Run` the row is `Stop`, not
   `Stop Game`; under `Create` it is the node type, not `Create <Type>`.
 
-Rationale and the full inventory: `.plans/done/ui-consistency-pass.md` §2.
+Rationale and the full inventory: `../pix3/.plans/done/ui-consistency-pass.md` §2.
 
 ## 7. Inspector controls: one primitive set
 

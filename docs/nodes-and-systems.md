@@ -20,8 +20,8 @@ When asked to implement a game feature:
    node, behavior, system, or runtime API already covers it, use that.
 2. Ask: _"Would Godot / Unity ship this as a built-in?"_
    - **Yes → engine-level.** Implement in the runtime + editor (schema,
-     `Create*Command`, registry, YAML serialization, inspector), then
-     `yalc:publish` and update the consumer. **State the plan and confirm first.**
+     `Create*Command`, registry, YAML serialization, inspector), then release
+     the runtime and update the consumer. **State the plan and confirm first.**
    - **No** (game-specific rules, content, balancing) → **game-level script**.
 3. Engine nodes/systems must **not** reference game domain concepts (shop, coins,
    enemies). Keep the runtime editor-agnostic and game-agnostic.
@@ -35,17 +35,16 @@ When asked to implement a game feature:
 project's `scripts/` folder, attached to a node as a component and referenced in
 the scene as `type: user:<ClassName>`. The editor compiles it (esbuild-wasm) and
 hot-reloads it. Scripts reach the engine through `this.scene` / `this.input` /
-`this.node`. Example: [../samples/HelloWorld/scripts/CutsceneTrigger.ts](../samples/HelloWorld/scripts/CutsceneTrigger.ts).
+`this.node`. Example: [example-scripts/RotatingCube.ts](example-scripts/RotatingCube.ts).
 
-**B. Consumer game project** (e.g. DeepCore) that imports `@pix3/runtime` via
-yalc. It drives the engine itself with `SceneManager` + `SceneRunner` +
+**B. Consumer game project** (e.g. DeepCore) that imports `@pix3/runtime` from
+npm. It drives the engine itself with `SceneManager` + `SceneRunner` +
 `RuntimeRenderer` (no editor). The **same runtime APIs** below are available; the
 difference is you own the loop and there is no inspector/command layer. It may
 register a debug provider via `registerGameDebug(...)` (see §6).
 
-> The runtime package (`packages/runtime`) is the contract shared by both.
-> After changing it: `cd packages/runtime && npm run yalc:publish`, then
-> `yalc update` in the consumer.
+> The runtime package (`packages/runtime`) is the contract shared by both; a
+> consumer takes a change with its next `@pix3/runtime` version.
 
 ---
 
@@ -209,7 +208,7 @@ in the **Animation** timeline panel (keyframes — not the Sprite Editor, which 
 flipbook frames), `player.play('clip')` or `autoplay`. Event tracks emit
 signals (the "cutscene glue"); `finish()` fast-forwards. Signals:
 `animation_started` / `animation_finished`.
-See node-types-reference "AnimationPlayer" + [../samples/HelloWorld/demo-03-animation-timeline.pix3scene](../samples/HelloWorld/demo-03-animation-timeline.pix3scene).
+See node-types-reference "AnimationPlayer" + [demo-03-animation-timeline.pix3scene](../packages/runtime/fixtures/hello-world-scenes/demo-03-animation-timeline.pix3scene).
 
 ### 3D camera system (Cinemachine-lite)
 
@@ -217,7 +216,7 @@ One `Camera3D` renders; attach `core:CameraBrain` to it. Add `VirtualCamera3D`
 rigs (follow/look-at/damping/priority). The brain blends the render camera to the
 **highest-priority visible** vcam. **Use:** raise a vcam's `priority` (animatable)
 to "cut" to it; scripts can force a one-shot blend with
-`brain.overrideNextBlend(sec, easing?)`. Demo: [../samples/HelloWorld/demo-02-cinematic-camera.pix3scene](../samples/HelloWorld/demo-02-cinematic-camera.pix3scene).
+`brain.overrideNextBlend(sec, easing?)`. Demo: [demo-02-cinematic-camera.pix3scene](../packages/runtime/fixtures/hello-world-scenes/demo-02-cinematic-camera.pix3scene).
 
 ### Cutscene Director (`scene.cutscene`)
 
@@ -225,7 +224,7 @@ Play an AnimationPlayer clip as a cinematic: letterbox, input-lock, skip gesture
 CameraBrain blend in/out. **Use:**
 `const {done} = this.scene.cutscene.playCinematic(nodeId, { skippableAfter, blendDuration }); await done;`
 (`'finished' | 'skipped' | 'stopped'`). Camera moves/VFX/beats are authored as
-clip tracks. Spec §6.13; demo: [../samples/HelloWorld/demo-07-cutscene.pix3scene](../samples/HelloWorld/demo-07-cutscene.pix3scene) + [../samples/HelloWorld/scripts/CutsceneTrigger.ts](../samples/HelloWorld/scripts/CutsceneTrigger.ts).
+clip tracks. Spec §6.13; demo: [demo-07-cutscene.pix3scene](../packages/runtime/fixtures/hello-world-scenes/demo-07-cutscene.pix3scene).
 
 ### 2D camera & layers
 
@@ -245,7 +244,7 @@ Fire-and-forget game feel from scripts (or the matching `core:*` presets):
   YAML, nothing to clean up — and tick through `node.tick`, so a hitstop freezes
   them like every other juice effect. Call them **together with the mechanic** they
   punctuate; they are one-liners, not a later polish pass.
-  Spec §6.12; demo: [../samples/HelloWorld/demo-05-juice.pix3scene](../samples/HelloWorld/demo-05-juice.pix3scene).
+  Spec §6.12; demo: [demo-05-juice.pix3scene](../packages/runtime/fixtures/hello-world-scenes/demo-05-juice.pix3scene).
 - `scene.juice.trail(target, opts)` — fading motion ribbon that follows a node (a ball, a dash, a projectile). Options: `lifeSec` (0.35), `widthPx` (14, tapers to 0 at the tail), `color` / `colors` (a palette is lerped head→tail), `additive` (true), `zIndex`, `maxPoints` (48, max 256). Returns a `Trail2D` — call `trail.stop()` to stop following; it then fades out and frees itself, and freeing the target does the same. Same transient lifecycle as `burst`: runtime-only node, never pickable, never serialized.
 
 ### Tweens (scene.tween)
@@ -565,8 +564,6 @@ authored texture refs stay as fallback. **Use — scripts:**
 `await this.scene.localization.setLocale('ru')` (every keyed label/sprite
 re-renders live), `onChange(cb)`, `trSprite(key)`; `label.setTextKey(key, params?)`
 keeps dynamic labels re-resolvable on locale switch (`setText` clears the key).
-Reference migration: `samples/SkyDefender` (mission names/briefings/goals as
-keys in `SdBalance`, `locales/en.json`+`ru.json`, keyed HUD/shop/map labels).
 **Authoring:** View → Localization panel (Strings/Sprites tabs, per-locale
 columns, missing-translation filter, preview-locale switch that live-updates the
 viewport). The panel's **Scan** button extracts keys project-wide: it lists
@@ -896,9 +893,6 @@ pix3-cloud with `ROOMS_ADMIN_URL` / `ROOMS_SERVICE_TOKEN` / `ROOMS_JWT_SECRET`
 configured; without one the button reports `rooms_not_configured` and single-player
 Play is unaffected.
 
-`samples/MultiplayerArena` is the worked example of all of the above (8-player
-tag arena, no binary assets, runs offline as a single-player sandbox).
-
 ### Scene transitions (change the running scene)
 
 `await scene.changeScene('res://scenes/level2.pix3scene', { transition: 'fade', durationSec: 0.3 })`
@@ -993,7 +987,7 @@ play-mode hook, so the editor keeps running.
 - **Mutation gateway:** every state change flows UI → `CommandDispatcher.execute(CommandClass, args)` → Command → Operation → history. **Never mutate `appState` or node properties directly.** A feature = a `Command` + an `Operation` under `src/features/<area>/`. (See CLAUDE.md + AGENTS.md — binding.)
 - **Property schema:** nodes and `Script`s expose `static getPropertySchema()` returning typed `PropertyDefinition`s (`getValue`/`setValue`); the Inspector renders editors from it and all edits go through `UpdateObjectPropertyOperation`. See [property-schema-reference.md](property-schema-reference.md).
 - **A new node's constructor must end with `installReactiveSchemaProperties(this, TheNode.getPropertySchema)`.** Without it, a schema `setValue` that redraws (clamp, geometry rebuild, canvas repaint, material colour) runs for the Inspector but not for a script: `node.prop = x` changes the field, redraws nothing, and the getter still returns `x` — so even state-based verification reports a success that never reached the screen. `reactive-schema-coverage.spec.ts` fails if a `SceneLoader`-constructible node skips it.
-- **Serialization:** scenes are `.pix3scene` YAML (`root:` tree of nodes with `properties`, `components`, `children`). Copy a known-good demo in `samples/HelloWorld/` as a template.
+- **Serialization:** scenes are `.pix3scene` YAML (`root:` tree of nodes with `properties`, `components`, `children`). Copy a known-good scene from a template (`packages/create-pix3/templates/*/files/scenes/`).
 - **2D texture filtering (project setting):** Project Settings → _2D Texture Filtering_ is `linear` (default, smoothed) or `nearest` (crisp pixel-art). It lives on the `ProjectManifest` and is pushed to the runtime global via `setProjectTextureFiltering`; `configure2DTexture` (runtime) and the editor's sprite-texture setup both read it, so 2D sprite/UI textures pick up the mode in edit mode, play mode, and export. 3D textures are unaffected (they keep mipmapped linear sampling).
 - **2D blend modes:** every `Node2D` carries `blendMode` (`normal` | `additive` | `multiply` | `subtract`, Inspector → Style). It maps to the three.js blending constant on the materials the node itself owns and is _not_ inherited by children — set it per sprite, not on a wrapping group. Use `additive` for glow/VFX. A blended node is excluded from the 2D quad batcher (a batch run may only contain the default blend), so it costs its own draw call. Details and the "why no `screen`" note: [node-types-reference.md](node-types-reference.md) → `### Node2D`.
 - **2D draw-call optimization (play mode):** a pre-launch **texture atlas** + a paint-order **quad batcher** cut a 2D frame from ~one draw call per node to a handful. The editor packer (`TextureAtlasService`) packs eligible sprite textures (Sprite2D / Button2D / AnimatedSprite2D / Bar2D — plus dynamic paths reached via script `res://` directory prefixes) into a few sheets, cached in IndexedDB, and installs a resolver on the play-mode `AssetLoader` so every texture load returns a lightweight **view** onto a shared sheet (`configure2DTexture` keeps sheets mipmap-free). The runtime `Batch2DSystem` then merges maximal contiguous same-source runs (in stamped `renderOrder`) into single draws, preserving paint order by construction (per-node opacity/tint ride vertex colors). Editor viewport rendering is unaffected (it draws its own proxy meshes). Toggles (`'auto'` default; `'off'` = byte-identical): project manifest `rendering2D.textureAtlas` / `.batching`, or `?pix3Atlas2D=off` / `?pix3Batch2D=off`, or `window.__PIX3_RENDER2D__`. `Label2D`/canvas text and `TiledSprite2D` are intentionally not atlased/batched. Exported games consume a shipped `assets/.atlas/atlas-manifest.json` via `installAtlasFromManifest` (emission from `ProjectBuildService` is a pending follow-up).
@@ -1021,5 +1015,5 @@ play-mode hook, so the editor keeps running.
 - Editor features (commands/operations): `src/features/<area>/`; services: `src/services/`.
 - Asset Library: services `src/services/library/AssetLibraryService.ts`, `LibraryInsertService.ts`, `PublishToLibraryService.ts`, providers + model in `src/services/library/`; panel `src/ui/asset-library/`; builtin pack `public/library/`.
 - Model Lab (3D generation): orchestrator + pipeline in `src/services/model-gen/` (`Model3DGenService`, `SculptSpec`, `ModelPreviewRenderer`, `ComparisonSheet`, `Model3DGenHistoryService`, `prompts/`); scene lane in `src/services/model-gen/scene/` (`Scene3DGenService`, `LevelSpec`, `scene-validate`, `SceneInventoryService`, `ScenePreviewRenderer`, `scene-scatter`, `prompts`); panel `src/ui/model-lab/`; agent tools `generate_model_3d` / `generate_scene_3d` (`src/services/agent/AgentToolRegistry.ts`); debug lanes `__PIX3_DEBUG__.model3d` / `.scene3d` (`src/core/debug-bridge.ts`).
-- Demo scenes + example scripts: `samples/HelloWorld/`; `docs/example-scripts/`.
+- Demo scenes + example scripts: `packages/runtime/fixtures/hello-world-scenes/`; `docs/example-scripts/`.
 - Deeper docs: [node-types-reference.md](node-types-reference.md), [pix3-specification.md](pix3-specification.md), [architecture.md](architecture.md), [property-schema-reference.md](property-schema-reference.md).

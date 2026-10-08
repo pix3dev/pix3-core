@@ -12,10 +12,9 @@ import { parseRoutine } from '../../editor-core/src/services/agent/game-routines
 import { MAX_RECIPE_MD_CHARS, RECIPE_CATALOG, RECIPE_MD_HEADROOM_CHARS } from '../src/recipes';
 
 /**
- * Contract drift guard for the Flow "recipe" templates (`.plans/done/flow-recipes-contract.md`).
+ * Contract drift guard for the "recipe" templates (`../pix3/.plans/done/flow-recipes-contract.md`).
  *
- * `design/recipe.md` is a machine-read contract: the Flow expander patches the
- * scene YAML through it, and agents grep it. Every entry in its `tunables:`
+ * `design/recipe.md` is a machine-read contract: agents grep it. Every entry in its `tunables:`
  * block therefore has to keep pointing at a node that exists, a component that
  * is actually attached to that node, and a property that the component's
  * `getPropertySchema()` really declares. When any of those drift apart the

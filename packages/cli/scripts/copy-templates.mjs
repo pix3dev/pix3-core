@@ -1,7 +1,7 @@
-// Copies the editor's project templates into `<package>/templates/` for the published tarball
-// (plan §5 A, risk #7: templates stay in `packages/create-pix3/templates/`, one source; the package gets a
-// build-time copy). Only what `pix3 new` reads is copied — `template.yaml` and `files/` — never the
-// wizard's `cover.png` or the editor specs that sit beside them. The output is gitignored.
+// Copies create-pix3's project templates into `<package>/templates/` for the published tarball
+// (plan §5 A, risk #7: templates stay in `packages/create-pix3/templates/`, one source; the package
+// gets a build-time copy). Only what `pix3 new` reads is copied — `template.yaml` and `files/` —
+// never the wizard's `cover.png` or the specs that sit beside them. The output is gitignored.
 import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

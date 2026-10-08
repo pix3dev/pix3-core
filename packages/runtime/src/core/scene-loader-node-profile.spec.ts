@@ -29,9 +29,9 @@ import { ScriptRegistry } from './ScriptRegistry';
  *
  * This is the golden test for `pix3 validate` level 2 (`.plans/external-agent-authoring.md`, §5 A;
  * measurements in `.plans/measurements/external-agent-phase0-strict-profile.md`). Every scene and
- * prefab shipped under `packages/create-pix3/templates/` must hydrate through the real loader, with the
- * built-in `core:*` behaviours AND the template's own `user:*` scripts registered, and come out
- * with nothing parked, nothing inert, no missing `res://` texture and no loader warning.
+ * prefab shipped under `packages/create-pix3/templates/` must hydrate through the real loader,
+ * with the built-in `core:*` behaviours AND the template's own `user:*` scripts registered, and
+ * come out with nothing parked, nothing inert, no missing `res://` texture and no loader warning.
  *
  * What Node needs, and nothing more (all of it in `@pix3/runtime/node`, which `pix3 validate` uses
  * too):

@@ -39,7 +39,10 @@ const typescriptRules = {
   // sprinkling disable comments.
   '@typescript-eslint/no-this-alias': [
     'error',
-    { allowDestructuring: true, allowedNames: ['current', 'root', 'node', 'runner', 'lastContext'] },
+    {
+      allowDestructuring: true,
+      allowedNames: ['current', 'root', 'node', 'runner', 'lastContext'],
+    },
   ],
 
   // An empty interface is a deliberate declaration-merging seam here: `SceneNodeNames` is
