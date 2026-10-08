@@ -77,6 +77,7 @@ export default [
     ['packages/runtime/src/**/*.ts', './packages/runtime/tsconfig.json'],
     // `@pix3/cli` is Node, with its own tsconfig (`.ts` import extensions).
     ['packages/cli/src/**/*.ts', './packages/cli/tsconfig.json'],
+    ['packages/vite-plugin/src/**/*.ts', './packages/vite-plugin/tsconfig.json'],
   ].map(([files, project]) => ({
     files: [files],
     languageOptions: {

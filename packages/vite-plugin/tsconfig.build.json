@@ -1,0 +1,12 @@
+{
+  // Emits `dist/` (JS + declarations) from the sources only; specs stay out of the tarball.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "exclude": ["src/**/*.spec.ts", "src/**/test-support/**"]
+}

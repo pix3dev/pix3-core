@@ -16,6 +16,8 @@ export default defineConfig({
       // CLI specs are Node (`// @vitest-environment node` per file).
       'packages/cli/src/**/*.spec.ts',
       'packages/create-pix3/templates/*.spec.ts',
+      // Plugin specs are Node too; they start real Vite dev servers on port 0.
+      'packages/vite-plugin/src/**/*.spec.ts',
       // packages/editor-core joins once the port makes it compile (plan §G.2).
     ],
     // The default 'forks' pool reports "No test suite found" for every spec on win32-arm64
