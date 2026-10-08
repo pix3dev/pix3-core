@@ -9,17 +9,28 @@ import {
   type ProviderModel,
   type RequestContext,
 } from './ImageGenTypes';
+import { ServiceContainer } from '@/fw/di';
+import { HostService } from '@/host/HostService';
 
 /**
  * Default API host. OpenAI does NOT send CORS headers, so a browser cannot call `api.openai.com`
- * directly (unlike Gemini). Requests therefore go through a **same-origin proxy** by default: the
- * Vite dev server rewrites `/openai-proxy` → `https://api.openai.com` (see `vite.config.ts`). For a
- * production static build, host an equivalent proxy and point `VITE_OPENAI_PROXY_URL` at it, or pass
- * a `baseUrl` in the {@link RequestContext}. The user's API key is still supplied from the browser
- * as a Bearer token (the proxy is a dumb pass-through), matching how the Gemini key is handled.
+ * directly (unlike Gemini). Requests therefore go through the **dev server's proxy** at
+ * `${base}__pix3/api/proxy/openai/v1` (plan §5, image-gen row). The proxy is P2 work: until the
+ * plugin serves it, the route answers 404 and the request fails with "proxy unavailable". The
+ * user's API key is still supplied from the browser as a Bearer token (the proxy is a dumb
+ * pass-through), matching how the Gemini key is handled. A `baseUrl` in the {@link RequestContext}
+ * overrides it.
  */
-const DEFAULT_BASE_URL =
-  (import.meta.env.VITE_OPENAI_PROXY_URL as string | undefined) ?? '/openai-proxy/v1';
+const PROXY_PATH = '__pix3/api/proxy/openai/v1';
+
+const defaultBaseUrl = (): string => {
+  const base = HostService.isInstalled()
+    ? ServiceContainer.getInstance().getService<HostService>(
+        ServiceContainer.getInstance().getOrCreateToken(HostService)
+      ).info.base
+    : '/';
+  return `${base.endsWith('/') ? base : `${base}/`}${PROXY_PATH}`;
+};
 
 const ASPECTS: readonly AspectRatio[] = ['Auto', '1:1', '3:4', '4:3', '16:9', '9:16'];
 const QUALITIES: readonly string[] = ['low', 'medium', 'high'];
@@ -123,7 +134,8 @@ export class OpenAIImageProvider implements ImageGenProvider {
     }
 
     const fetchImpl = ctx.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    const baseUrl = (ctx.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
+    const usesProxy = ctx.baseUrl === undefined;
+    const baseUrl = (ctx.baseUrl ?? defaultBaseUrl()).replace(/\/$/, '');
 
     const size = sizeForAspect(params.aspectRatio);
     const quality =
@@ -185,7 +197,9 @@ export class OpenAIImageProvider implements ImageGenProvider {
       }
       throw new ImageGenError(
         'network',
-        'Network error contacting the OpenAI API. If this is a production build, an /openai-proxy route must be configured (browsers cannot call api.openai.com directly).',
+        usesProxy
+          ? 'OpenAI proxy unavailable: the dev server does not serve /__pix3/api/proxy/openai yet (browsers cannot call api.openai.com directly).'
+          : 'Network error contacting the OpenAI API.',
         undefined,
         { cause: error }
       );
@@ -205,6 +219,14 @@ export class OpenAIImageProvider implements ImageGenProvider {
         {
           cause: error,
         }
+      );
+    }
+
+    if (!response.ok && usesProxy && response.status === 404) {
+      throw new ImageGenError(
+        'network',
+        'OpenAI proxy unavailable: the dev server does not serve /__pix3/api/proxy/openai yet.',
+        response.status
       );
     }
 

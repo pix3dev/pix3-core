@@ -128,24 +128,13 @@ describe('pix3-lightbox', () => {
     expect(element.querySelector('.lightbox__counter')).toBeNull();
   });
 
-  it('renders markdown through the document renderer and text as a pre block', async () => {
+  it('renders markdown and text as a pre block', async () => {
     const element = await mount();
     lightbox().open([
-      {
-        kind: 'markdown',
-        title: 'Ant Strategy',
-        text: ['# Ant Strategy', '', '| Unit | Cost |', '| --- | ---: |', '| Worker | 5 |'].join(
-          '\n'
-        ),
-        path: 'design/gdd.md',
-      },
+      { kind: 'markdown', title: 'gdd.md', text: '# Ant Strategy', path: 'design/gdd.md' },
     ]);
     await settle(element);
-
-    expect(element.querySelector('.lightbox__doc h1')?.textContent?.trim()).toBe('Ant Strategy');
-    // Doc mode is what makes the table (and the line anchors) exist at all.
-    expect(element.querySelector('.lightbox__doc table.md-table')).toBeTruthy();
-    expect(element.querySelector('.lightbox__doc h1')?.getAttribute('data-md-lines')).toBe('0-0');
+    expect(element.querySelector('.lightbox__text')?.textContent).toBe('# Ant Strategy');
 
     lightbox().close();
     lightbox().open([{ kind: 'text', title: 'notes.txt', text: 'line one\nline two' }]);
@@ -253,66 +242,5 @@ describe('pix3-lightbox', () => {
     lightbox().step(1);
     await settle(element);
     expect(picture()?.style.transform).toContain('scale(1)');
-  });
-});
-
-describe('annotation mode', () => {
-  /**
-   * The sidecars are named after the source file, so a picture that only exists as a blob URL —
-   * a screenshot pasted into the chat — has nothing to hang them off and cannot be annotated.
-   */
-  it('offers annotation only for an image that is a project file', async () => {
-    const element = await mount();
-
-    lightbox().open([image('Pasted', 'blob:1')]);
-    await settle(element);
-    expect(element.querySelector('button[aria-label="Annotate"]')).toBeNull();
-
-    lightbox().open([{ ...image('Mood', 'blob:2'), path: 'references/mood-1.png' }]);
-    await settle(element);
-    expect(element.querySelector('button[aria-label="Annotate"]')).not.toBeNull();
-  });
-
-  /** A composite must never be annotated again, or drawings nest inside drawings forever. */
-  it('does not offer annotation on its own output', async () => {
-    const element = await mount();
-
-    lightbox().open([{ ...image('Mood', 'blob:1'), path: 'references/mood-1.annot.png' }]);
-    await settle(element);
-
-    expect(element.querySelector('button[aria-label="Annotate"]')).toBeNull();
-  });
-
-  it('swaps the picture for the annotator and back', async () => {
-    const element = await mount();
-    lightbox().open([{ ...image('Mood', 'blob:1'), path: 'references/mood-1.png' }]);
-    await settle(element);
-
-    element.querySelector<HTMLButtonElement>('button[aria-label="Annotate"]')?.click();
-    await settle(element);
-    expect(element.querySelector('pix3-image-annotator')).not.toBeNull();
-    expect(element.querySelector('.lightbox__image')).toBeNull();
-
-    element.querySelector<HTMLButtonElement>('button[aria-label="Stop annotating"]')?.click();
-    await settle(element);
-    expect(element.querySelector('pix3-image-annotator')).toBeNull();
-    expect(element.querySelector('.lightbox__image')).not.toBeNull();
-  });
-
-  it('leaves annotation mode when stepping to another picture', async () => {
-    const element = await mount();
-    lightbox().open([
-      { ...image('One', 'blob:1'), path: 'references/mood-1.png' },
-      { ...image('Two', 'blob:2'), path: 'references/mood-2.png' },
-    ]);
-    await settle(element);
-
-    element.querySelector<HTMLButtonElement>('button[aria-label="Annotate"]')?.click();
-    await settle(element);
-    expect(element.querySelector('pix3-image-annotator')).not.toBeNull();
-
-    lightbox().step(1);
-    await settle(element);
-    expect(element.querySelector('pix3-image-annotator')).toBeNull();
   });
 });

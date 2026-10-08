@@ -19,7 +19,6 @@ import {
 } from '@/core/ProjectManifest';
 import { ProjectService } from '@/services/project/ProjectService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
-import type { ProjectBackend } from '@/state';
 
 export interface UpdateProjectSettingsParams {
   projectName?: string;
@@ -55,30 +54,6 @@ const cloneManifest = (manifest: ProjectManifestSnapshotLike): ProjectManifest =
     metadata: manifest.metadata ? { ...manifest.metadata } : {},
     autoloads: manifest.autoloads.map(entry => ({ ...entry })),
   });
-
-/**
- * Persists the given recent project entry to localStorage.
- */
-function persistRecentProject(entry: {
-  id?: string;
-  name: string;
-  backend: ProjectBackend;
-  localAbsolutePath?: string;
-  linkedCloudProjectId?: string;
-  linkedLocalSessionId?: string;
-  lastOpenedAt: number;
-}): void {
-  try {
-    const RECENTS_KEY = 'pix3.recentProjects:v1';
-    const raw = localStorage.getItem(RECENTS_KEY);
-    const existing = raw ? (JSON.parse(raw) as (typeof entry)[]) : [];
-    const filtered = existing.filter(r => (entry.id ? r.id !== entry.id : r.name !== entry.name));
-    const updated = [entry, ...filtered].slice(0, 10);
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(updated));
-  } catch {
-    // ignore persistence errors
-  }
-}
 
 export class UpdateProjectSettingsOperation implements Operation<OperationInvokeResult> {
   readonly metadata: OperationMetadata = {
@@ -159,19 +134,6 @@ export class UpdateProjectSettingsOperation implements Operation<OperationInvoke
       return { didMutate: false };
     }
 
-    // Persist changes to recent projects
-    if (state.project.status === 'ready' && state.project.id) {
-      persistRecentProject({
-        id: state.project.id,
-        name: newName ?? 'Untitled Project',
-        backend: state.project.backend,
-        localAbsolutePath: newPath ?? undefined,
-        linkedCloudProjectId: state.project.hybridSync.linkedCloudProjectId ?? undefined,
-        linkedLocalSessionId: state.project.hybridSync.linkedLocalSessionId ?? undefined,
-        lastOpenedAt: Date.now(),
-      });
-    }
-
     return {
       didMutate: true,
       commit: {
@@ -188,17 +150,6 @@ export class UpdateProjectSettingsOperation implements Operation<OperationInvoke
             nextManifest.viewportBaseSize,
             prevManifest.viewportBaseSize
           );
-          if (state.project.status === 'ready' && state.project.id) {
-            persistRecentProject({
-              id: state.project.id,
-              name: prevName ?? 'Untitled Project',
-              backend: state.project.backend,
-              localAbsolutePath: prevPath ?? undefined,
-              linkedCloudProjectId: state.project.hybridSync.linkedCloudProjectId ?? undefined,
-              linkedLocalSessionId: state.project.hybridSync.linkedLocalSessionId ?? undefined,
-              lastOpenedAt: Date.now(),
-            });
-          }
         },
         redo: async () => {
           await projectService.saveProjectManifest(nextManifest);
@@ -212,17 +163,6 @@ export class UpdateProjectSettingsOperation implements Operation<OperationInvoke
             prevManifest.viewportBaseSize,
             nextManifest.viewportBaseSize
           );
-          if (state.project.status === 'ready' && state.project.id) {
-            persistRecentProject({
-              id: state.project.id,
-              name: newName ?? 'Untitled Project',
-              backend: state.project.backend,
-              localAbsolutePath: newPath ?? undefined,
-              linkedCloudProjectId: state.project.hybridSync.linkedCloudProjectId ?? undefined,
-              linkedLocalSessionId: state.project.hybridSync.linkedLocalSessionId ?? undefined,
-              lastOpenedAt: Date.now(),
-            });
-          }
         },
       },
     };

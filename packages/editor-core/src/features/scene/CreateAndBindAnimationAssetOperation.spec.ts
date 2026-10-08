@@ -21,7 +21,6 @@ const createOperationContext = (sprite: AnimatedSprite2D) => {
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
 

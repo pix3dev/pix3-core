@@ -759,3 +759,23 @@ pix3-editor-settings-dialog .btn-save {
 pix3-editor-settings-dialog .btn-save:hover {
   filter: brightness(1.1);
 }
+
+/* About → versions the dev server reports (EditorHost.info.versions). */
+pix3-editor-settings-dialog .about-versions {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.8rem;
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+}
+
+pix3-editor-settings-dialog .about-versions dt {
+  color: var(--fg-3);
+}
+
+pix3-editor-settings-dialog .about-versions dd {
+  margin: 0;
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

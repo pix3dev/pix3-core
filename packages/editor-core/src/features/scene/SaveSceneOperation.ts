@@ -7,17 +7,13 @@ import type {
 import { SceneManager } from '@pix3/runtime';
 import { getAppStateSnapshot } from '@/state';
 import { LoggingService } from '@/services/core/LoggingService';
-import { FileWatchService } from '@/services/project/FileWatchService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { WorkspaceConflictError } from '@/services/project/workspace/workspace-protocol';
 import { sha256 } from '@/services/project/external-merge/hash';
 import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
-import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
 import { optionalService } from '@/services/project/coauthoring/optional-service';
 import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
-import { RecoveryJournalService } from '@/services/project/coauthoring/RecoveryJournalService';
-import { ProtectedSetService } from '@/services/project/coauthoring/ProtectedSetService';
 import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
+import { SceneWriteConflictError } from '@/services/project/write-errors';
 
 export interface SaveSceneOperationParams {
   /** Optional scene id to save (defaults to active scene). */
@@ -87,9 +83,6 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
     const logger = context.container.getService<LoggingService>(
       context.container.getOrCreateToken(LoggingService)
     );
-    const fileWatchService = context.container.getService<FileWatchService>(
-      context.container.getOrCreateToken(FileWatchService)
-    );
 
     const sceneGraph = sceneManager.getSceneGraph(sceneId);
     if (!sceneGraph) {
@@ -110,12 +103,9 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
 
     // Co-authoring bookkeeping (absent in minimal test containers).
     const diskState = optionalService(context.container, SceneDiskStateService);
-    const journal = optionalService(context.container, RecoveryJournalService);
-    const protectedSets = optionalService(context.container, ProtectedSetService);
     const externalChanges = optionalService(context.container, ExternalChangeService);
     const projectPath = toProjectPath(filePath);
     const newHash = await sha256(sceneYaml);
-    const genAtSerialize = protectedSets?.getGen(projectPath);
 
     const refuse = (currentHash: string | null): SaveSceneOperationResult => {
       logger.warn(
@@ -128,37 +118,21 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
       return { didMutate: false, outcome: 'external-change' };
     };
 
-    // Pre-write check (plan §5 C4): never write over a version the editor has not seen. The
-    // workspace backend does the same server-side (`If-Match`) — see the catch below.
+    // Pre-write check: never write over a version the editor has not seen. The plugin checks it
+    // (`If-Match` on the version in the graph → 412), see the catch below.
     const known = diskState?.getKnown(projectPath) ?? null;
-    let alreadyOnDisk = false;
     const overwrite = this.params.overwriteExternalHash;
-    if (known && storage.getBackend() === 'local') {
-      // Raw bytes: the same hash the external-change path and `pix3 serve` compute.
-      const current = await readDiskVersion(storage, filePath);
-      if (current !== null) {
-        const currentHash = current.hash;
-        if (currentHash === newHash) {
-          alreadyOnDisk = true;
-        } else if (currentHash !== known.hash && currentHash !== overwrite) {
-          return refuse(currentHash);
-        }
-      }
-    } else if (known && known.hash === newHash) {
-      alreadyOnDisk = true;
-    }
+    const alreadyOnDisk = known !== null && known.hash === newHash;
 
     if (!alreadyOnDisk) {
-      // Journal first: the version being written is recoverable even if the write clobbers it.
-      await journal?.recordVersion(projectPath, sceneYaml, 'editor-write');
-      // Workspace `If-Match` base: the version in the graph (or the one "Keep mine" chose), never
+      // `If-Match` base: the version in the graph (or the one "Keep mine" chose), never
       // the client's known hash — a background read of an agent's version not merged yet moves
       // that, and a save based on it would overwrite the agent's version with the old graph.
       const baseHash = overwrite ?? known?.hash;
       try {
         await storage.writeTextFile(filePath, sceneYaml, baseHash ? { baseHash } : {});
       } catch (error) {
-        if (error instanceof WorkspaceConflictError) {
+        if (error instanceof SceneWriteConflictError) {
           return refuse(error.currentHash);
         }
         throw error;
@@ -166,9 +140,7 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
       log(`✓ Scene saved: ${descriptor.name || filePath}`);
     }
 
-    diskState?.recordWrite(projectPath, newHash, genAtSerialize, sceneYaml);
-    fileWatchService.setLastKnownHash(filePath, newHash);
-    protectedSets?.recordEditorWrite(projectPath, newHash, genAtSerialize);
+    diskState?.recordWrite(projectPath, newHash, undefined, sceneYaml);
 
     const beforeSnapshot = context.snapshot;
 
@@ -178,17 +150,9 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
     }
     descriptor.lastSavedAt = Date.now();
 
-    // Update modification time best-effort and tell the file watcher about our own
-    // write, so it does not mistake this Save for an external change and trigger a
-    // self-reload (which would replace the graph and clear this scene's undo history).
+    // Update modification time best-effort (the own write's `pix3:fs` frame is skipped by hash).
     try {
-      if (descriptor.fileHandle) {
-        const file = await descriptor.fileHandle.getFile();
-        descriptor.lastModifiedTime = file.lastModified;
-      } else {
-        descriptor.lastModifiedTime = await storage.getLastModified(filePath);
-      }
-      fileWatchService.setLastKnownModifiedTime(filePath, descriptor.lastModifiedTime);
+      descriptor.lastModifiedTime = await storage.getLastModified(filePath);
     } catch {
       // ignore
     }

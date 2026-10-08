@@ -1,22 +1,23 @@
 import { setSpineModuleLoader, type SpineModule } from '@pix3/runtime';
+import { loadSpine } from 'virtual:pix3/spine-loader';
 
 /**
- * Registers the lazy loader for `@esotericsoftware/spine-threejs` with the
- * runtime.
+ * Registers the lazy loader for `@esotericsoftware/spine-threejs` with the runtime.
  *
- * The runtime deliberately does not import Spine itself — it declares the module
- * contract and lets the host provide it (see `setSpineModuleLoader`), which keeps
- * the Spine Runtimes (a separately licensed, ~300 KB dependency) out of every
- * consumer project that never places a `SpineSkeleton2D`.
- *
- * The literal dynamic `import()` below is what lets Vite emit Spine as its own
- * chunk: nothing is downloaded until a scene actually loads a Spine asset.
- *
- * Call this once during startup — both the editor and the exported player do, so
- * edit mode and play mode resolve Spine the same way.
+ * The runtime never imports Spine itself — it declares the module contract and lets the host
+ * provide it (`setSpineModuleLoader`). The editor is a prebuilt package, so the literal `import()`
+ * lives in the plugin's `virtual:pix3/spine-loader`, which resolves to `null` when the project does
+ * not install Spine (a literal import of a missing optional peer kills the importing module — plan
+ * §B.2, S1 finding 6).
  */
 export function registerSpineModuleLoader(): void {
-  setSpineModuleLoader(
-    () => import('@esotericsoftware/spine-threejs') as unknown as Promise<SpineModule>
-  );
+  setSpineModuleLoader(async () => {
+    const spine = await loadSpine();
+    if (!spine) {
+      throw new Error(
+        'This scene uses Spine, but @esotericsoftware/spine-threejs is not installed in the project.'
+      );
+    }
+    return spine as SpineModule;
+  });
 }

@@ -134,7 +134,7 @@ export class InspectorResourcePreview {
       this.texturePreviewLoads.add(resourceUrl);
       void (async () => {
         try {
-          const blob = await this.host.fileSystemAPI.readBlob(resourceUrl);
+          const blob = await this.host.projectStorage.readBlob(resourceUrl);
           const objectUrl = URL.createObjectURL(blob);
 
           // Get image dimensions
@@ -248,7 +248,7 @@ export class InspectorResourcePreview {
         this.audioPreviewLoads.add(normalizedUrl);
         void (async () => {
           try {
-            const blob = await this.host.fileSystemAPI.readBlob(normalizedUrl);
+            const blob = await this.host.projectStorage.readBlob(normalizedUrl);
             const objectUrl = URL.createObjectURL(blob);
             const analysis = await analyzeAudioBlob(blob);
 

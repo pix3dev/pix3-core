@@ -4,7 +4,8 @@ import { appState } from '@/state';
 import { LoggingService } from '@/services/core/LoggingService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
-import { RecoveryJournalService } from '@/services/project/coauthoring/RecoveryJournalService';
+import type { HostFsFrame } from '@/host/EditorHost';
+import { HostService } from '@/host/HostService';
 import {
   isPix3InternalPath,
   isSceneFilePath,
@@ -26,7 +27,7 @@ export interface ExternalBatchResult {
   readonly failed?: readonly string[];
 }
 
-/** Consumer of a settled batch — `ExternalMergeService.handleBatch` (via the editor shell). */
+/** Consumer of a settled batch — `ExternalReloadService` (reload clean scenes, flag dirty ones). */
 export type ExternalBatchListener = (
   paths: readonly string[]
 ) => Promise<ExternalBatchResult | void> | ExternalBatchResult | void;
@@ -50,11 +51,9 @@ interface PendingEntry {
 }
 
 /**
- * The external-change path of the co-authoring mode — plan §4.1 "обещаем поведение на
- * промежуточном состоянии" and §5 C2:
+ * The external-change path (pix3-core plan §C.3, port phase — `.plans/editor-core-port.md` D5):
  *
- * 1. **Stabilisation.** A reported path (FileWatch poll, workspace push, a refused pre-write
- *    check, `syncNow`) is re-read every {@link STABILITY_INTERVAL_MS}; it has arrived once two
+ * 1. **Stabilisation.** A reported path (a `pix3:fs` frame, a refused pre-write check) is re-read every {@link STABILITY_INTERVAL_MS}; it has arrived once two
  *    consecutive snapshots (size + sha256) match. Every path reported while any of them is still
  *    moving belongs to the same batch, and a batch is delivered together
  *    (`onExternalBatch(paths)`), so "script + prefab + scene" loads as one.
@@ -67,8 +66,8 @@ interface PendingEntry {
  *    (the loader rejected it) is treated the same way. A pending path whose content returns to
  *    the version the editor holds (known hash) is dropped like an own write: pending, the
  *    notice and the autosave hold clear, nothing reloads.
- * 4. **Play mode.** Detected but not delivered while playing: `coauthoring.stale` is set, and the
- *    batch goes out when play stops.
+ * 4. **Play mode.** Detected but not delivered while playing ({@link isStale}); the batch goes
+ *    out when play stops.
  *
  * While a path is pending, `SceneDiskStateService.isPendingExternal(path)` is true.
  */
@@ -83,8 +82,12 @@ export class ExternalChangeService {
   @inject(LoggingService)
   private readonly logger!: LoggingService;
 
-  @inject(RecoveryJournalService)
-  private readonly journal!: RecoveryJournalService;
+  @inject(HostService)
+  private readonly hostService!: HostService;
+
+  /** Detected during play, not applied yet (plan §B.3: a sync answers `stale`). */
+  private stale = false;
+  private unreadable: string[] = [];
 
   private projectKey: string | null = null;
   private disposeProjectSubscription: (() => void) | null = null;
@@ -125,7 +128,6 @@ export class ExternalChangeService {
       this.projectKey = key;
       this.reset();
       this.diskState.reset();
-      this.journal.reset();
     };
     this.disposeProjectSubscription = subscribe(appState.project, sync);
     this.projectKey =
@@ -137,6 +139,32 @@ export class ExternalChangeService {
   onExternalBatch(listener: ExternalBatchListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * A `pix3:fs` frame from the dev server: every file another writer changed is reported. The
+   * editor's own writes (`author: 'editor'`) are skipped here; their hashes are known anyway.
+   */
+  reportFrame(frame: HostFsFrame): void {
+    for (const event of frame.events) {
+      if (event.kind !== 'file' || event.author === 'editor') continue;
+      for (const wirePath of event.op === 'rename' && event.from
+        ? [event.from, event.path]
+        : [event.path]) {
+        const projectPath = this.hostService.projectPath(wirePath);
+        if (projectPath !== null) this.report(projectPath);
+      }
+    }
+  }
+
+  /** True while external changes wait for play to stop. */
+  isStale(): boolean {
+    return this.stale;
+  }
+
+  /** Project paths whose settled content does not parse (a notice was logged). */
+  getUnreadablePaths(): readonly string[] {
+    return this.unreadable;
   }
 
   /** A file may have changed on disk. Cheap and idempotent; `.pix3/` is ignored. */
@@ -439,19 +467,14 @@ export class ExternalChangeService {
   }
 
   private setStale(stale: boolean): void {
-    if (appState.project.coauthoring.stale !== stale) {
-      appState.project.coauthoring.stale = stale;
-    }
+    this.stale = stale;
   }
 
   private setUnreadable(): void {
     const unreadable = Array.from(this.entries.values())
       .filter(e => e.noticeShown)
       .map(e => e.path);
-    const current = appState.project.coauthoring.unreadablePaths;
-    if (current.length !== unreadable.length || current.some((p, i) => p !== unreadable[i])) {
-      appState.project.coauthoring.unreadablePaths = unreadable;
-    }
+    this.unreadable = unreadable;
   }
 }
 

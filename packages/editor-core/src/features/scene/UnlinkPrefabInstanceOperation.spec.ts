@@ -67,7 +67,6 @@ async function createHarness(files: Record<string, string>, sceneText: string) {
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
 

@@ -18,7 +18,6 @@ import { CreatePrefabInstanceCommand } from '@/features/scene/CreatePrefabInstan
 import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
 import { SaveAsPrefabCommand } from '@/features/scene/SaveAsPrefabCommand';
 import { OpenPrefabCommand } from '@/features/scene/OpenPrefabCommand';
-import { OpenSpriteEditorForNodeCommand } from '@/features/editor/OpenSpriteEditorForNodeCommand';
 import { UnlinkPrefabInstanceCommand } from '@/features/scene/UnlinkPrefabInstanceCommand';
 import { FrameSelectedCommand } from '@/features/viewport/FrameSelectedCommand';
 import { SceneManager } from '@pix3/runtime';
@@ -37,6 +36,7 @@ import '../shared/pix3-toolbar';
 import '../shared/pix3-toolbar-button';
 import './scene-tree-node';
 import './scene-tree-panel.ts.css';
+import { isReadOnlyTab } from '@/services/editor/read-only';
 
 interface NodeContextMenuDetail {
   nodeId: string;
@@ -85,10 +85,12 @@ export class SceneTreePanel extends ComponentBase {
   @state()
   private collapsedNodeIds: Set<string> = new Set();
 
-  /** Short highlight of the nodes an external version changed (co-authoring, plan §5 C5). */
+  /**
+   * Short highlight of the nodes an external version changed. Nothing feeds it in the port phase
+   * (1.x's co-authoring did); the external-merge work of plan §C.3 does again.
+   */
   @state()
   private recentlyChangedNodeIds: Set<string> = new Set();
-  private disposeCoauthoringSubscription?: () => void;
 
   /**
    * Branch roots the Peek mask is currently hiding — the chips' state, mirrored into the tree.
@@ -126,9 +128,6 @@ export class SceneTreePanel extends ComponentBase {
     y: number;
   } | null = null;
 
-  @state()
-  private remoteSelectionByNodeId: Record<string, Array<{ name: string; color: string }>> = {};
-
   private portal = new DropdownPortal({ minWidth: '12rem' });
   private lastHierarchyRef: NodeBase[] | null = null;
   private pendingScrollNodeId: string | null = null;
@@ -140,7 +139,6 @@ export class SceneTreePanel extends ComponentBase {
   private collapseInitializedSceneId: string | null = null;
   private disposeSceneSubscription?: () => void;
   private disposeSelectionSubscription?: () => void;
-  private disposeCollaborationSubscription?: () => void;
   private disposePeekSubscription?: () => void;
   private readonly onWindowClick = (event: MouseEvent): void => {
     if (!this.contextMenu) {
@@ -163,7 +161,6 @@ export class SceneTreePanel extends ComponentBase {
     super.connectedCallback();
     this.syncSceneState();
     this.syncSelectionState();
-    this.syncRemoteSelections();
     this.syncPeekState();
     this.disposeSceneSubscription = subscribe(appState.scenes, () => {
       this.syncSceneState();
@@ -177,13 +174,6 @@ export class SceneTreePanel extends ComponentBase {
     });
     this.disposeSelectionSubscription = subscribe(appState.selection, () => {
       this.syncSelectionState();
-    });
-    this.disposeCollaborationSubscription = subscribe(appState.collaboration, () => {
-      this.syncRemoteSelections();
-    });
-    this.syncRecentlyChanged();
-    this.disposeCoauthoringSubscription = subscribe(appState.project.coauthoring, () => {
-      this.syncRecentlyChanged();
     });
 
     // Track focus for context-aware shortcuts
@@ -200,12 +190,8 @@ export class SceneTreePanel extends ComponentBase {
     this.disposeSceneSubscription = undefined;
     this.disposeSelectionSubscription?.();
     this.disposeSelectionSubscription = undefined;
-    this.disposeCollaborationSubscription?.();
-    this.disposeCollaborationSubscription = undefined;
     this.disposePeekSubscription?.();
     this.disposePeekSubscription = undefined;
-    this.disposeCoauthoringSubscription?.();
-    this.disposeCoauthoringSubscription = undefined;
     document.removeEventListener('click', this.onWindowClick, { capture: true });
     window.removeEventListener('keydown', this.onWindowEscape);
     this.portal.close();
@@ -215,7 +201,7 @@ export class SceneTreePanel extends ComponentBase {
   protected render() {
     const hasHierarchy = this.hierarchy.length > 0;
     const activeSceneName = this.activeScene?.name ?? null;
-    const isReadOnly = appState.collaboration.isReadOnly;
+    const isReadOnly = isReadOnlyTab();
 
     return html`
       <pix3-panel
@@ -241,7 +227,6 @@ export class SceneTreePanel extends ComponentBase {
           @node-context-menu=${this.onNodeContextMenu.bind(this)}
           @node-asset-drop=${this.onNodeAssetDrop.bind(this)}
           @node-open-prefab=${this.onNodeOpenPrefab.bind(this)}
-          @node-open-sprite-editor=${this.onNodeOpenSpriteEditor.bind(this)}
         >
           ${hasHierarchy
             ? html`<ul
@@ -263,7 +248,6 @@ export class SceneTreePanel extends ComponentBase {
                       .peekHiddenNodeIds=${this.peekHiddenNodeIds}
                       .draggedNodeId=${this.draggedNodeId}
                       .draggedNodeType=${this.draggedNodeType}
-                      .remoteSelectionByNodeId=${this.remoteSelectionByNodeId}
                       ?focusable=${index === 0}
                     ></pix3-scene-tree-node>`
                 )}
@@ -430,13 +414,6 @@ export class SceneTreePanel extends ComponentBase {
     this.peekHiddenNodeIds = next;
   }
 
-  private syncRecentlyChanged(): void {
-    const ids = appState.project.coauthoring.recentlyChangedNodeIds;
-    const current = this.recentlyChangedNodeIds;
-    if (ids.length === current.size && ids.every(id => current.has(id))) return;
-    this.recentlyChangedNodeIds = new Set(ids);
-  }
-
   private syncSceneState(): void {
     const nextSceneId = appState.scenes.activeSceneId;
     const sceneChanged = this.activeSceneId !== nextSceneId;
@@ -524,19 +501,6 @@ export class SceneTreePanel extends ComponentBase {
 
     this.expandAncestorsForNode(selectedNodeId);
     this.pendingScrollNodeId = selectedNodeId;
-  }
-
-  private syncRemoteSelections(): void {
-    const next: Record<string, Array<{ name: string; color: string }>> = {};
-    for (const user of appState.collaboration.remoteUsers) {
-      for (const nodeId of user.selection) {
-        if (!next[nodeId]) {
-          next[nodeId] = [];
-        }
-        next[nodeId].push({ name: user.name, color: user.color });
-      }
-    }
-    this.remoteSelectionByNodeId = next;
   }
 
   private resolveActiveSceneDescriptor(): SceneDescriptor | null {
@@ -993,12 +957,6 @@ export class SceneTreePanel extends ComponentBase {
     );
     const node = sceneManager.getSceneGraph(sceneId)?.nodeMap.get(event.detail.nodeId) ?? null;
     await this.openPrefabForNode(node);
-  }
-
-  private async onNodeOpenSpriteEditor(event: CustomEvent<{ nodeId: string }>): Promise<void> {
-    await this.commandDispatcher.execute(
-      new OpenSpriteEditorForNodeCommand({ nodeId: event.detail.nodeId })
-    );
   }
 
   private async openPrefabForNode(node: NodeBase | null): Promise<void> {

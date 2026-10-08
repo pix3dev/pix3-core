@@ -57,7 +57,10 @@ export class HostService {
   wirePath(path: string): string {
     const normalized = HostService.normalize(path);
     const resRoot = HostService.normalize(this.info.resRoot);
-    if (resRoot === '.' || ROOT_RELATIVE.some(prefix => normalized === prefix || normalized.startsWith(prefix))) {
+    if (
+      resRoot === '.' ||
+      ROOT_RELATIVE.some(prefix => normalized === prefix || normalized.startsWith(prefix))
+    ) {
       return normalized;
     }
     return normalized === '.' ? resRoot : `${resRoot}/${normalized}`;
@@ -66,7 +69,10 @@ export class HostService {
   /** Wire path → project path; null when it lies outside `resRoot` (and is not root-relative). */
   projectPath(wirePath: string): string | null {
     const resRoot = HostService.normalize(this.info.resRoot);
-    if (resRoot === '.' || ROOT_RELATIVE.some(prefix => wirePath === prefix || wirePath.startsWith(prefix))) {
+    if (
+      resRoot === '.' ||
+      ROOT_RELATIVE.some(prefix => wirePath === prefix || wirePath.startsWith(prefix))
+    ) {
       return wirePath;
     }
     if (wirePath === resRoot) return '.';

@@ -25,6 +25,7 @@ import {
 import { IconSize } from '@/services/editor/IconService';
 import type { InspectorPanel } from './inspector-panel';
 import type { NumberFieldAxis } from './property-editors';
+import { isReadOnlyTab } from '@/services/editor/read-only';
 
 interface SelectOption {
   value: string;
@@ -49,7 +50,7 @@ export type DetachedPropertyOptions = {
   label?: string;
   /** Placeholder for text rows. */
   placeholder?: string;
-  /** Defaults to the collaboration read-only flag. */
+  /** Defaults to the read-only-tab flag (another tab holds the writer claim). */
   readOnly?: boolean;
   /** Axis chips for a vector2 pair, e.g. `['w', 'h']` for a size. */
   axes?: readonly [NumberFieldAxis, NumberFieldAxis];
@@ -556,7 +557,7 @@ export class InspectorPropertyRenderers {
     const enabled = this.isAnchorLayoutEnabled();
     // Play mode is a read-only live mirror — gate the switch and every control
     // in the body so they can't silently mutate the authored node during play.
-    const readOnly = appState.collaboration.isReadOnly || appState.ui.isPlaying;
+    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
     const horizontal = this.host.propertyValues['horizontalAlign']?.value ?? node.horizontalAlign;
     const vertical = this.host.propertyValues['verticalAlign']?.value ?? node.verticalAlign;
     const previewClass = `anchor-preview anchor-preview--h-${horizontal} anchor-preview--v-${vertical}`;
@@ -630,7 +631,7 @@ export class InspectorPropertyRenderers {
     }
 
     const enabled = this.isFlowEnabled();
-    const readOnly = appState.collaboration.isReadOnly || appState.ui.isPlaying;
+    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
     const bodyProps = props.filter(prop => prop.name !== 'flowEnabled');
 
     return this.renderSubsection({
@@ -1059,7 +1060,7 @@ export class InspectorPropertyRenderers {
   ): boolean {
     // Play mode shows a read-only LIVE mirror of the running game; editing the
     // authored node mid-play (two-way edit) is out of scope for Phase 0.
-    if (appState.collaboration.isReadOnly || appState.ui.isPlaying) {
+    if (isReadOnlyTab() || appState.ui.isPlaying) {
       return true;
     }
 
@@ -2328,7 +2329,7 @@ export class InspectorPropertyRenderers {
     const unitSuffix = prop.ui?.unit ? ` (${prop.ui.unit})` : '';
     // Asset documents are not node properties, so play mode does not apply; a
     // read-only collaborator still must not author.
-    const readOnly = options.readOnly ?? appState.collaboration.isReadOnly;
+    const readOnly = options.readOnly ?? isReadOnlyTab();
     const labelTemplate = this.renderPropertyLabel(
       prop,
       `${label}${unitSuffix}`,

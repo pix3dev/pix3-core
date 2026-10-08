@@ -1,4 +1,4 @@
-import type { FileDescriptor } from '@/services/project/FileSystemAPIService';
+import type { FileDescriptor } from '@/services/project/file-descriptor';
 import type { ProjectService } from '@/services/project/ProjectService';
 
 /** Recursive stats for a project directory (nested files + folders). */

@@ -36,7 +36,6 @@ function createHarness(rootNodes: NodeBase[]) {
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
   state.scenes.hierarchies['scene-1'] = {

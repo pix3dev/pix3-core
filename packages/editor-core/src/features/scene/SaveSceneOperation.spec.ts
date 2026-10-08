@@ -3,24 +3,40 @@ import type { OperationContext } from '@/core/Operation';
 import { SceneManager } from '@pix3/runtime';
 import { appState, resetAppState } from '@/state';
 import { LoggingService } from '@/services/core/LoggingService';
-import { FileWatchService } from '@/services/project/FileWatchService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
-import { RecoveryJournalService } from '@/services/project/coauthoring/RecoveryJournalService';
-import { ProtectedSetService } from '@/services/project/coauthoring/ProtectedSetService';
 import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
-import { MemoryRecoveryFallbackStore } from '@/services/project/coauthoring/recovery-fallback-store';
-import { MemoryStorage, wire } from '@/services/project/coauthoring/memory-storage.spec-helper';
-import { WorkspaceConflictError } from '@/services/project/workspace/workspace-protocol';
+import { MemoryStorage } from '@/services/project/coauthoring/memory-storage.spec-helper';
+import { SceneWriteConflictError } from '@/services/project/write-errors';
 import { sha256 } from '@/services/project/external-merge/hash';
 import { SaveSceneOperation } from './SaveSceneOperation';
 
 const SCENE_ID = 'scene-1';
 const PATH = 'scenes/main.pix3scene';
 
+/** The plugin's write rule: `If-Match` must equal the disk's hash, else 412. */
 class SaveStorage extends MemoryStorage {
+  readonly bases: Array<string | undefined> = [];
   async getLastModified(): Promise<number | null> {
     return 1;
+  }
+  async writeTextFile(
+    path: string,
+    contents: string,
+    options: { baseHash?: string } = {}
+  ): Promise<void> {
+    const key = path.replace(/^res:\/\//, '');
+    this.bases.push(options.baseHash);
+    const current = this.files.get(key);
+    if (options.baseHash && current !== undefined && (await sha256(current)) !== options.baseHash) {
+      throw new SceneWriteConflictError(key, {
+        code: 'base_mismatch',
+        status: 412,
+        message: 'changed',
+        currentHash: await sha256(current),
+      });
+    }
+    await super.writeTextFile(path, contents);
   }
 }
 
@@ -28,11 +44,7 @@ function createHarness() {
   let yaml = 'version: 1.0.0\nroot:\n  - id: n\n    name: Edited\n';
   const storage = new SaveStorage();
   const diskState = new SceneDiskStateService();
-  const journal = wire(new RecoveryJournalService(), { storage });
-  journal.setFallbackStore(new MemoryRecoveryFallbackStore());
-  const protectedSets = new ProtectedSetService();
   const externalChanges = { report: vi.fn() };
-  const fileWatch = { setLastKnownModifiedTime: vi.fn(), setLastKnownHash: vi.fn() };
   const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const graph = { rootNodes: [] };
   let onSerialize: () => void = () => undefined;
@@ -47,10 +59,7 @@ function createHarness() {
     [SceneManager, sceneManager],
     [ProjectStorageService, storage],
     [LoggingService, logger],
-    [FileWatchService, fileWatch],
     [SceneDiskStateService, diskState],
-    [RecoveryJournalService, journal],
-    [ProtectedSetService, protectedSets],
     [ExternalChangeService, externalChanges],
   ]);
   const container = {
@@ -71,7 +80,6 @@ function createHarness() {
     version: '1.0.0',
     isDirty: true,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
   const save = (params: { overwriteExternalHash?: string } = {}) =>
@@ -85,9 +93,7 @@ function createHarness() {
   return {
     storage,
     diskState,
-    protectedSets,
     externalChanges,
-    fileWatch,
     save,
     setYaml: (next: string) => {
       yaml = next;
@@ -102,8 +108,8 @@ beforeEach(() => {
   resetAppState();
 });
 
-describe('SaveSceneOperation — pre-write check and recovery journal', () => {
-  it('writes when the disk still holds the version the editor read, journaling it first', async () => {
+describe('SaveSceneOperation — conditional write', () => {
+  it('writes when the disk still holds the version the editor read', async () => {
     const h = createHarness();
     const original = 'version: 1.0.0\nroot: []\n';
     h.storage.files.set(PATH, original);
@@ -112,18 +118,14 @@ describe('SaveSceneOperation — pre-write check and recovery journal', () => {
     const result = await h.save();
 
     expect(result.outcome).toBe('saved');
-    expect(h.storage.writes.map(w => w.path)).toEqual([
-      expect.stringMatching(/^\.pix3\/recovery\/scenes%2Fmain\.pix3scene\//),
-      PATH,
-    ]);
+    expect(h.storage.writes.map(w => w.path)).toEqual([PATH]);
+    expect(h.storage.bases).toEqual([await sha256(original)]);
     const hash = await sha256(h.storage.files.get(PATH)!);
-    expect(h.diskState.getKnown(PATH)).toMatchObject({ hash, source: 'write', genAtWrite: 0 });
-    expect(h.protectedSets.get(PATH).versions).toEqual([{ hash, genAtWrite: 0 }]);
-    expect(h.fileWatch.setLastKnownHash).toHaveBeenCalledWith(`res://${PATH}`, hash);
+    expect(h.diskState.getKnown(PATH)).toMatchObject({ hash, source: 'write' });
     expect(appState.scenes.descriptors[SCENE_ID].isDirty).toBe(false);
   });
 
-  it('does not write over an external version: no write, path pending, typed outcome', async () => {
+  it('does not write over an external version: refused, path pending, scene stays dirty', async () => {
     const h = createHarness();
     await h.diskState.recordRead(PATH, 'version: 1.0.0\nroot: []\n');
     h.storage.files.set(PATH, 'version: 1.0.0\nroot: [] # the agent wrote this\n');
@@ -138,53 +140,22 @@ describe('SaveSceneOperation — pre-write check and recovery journal', () => {
     expect(appState.scenes.descriptors[SCENE_ID].isDirty).toBe(true);
   });
 
-  it('maps a workspace If-Match refusal to the same outcome', async () => {
+  it('bases the write on the accepted version; "keep mine" writes over the chosen one', async () => {
     const h = createHarness();
-    h.storage.backend = 'workspace';
-    await h.diskState.recordRead(PATH, 'old');
-    h.storage.writeTextFile = vi.fn(async (path: string) => {
-      if (path.endsWith(PATH)) throw new WorkspaceConflictError(PATH, 'a', 'b');
-    });
-
-    const result = await h.save();
-
-    expect(result.outcome).toBe('external-change');
-    expect(h.externalChanges.report).toHaveBeenCalledWith(PATH);
-    expect(appState.scenes.descriptors[SCENE_ID].isDirty).toBe(true);
-  });
-
-  it('bases a workspace write on the accepted version, not on a background read', async () => {
-    const h = createHarness();
-    h.storage.backend = 'workspace';
     const accepted = 'version: 1.0.0\nroot: []\n';
     const agent = 'version: 1.0.0\nroot: [] # the agent wrote this\n';
     await h.diskState.recordRead(PATH, accepted);
-    // The server holds the agent's version, and the client already READ it in the background
-    // (so its own known hash — the default base — is the agent's hash); not merged yet.
-    const agentHash = await sha256(agent);
-    const bases: Array<string | undefined> = [];
-    h.storage.writeTextFile = vi.fn(
-      async (path: string, _contents: string, options: { baseHash?: string } = {}) => {
-        if (!path.endsWith(PATH)) return;
-        bases.push(options.baseHash);
-        const base = options.baseHash ?? agentHash;
-        if (base !== agentHash) throw new WorkspaceConflictError(PATH, base, agentHash);
-      }
-    );
+    h.storage.files.set(PATH, agent);
 
-    const result = await h.save();
+    expect((await h.save()).outcome).toBe('external-change');
+    expect(h.storage.bases).toEqual([await sha256(accepted)]);
 
-    expect(result.outcome).toBe('external-change');
-    expect(bases).toEqual([await sha256(accepted)]);
-    expect(h.diskState.isPendingExternal(PATH)).toBe(true);
-
-    // "Keep mine" writes over exactly the version the human chose.
-    const kept = await h.save({ overwriteExternalHash: agentHash });
+    const kept = await h.save({ overwriteExternalHash: await sha256(agent) });
     expect(kept.outcome).toBe('saved');
-    expect(bases[1]).toBe(agentHash);
+    expect(h.storage.bases[1]).toBe(await sha256(agent));
   });
 
-  it('skips the write when the bytes are already on disk', async () => {
+  it('skips the write when the bytes are what the editor last read', async () => {
     const h = createHarness();
     const same = 'version: 1.0.0\nroot:\n  - id: n\n    name: Edited\n';
     h.storage.files.set(PATH, same);

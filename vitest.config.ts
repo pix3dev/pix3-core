@@ -18,7 +18,8 @@ export default defineConfig({
       'packages/create-pix3/templates/*.spec.ts',
       // Plugin specs are Node too; they start real Vite dev servers on port 0.
       'packages/vite-plugin/src/**/*.spec.ts',
-      // packages/editor-core joins once the port makes it compile (plan §G.2).
+      // The editor port (.plans/editor-core-port.md): specs join lane by lane.
+      'packages/editor-core/src/**/*.spec.ts',
     ],
     // The default 'forks' pool reports "No test suite found" for every spec on win32-arm64
     // (vitest 4.x); threads run them fine everywhere. Four workers: the run is import-bound, and
@@ -34,6 +35,10 @@ export default defineConfig({
       '@pix3/runtime': resolve(import.meta.dirname, 'packages/runtime/src'),
       // editor-core's own alias, for the few editor modules template specs load (`parseRoutine`).
       '@': resolve(import.meta.dirname, 'packages/editor-core/src'),
+      'virtual:pix3/spine-loader': resolve(
+        import.meta.dirname,
+        'packages/editor-core/src/host/testing/spine-loader-stub.ts'
+      ),
     },
   },
 });

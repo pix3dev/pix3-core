@@ -35,8 +35,18 @@ const encode = (data: Uint8Array | string): Uint8Array =>
   typeof data === 'string' ? new TextEncoder().encode(data) : data;
 
 export class FakeHostError extends Error {
-  readonly failure: { code: HostFileErrorCode; status: number; message: string; currentHash?: string | null };
-  constructor(code: HostFileErrorCode, status: number, message: string, currentHash?: string | null) {
+  readonly failure: {
+    code: HostFileErrorCode;
+    status: number;
+    message: string;
+    currentHash?: string | null;
+  };
+  constructor(
+    code: HostFileErrorCode,
+    status: number,
+    message: string,
+    currentHash?: string | null
+  ) {
     super(message);
     this.failure = { code, status, message, ...(currentHash !== undefined ? { currentHash } : {}) };
   }
@@ -88,8 +98,11 @@ export class FakeHost implements EditorHost {
       versions: { plugin: '0.0.0', runtime: '0.0.0', editorCore: '0.0.0', vite: '0.0.0' },
     };
     this.ready = (async () => {
-      for (const [path, data] of Object.entries(options.files ?? {})) await this.put(path, encode(data));
+      for (const [path, data] of Object.entries(options.files ?? {}))
+        await this.put(path, encode(data));
     })();
+    // The file API below is a plain object whose methods need the fake's maps.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const host = this;
     this.files = {
       async read(path) {
@@ -104,7 +117,9 @@ export class FakeHost implements EditorHost {
       async head(path) {
         await host.ready;
         const entry = host.store.get(path);
-        return entry ? { sha256: entry.sha256, size: entry.bytes.length, mtime: entry.mtime } : null;
+        return entry
+          ? { sha256: entry.sha256, size: entry.bytes.length, mtime: entry.mtime }
+          : null;
       },
       async write(path, data, options: HostWriteOptions = {}): Promise<HostWriteResult> {
         await host.ready;
@@ -118,7 +133,9 @@ export class FakeHost implements EditorHost {
         const bytes = encode(data);
         const existed = current !== null;
         const sha = await host.put(path, bytes);
-        const seq = host.emit([{ op: existed ? 'modify' : 'create', path, kind: 'file', sha256: sha, author: 'editor' }]);
+        const seq = host.emit([
+          { op: existed ? 'modify' : 'create', path, kind: 'file', sha256: sha, author: 'editor' },
+        ]);
         return { path, sha256: sha, size: bytes.length, seq };
       },
       async mkdir(path) {
@@ -136,7 +153,8 @@ export class FakeHost implements EditorHost {
         }
         if (events.length === 0 && !host.dirs.has(path))
           throw new FakeHostError('not_found', 404, `${path} does not exist.`);
-        for (const dir of [...host.dirs]) if (dir === path || dir.startsWith(`${path}/`)) host.dirs.delete(dir);
+        for (const dir of [...host.dirs])
+          if (dir === path || dir.startsWith(`${path}/`)) host.dirs.delete(dir);
         host.emit(events);
       },
       async move(from, to) {
@@ -146,7 +164,9 @@ export class FakeHost implements EditorHost {
         host.store.delete(from);
         host.store.set(to, entry);
         host.addDirs(to);
-        host.emit([{ op: 'rename', path: to, from, kind: 'file', sha256: entry.sha256, author: 'editor' }]);
+        host.emit([
+          { op: 'rename', path: to, from, kind: 'file', sha256: entry.sha256, author: 'editor' },
+        ]);
       },
       async manifest() {
         await host.ready;
@@ -171,12 +191,16 @@ export class FakeHost implements EditorHost {
     this.events = {
       onFs: listener => (this.fsListeners.add(listener), () => this.fsListeners.delete(listener)),
       onConnection: listener => (
-        this.connectionListeners.add(listener), () => this.connectionListeners.delete(listener)
+        this.connectionListeners.add(listener),
+        () => this.connectionListeners.delete(listener)
       ),
     };
     this.scripts = {
       current: () => this.roots,
-      onChange: listener => (this.scriptListeners.add(listener), () => this.scriptListeners.delete(listener)),
+      onChange: listener => (
+        this.scriptListeners.add(listener),
+        () => this.scriptListeners.delete(listener)
+      ),
     };
     this.sync = {
       setHandlers: handlers => {
@@ -203,7 +227,10 @@ export class FakeHost implements EditorHost {
         for (const [path, entry] of this.store) hashes[path] = entry.sha256;
         return { writerId: this.info.tabId, seq: this.seq, revision: '0'.repeat(64), hashes };
       },
-      onChange: listener => (this.writerListeners.add(listener), () => this.writerListeners.delete(listener)),
+      onChange: listener => (
+        this.writerListeners.add(listener),
+        () => this.writerListeners.delete(listener)
+      ),
     };
   }
 
@@ -217,7 +244,9 @@ export class FakeHost implements EditorHost {
     await this.ready;
     const existed = this.store.has(path);
     const sha = await this.put(path, encode(data));
-    this.emit([{ op: existed ? 'modify' : 'create', path, kind: 'file', sha256: sha, author: 'external' }]);
+    this.emit([
+      { op: existed ? 'modify' : 'create', path, kind: 'file', sha256: sha, author: 'external' },
+    ]);
   }
 
   setScripts(roots: ScriptRoots): void {

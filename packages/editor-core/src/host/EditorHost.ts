@@ -100,11 +100,19 @@ export interface HostFiles {
   read(path: string): Promise<{ readonly bytes: Uint8Array; readonly sha256: string } | null>;
   readText(path: string): Promise<string | null>;
   head(path: string): Promise<HostFileStat | null>;
-  write(path: string, data: Uint8Array | string, options?: HostWriteOptions): Promise<HostWriteResult>;
+  write(
+    path: string,
+    data: Uint8Array | string,
+    options?: HostWriteOptions
+  ): Promise<HostWriteResult>;
   mkdir(path: string): Promise<void>;
   delete(path: string, options?: { readonly recursive?: boolean }): Promise<void>;
   move(from: string, to: string, options?: { readonly overwrite?: boolean }): Promise<void>;
-  manifest(): Promise<{ readonly revision: string; readonly seq: number; readonly files: readonly HostManifestEntry[] }>;
+  manifest(): Promise<{
+    readonly revision: string;
+    readonly seq: number;
+    readonly files: readonly HostManifestEntry[];
+  }>;
   hash(paths: readonly string[]): Promise<Record<string, string | null>>;
   /** Browser URL of a project file for `<img>`/`TextureLoader` (Vite serves the root). */
   url(path: string): string;
@@ -153,7 +161,10 @@ export interface HostScripts {
   onChange(listener: (roots: ScriptRoots) => void): Unsubscribe;
 }
 
-export type HookReply = { readonly ok: boolean; readonly reason?: string } & Record<string, unknown>;
+export type HookReply = { readonly ok: boolean; readonly reason?: string } & Record<
+  string,
+  unknown
+>;
 
 export interface SyncInfo {
   readonly rev: number;
@@ -175,7 +186,10 @@ export interface HostSyncHandlers {
 export interface HostSync {
   setHandlers(handlers: HostSyncHandlers): void;
   /** `pix3_sync` from this tab: flush, then the plugin's barrier with this tab confirming. */
-  run(options?: { readonly expect?: Record<string, string>; readonly timeoutMs?: number }): Promise<HookReply>;
+  run(options?: {
+    readonly expect?: Record<string, string>;
+    readonly timeoutMs?: number;
+  }): Promise<HookReply>;
 }
 
 export interface HostClaim {

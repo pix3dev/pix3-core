@@ -1,8 +1,5 @@
 import { ServiceContainer, ServiceLifetime } from '@/fw/di';
 import { ResourceManager } from '@/services/assets/ResourceManager';
-import { CollaborationService } from '@/services/collab/CollaborationService';
-import { AssetUploadService } from '@/services/cloud/AssetUploadService';
-import { CollabViewportOverlayService } from '@/services/collab/CollabViewportOverlayService';
 import {
   AssetLoader,
   AudioService,
@@ -107,31 +104,4 @@ export function registerRuntimeServices(): void {
     EditorSceneManager,
     ServiceLifetime.Singleton
   );
-
-  // 6. CollaborationService
-  container.addService(
-    container.getOrCreateToken(CollaborationService),
-    CollaborationService,
-    ServiceLifetime.Singleton
-  );
-
-  // 7. AssetUploadService
-  container.addService(
-    container.getOrCreateToken(AssetUploadService),
-    AssetUploadService,
-    ServiceLifetime.Singleton
-  );
-
-  // 8. CollabViewportOverlayService
-  // Note: SceneCRDTBinding is intentionally NOT registered here. It carries
-  // @injectable() (registers itself on module load) and is reached only via
-  // dynamic import() from the collab join/session flows, which keeps the eager
-  // yjs value import it holds out of the main bundle chunk.
-  container.addService(
-    container.getOrCreateToken(CollabViewportOverlayService),
-    CollabViewportOverlayService,
-    ServiceLifetime.Singleton
-  );
-
-  console.log('[Pix3] Runtime services registered');
 }

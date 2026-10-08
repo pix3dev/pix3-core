@@ -4,7 +4,6 @@ import {
   AssetLoader,
   AudioService,
   collectRenderabilityIssues,
-  NetworkService,
   RuntimeRenderer,
   SceneManager,
   SceneRunner,
@@ -12,7 +11,7 @@ import {
   setDirectionAxesEnabled,
 } from '@pix3/runtime';
 import { appState } from '@/state';
-import type { FlowStageAspect, GameAspectRatio } from '@/state/AppState';
+import type { GameAspectRatio } from '@/state/AppState';
 import {
   encodeCanvasScreenshot,
   type CanvasScreenshot,
@@ -20,7 +19,6 @@ import {
 } from '@/core/canvas-screenshot';
 import { createDefaultQualitySettings, DEFAULT_TARGET_PLATFORM } from '@/core/ProjectManifest';
 import { OperationService } from '@/services/core/OperationService';
-import { ProfilerSessionService } from '@/services/play/ProfilerSessionService';
 import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
 import { TextureAtlasService } from '@/services/atlas/TextureAtlasService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
@@ -66,9 +64,6 @@ export class GamePlaySessionService {
   @inject(OperationService)
   private readonly operationService!: OperationService;
 
-  @inject(ProfilerSessionService)
-  private readonly profilerSessionService!: ProfilerSessionService;
-
   @inject(RuntimeErrorBridgeService)
   private readonly runtimeErrorBridge!: RuntimeErrorBridgeService;
 
@@ -92,13 +87,6 @@ export class GamePlaySessionService {
   private popoutWindowResizeHandler?: () => void;
   private runner?: SceneRunner;
   private renderer?: RuntimeRenderer;
-  /**
-   * The multiplayer session (plan decision D5). Owned by this service rather than by a runner, so it
-   * outlives `changeScene` and every play/restart cycle; a stopped play session leaves the room but
-   * keeps the object, and "Play Online" (Phase 1.5) drives it from the Game tab. Nothing connects on
-   * its own.
-   */
-  private networkService?: NetworkService;
   private focusCleanup?: () => void;
   /**
    * Frame source of every runner: rAF, or worker ticks in a hidden tab while an agent keeps the
@@ -182,24 +170,7 @@ export class GamePlaySessionService {
     this.disposeKeepAlive = undefined;
     this.cancelPendingTabHostRelease();
     this.detachRuntime();
-    this.networkService?.dispose();
-    this.networkService = undefined;
     this.closePopoutWindow();
-  }
-
-  /**
-   * The play session's multiplayer membership (plan decision D5).
-   *
-   * Exposed because "Play Online" has to join the room *before* the scene starts — a script's
-   * `onStart` must already see `net.isOnline`. Created lazily here and installed into whichever
-   * runner starts next, so the caller never has to care which order the two happen in.
-   */
-  getNetworkService(): NetworkService {
-    if (!this.networkService) {
-      this.networkService = new NetworkService();
-    }
-    this.runner?.setNetworkService(this.networkService);
-    return this.networkService;
   }
 
   getAspectRatio(): GameAspectRatio {
@@ -210,22 +181,6 @@ export class GamePlaySessionService {
     this.initialize();
     await this.operationService.invoke(
       new UpdateEditorSettingsOperation({ gameAspectRatio: aspectRatio })
-    );
-  }
-
-  /**
-   * Vibe's own stage shape. A separate setting from {@link getAspectRatio} on purpose — see
-   * `FlowStageAspect`: Studio's default means "fill the panel", Vibe's means "the authored
-   * viewport", and one value cannot carry both defaults.
-   */
-  getFlowStageAspect(): FlowStageAspect {
-    return appState.ui.flowStageAspect;
-  }
-
-  async setFlowStageAspect(aspect: FlowStageAspect): Promise<void> {
-    this.initialize();
-    await this.operationService.invoke(
-      new UpdateEditorSettingsOperation({ flowStageAspect: aspect })
     );
   }
 
@@ -359,9 +314,7 @@ export class GamePlaySessionService {
    * at, and the host window. The returned objects are live — treat as read-only.
    *
    * `renderer` is here so a caller can read the last frame's counters directly
-   * (`getStatsSnapshot`) instead of through {@link ProfilerSessionService}: the profiler
-   * only samples while a panel can show the numbers, so in Vibe its readings are null,
-   * and an agent's questions must not depend on which workspace the user is looking at.
+   * (`getStatsSnapshot`).
    */
   getActiveRuntime(): {
     runner: SceneRunner;
@@ -431,7 +384,7 @@ export class GamePlaySessionService {
 
   /**
    * The user-facing pause: hold the game frozen (or let it run) *and* move `playModeStatus` with it,
-   * so the Game tab, the Flow stage bar, the popout window, `play_status` and the debug bridge all
+   * so the Game tab, the popout window, `play_status` and the debug bridge all
    * read the same thing. Every surface with a Pause button goes through here rather than through
    * {@link setPauseRequested}, which is the plumbing underneath and leaves the UI unaware.
    */
@@ -496,9 +449,6 @@ export class GamePlaySessionService {
   private async syncRuntimeToUiState(): Promise<void> {
     if (!appState.ui.isPlaying) {
       this.detachRuntime();
-      // Play mode ended (not a restart, not a host swap): leave the room. The session object stays
-      // so the Game tab can start a new one without re-wiring.
-      this.networkService?.disconnect();
       this.updateHostRunningState(false);
       // Play mode has ended; the banner ("the game may have stopped updating")
       // no longer applies. The failure is retained in the Logs panel.
@@ -536,7 +486,7 @@ export class GamePlaySessionService {
   }
 
   /**
-   * Undo a launch that never reached a scene. `isPlaying` is what the Game tab, the Flow stage,
+   * Undo a launch that never reached a scene. `isPlaying` is what the Game tab,
    * `play_start` and every agent verification read — leaving it on after a failed start makes a
    * stopped runtime appear to be playing.
    * Release the failed runtime and turn play mode back off so another start can retry cleanly.
@@ -572,7 +522,6 @@ export class GamePlaySessionService {
     // Each launch/restart begins with a clean slate — clear any banner from a
     // previous run so a fresh attempt isn't shadowed by a stale error.
     this.runtimeErrorBridge.clearPlayModeError();
-    this.profilerSessionService.beginSession(host.kind);
 
     const quality =
       appState.project.manifest?.quality ?? createDefaultQualitySettings(DEFAULT_TARGET_PLATFORM);
@@ -597,20 +546,14 @@ export class GamePlaySessionService {
     runner.setFrameScheduler(this.frameTicker);
     this.renderer = renderer;
     this.runner = runner;
-    if (!this.networkService) {
-      this.networkService = new NetworkService();
-    }
-    runner.setNetworkService(this.networkService);
     // Phase 3: enable the 2D quad batcher for this run (flag-gated; off is
     // byte-identical to individual-mesh rendering).
     runner.setBatching2DEnabled(isBatch2DEnabled());
-    this.profilerSessionService.bindRuntime(runner, renderer, host.kind);
 
     this.attachFocusListeners(host.windowRef);
 
     const activeSceneId = appState.scenes.activeSceneId;
     if (!activeSceneId) {
-      this.profilerSessionService.endSession();
       this.updateHostRunningState(false);
       this.runtimeErrorBridge.reportPlayModeFailure(
         'Cannot start the game: no active scene is open.'
@@ -719,16 +662,9 @@ export class GamePlaySessionService {
     // restart or a host swap must not hand the next scene a game that starts
     // frozen for a reason nothing on screen explains.
     this.hostPauseRequested = false;
-    this.profilerSessionService.endSession();
     // Keep atlasing strictly play-mode-scoped: edit-mode texture loads on the
     // shared AssetLoader must always get raw standalone textures.
     this.assetLoader.setAtlasResolver(null);
-
-    // The room membership deliberately survives this: `detachRuntime` also runs on a restart and on
-    // a host swap (tab ⇄ popout), and dropping everyone out of the room because a level reloaded is
-    // exactly the bug D5 exists to prevent. Leaving is tied to play mode *ending* — see
-    // `syncRuntimeToUiState` — and to `dispose`. Entities the departing scene owned are despawned by
-    // each `core:NetworkedNode`'s `despawnOnDetach`, so no ghosts survive the reload.
 
     // Drop the Peek sink with the runner it pointed at, or a chip toggled while nothing is playing
     // would reach a stopped runner.

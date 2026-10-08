@@ -12,7 +12,6 @@ import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { AssetImportDialogService } from '@/services/assets/AssetImportDialogService';
 import { DialogService } from '@/services/editor/DialogService';
 import { ProjectService } from '@/services/project/ProjectService';
-import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { AddAutoloadCommand } from '@/features/project/AddAutoloadCommand';
 import type { AssetTree } from './asset-tree';
 
@@ -21,6 +20,7 @@ import '../shared/pix3-dropdown-button';
 import './asset-tree';
 import './assets-content';
 import './assets-panel.ts.css';
+import { isReadOnlyTab } from '@/services/editor/read-only';
 
 interface ScriptRevealRequestDetail {
   scriptType: string;
@@ -65,9 +65,6 @@ export class AssetsPanel extends ComponentBase {
 
   @inject(ProjectService)
   private readonly projectService!: ProjectService;
-
-  @inject(ProjectScriptLoaderService)
-  private readonly scriptLoader!: ProjectScriptLoaderService;
 
   private assetTreeRef: AssetTree | null = null;
   private splitEl: HTMLElement | null = null;
@@ -239,7 +236,7 @@ export class AssetsPanel extends ComponentBase {
   private onContentMoveRequest = (e: Event) => {
     const detail = (e as CustomEvent<{ paths: string[]; targetPath: string; targetLabel: string }>)
       .detail;
-    if (!detail || detail.paths.length === 0 || appState.collaboration.isReadOnly) return;
+    if (!detail || detail.paths.length === 0 || isReadOnlyTab()) return;
     void this.assetTreeRef?.movePathsInto(detail.paths, detail.targetPath, detail.targetLabel);
   };
 
@@ -303,8 +300,8 @@ export class AssetsPanel extends ComponentBase {
       const template = this.generateAutoloadTemplate(singletonName);
       await this.projectService.writeFile(filePath, template);
 
-      await this.scriptLoader.syncAndBuild();
-
+      // No build step here: the dev server picks the new file up and re-registers the scripts
+      // (`EditorHost.scripts.onChange`); the autoload entry only names the path.
       const didMutate = await this.commandDispatcher.execute(
         new AddAutoloadCommand({
           scriptPath: filePath,
@@ -394,7 +391,7 @@ export class ${singletonName} extends Script {
 
   // ── Grid file operations (dialog rename + multi-delete) ───────────────────
   private async renamePath(path: string): Promise<void> {
-    if (appState.collaboration.isReadOnly) {
+    if (isReadOnlyTab()) {
       return;
     }
     const name = path.split('/').pop() ?? path;
@@ -433,7 +430,7 @@ export class ${singletonName} extends Script {
   }
 
   private async deletePaths(paths: string[]): Promise<void> {
-    if (appState.collaboration.isReadOnly || paths.length === 0) {
+    if (isReadOnlyTab() || paths.length === 0) {
       return;
     }
 
@@ -551,7 +548,7 @@ export class ${singletonName} extends Script {
 
   // ── Drop target for the root row ─────────────────────────────────────────
   private onRootDragOver = (event: DragEvent) => {
-    if (appState.collaboration.isReadOnly) {
+    if (isReadOnlyTab()) {
       return;
     }
     event.preventDefault();
@@ -561,7 +558,7 @@ export class ${singletonName} extends Script {
   };
 
   private onRootDrop = (event: DragEvent) => {
-    if (appState.collaboration.isReadOnly || !event.dataTransfer) {
+    if (isReadOnlyTab() || !event.dataTransfer) {
       return;
     }
     event.preventDefault();
@@ -569,7 +566,7 @@ export class ${singletonName} extends Script {
   };
 
   protected render() {
-    const isReadOnly = appState.collaboration.isReadOnly;
+    const isReadOnly = isReadOnlyTab();
     const rootLabel = appState.project.projectName ?? 'Assets';
 
     return html`

@@ -144,6 +144,18 @@ export class ViewportTransformSession {
     );
   }
 
+  /**
+   * Mirror {@link isGestureActive} into `appState.ui.gestureInProgress` (session UI state, written
+   * directly — AGENTS.md "Gateway scope"). `SceneWriteService` waits for it before a flush or an
+   * idle save, so a drag is never written half-way (plan §C.1).
+   */
+  private syncGestureFlag(): void {
+    const active = this.isGestureActive();
+    if (appState.ui.gestureInProgress !== active) {
+      appState.ui.gestureInProgress = active;
+    }
+  }
+
   start2DTransform(screenX: number, screenY: number, handle: TwoDHandle): void {
     const selection2DOverlay = this.deps.getSelection2DOverlay();
     const orthographicCamera = this.deps.getOrthographicCamera();
@@ -169,6 +181,7 @@ export class ViewportTransformSession {
 
     if (transform) {
       this.active2DTransform = transform;
+      this.syncGestureFlag();
       // Set active handle for visual feedback (accent color during drag)
       transformTool2d.setActiveHandle(handle, selection2DOverlay);
       this.deps.begin2DInteraction();
@@ -222,6 +235,14 @@ export class ViewportTransformSession {
   }
 
   async complete2DTransform(): Promise<void> {
+    try {
+      await this.complete2DTransformInner();
+    } finally {
+      this.syncGestureFlag();
+    }
+  }
+
+  private async complete2DTransformInner(): Promise<void> {
     if (!this.active2DTransform) {
       return;
     }
@@ -314,6 +335,7 @@ export class ViewportTransformSession {
     if (targetNode) {
       this.targetTransformStartStates.set(targetNode.nodeId, targetNode.getTargetPosition());
       this.activeTargetDragNodeId = targetNode.nodeId;
+      this.syncGestureFlag();
       return;
     }
 
@@ -327,6 +349,7 @@ export class ViewportTransformSession {
       rotation: obj.rotation.clone(),
       scale: obj.scale.clone(),
     });
+    this.syncGestureFlag();
   }
 
   updateTargetTransformFromControl(): void {
@@ -345,6 +368,14 @@ export class ViewportTransformSession {
   }
 
   async handleTransformCompleted(): Promise<void> {
+    try {
+      await this.handleTransformCompletedInner();
+    } finally {
+      this.syncGestureFlag();
+    }
+  }
+
+  private async handleTransformCompletedInner(): Promise<void> {
     const transformedObject = this.deps.getTransformControls()?.object;
     if (!transformedObject) {
       this.transformStartStates.clear();

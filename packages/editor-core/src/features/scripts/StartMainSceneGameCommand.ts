@@ -8,7 +8,7 @@ import {
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { OperationService } from '@/services/core/OperationService';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
+import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlayModeOperation';
 import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-workspace';
 
 /**
@@ -19,7 +19,7 @@ import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-work
  * This is the **full-flow** run: on a recipe project the entry scene is the menu, so it also
  * switches the editor's active scene there — `appState.scenes.activeSceneId` is what play mode binds
  * to (`GamePlaySessionService.startScene`), so running one scene while the editor shows another is
- * not expressible. That is why the prototyping surfaces (the Studio toolbar button, the Flow stage)
+ * not expressible. That is why the prototyping surfaces (the toolbar button)
  * dispatch `game.start` instead: a menu becoming the active scene mid-session also silently
  * redirects every agent edit into it.
  */
@@ -39,11 +39,15 @@ export class StartMainSceneGameCommand extends CommandBase<void, void> {
   private readonly gamePlaySessionService: GamePlaySessionService;
 
   /**
-   * `editorTabService` is accepted for call-site compatibility but no longer used: which surface
-   * the game appears on is decided per workspace in `play-workspace` (Studio = a Golden-Layout
-   * tab, Flow = the permanently mounted stage).
+   * `editorTabService` is accepted for call-site compatibility but no longer used: the game
+   * surface (the Game tab) is opened through `play-workspace`. `options.owner` is who starts play:
+   * `'designer'` (default, the UI) or `'agent'` (the debug bridge).
    */
-  constructor(_editorTabService: EditorTabService, gamePlaySessionService: GamePlaySessionService) {
+  constructor(
+    _editorTabService: EditorTabService,
+    gamePlaySessionService: GamePlaySessionService,
+    private readonly options: { readonly owner?: PlayOwner } = {}
+  ) {
     super();
     this.gamePlaySessionService = gamePlaySessionService;
   }
@@ -88,7 +92,7 @@ export class StartMainSceneGameCommand extends CommandBase<void, void> {
 
     // Play mode is flipped by the operation below, and `GamePlaySessionService` starts the runtime
     // off that flag — so flipping it without a scene puts the app in a state where nothing runs but
-    // everything (Game tab, Flow stage, `play_start`, every agent verification) believes it does.
+    // everything (Game tab, `play_start`, every agent verification) believes it does.
     if (!context.state.scenes.activeSceneId) {
       throw new Error('Cannot start the game: no scene could be opened.');
     }
@@ -101,6 +105,7 @@ export class StartMainSceneGameCommand extends CommandBase<void, void> {
       new SetPlayModeOperation({
         isPlaying: true,
         status: 'playing',
+        owner: this.options.owner,
       })
     );
 

@@ -1,6 +1,4 @@
-import { dismissOnBackdropClick } from '@/ui/shared/backdrop-dismiss';
 import { subscribe } from 'valtio/vanilla';
-import { keyed } from 'lit/directives/keyed.js';
 
 import { ComponentBase, customElement, html, inject, property, state } from '@/fw';
 import { LayoutManagerService } from '@/core/LayoutManager';
@@ -8,17 +6,6 @@ import { OperationService } from '@/services/core/OperationService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { CommandRegistry } from '@/services/core/CommandRegistry';
 import { KeybindingService } from '@/services/editor/KeybindingService';
-import { FileWatchService } from '@/services/project/FileWatchService';
-import { AutosaveService } from '@/services/project/autosave/AutosaveService';
-import { WorkspaceAgentToolBridge } from '@/services/project/workspace/WorkspaceAgentToolBridge';
-import { ProtectedSetService } from '@/services/project/coauthoring/ProtectedSetService';
-import { ProjectOwnershipService } from '@/services/project/coauthoring/ProjectOwnershipService';
-import { ExternalMergeService } from '@/services/project/coauthoring/ExternalMergeService';
-import { AckService } from '@/services/project/coauthoring/AckService';
-import {
-  ExternalChangeService,
-  type ExternalBatchResult,
-} from '@/services/project/coauthoring/ExternalChangeService';
 import { DialogService, type DialogInstance } from '@/services/editor/DialogService';
 import {
   AnimationAutoSliceDialogService,
@@ -49,10 +36,6 @@ import {
   type ProjectSettingsDialogInstance,
 } from '@/services/project/ProjectSettingsService';
 import {
-  ProjectSyncService,
-  type ProjectSyncDialogInstance,
-} from '@/services/project/ProjectSyncService';
-import {
   EditorSettingsService,
   type EditorSettingsDialogInstance,
 } from '@/services/editor/EditorSettingsService';
@@ -60,80 +43,43 @@ import {
   NodeTypePickerService,
   type NodeTypePickerInstance,
 } from '@/services/editor/NodeTypePickerService';
-import {
-  PlayableExportDialogService,
-  type PlayableExportDialogInstance,
-} from '@/services/export/PlayableExportDialogService';
-import {
-  PlayableExportProgressDialogService,
-  type PlayableExportProgressDialogInstance,
-} from '@/services/export/PlayableExportProgressDialogService';
 import { ScriptExecutionService } from '@/services/play/ScriptExecutionService';
 import { AutoloadService } from '@/services/project/AutoloadService';
-import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
-import { ScriptCompilerService } from '@/services/scripting/ScriptCompilerService';
+import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
+import { EditorTabService } from '@/services/editor/EditorTabService';
+import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { PeekService } from '@/services/viewport/PeekService';
 import { SaveActiveResourceCommand } from '@/features/editor/SaveActiveResourceCommand';
+import { OpenEditorSettingsCommand } from '@/features/editor/OpenEditorSettingsCommand';
+import { OpenGeneratePanelCommand } from '@/features/editor/OpenGeneratePanelCommand';
 import { SaveAsSceneCommand } from '@/features/scene/SaveAsSceneCommand';
 import { DeleteObjectCommand } from '@/features/scene/DeleteObjectCommand';
 import { DuplicateNodesCommand } from '@/features/scene/DuplicateNodesCommand';
 import { GroupSelectedNodesCommand } from '@/features/scene/GroupSelectedNodesCommand';
 import { FitGroup2DToContentsCommand } from '@/features/scene/FitGroup2DToContentsCommand';
 import { SaveAsPrefabCommand } from '@/features/scene/SaveAsPrefabCommand';
-import { PublishToLibraryCommand } from '@/features/library/PublishToLibraryCommand';
-import { PublishToStoreCommand } from '@/features/library/PublishToStoreCommand';
+import { BrowseNodeTypesCommand } from '@/features/scene/BrowseNodeTypesCommand';
 import { UndoCommand } from '@/features/history/UndoCommand';
 import { RedoCommand } from '@/features/history/RedoCommand';
 import { StartGameCommand } from '@/features/scripts/StartGameCommand';
-import { StartOnlineGameCommand } from '@/features/scripts/StartOnlineGameCommand';
 import { StartMainSceneGameCommand } from '@/features/scripts/StartMainSceneGameCommand';
 import { StopGameCommand } from '@/features/scripts/StopGameCommand';
 import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
 import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
 import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
 import { OpenProjectSettingsCommand } from '@/features/project/OpenProjectSettingsCommand';
-import { OpenProjectSyncCommand } from '@/features/project/OpenProjectSyncCommand';
 import { OpenProjectInIdeCommand } from '@/features/project/OpenProjectInIdeCommand';
-import { InstallAgentKitCommand } from '@/features/project/InstallAgentKitCommand';
-import { AgentKitService } from '@/services/project/agent-kit/AgentKitService';
-import type { AgentHandoff } from '@/services/project/agent-kit/agent-handoff';
-import { BuildProjectCommand } from '@/features/project/BuildProjectCommand';
-import { ExportPlayableHtmlCommand } from '@/features/project/ExportPlayableHtmlCommand';
-import { ExportPlayableZipCommand } from '@/features/project/ExportPlayableZipCommand';
-import { StartRemotePreviewCommand } from '@/features/project/StartRemotePreviewCommand';
-import { NewProjectCommand } from '@/features/project/NewProjectCommand';
-import { CloseProjectCommand } from '@/features/project/CloseProjectCommand';
-import { ConnectWorkspaceCommand } from '@/features/project/ConnectWorkspaceCommand';
-import {
-  WorkspaceConnectDialogService,
-  type WorkspaceConnectDialogRequest,
-} from '@/services/project/workspace/WorkspaceConnectDialogService';
-import { MoveProjectToFolderCommand } from '@/features/project/MoveProjectToFolderCommand';
-import { OpenEditorSettingsCommand } from '@/features/editor/OpenEditorSettingsCommand';
-import { SwitchWorkspaceModeCommand } from '@/features/editor/SwitchWorkspaceModeCommand';
-import { OpenSpriteEditorCommand } from '@/features/editor/OpenSpriteEditorCommand';
-import { OpenModelLabCommand } from '@/features/editor/OpenModelLabCommand';
-import { OpenUiKitForgeCommand } from '@/features/editor/OpenUiKitForgeCommand';
-import { ApplyUiKitSkinCommand } from '@/features/uikit/ApplyUiKitSkinCommand';
-import { isUiKitForgeHash } from '@/core/tool-routes';
-import { OpenAgentChatCommand } from '@/features/editor/OpenAgentChatCommand';
-import { OpenProjectHomeCommand } from '@/features/editor/OpenProjectHomeCommand';
-import { BakeAmbientOcclusionCommand } from '@/features/render/BakeAmbientOcclusionCommand';
-import { ClearAmbientOcclusionCommand } from '@/features/render/ClearAmbientOcclusionCommand';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
-import { OpenLocalizationPanelCommand } from '@/features/localization/OpenLocalizationPanelCommand';
-import { OpenGeneratePanelCommand } from '@/features/editor/OpenGeneratePanelCommand';
-import { OpenLibraryDocumentCommand } from '@/features/library/OpenLibraryDocumentCommand';
-import { CheckScriptsCommand } from '@/features/scripts/CheckScriptsCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
-import { BrowseNodeTypesCommand } from '@/features/scene/BrowseNodeTypesCommand';
+import { OpenLocalizationPanelCommand } from '@/features/localization/OpenLocalizationPanelCommand';
 import { createTransformModeCommands } from '@/features/viewport/SetTransformModeCommand';
 import { createShowPanelCommands } from '@/features/window/ShowPanelCommand';
-import { createAlign2DMenuCommands } from '@/features/alignment/Align2DMenuCommands';
 import { ResetLayoutCommand } from '@/features/window/ResetLayoutCommand';
+import { createAlign2DMenuCommands } from '@/features/alignment/Align2DMenuCommands';
 import { ToggleGridCommand } from '@/features/viewport/ToggleGridCommand';
-import { PeekShowAllCommand } from '@/features/peek/PeekCommands';
-import { PeekService } from '@/services/viewport/PeekService';
 import { ToggleAxisGizmoCommand } from '@/features/viewport/ToggleAxisGizmoCommand';
+import { ToggleSnapToGridCommand } from '@/features/viewport/ToggleSnapToGridCommand';
 import { ToggleLayer2DCommand } from '@/features/viewport/ToggleLayer2DCommand';
 import { ToggleLayer3DCommand } from '@/features/viewport/ToggleLayer3DCommand';
 import { ZoomDefaultCommand } from '@/features/viewport/ZoomDefaultCommand';
@@ -146,24 +92,9 @@ import { ToggleCollidersCommand } from '@/features/viewport/ToggleCollidersComma
 import { ToggleCollisionShapesCommand } from '@/features/viewport/ToggleCollisionShapesCommand';
 import { ToggleDirectionAxesCommand } from '@/features/viewport/ToggleDirectionAxesCommand';
 import { ToggleNavigationModeCommand } from '@/features/viewport/ToggleNavigationModeCommand';
-import { ToggleSnapToGridCommand } from '@/features/viewport/ToggleSnapToGridCommand';
+import { PeekShowAllCommand } from '@/features/peek/PeekCommands';
 import { NudgeNodesCommand } from '@/features/properties/NudgeNodesCommand';
 import { appState } from '@/state';
-import type { WorkspaceMode } from '@/state/AppState';
-import { WorkspaceModeService } from '@/services/editor/WorkspaceModeService';
-import { StudioViewportMountService } from '@/services/editor/StudioViewportMountService';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
-import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
-import { EditorTabService } from '@/services/editor/EditorTabService';
-import { RouterService } from '@/services/core/RouterService';
-import { AuthService } from '@/services/cloud/AuthService';
-import { CloudProjectService } from '@/services/cloud/CloudProjectService';
-import { LocalSyncService } from '@/services/project/LocalSyncService';
-import { UpdateCheckService } from '@/services/editor/UpdateCheckService';
-import {
-  ProjectLifecycleService,
-  type CreateProjectDialogInstance,
-} from '@/services/project/ProjectLifecycleService';
 import './shared/pix3-toolbar';
 import './shared/pix3-toolbar-button';
 import './shared/pix3-dropdown-button';
@@ -173,35 +104,33 @@ import './shared/pix3-confirm-dialog';
 import './shared/pix3-behavior-picker';
 import './shared/pix3-effect-picker';
 import './shared/pix3-script-creator';
-import './shared/pix3-create-project-dialog';
-import './shared/pix3-workspace-connect-dialog';
-import './shared/pix3-agent-handoff-dialog';
-import './shared/pix3-workspace-banner';
-import './shared/pix3-merge-banner';
-import './shared/pix3-recovery-menu';
+import './shared/pix3-host-banner';
 import './shared/pix3-project-settings-dialog';
-import './shared/pix3-project-sync-dialog';
 import './shared/pix3-editor-settings-dialog';
 import './shared/pix3-animation-auto-slice-dialog';
 import './shared/pix3-asset-import-dialog';
 import './shared/pix3-save-asset-dialog';
 import './shared/pix3-node-type-picker';
-import './shared/pix3-playable-export-dialog';
-import './shared/pix3-playable-export-progress-dialog';
 import './shared/pix3-status-bar';
-import './shared/pix3-mode-switch';
-import './home/pix3-project-home';
-import './collab/collab-participants-strip';
-import './collab/pix3-share-dialog';
-import './welcome/pix3-welcome';
-import './flow/pix3-flow-shell';
-import './tools/pix3-uikit-forge';
-import './auth/pix3-auth-screen';
-import './logs-view/logs-panel';
-import './profiler/profiler-panel';
+import './shared/pix3-lightbox';
+import './scene-tree/scene-tree-panel';
+import './viewport/editor-tab';
 import './viewport/game-tab';
+import './object-inspector/inspector-panel';
+import './logs-view/logs-panel';
 import './pix3-editor-shell.ts.css';
 
+/**
+ * The editor's one screen (plan §2.1, step 9). `mountEditor` appends it once the project is open;
+ * there is no router, welcome screen or second workspace to switch to. It owns:
+ *
+ * - the toolbar (main menu, Play + run options, project name),
+ * - `.layout-host`, where `LayoutManagerService` builds the Golden Layout studio, after which the
+ *   last session's tabs are restored or the project's entry scene is opened,
+ * - the status bar and the host banner (read-only / disconnected),
+ * - every dialog host the services raise (confirm, pickers, script creator, settings, …),
+ * - command registration and the global keyboard shortcuts.
+ */
 @customElement('pix3-editor')
 export class Pix3EditorShell extends ComponentBase {
   @inject(LayoutManagerService)
@@ -209,27 +138,6 @@ export class Pix3EditorShell extends ComponentBase {
 
   @inject(PeekService)
   private readonly peekService!: PeekService;
-
-  @inject(AuthService)
-  private readonly authService!: AuthService;
-
-  @inject(CloudProjectService)
-  private readonly cloudProjectService!: CloudProjectService;
-
-  @inject(LocalSyncService)
-  private readonly localSyncService!: LocalSyncService;
-
-  @inject(WorkspaceConnectDialogService)
-  private readonly workspaceConnectDialogService!: WorkspaceConnectDialogService;
-
-  @inject(ProjectLifecycleService)
-  private readonly projectLifecycleService!: ProjectLifecycleService;
-
-  @inject(AgentKitService)
-  private readonly agentKitService!: AgentKitService;
-
-  @inject(UpdateCheckService)
-  private readonly updateCheckService!: UpdateCheckService;
 
   @inject(OperationService)
   private readonly operationService!: OperationService;
@@ -252,9 +160,6 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(LocalizationEditorService)
   private readonly localizationEditorService!: LocalizationEditorService;
 
-  @inject(FileWatchService)
-  private readonly fileWatchService!: FileWatchService;
-
   @inject(DialogService)
   private readonly dialogService!: DialogService;
 
@@ -276,20 +181,8 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(ScriptCreatorService)
   private readonly scriptCreatorService!: ScriptCreatorService;
 
-  @inject(RouterService)
-  private readonly routerService!: RouterService;
-
-  @inject(WorkspaceModeService)
-  private readonly workspaceModeService!: WorkspaceModeService;
-
-  @inject(StudioViewportMountService)
-  private readonly studioViewportMount!: StudioViewportMountService;
-
   @inject(ProjectSettingsService)
   private readonly projectSettingsService!: ProjectSettingsService;
-
-  @inject(ProjectSyncService)
-  private readonly projectSyncService!: ProjectSyncService;
 
   @inject(EditorSettingsService)
   private readonly editorSettingsService!: EditorSettingsService;
@@ -297,278 +190,121 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(NodeTypePickerService)
   private readonly nodeTypePickerService!: NodeTypePickerService;
 
-  @inject(PlayableExportDialogService)
-  private readonly playableExportDialogService!: PlayableExportDialogService;
-
-  @inject(PlayableExportProgressDialogService)
-  private readonly playableExportProgressDialogService!: PlayableExportProgressDialogService;
-
   @inject(ScriptExecutionService)
   private readonly scriptExecutionService!: ScriptExecutionService;
 
-  @inject(ProjectScriptLoaderService)
-  private readonly projectScriptLoader!: ProjectScriptLoaderService;
+  @inject(ProjectStorageService)
+  private readonly storage!: ProjectStorageService;
 
-  @inject(ScriptCompilerService)
-  private readonly _scriptCompiler!: ScriptCompilerService; // Injected to ensure service initialization
-
+  /** Resolved for its side effect: the autoload lifecycle subscribes on construction. */
   @inject(AutoloadService)
-  private readonly _autoloadService!: AutoloadService; // Injected to ensure autoload lifecycle initialization
+  private readonly autoloadService!: AutoloadService;
 
-  // Co-authoring mode (plan `.plans/external-agent-authoring.md` §4.3 / §5 C).
-  @inject(ProjectOwnershipService)
-  private readonly projectOwnership!: ProjectOwnershipService;
-
-  @inject(ProtectedSetService)
-  private readonly protectedSets!: ProtectedSetService;
-
-  @inject(AutosaveService)
-  private readonly autosave!: AutosaveService;
-
-  @inject(WorkspaceAgentToolBridge)
-  private readonly workspaceAgentBridge!: WorkspaceAgentToolBridge;
-
-  @inject(ExternalChangeService)
-  private readonly externalChanges!: ExternalChangeService;
-
-  @inject(ExternalMergeService)
-  private readonly externalMerge!: ExternalMergeService;
-
-  @inject(AckService)
-  private readonly agentAcks!: AckService;
-
-  private disposeOwnershipReleaseHook: (() => void) | null = null;
-
-  private disposeExternalBatchListener?: () => void;
-
-  // project open handled by <pix3-welcome>
-
-  @state()
-  private isAuthenticated = appState.auth.isAuthenticated;
-
-  @state()
-  private isLayoutReady = appState.ui.isLayoutReady;
-
-  @state()
-  private workspaceMode: WorkspaceMode = appState.ui.workspaceMode;
-
-  /**
-   * True once Golden Layout has taken ownership of `.layout-host`. From that point the Studio
-   * branch stays in the DOM even while Flow is on screen — see `render()`.
-   */
-  @state()
-  private studioLayoutMounted = false;
-
-  /**
-   * True once an agent-facing caller asked for the edit-mode viewport while Flow is on screen.
-   *
-   * Deliberately NOT a workspace-mode change: the user stays in Vibe and their screen must not
-   * move. It only lets `ensureStudioLayout()` run in Flow and puts the Studio branch in the DOM,
-   * where CSS parks it offscreen instead of hiding it outright — a `display: none` host measures
-   * 0x0, and Golden Layout plus the WebGL viewport would come up at zero size.
-   */
-  @state()
-  private agentStudioMountRequested = false;
-
-  @state()
-  private routerStatus = appState.router.status;
-
-  @state()
-  private currentHash =
-    typeof window !== 'undefined' ? window.location.hash || '#welcome' : '#welcome';
-
-  @state()
-  private dialogs: DialogInstance[] = [];
-
-  @state()
-  private componentPickers: ComponentPickerInstance[] = [];
-
-  @state()
-  private effectPickers: EffectPickerInstance[] = [];
-
-  @state()
-  private scriptCreators: ScriptCreationInstance[] = [];
-
-  @state()
-  private activeProjectSettingsDialog: ProjectSettingsDialogInstance | null = null;
-
-  @state()
-  private activeProjectSyncDialog: ProjectSyncDialogInstance | null = null;
-
-  @state()
-  private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
-
-  @state()
-  private activeAnimationAutoSliceDialog: AnimationAutoSliceDialogInstance | null = null;
-
-  @state()
-  private activeAssetImportDialog: AssetImportDialogInstance | null = null;
-
-  @state()
-  private activeSaveGeneratedAssetDialog: SaveGeneratedAssetDialogInstance | null = null;
-
-  @state()
-  private activeNodeTypePicker: NodeTypePickerInstance | null = null;
-
-  @state()
-  private activePlayableExportDialog: PlayableExportDialogInstance | null = null;
-
-  @state()
-  private activePlayableExportProgressDialog: PlayableExportProgressDialogInstance | null = null;
-
-  @state()
-  private isAuthModalOpen = false;
-
-  @state()
-  private pendingAuthProjectId: string | null = null;
-
-  @state()
-  private activeCreateProjectDialog: CreateProjectDialogInstance | null = null;
-  private activeAgentHandoff: AgentHandoff | null = null;
-  private activeWorkspaceConnectDialog: WorkspaceConnectDialogRequest | null = null;
-
-  @state()
-  private isAccountPopoverOpen = false;
+  @state() private isLayoutReady = appState.ui.isLayoutReady;
+  @state() private dialogs: DialogInstance[] = [];
+  @state() private componentPickers: ComponentPickerInstance[] = [];
+  @state() private effectPickers: EffectPickerInstance[] = [];
+  @state() private scriptCreators: ScriptCreationInstance[] = [];
+  @state() private activeProjectSettingsDialog: ProjectSettingsDialogInstance | null = null;
+  @state() private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
+  @state() private activeAnimationAutoSliceDialog: AnimationAutoSliceDialogInstance | null = null;
+  @state() private activeAssetImportDialog: AssetImportDialogInstance | null = null;
+  @state() private activeSaveGeneratedAssetDialog: SaveGeneratedAssetDialogInstance | null = null;
+  @state() private activeNodeTypePicker: NodeTypePickerInstance | null = null;
 
   @property({ type: Boolean, reflect: true, attribute: 'shell-ready' })
   protected shellReady = false;
 
-  private disposeAuthSubscription?: () => void;
-  private disposeSubscription?: () => void;
-  private disposeUiSubscription?: () => void;
-  private disposeScenesSubscription?: () => void;
-  private disposeProjectSubscription?: () => void;
-  private disposeDialogsSubscription?: () => void;
-  private disposeProjectSettingsSubscription?: () => void;
-  private disposeProjectSyncSubscription?: () => void;
-  private disposeEditorSettingsSubscription?: () => void;
-  private disposeCreateProjectSubscription?: () => void;
-  private disposeAgentHandoffSubscription?: () => void;
-  private disposeWorkspaceConnectSubscription?: () => void;
-  private disposeNodeTypePickerSubscription?: () => void;
-  private disposePlayableExportDialogSubscription?: () => void;
-  private disposePlayableExportProgressDialogSubscription?: () => void;
-  private disposeBehaviorPickerSubscription?: () => void;
-  private disposeEffectPickerSubscription?: () => void;
-  private disposeScriptCreatorSubscription?: () => void;
-  private disposeAnimationAutoSliceSubscription?: () => void;
-  private disposeAssetImportSubscription?: () => void;
-  private disposeSaveGeneratedAssetSubscription?: () => void;
-  private disposeStudioViewportMounter?: () => void;
-  private onWelcomeProjectReady?: (e: Event) => void;
+  private disposers: Array<() => void> = [];
   private keyboardHandler?: (e: KeyboardEvent) => void;
-  private accountPopoverPointerHandler?: (e: PointerEvent) => void;
-  private hashChangeHandler?: () => void;
-  private watchedSceneIds = new Set<string>();
-  private watchedScenePaths = new Map<string, string>();
-  /**
-   * Project whose saved tabs were already restored. A boolean here was a bug: the welcome screen
-   * lives in this component, so the flag survived closing one project and opening the next.
-   */
-  private tabsRestoredForProjectId: string | null = null;
-  /** Golden Layout is built at most once per session, the first time Studio is on screen. */
+  /** Golden Layout is built once per shell. */
   private layoutInitStarted = false;
-  /** Project id whose remembered workspace mode has already been applied. */
-  private workspaceModeAppliedFor: string | null = null;
-  private isResumingRouterTarget = false;
-  private previousIsPlaying = appState.ui.isPlaying;
-  private returnPanelAfterPlay: 'inspector' | 'profiler' | null = null;
+  /** Project whose tabs were already restored (or whose entry scene was opened). */
+  private sessionOpenedForProjectId: string | null = null;
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.registerCommands();
 
-    // Register history commands and scene commands
-    const saveCommand = new SaveActiveResourceCommand();
-    const saveAsCommand = new SaveAsSceneCommand();
-    const deleteCommand = new DeleteObjectCommand();
-    const duplicateCommand = new DuplicateNodesCommand();
-    const groupSelectedCommand = new GroupSelectedNodesCommand();
-    const fitGroup2DToContentsCommand = new FitGroup2DToContentsCommand();
-    const saveAsPrefabCommand = new SaveAsPrefabCommand();
-    const publishToLibraryCommand = new PublishToLibraryCommand();
-    const publishToStoreCommand = new PublishToStoreCommand();
-    const undoCommand = new UndoCommand(this.operationService);
-    const redoCommand = new RedoCommand(this.operationService);
-    const startGameCommand = new StartGameCommand(
-      this.editorTabService,
-      this.gamePlaySessionService
+    this.disposers.push(
+      this.dialogService.subscribe(dialogs => {
+        this.dialogs = dialogs;
+      }),
+      this.projectSettingsService.subscribe(dialog => {
+        this.activeProjectSettingsDialog = dialog;
+      }),
+      this.editorSettingsService.subscribe(dialog => {
+        this.activeEditorSettingsDialog = dialog;
+      }),
+      this.animationAutoSliceDialogService.subscribe(dialog => {
+        this.activeAnimationAutoSliceDialog = dialog;
+      }),
+      this.assetImportDialogService.subscribe(dialog => {
+        this.activeAssetImportDialog = dialog;
+      }),
+      this.saveGeneratedAssetDialogService.subscribe(dialog => {
+        this.activeSaveGeneratedAssetDialog = dialog;
+      }),
+      this.nodeTypePickerService.subscribe(picker => {
+        this.activeNodeTypePicker = picker;
+      }),
+      this.behaviorPickerService.subscribe(pickers => {
+        this.componentPickers = pickers;
+      }),
+      this.effectPickerService.subscribe(pickers => {
+        this.effectPickers = pickers;
+      }),
+      this.scriptCreatorService.subscribe(creators => {
+        this.scriptCreators = creators;
+      }),
+      subscribe(appState.ui, () => {
+        this.isLayoutReady = appState.ui.isLayoutReady;
+        this.shellReady = this.isLayoutReady;
+        this.requestUpdate();
+      }),
+      // A project that is not `ready` yet when the shell connects (specs, a slow manifest) builds
+      // the studio the moment it is.
+      subscribe(appState.project, () => {
+        this.requestUpdate();
+        void this.ensureStudioLayout();
+      }),
+      subscribe(appState.scenes, () => {
+        this.scriptExecutionService.onSceneChanged(appState.scenes.activeSceneId);
+      })
     );
-    const startOnlineGameCommand = new StartOnlineGameCommand();
-    const startMainSceneGameCommand = new StartMainSceneGameCommand(
-      this.editorTabService,
-      this.gamePlaySessionService
-    );
-    const stopGameCommand = new StopGameCommand(this.editorTabService, this.gamePlaySessionService);
-    const restartGameCommand = new RestartGameCommand(this.gamePlaySessionService);
-    const pauseGameCommand = new PauseGameCommand(this.gamePlaySessionService);
-    const openGamePopoutWindowCommand = new OpenGamePopoutWindowCommand(
-      this.gamePlaySessionService
-    );
-    const projectSettingsCommand = new OpenProjectSettingsCommand();
-    const projectSyncCommand = new OpenProjectSyncCommand();
-    const openProjectInIdeCommand = new OpenProjectInIdeCommand();
-    const buildProjectCommand = new BuildProjectCommand();
-    const exportPlayableHtmlCommand = new ExportPlayableHtmlCommand();
-    const exportPlayableZipCommand = new ExportPlayableZipCommand();
-    const startRemotePreviewCommand = new StartRemotePreviewCommand();
-    const newProjectCommand = new NewProjectCommand();
-    const closeProjectCommand = new CloseProjectCommand();
-    const connectWorkspaceCommand = new ConnectWorkspaceCommand();
-    const moveProjectToFolderCommand = new MoveProjectToFolderCommand();
-    const installAgentKitCommand = new InstallAgentKitCommand();
-    const editorSettingsCommand = new OpenEditorSettingsCommand();
-    const switchWorkspaceModeCommand = new SwitchWorkspaceModeCommand();
-    const openSpriteEditorCommand = new OpenSpriteEditorCommand();
-    const openModelLabCommand = new OpenModelLabCommand();
-    const openUiKitForgeCommand = new OpenUiKitForgeCommand();
-    // `properties.`-prefixed, so the agent's `run_command` can reach it (AgentToolRegistry's
-    // allow-list). Zero-argument form = current selection, default role, kit from design/ui-kit.json.
-    const applyUiKitSkinCommand = new ApplyUiKitSkinCommand();
-    const openAgentChatCommand = new OpenAgentChatCommand();
-    const openProjectHomeCommand = new OpenProjectHomeCommand();
-    const bakeAOCommand = new BakeAmbientOcclusionCommand();
-    const clearAOCommand = new ClearAmbientOcclusionCommand();
-    const focusAnimationTimelineCommand = new FocusAnimationTimelineCommand();
-    const openLocalizationPanelCommand = new OpenLocalizationPanelCommand();
-    const openGeneratePanelCommand = new OpenGeneratePanelCommand();
-    const openLibraryDocumentCommand = new OpenLibraryDocumentCommand();
-    const checkScriptsCommand = new CheckScriptsCommand();
-    const addAnimationPlayerCommand = new AddAnimationPlayerToSelectionCommand();
-    // Searchable fallback for the Create menu, whose rows are grouped by node type.
-    const browseNodeTypesCommand = new BrowseNodeTypesCommand();
 
-    // Window menu: one open-or-focus row per closable panel, plus the layout escape hatch.
-    const showPanelCommands = createShowPanelCommands();
-    const resetLayoutCommand = new ResetLayoutCommand();
+    this.keyboardHandler = this.handleKeyboardShortcuts.bind(this);
+    window.addEventListener('keydown', this.keyboardHandler);
 
-    // Node > Align / Node > Distribute: the viewport strip's actions, as menu rows.
-    const align2DMenuCommands = createAlign2DMenuCommands();
+    // Tab sessions, play sessions and localization subscribe to state once, early.
+    this.editorTabService.initialize();
+    this.gamePlaySessionService.initialize();
+    this.localizationEditorService.initialize();
+    this.editorSettingsService.initialize();
+    void this.autoloadService;
+  }
 
-    // Register viewport commands
-    const transformModeCommands = createTransformModeCommands();
-    const toggleGridCommand = new ToggleGridCommand();
-    const toggleAxisGizmoCommand = new ToggleAxisGizmoCommand();
-    const toggleSnapToGridCommand = new ToggleSnapToGridCommand();
-    const toggleLayer2DCommand = new ToggleLayer2DCommand();
-    const toggleLayer3DCommand = new ToggleLayer3DCommand();
-    const zoomDefaultCommand = new ZoomDefaultCommand();
-    const zoomAllCommand = new ZoomAllCommand();
-    const frameSelectedCommand = new FrameSelectedCommand();
-    const zoomInCommand = new ZoomInCommand();
-    const zoomOutCommand = new ZoomOutCommand();
-    const toggleLightingCommand = new ToggleLightingCommand();
-    const toggleCollidersCommand = new ToggleCollidersCommand();
-    const toggleCollisionShapesCommand = new ToggleCollisionShapesCommand();
-    const toggleDirectionAxesCommand = new ToggleDirectionAxesCommand();
-    const toggleNavigationModeCommand = new ToggleNavigationModeCommand();
-    // Only Show All goes into the menu: the other three Peek commands need a branch to act on and
-    // are driven from `pix3-peek-strip`. This one is the guaranteed way out of a masked state.
-    const peekShowAllCommand = new PeekShowAllCommand();
+  disconnectedCallback(): void {
+    for (const dispose of this.disposers) {
+      dispose();
+    }
+    this.disposers = [];
+    if (this.keyboardHandler) {
+      window.removeEventListener('keydown', this.keyboardHandler);
+      this.keyboardHandler = undefined;
+    }
+    this.scriptExecutionService.stop();
+    super.disconnectedCallback();
+  }
+
+  protected async firstUpdated(): Promise<void> {
+    await this.ensureStudioLayout();
+  }
+
+  /** Every command the menus, the toolbar and the keyboard reach. */
+  private registerCommands(): void {
     // Resolve PeekService here so its scene subscription and its localStorage restore happen at a
-    // known moment. `@inject` resolves lazily on first property access, and the first accessor was
-    // whatever happened to touch it — the View menu evaluating this command's preconditions, the
-    // Play button, an agent tool — so a persisted mask used to appear the instant the user opened a
-    // menu, which reads as the editor losing a branch by itself.
+    // known moment, not whenever something first touches it (a menu precondition, the Play button).
     this.peekService.applyToActiveGraph();
 
     // Arrow-key nudge for selected 2D nodes (Shift = larger step).
@@ -578,414 +314,59 @@ export class Pix3EditorShell extends ComponentBase {
     ]);
 
     this.commandRegistry.registerMany(
-      undoCommand,
-      redoCommand,
-      saveCommand,
-      saveAsCommand,
-      deleteCommand,
-      duplicateCommand,
-      groupSelectedCommand,
-      fitGroup2DToContentsCommand,
-      saveAsPrefabCommand,
-      publishToLibraryCommand,
-      publishToStoreCommand,
-      startGameCommand,
-      startOnlineGameCommand,
-      startMainSceneGameCommand,
-      stopGameCommand,
-      restartGameCommand,
-      pauseGameCommand,
-      openGamePopoutWindowCommand,
-      editorSettingsCommand,
-      switchWorkspaceModeCommand,
-      openSpriteEditorCommand,
-      openModelLabCommand,
-      openUiKitForgeCommand,
-      applyUiKitSkinCommand,
-      openAgentChatCommand,
-      openProjectHomeCommand,
-      bakeAOCommand,
-      clearAOCommand,
-      focusAnimationTimelineCommand,
-      openLocalizationPanelCommand,
-      openGeneratePanelCommand,
-      openLibraryDocumentCommand,
-      checkScriptsCommand,
-      addAnimationPlayerCommand,
-      browseNodeTypesCommand,
-      ...showPanelCommands,
-      resetLayoutCommand,
-      ...align2DMenuCommands,
-      newProjectCommand,
-      closeProjectCommand,
-      connectWorkspaceCommand,
-      moveProjectToFolderCommand,
-      installAgentKitCommand,
-      projectSettingsCommand,
-      projectSyncCommand,
-      openProjectInIdeCommand,
-      buildProjectCommand,
-      exportPlayableHtmlCommand,
-      exportPlayableZipCommand,
-      startRemotePreviewCommand,
-      ...transformModeCommands,
-      toggleGridCommand,
-      toggleAxisGizmoCommand,
-      toggleSnapToGridCommand,
-      toggleLayer2DCommand,
-      toggleLayer3DCommand,
-      zoomDefaultCommand,
-      zoomAllCommand,
-      frameSelectedCommand,
-      zoomInCommand,
-      zoomOutCommand,
-      toggleLightingCommand,
-      toggleCollidersCommand,
-      toggleCollisionShapesCommand,
-      toggleDirectionAxesCommand,
-      toggleNavigationModeCommand,
-      peekShowAllCommand,
+      new UndoCommand(this.operationService),
+      new RedoCommand(this.operationService),
+      new SaveActiveResourceCommand(),
+      new SaveAsSceneCommand(),
+      new DeleteObjectCommand(),
+      new DuplicateNodesCommand(),
+      new GroupSelectedNodesCommand(),
+      new FitGroup2DToContentsCommand(),
+      new SaveAsPrefabCommand(),
+      new StartGameCommand(this.editorTabService, this.gamePlaySessionService),
+      new StartMainSceneGameCommand(this.editorTabService, this.gamePlaySessionService),
+      new StopGameCommand(this.editorTabService, this.gamePlaySessionService),
+      new RestartGameCommand(this.gamePlaySessionService),
+      new PauseGameCommand(this.gamePlaySessionService),
+      new OpenGamePopoutWindowCommand(this.gamePlaySessionService),
+      new OpenEditorSettingsCommand(),
+      new FocusAnimationTimelineCommand(),
+      new OpenLocalizationPanelCommand(),
+      new OpenGeneratePanelCommand(),
+      new AddAnimationPlayerToSelectionCommand(),
+      // Searchable fallback for the Create menu, whose rows are grouped by node type.
+      new BrowseNodeTypesCommand(),
+      // Window menu: one open-or-focus row per closable panel, plus the layout escape hatch.
+      ...createShowPanelCommands(),
+      new ResetLayoutCommand(),
+      // Node > Align / Node > Distribute: the viewport strip's actions, as menu rows.
+      ...createAlign2DMenuCommands(),
+      new OpenProjectSettingsCommand(),
+      new OpenProjectInIdeCommand(),
+      ...createTransformModeCommands(),
+      new ToggleGridCommand(),
+      new ToggleAxisGizmoCommand(),
+      new ToggleSnapToGridCommand(),
+      new ToggleLayer2DCommand(),
+      new ToggleLayer3DCommand(),
+      new ZoomDefaultCommand(),
+      new ZoomAllCommand(),
+      new FrameSelectedCommand(),
+      new ZoomInCommand(),
+      new ZoomOutCommand(),
+      new ToggleLightingCommand(),
+      new ToggleCollidersCommand(),
+      new ToggleCollisionShapesCommand(),
+      new ToggleDirectionAxesCommand(),
+      new ToggleNavigationModeCommand(),
+      // Only Show All goes into the menu: the other Peek commands need a branch to act on and are
+      // driven from `pix3-peek-strip`. This one is the guaranteed way out of a masked state.
+      new PeekShowAllCommand(),
       ...nudgeCommands
     );
-
-    // Subscribe to dialog changes
-    this.disposeDialogsSubscription = this.dialogService.subscribe(dialogs => {
-      this.dialogs = dialogs;
-      this.requestUpdate();
-    });
-
-    // Subscribe to project settings dialog changes
-    this.disposeProjectSettingsSubscription = this.projectSettingsService.subscribe(dialog => {
-      this.activeProjectSettingsDialog = dialog;
-      this.requestUpdate();
-    });
-
-    this.disposeProjectSyncSubscription = this.projectSyncService.subscribe(dialog => {
-      this.activeProjectSyncDialog = dialog;
-      this.requestUpdate();
-    });
-
-    this.disposeEditorSettingsSubscription = this.editorSettingsService.subscribe(dialog => {
-      this.activeEditorSettingsDialog = dialog;
-      this.requestUpdate();
-    });
-
-    this.disposeAnimationAutoSliceSubscription = this.animationAutoSliceDialogService.subscribe(
-      dialog => {
-        this.activeAnimationAutoSliceDialog = dialog;
-        this.requestUpdate();
-      }
-    );
-
-    this.disposeAssetImportSubscription = this.assetImportDialogService.subscribe(dialog => {
-      this.activeAssetImportDialog = dialog;
-      this.requestUpdate();
-    });
-
-    this.disposeSaveGeneratedAssetSubscription = this.saveGeneratedAssetDialogService.subscribe(
-      dialog => {
-        this.activeSaveGeneratedAssetDialog = dialog;
-        this.requestUpdate();
-      }
-    );
-
-    this.disposeCreateProjectSubscription = this.projectLifecycleService.subscribe(dialog => {
-      this.activeCreateProjectDialog = dialog;
-      this.requestUpdate();
-    });
-
-    this.disposeAgentHandoffSubscription = this.agentKitService.subscribe(handoff => {
-      this.activeAgentHandoff = handoff;
-      this.requestUpdate();
-    });
-
-    this.disposeWorkspaceConnectSubscription = this.workspaceConnectDialogService.subscribe(
-      request => {
-        this.activeWorkspaceConnectDialog = request;
-        this.requestUpdate();
-      }
-    );
-
-    this.disposeNodeTypePickerSubscription = this.nodeTypePickerService.subscribe(picker => {
-      this.activeNodeTypePicker = picker;
-      this.requestUpdate();
-    });
-
-    this.disposePlayableExportDialogSubscription = this.playableExportDialogService.subscribe(
-      dialog => {
-        this.activePlayableExportDialog = dialog;
-        this.requestUpdate();
-      }
-    );
-
-    this.disposePlayableExportProgressDialogSubscription =
-      this.playableExportProgressDialogService.subscribe(dialog => {
-        this.activePlayableExportProgressDialog = dialog;
-        this.requestUpdate();
-      });
-
-    // Touch injected services to avoid unused var lint error (they are singletons for side-effects)
-    void this.projectScriptLoader;
-    void this._scriptCompiler;
-    void this._autoloadService;
-
-    // Subscribe to component picker changes
-    this.disposeBehaviorPickerSubscription = this.behaviorPickerService.subscribe(pickers => {
-      this.componentPickers = pickers;
-      this.requestUpdate();
-    });
-
-    // Subscribe to effect picker changes
-    this.disposeEffectPickerSubscription = this.effectPickerService.subscribe(pickers => {
-      this.effectPickers = pickers;
-      this.requestUpdate();
-    });
-
-    // Subscribe to script creator changes
-    this.disposeScriptCreatorSubscription = this.scriptCreatorService.subscribe(creators => {
-      this.scriptCreators = creators;
-      this.requestUpdate();
-    });
-
-    // Setup keyboard shortcuts
-    this.keyboardHandler = this.handleKeyboardShortcuts.bind(this);
-    window.addEventListener('keydown', this.keyboardHandler);
-
-    this.accountPopoverPointerHandler = this.handleAccountPopoverPointerDown.bind(this);
-    window.addEventListener('pointerdown', this.accountPopoverPointerHandler);
-
-    // Initialize tab service early to catch session persistence
-    this.editorTabService.initialize();
-    this.gamePlaySessionService.initialize();
-    this.localizationEditorService.initialize();
-    this.updateCheckService.initialize();
-
-    this.editorSettingsService.initialize();
-    this.routerService.initialize();
-
-    // Co-authoring: ownership first (autosave and the protected set ask it), then the recorder
-    // of human edits, autosave, and the stabilised external-change path feeding scene reloads.
-    this.projectOwnership.initialize();
-    this.externalChanges.initialize();
-    this.protectedSets.initialize();
-    this.autosave.initialize();
-    this.agentAcks.initialize();
-    // The live agent channel (`pix3 mcp --workspace` → `pix3 serve` → this window).
-    this.workspaceAgentBridge.initialize();
-    // Hand-over to another window: flush pending writes and persist `P` before letting go.
-    this.disposeOwnershipReleaseHook = this.projectOwnership.registerReleaseHook(async () => {
-      await this.autosave.handOver();
-      await this.protectedSets.flush();
-    });
-    this.disposeExternalBatchListener = this.externalChanges.onExternalBatch(paths =>
-      this.handleExternalBatch(paths)
-    );
-
-    // Restore auth session on startup
-    void this.authService.restoreSession();
-
-    this.disposeAuthSubscription = subscribe(appState.auth, () => {
-      this.isAuthenticated = appState.auth.isAuthenticated;
-      if (
-        this.isAuthenticated &&
-        appState.router.status === 'authenticating' &&
-        appState.router.targetParams &&
-        !this.isResumingRouterTarget
-      ) {
-        this.isResumingRouterTarget = true;
-        void this.routerService
-          .resumeTargetSession()
-          .catch(error => {
-            console.error(
-              '[Pix3EditorShell] Failed to resume routed session after auth restore',
-              error
-            );
-          })
-          .finally(() => {
-            this.isResumingRouterTarget = false;
-            this.requestUpdate();
-          });
-      }
-      this.requestUpdate();
-    });
-
-    // The agent's way into the Studio viewport. Registering a callback (rather than letting a
-    // service reach into this component) is what keeps the mounting private to the shell.
-    this.disposeStudioViewportMounter = this.studioViewportMount.registerMounter(() =>
-      this.mountStudioForAgent()
-    );
-
-    this.disposeSubscription = subscribe(appState.router, () => {
-      this.routerStatus = appState.router.status;
-      if (this.routerStatus === 'authenticating' && !this.isAuthModalOpen) {
-        this.openAuthModal();
-      }
-      this.requestUpdate();
-    });
-
-    this.hashChangeHandler = () => {
-      this.currentHash = window.location.hash || '#editor';
-    };
-    window.addEventListener('hashchange', this.hashChangeHandler);
-
-    this.disposeUiSubscription = subscribe(appState.ui, () => {
-      this.syncProfilerPanelFocusWithPlayMode();
-      this.isLayoutReady = appState.ui.isLayoutReady;
-      this.workspaceMode = appState.ui.workspaceMode;
-      // Flow does not mount Golden Layout for the user, so `isLayoutReady` stays false there (an
-      // agent-requested offscreen mount can flip it, which is exactly why Flow must not read it) —
-      // the shell is "ready" as soon as a project is open.
-      this.shellReady =
-        this.workspaceMode === 'flow' ? appState.project.status === 'ready' : this.isLayoutReady;
-      if (this.workspaceMode === 'studio') {
-        // Entering Studio for the first time is when Golden Layout is built (it is skipped
-        // entirely for a session that stays in Flow).
-        void this.updateComplete.then(() => this.ensureStudioLayout());
-      }
-      this.requestUpdate();
-    });
-    // also subscribe to project state so we can initialize layout once a project is opened
-    this.disposeProjectSubscription = subscribe(appState.project, () => {
-      this.applyProjectWorkspaceMode();
-      void this.ensureStudioLayout();
-      this.requestUpdate();
-    });
-
-    // Subscribe to scene descriptor changes to start/stop file watching
-    this.disposeScenesSubscription = subscribe(appState.scenes, () => {
-      this.updateSceneWatchers();
-
-      // Notify script execution service of scene changes
-      const activeSceneId = appState.scenes.activeSceneId;
-      this.scriptExecutionService.onSceneChanged(activeSceneId);
-    });
-
-    // Landing on the editor is a welcome-screen landing, never an implicit session resume: a
-    // project is reopened only on purpose — by following a project link (the URL the router keeps
-    // stamped while a project is open, so a reload of that tab still restores) or by picking an
-    // entry from the welcome screen's recent list. Auto-opening the last project on every visit
-    // got in the way of the common case, which is coming here to try a new idea.
-    try {
-      if (typeof window !== 'undefined' && window.location.hash === '') {
-        window.location.hash = '#welcome';
-      }
-
-      this.currentHash = window.location.hash || '#welcome';
-
-      const isEditor =
-        window.location.hash.startsWith('#editor') || window.location.hash.startsWith('#flow');
-      if (typeof window !== 'undefined' && isEditor) {
-        const { currentParams } = appState.router;
-        const noTargetFound = !currentParams.projectId && !currentParams.localSessionId;
-
-        // An `#editor`/`#flow` URL carrying no project (bookmark, or a link that lost its query)
-        // has nothing for the router to restore — send it to the welcome screen so the recent
-        // list is one click away instead of leaving an empty shell behind.
-        if (noTargetFound && appState.project.status !== 'ready') {
-          window.location.hash = '#welcome';
-        }
-      }
-    } catch {
-      // ignore environment where window/history isn't available
-    }
-
-    // Check if we already have target params locally wait for router to naturally take over
-    // if not, it will just drop into the empty screen below.
-
-    // Listen for the welcome component signaling that project is ready so
-    // the shell can switch to the editor route and let Lit reconcile the overlay.
-    this.onWelcomeProjectReady = () => {
-      this.syncEditorRoute();
-    };
-    this.addEventListener(
-      'pix3-welcome:project-ready',
-      this.onWelcomeProjectReady as EventListener
-    );
-  }
-
-  disconnectedCallback(): void {
-    this.disposeAuthSubscription?.();
-    this.disposeAuthSubscription = undefined;
-    this.disposeSubscription?.();
-    this.disposeSubscription = undefined;
-    this.disposeUiSubscription?.();
-    this.disposeUiSubscription = undefined;
-    this.disposeScenesSubscription?.();
-    this.disposeScenesSubscription = undefined;
-    this.disposeProjectSubscription?.();
-    this.disposeProjectSubscription = undefined;
-    this.disposeDialogsSubscription?.();
-    this.disposeDialogsSubscription = undefined;
-    this.disposeProjectSettingsSubscription?.();
-    this.disposeProjectSettingsSubscription = undefined;
-    this.disposeProjectSyncSubscription?.();
-    this.disposeProjectSyncSubscription = undefined;
-    this.disposeEditorSettingsSubscription?.();
-    this.disposeEditorSettingsSubscription = undefined;
-    this.disposeCreateProjectSubscription?.();
-    this.disposeCreateProjectSubscription = undefined;
-    this.disposeAgentHandoffSubscription?.();
-    this.disposeAgentHandoffSubscription = undefined;
-    this.disposeWorkspaceConnectSubscription?.();
-    this.disposeWorkspaceConnectSubscription = undefined;
-    this.disposeNodeTypePickerSubscription?.();
-    this.disposeNodeTypePickerSubscription = undefined;
-    this.disposePlayableExportDialogSubscription?.();
-    this.disposePlayableExportDialogSubscription = undefined;
-    this.disposePlayableExportProgressDialogSubscription?.();
-    this.disposePlayableExportProgressDialogSubscription = undefined;
-    this.disposeBehaviorPickerSubscription?.();
-    this.disposeBehaviorPickerSubscription = undefined;
-    this.disposeEffectPickerSubscription?.();
-    this.disposeEffectPickerSubscription = undefined;
-    this.disposeScriptCreatorSubscription?.();
-    this.disposeScriptCreatorSubscription = undefined;
-    this.disposeAnimationAutoSliceSubscription?.();
-    this.disposeAnimationAutoSliceSubscription = undefined;
-    this.disposeAssetImportSubscription?.();
-    this.disposeAssetImportSubscription = undefined;
-    this.disposeSaveGeneratedAssetSubscription?.();
-    this.disposeSaveGeneratedAssetSubscription = undefined;
-    this.disposeStudioViewportMounter?.();
-    this.disposeStudioViewportMounter = undefined;
-    this.disposeExternalBatchListener?.();
-    this.disposeExternalBatchListener = undefined;
-    this.disposeOwnershipReleaseHook?.();
-    this.disposeOwnershipReleaseHook = null;
-    if (this.onWelcomeProjectReady) {
-      this.removeEventListener(
-        'pix3-welcome:project-ready',
-        this.onWelcomeProjectReady as EventListener
-      );
-      this.onWelcomeProjectReady = undefined;
-    }
-    if (this.keyboardHandler) {
-      window.removeEventListener('keydown', this.keyboardHandler);
-      this.keyboardHandler = undefined;
-    }
-    if (this.accountPopoverPointerHandler) {
-      window.removeEventListener('pointerdown', this.accountPopoverPointerHandler);
-      this.accountPopoverPointerHandler = undefined;
-    }
-    if (this.hashChangeHandler) {
-      window.removeEventListener('hashchange', this.hashChangeHandler);
-      this.hashChangeHandler = undefined;
-    }
-    // Stop all file watchers
-    this.fileWatchService.unwatchAll();
-    // Stop script execution service
-    this.scriptExecutionService.stop();
-    super.disconnectedCallback();
   }
 
   private handleKeyboardShortcuts(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && this.isAccountPopoverOpen) {
-      this.isAccountPopoverOpen = false;
-      this.requestUpdate();
-      return;
-    }
-
-    // Use KeybindingService to find matching command
     const commandId = this.keybindingService.handleKeyboardEvent(e);
     if (commandId) {
       e.preventDefault();
@@ -993,379 +374,73 @@ export class Pix3EditorShell extends ComponentBase {
     }
   }
 
-  private syncProfilerPanelFocusWithPlayMode(): void {
-    const isPlaying = appState.ui.isPlaying;
-    if (isPlaying === this.previousIsPlaying) {
+  /**
+   * Build Golden Layout into `.layout-host` (once), then open the project's documents: the tabs the
+   * last session of this project left open, or else its entry scene (`project.lastOpenedScenePath`,
+   * which `ProjectService.openHostProject` sets to `defaultExportScenePath` / `scenes/main.pix3scene`).
+   */
+  private async ensureStudioLayout(): Promise<void> {
+    if (appState.project.status !== 'ready' || this.layoutInitStarted) {
+      await this.ensureProjectDocumentsOpen();
       return;
     }
-
-    if (isPlaying) {
-      // If the user has the Agent (or any tab other than Inspector/Profiler) fronted in the
-      // Inspector/Profiler/Agent stack, leave it be — don't yank focus to the Profiler on play and
-      // break their flow. Only auto-front the Profiler when Inspector or Profiler is already active.
-      const activeInStack = this.layoutManager.getActivePanelInStackOf('profiler');
-      if (activeInStack !== 'inspector' && activeInStack !== 'profiler') {
-        this.returnPanelAfterPlay = null;
-      } else {
-        this.returnPanelAfterPlay = activeInStack;
-        this.layoutManager.focusPanel('profiler');
-      }
-    } else {
-      // Only restore focus if play actually stole it; otherwise leave the user's tab (e.g. Agent).
-      if (this.returnPanelAfterPlay) {
-        this.layoutManager.focusPanel(this.returnPanelAfterPlay);
-      }
-      this.returnPanelAfterPlay = null;
-    }
-
-    this.previousIsPlaying = isPlaying;
-  }
-
-  private handleAccountPopoverPointerDown(e: PointerEvent): void {
-    if (!this.isAccountPopoverOpen) {
+    await this.updateComplete;
+    const host = this.renderRoot.querySelector<HTMLDivElement>('.layout-host');
+    if (!host || this.layoutInitStarted) {
       return;
     }
-
-    const path = e.composedPath();
-    const clickedToolbarButton = path.some(
-      target =>
-        target instanceof HTMLElement &&
-        target.tagName.toLowerCase() === 'pix3-toolbar-button' &&
-        target.getAttribute('aria-label') === 'Open account menu'
-    );
-    const clickedPopover = path.some(
-      target => target instanceof HTMLElement && target.classList.contains('account-popover')
-    );
-
-    if (!clickedToolbarButton && !clickedPopover) {
-      this.isAccountPopoverOpen = false;
-      this.requestUpdate();
-    }
+    this.layoutInitStarted = true;
+    await this.layoutManager.initialize(host);
+    this.shellReady = true;
+    await this.ensureProjectDocumentsOpen();
   }
 
-  private onDialogConfirmed(e: CustomEvent): void {
-    const dialogId = e.detail.dialogId;
-    this.dialogService.confirm(dialogId);
-  }
-
-  private onDialogCancelled(e: CustomEvent): void {
-    const dialogId = e.detail.dialogId;
-    this.dialogService.cancel(dialogId);
-  }
-
-  /**
-   * Update file watchers based on currently loaded scenes.
-   * Starts watching new scenes with file handles, stops watching removed scenes.
-   */
-  private updateSceneWatchers(): void {
-    const currentSceneIds = new Set(Object.keys(appState.scenes.descriptors));
-
-    // Stop watching scenes that are no longer loaded
-    for (const sceneId of this.watchedSceneIds) {
-      if (!currentSceneIds.has(sceneId)) {
-        const descriptor = appState.scenes.descriptors[sceneId];
-        if (descriptor?.filePath) {
-          this.fileWatchService.unwatch(descriptor.filePath);
-        }
-        this.watchedSceneIds.delete(sceneId);
-        this.watchedScenePaths.delete(sceneId);
-      }
-    }
-
-    // Start watching new scenes that have file handles
-    for (const sceneId of currentSceneIds) {
-      const descriptor = appState.scenes.descriptors[sceneId];
-      const currentPath = descriptor?.filePath ?? '';
-      const previousPath = this.watchedScenePaths.get(sceneId) ?? '';
-
-      // If a scene's path changed (e.g., Save As inside project), rewire watchers.
-      if (previousPath && currentPath && previousPath !== currentPath) {
-        this.fileWatchService.unwatch(previousPath);
-        this.watchedSceneIds.delete(sceneId);
-        this.watchedScenePaths.delete(sceneId);
-      }
-
-      if (!this.watchedSceneIds.has(sceneId)) {
-        // A workspace (`pix3 serve`) has no file handles: its changes are pushed over the events
-        // socket into the same FileWatchService listeners, so the watch needs no handle there.
-        const canWatch = Boolean(descriptor?.fileHandle) || this.fileWatchService.isPushMode();
-        if (canWatch && currentPath) {
-          // Only watch res:// paths (project files)
-          if (currentPath.startsWith('res://')) {
-            this.fileWatchService.watch(
-              currentPath,
-              descriptor.fileHandle,
-              descriptor.lastModifiedTime,
-              () => this.handleFileChanged(currentPath)
-            );
-            this.watchedSceneIds.add(sceneId);
-            this.watchedScenePaths.set(sceneId, currentPath);
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * A watched scene file may have changed on disk (FileWatch poll or workspace push). It goes
-   * through the stabilisation window of `ExternalChangeService` (two matching snapshots, batch,
-   * own-hash skip, parse check, play-mode hold) before {@link handleExternalBatch} reloads it.
-   */
-  private handleFileChanged(filePath: string): void {
-    if (import.meta.env.DEV) {
-      console.debug('[Pix3EditorShell] External scene file change detected', { filePath });
-    }
-    this.externalChanges.report(filePath);
-  }
-
-  /**
-   * A settled batch of external versions: `ExternalMergeService` merges each open scene it names
-   * with the protected set (or reloads it plainly when nothing of the human's is at stake) and
-   * refreshes the active scene's prefab instances. Failed paths stay pending and are retried.
-   */
-  private handleExternalBatch(paths: readonly string[]): Promise<ExternalBatchResult> {
-    return this.externalMerge.handleBatch(paths);
-  }
-
-  private syncEditorRoute(): void {
+  private async ensureProjectDocumentsOpen(): Promise<void> {
+    const projectId = appState.project.id;
     if (
-      typeof window === 'undefined' ||
+      !this.layoutInitStarted ||
       appState.project.status !== 'ready' ||
-      !appState.project.id
+      !projectId ||
+      this.sessionOpenedForProjectId === projectId
     ) {
       return;
     }
+    this.sessionOpenedForProjectId = projectId;
 
-    const params = new URLSearchParams();
-    if (appState.project.backend === 'cloud') {
-      params.set('project', appState.project.id);
-    } else {
-      params.set('local', appState.project.id);
-    }
-
-    if (appState.scenes.activeSceneId) {
-      params.set('scene', appState.scenes.activeSceneId);
-    }
-
-    if (appState.selection.primaryNodeId) {
-      params.set('select', appState.selection.primaryNodeId);
-    }
-
-    const base = appState.ui.workspaceMode === 'flow' ? '#flow' : '#editor';
-    const nextHash = params.toString() ? `${base}?${params.toString()}` : base;
-    this.currentHash = nextHash;
-
-    if (window.location.hash !== nextHash) {
-      history.replaceState(
-        null,
-        '',
-        `${window.location.pathname}${window.location.search}${nextHash}`
-      );
-    }
-  }
-
-  protected async firstUpdated(): Promise<void> {
-    this.applyProjectWorkspaceMode();
-    await this.ensureStudioLayout();
-  }
-
-  /**
-   * Build Golden Layout — but only in Studio, and only once. Flow deliberately never pays for it:
-   * a session that lives in the prompt-first shell should not construct the whole docking editor
-   * (and everything its panels pull in) just to leave it hidden.
-   *
-   * Called from every place a project or the workspace mode can change, so entering Studio later
-   * in the session initializes the layout at that moment instead. The one exception to "only in
-   * Studio" is an explicit agent mount — see {@link mountStudioForAgent}.
-   */
-  private async ensureStudioLayout(): Promise<void> {
-    if (appState.project.status !== 'ready') {
-      return;
-    }
-    // Flow builds nothing on its own, but an agent that needs the edit-mode viewport may ask for the
-    // branch explicitly (`mountStudioForAgent`). That request is a mount, never a mode switch — the
-    // user is left in Vibe and the branch is parked offscreen.
-    if (appState.ui.workspaceMode !== 'studio' && !this.agentStudioMountRequested) {
-      return;
-    }
-    if (this.layoutInitStarted) {
-      // Returning from Flow. The layout kept its DOM but was measured at zero size while hidden,
-      // so re-measure now that it is back on screen.
-      this.layoutManager.refreshSize();
-    } else {
-      // The host only exists after the Studio branch of render() has run.
-      await this.updateComplete;
-      const host = this.renderRoot.querySelector<HTMLDivElement>('.layout-host');
-      if (!host) {
-        return;
-      }
-      this.layoutInitStarted = true;
-      this.studioLayoutMounted = true;
-      await this.layoutManager.initialize(host);
-      this.shellReady = true;
-      this.requestUpdate();
-    }
-
-    // Deliberately OUTSIDE the "layout was just built" branch. The welcome screen renders inside
-    // this same component, so opening a second project in one page load finds the layout already
-    // built — and the session restore used to sit behind that early return, never running. Its
-    // tabs had meanwhile been cleared by `discardTabsOnProjectSwitch`, which is exactly the
-    // reported symptom: an empty workspace and no scene tree for every project after the first.
-    await this.ensureProjectSessionRestored();
-  }
-
-  /**
-   * Reopen the current project's saved tabs, once per project rather than once per page load.
-   * Keyed by project id: a second `ensureStudioLayout` for the same project is a no-op, a
-   * different project restores its own session.
-   */
-  private async ensureProjectSessionRestored(): Promise<void> {
-    const projectId = appState.project.id;
-    if (!projectId || this.tabsRestoredForProjectId === projectId) {
-      return;
-    }
-    this.tabsRestoredForProjectId = projectId;
-    // Wait for project scripts to compile before restoring the session, so custom components are
-    // already in the ScriptRegistry when the scene tabs reopen.
-    await this.waitForScripts();
-    // The project can change while we wait (the user went back to welcome and opened another one);
-    // restoring the previous project's tabs into it would be worse than restoring nothing.
-    if (appState.project.id !== projectId) {
-      return;
-    }
     await this.editorTabService.restoreProjectSession(projectId);
-    if (appState.tabs.tabs.length === 0) {
-      const pending = appState.scenes.pendingScenePaths[0];
-      if (pending) {
-        await this.editorTabService.openResourceTab('scene', pending);
-      }
-    }
-  }
-
-  /**
-   * Build the Studio branch for an agent-facing caller that needs the edit-mode viewport, WITHOUT
-   * taking the user out of Vibe. Registered with `StudioViewportMountService` on connect; nothing
-   * reaches it unless an agent tool asks, so a human-only Vibe session still builds nothing.
-   *
-   * The user's workspace mode is never touched. All that changes is `agentStudioMountRequested`,
-   * which puts the branch in the DOM at a real (offscreen, invisible, click-through) size — see the
-   * `data-studio-offscreen` rule in the stylesheet for why it cannot simply stay `display: none`.
-   */
-  private async mountStudioForAgent(): Promise<boolean> {
-    if (appState.project.status !== 'ready') {
-      return false;
-    }
-    this.agentStudioMountRequested = true;
-    // The `.layout-host` only exists after the Studio branch of render() has run.
-    this.requestUpdate();
-    await this.updateComplete;
-    await this.ensureStudioLayout();
-    if (!this.layoutInitStarted) {
-      return false;
-    }
-    await this.ensureSceneTabForOffscreenViewport();
-    // Golden Layout's ResizeObserver may have seen the host at 0x0 (the branch was `display: none`
-    // until the render above), and it keeps those sizes until something asks it to re-measure.
-    this.layoutManager.refreshSize();
-    await this.updateComplete;
-    return true;
-  }
-
-  /**
-   * Put a scene in front of the freshly mounted layout.
-   *
-   * The editor viewport is not a permanent panel: `pix3-editor-tab` attaches the shared canvas only
-   * while it is the ACTIVE editor tab, and the default layout fronts Home. A project that has only
-   * ever been open in Vibe also has no stored tab session for `ensureStudioLayout()` to restore, so
-   * without this the branch comes up complete and still has no viewport in it.
-   */
-  private async ensureSceneTabForOffscreenViewport(): Promise<void> {
-    const activeTab = appState.tabs.tabs.find(tab => tab.id === appState.tabs.activeTabId);
-    if (activeTab?.type === 'scene') {
+    if (appState.tabs.tabs.some(tab => tab.type === 'scene')) {
       return;
     }
-    const openSceneTab = appState.tabs.tabs.find(tab => tab.type === 'scene');
-    const activeSceneId = appState.scenes.activeSceneId;
-    const resourcePath =
-      openSceneTab?.resourceId ??
-      (activeSceneId ? appState.scenes.descriptors[activeSceneId]?.filePath : undefined) ??
-      appState.scenes.pendingScenePaths[0];
-    if (!resourcePath) {
+    const entryScene = appState.project.lastOpenedScenePath;
+    if (!entryScene) {
       return;
     }
-    // Opening the scene the session is ALREADY editing: the graph is loaded, so this only fronts a
-    // tab the user cannot see. Deliberately not a different scene — the agent must photograph what
-    // it is editing, and `activeSceneId` is that editing surface.
-    await this.editorTabService.openResourceTab('scene', resourcePath);
-  }
-
-  /**
-   * Land a freshly opened project in the shell it belongs to: `#flow` in the URL, else whatever
-   * shell this project was last used in, else Studio. Runs once per opened project id so a manual
-   * "Open in Studio" is not undone by the next project-state notification.
-   */
-  private applyProjectWorkspaceMode(): void {
-    if (appState.project.status !== 'ready') {
+    if (!(await this.storage.fileExists(entryScene))) {
+      console.info('[Pix3EditorShell] Entry scene not found, nothing opened:', entryScene);
       return;
     }
-    const projectId = appState.project.id;
-    if (!projectId || this.workspaceModeAppliedFor === projectId) {
-      return;
-    }
-    this.workspaceModeAppliedFor = projectId;
-    const mode = this.workspaceModeService.resolveForOpenedProject(projectId);
-    this.workspaceModeService.set(mode, { persist: false });
+    await this.editorTabService.focusOrOpenScene(entryScene);
   }
 
   protected render() {
-    // Flow renders its own header/stage and never mounts Golden Layout — but it shares every
-    // dialog host below, so Download HTML, project settings and the auth modal work identically
-    // in both shells.
-    const isFlow = this.workspaceMode === 'flow';
-    // Studio is lazy but, once built, permanent: Golden Layout owns the DOM inside `.layout-host`,
-    // so letting the template swap tear that host out would strand the layout in a detached tree —
-    // and `ensureStudioLayout()` only builds once, so coming back from Flow would land on an empty
-    // workspace. Keep the branch mounted from then on and let CSS hide it while Flow is on screen.
-    const showStudio = !isFlow || this.studioLayoutMounted || this.agentStudioMountRequested;
-    // Flow + an agent-requested mount is the one case where the branch must be laid out rather than
-    // hidden: the stylesheet parks it offscreen at a fixed size so Golden Layout and the WebGL
-    // viewport measure something real, invisibly.
-    const studioOffscreen = isFlow && this.agentStudioMountRequested;
     return html`
-      <div
-        class="editor-shell"
-        data-workspace=${this.workspaceMode}
-        data-studio-offscreen=${studioOffscreen ? 'true' : 'false'}
-        data-ready=${this.shellReady ? 'true' : 'false'}
-      >
-        ${isFlow ? html`<pix3-flow-shell></pix3-flow-shell>` : html``}
-        ${showStudio
-          ? html`
-              <div class="toolbar-layer">
-                ${this.renderToolbar()} ${this.renderProjectNameLabel()}
-                ${this.renderAccountPopover()}
-              </div>
-              <div class="workspace" role="presentation">
-                <div class="layout-host" role="application" aria-busy=${!this.isLayoutReady}></div>
-              </div>
-            `
-          : html``}
-        <!-- Shared by both shells: Vibe needs the same "is the bridge up / is a key set / what
-             version am I on" readout Studio has, so the bar lives outside the Studio branch. -->
+      <div class="editor-shell" data-ready=${this.shellReady ? 'true' : 'false'}>
+        <div class="toolbar-layer">${this.renderToolbar()} ${this.renderProjectNameLabel()}</div>
+        <div class="workspace" role="presentation">
+          ${appState.project.status === 'error'
+            ? html`<div class="shell-message shell-message--error">
+                Could not open the project: ${appState.project.errorMessage ?? 'unknown error'}
+              </div>`
+            : null}
+          <div class="layout-host" role="application" aria-busy=${!this.isLayoutReady}></div>
+        </div>
         <pix3-status-bar></pix3-status-bar>
-        <pix3-workspace-banner></pix3-workspace-banner>
-        <pix3-merge-banner></pix3-merge-banner>
-        <pix3-recovery-menu></pix3-recovery-menu>
-        ${this.renderWorkspaceOverlay()} ${this.renderUiKitForge()}
-        <pix3-share-dialog @pix3-auth:request=${this.onAuthRequest}></pix3-share-dialog>
+        <pix3-host-banner></pix3-host-banner>
         ${this.renderDialogHost()} ${this.renderPickerHost()} ${this.renderEffectPickerHost()}
         ${this.renderScriptCreatorHost()} ${this.renderProjectSettingsHost()}
-        ${this.renderProjectSyncHost()} ${this.renderEditorSettingsHost()}
-        ${this.renderAnimationAutoSliceHost()} ${this.renderAssetImportHost()}
-        ${this.renderSaveGeneratedAssetHost()} ${this.renderCreateProjectHost()}
-        ${this.renderWorkspaceConnectHost()} ${this.renderAgentHandoffHost()}
-        ${this.renderNodeTypePickerHost()} ${this.renderPlayableExportDialogHost()}
-        ${this.renderPlayableExportProgressDialogHost()} ${this.renderAuthModal()}
+        ${this.renderEditorSettingsHost()} ${this.renderAnimationAutoSliceHost()}
+        ${this.renderAssetImportHost()} ${this.renderSaveGeneratedAssetHost()}
+        ${this.renderNodeTypePickerHost()}
       </div>
     `;
   }
@@ -1376,14 +451,7 @@ export class Pix3EditorShell extends ComponentBase {
       // Scene first: it is what the toolbar's own Play button does, and the entry scene is a menu on
       // every recipe project — a full-flow run is the deliberate choice, not the default.
       { id: 'game.start', label: 'Play Scene', icon: 'play', disabled: isPlaying },
-      {
-        id: 'game.start-main',
-        label: 'Play Game',
-        icon: 'film',
-        disabled: isPlaying,
-      },
-      { id: 'run-options-divider', label: '', divider: true },
-      { id: 'project.start-remote-preview', label: 'Remote Preview…', icon: 'cast' },
+      { id: 'game.start-main', label: 'Play Game', icon: 'film', disabled: isPlaying },
     ];
     return html`
       <pix3-toolbar aria-label="Editor toolbar">
@@ -1406,234 +474,8 @@ export class Pix3EditorShell extends ComponentBase {
               @item-select=${this.onRunOptionSelect}
             ></pix3-dropdown-button>
           </div>
-          <collab-participants-strip></collab-participants-strip>
         </div>
-        <pix3-toolbar-button
-          slot="actions"
-          .icon=${this.isAuthenticated ? null : 'log-in'}
-          label=${this.isAuthenticated ? 'Account' : 'Login'}
-          ?iconOnly=${this.isAuthenticated}
-          @click=${this.onAuthButtonClick}
-          aria-label=${this.isAuthenticated ? 'Open account menu' : 'Open login'}
-        >
-          ${this.isAuthenticated
-            ? html`<span class="account-avatar">${this.getUserInitials()}</span>`
-            : 'Login'}
-        </pix3-toolbar-button>
-        <pix3-toolbar-button
-          slot="actions"
-          icon="share-2"
-          label="Share Project"
-          @click=${this.openShareDialog}
-          aria-label="Share Project"
-        >
-          Share
-        </pix3-toolbar-button>
       </pix3-toolbar>
-    `;
-  }
-
-  private openShareDialog = (): void => {
-    const dialog = this.renderRoot.querySelector('pix3-share-dialog');
-    dialog?.openDialog();
-  };
-
-  private openAuthModal = (): void => {
-    this.pendingAuthProjectId = null;
-    this.isAuthModalOpen = true;
-    this.isAccountPopoverOpen = false;
-  };
-
-  private closeAuthModal = (): void => {
-    this.isAuthModalOpen = false;
-    this.pendingAuthProjectId = null;
-  };
-
-  private onAuthRequest = (event: CustomEvent<{ projectId: string | null }>): void => {
-    this.pendingAuthProjectId = event.detail.projectId ?? null;
-    this.isAuthModalOpen = true;
-    this.isAccountPopoverOpen = false;
-  };
-
-  private onAuthSuccess = async (): Promise<void> => {
-    const pendingProjectId = this.pendingAuthProjectId;
-    this.isAuthModalOpen = false;
-    this.pendingAuthProjectId = null;
-
-    await this.cloudProjectService.loadProjects();
-
-    if (this.projectLifecycleService.hasPendingCloudCreation()) {
-      await this.projectLifecycleService.resumePendingCloudCreation();
-      return;
-    }
-
-    if (pendingProjectId) {
-      await this.localSyncService.openCloudProject(pendingProjectId);
-    }
-  };
-
-  private onAuthButtonClick = (): void => {
-    if (!this.isAuthenticated) {
-      this.openAuthModal();
-      return;
-    }
-
-    this.isAccountPopoverOpen = !this.isAccountPopoverOpen;
-  };
-
-  private onLogoutClick = async (): Promise<void> => {
-    this.isAccountPopoverOpen = false;
-    await this.projectLifecycleService.logout();
-  };
-
-  /**
-   * UI Kit Forge sits above the whole shell rather than replacing it: an open project keeps its
-   * Golden Layout alive (the shell only ever builds it once — see `render()`), so the tool can be
-   * opened and closed mid-session without stranding the workspace in a detached tree.
-   */
-  private renderUiKitForge() {
-    if (!isUiKitForgeHash(this.currentHash)) {
-      return html``;
-    }
-    return html`<pix3-uikit-forge></pix3-uikit-forge>`;
-  }
-
-  private renderWorkspaceOverlay() {
-    // The tool route covers the window on its own; rendering the welcome screen underneath would
-    // only mean an invisible cloud-project fetch on every cold `#uikit` load.
-    if (isUiKitForgeHash(this.currentHash)) {
-      return html``;
-    }
-
-    if (appState.project.status === 'opening') {
-      const progress = appState.project.openProgress;
-      const progressValue =
-        progress.totalBytes && progress.totalBytes > 0
-          ? Math.min(100, Math.round(((progress.processedBytes ?? 0) / progress.totalBytes) * 100))
-          : progress.totalFileCount > 0
-            ? Math.min(
-                100,
-                Math.round((progress.processedFileCount / progress.totalFileCount) * 100)
-              )
-            : null;
-      const metaLabel =
-        progress.totalFileCount > 0
-          ? `${progress.processedFileCount}/${progress.totalFileCount} file(s)`
-          : 'Preparing project files';
-
-      return html`
-        <div class="collab-join-overlay">
-          <div class="collab-join-card">
-            <div class="collab-join-eyebrow">Pix3 Workspace</div>
-            <h2 class="collab-join-title">Opening Cloud Project</h2>
-            <p class="collab-join-copy">
-              ${progress.message ?? 'Preparing project files for local access.'}
-            </p>
-            ${progressValue !== null
-              ? html`
-                  <div
-                    class="loading-progress"
-                    role="progressbar"
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    aria-valuenow=${String(progressValue)}
-                  >
-                    <div class="loading-progress__bar">
-                      <div class="loading-progress__fill" style=${`width: ${progressValue}%`}></div>
-                    </div>
-                    <div class="loading-progress__meta">
-                      <span>${metaLabel}</span>
-                      <span>${progressValue}%</span>
-                    </div>
-                  </div>
-                `
-              : html`<div class="loading-label">Please wait...</div>`}
-            ${progress.currentPath
-              ? html`<div class="loading-progress__path">${progress.currentPath}</div>`
-              : html``}
-          </div>
-        </div>
-      `;
-    }
-
-    if (this.routerStatus !== 'idle') {
-      let title = 'Connecting to Workspace';
-      let message = 'Pix3 is loading your project setup...';
-
-      if (this.routerStatus === 'reactivationRequired') {
-        return html`
-          <div class="collab-join-overlay">
-            <div class="collab-join-card">
-              <div class="collab-join-eyebrow">Local Project Backup</div>
-              <h2 class="collab-join-title">Reactivate Project Access</h2>
-              <p class="collab-join-copy">
-                The browser requires permission to resume reading this local project folder.
-              </p>
-              <button
-                class="primary-button"
-                @click=${() => this.routerService.reactivateLocalSession()}
-              >
-                Restore Access
-              </button>
-            </div>
-          </div>
-        `;
-      }
-
-      if (this.routerStatus === 'loadingAssets') {
-        title = 'Loading project data';
-        message = 'Assets and scene hierarchies are being synchronized.';
-      } else if (this.routerStatus === 'fetchingMetadata') {
-        title = 'Negotiating connection';
-        message = 'Establishing handshake and verifying access.';
-      } else if (this.routerStatus === 'error') {
-        title = 'Connection Failed';
-        message = appState.router.errorMessage ?? 'An unknown error occurred.';
-      }
-
-      return html`
-        <div class="collab-join-overlay">
-          <div class="collab-join-card">
-            <div class="collab-join-eyebrow">Pix3 Workspace</div>
-            <h2 class="collab-join-title">${title}</h2>
-            <p class="collab-join-copy">${message}</p>
-            ${this.routerStatus !== 'error'
-              ? html`<div class="loading-label">Please wait...</div>`
-              : html`<div class="error-label">${message}</div>`}
-          </div>
-        </div>
-      `;
-    }
-
-    if (this.currentHash === '#welcome' || appState.project.status !== 'ready') {
-      return html` <pix3-welcome @pix3-auth:request=${this.onAuthRequest}></pix3-welcome> `;
-    }
-
-    // Default to editor mode, we no longer render welcome fallback here
-    return html``;
-  }
-
-  private renderAuthModal() {
-    if (!this.isAuthModalOpen) {
-      return html``;
-    }
-
-    return html`
-      <div class="auth-modal-backdrop" @click=${dismissOnBackdropClick(this.closeAuthModal)}>
-        <div class="auth-modal-shell" @click=${(event: Event) => event.stopPropagation()}>
-          <pix3-auth-screen
-            variant="modal"
-            show-close
-            @pix3-auth:close=${this.closeAuthModal}
-            @pix3-auth:success=${async () => {
-              await this.onAuthSuccess();
-              if (appState.router.targetParams) {
-                await this.routerService.resumeTargetSession();
-              }
-            }}
-          ></pix3-auth-screen>
-        </div>
-      </div>
     `;
   }
 
@@ -1641,36 +483,12 @@ export class Pix3EditorShell extends ComponentBase {
     return html`
       <div class="project-identity">
         <span class="project-name-label">${appState.project.projectName ?? 'No project open'}</span>
-        <pix3-mode-switch></pix3-mode-switch>
       </div>
     `;
   }
 
-  private renderAccountPopover() {
-    if (!this.isAuthenticated || !this.isAccountPopoverOpen) {
-      return html``;
-    }
-
-    return html`
-      <div class="account-popover">
-        <div class="account-popover__name">${appState.auth.user?.username ?? 'User'}</div>
-        <div class="account-popover__email">${appState.auth.user?.email ?? ''}</div>
-        <button class="account-popover__action" @click=${() => void this.onLogoutClick()}>
-          Logout
-        </button>
-      </div>
-    `;
-  }
-
-  private getUserInitials(): string {
-    const username = appState.auth.user?.username?.trim() || 'U';
-    const parts = username.split(/\s+/).filter(Boolean).slice(0, 2);
-    return parts.map(part => part.charAt(0).toUpperCase()).join('') || 'U';
-  }
-
-  private togglePlayMode() {
-    const commandId = appState.ui.isPlaying ? 'game.stop' : 'game.start';
-    void this.commandDispatcher.executeById(commandId);
+  private togglePlayMode(): void {
+    void this.commandDispatcher.executeById(appState.ui.isPlaying ? 'game.stop' : 'game.start');
   }
 
   private onRunOptionSelect = (event: CustomEvent<DropdownItem>): void => {
@@ -1678,104 +496,18 @@ export class Pix3EditorShell extends ComponentBase {
     void this.commandDispatcher.executeById(event.detail.id);
   };
 
-  private renderPickerHost() {
-    return html`
-      <div
-        class="picker-host"
-        @component-selected=${(e: CustomEvent) => this.onComponentSelected(e)}
-        @component-picker-cancelled=${(e: CustomEvent) => this.onComponentPickerCancelled(e)}
-        @component-picker-create-new=${(e: CustomEvent) => this.onComponentPickerCreateNew(e)}
-      >
-        ${this.componentPickers.map(
-          picker => html` <pix3-behavior-picker .pickerId=${picker.id}></pix3-behavior-picker> `
-        )}
-      </div>
-    `;
-  }
-
-  private onComponentSelected(e: CustomEvent): void {
-    const { pickerId, component } = e.detail;
-    this.behaviorPickerService.select(pickerId, component);
-  }
-
-  private onComponentPickerCancelled(e: CustomEvent): void {
-    const { pickerId } = e.detail;
-    this.behaviorPickerService.cancel(pickerId);
-  }
-
-  private renderEffectPickerHost() {
-    return html`
-      <div
-        class="picker-host"
-        @effect-selected=${(e: CustomEvent) =>
-          this.effectPickerService.select(e.detail.pickerId, e.detail.effectType)}
-        @effect-picker-cancelled=${(e: CustomEvent) =>
-          this.effectPickerService.cancel(e.detail.pickerId)}
-      >
-        ${this.effectPickers.map(
-          picker => html`
-            <pix3-effect-picker
-              .pickerId=${picker.id}
-              .excludeTypes=${picker.excludeTypes}
-              .target=${picker.target}
-            ></pix3-effect-picker>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private onComponentPickerCreateNew(e: CustomEvent): void {
-    const { pickerId } = e.detail;
-    // First cancel the picker
-    this.behaviorPickerService.cancel(pickerId);
-    // Then show the script creator - we'll handle the result in the inspector
-    // This event will bubble up to the inspector which initiated the picker
-    this.dispatchEvent(
-      new CustomEvent('script-creator-requested', {
-        detail: { pickerId },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private renderScriptCreatorHost() {
-    return html`
-      <div
-        class="script-creator-host"
-        @script-create-confirmed=${(e: CustomEvent) => this.onScriptCreateConfirmed(e)}
-        @script-create-cancelled=${(e: CustomEvent) => this.onScriptCreateCancelled(e)}
-      >
-        ${this.scriptCreators.map(
-          creator => html`
-            <pix3-script-creator
-              .dialogId=${creator.id}
-              .defaultName=${creator.params.defaultName || creator.params.scriptName}
-            ></pix3-script-creator>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private onScriptCreateConfirmed(e: CustomEvent): void {
-    const { dialogId, scriptName } = e.detail;
-    void this.scriptCreatorService.confirm(dialogId, scriptName);
-  }
-
-  private onScriptCreateCancelled(e: CustomEvent): void {
-    const { dialogId } = e.detail;
-    this.scriptCreatorService.cancel(dialogId);
-  }
+  // -- dialog hosts ----------------------------------------------------------
 
   private renderDialogHost() {
     return html`
       <div
         class="dialog-host"
-        @dialog-confirmed=${(e: CustomEvent) => this.onDialogConfirmed(e)}
-        @dialog-cancelled=${(e: CustomEvent) => this.onDialogCancelled(e)}
-        @dialog-secondary=${(e: CustomEvent) => this.onDialogSecondary(e)}
+        @dialog-confirmed=${(e: CustomEvent<{ dialogId: string }>) =>
+          this.dialogService.confirm(e.detail.dialogId)}
+        @dialog-cancelled=${(e: CustomEvent<{ dialogId: string }>) =>
+          this.dialogService.cancel(e.detail.dialogId)}
+        @dialog-secondary=${(e: CustomEvent<{ dialogId: string }>) =>
+          this.dialogService.secondary(e.detail.dialogId)}
       >
         ${this.dialogs.map(
           dialog => html`
@@ -1800,80 +532,131 @@ export class Pix3EditorShell extends ComponentBase {
     `;
   }
 
-  private renderProjectSettingsHost() {
-    if (!this.activeProjectSettingsDialog) {
-      return null;
-    }
-
+  private renderPickerHost() {
     return html`
-      <div class="project-settings-host">
-        <pix3-project-settings-dialog></pix3-project-settings-dialog>
+      <div
+        class="picker-host"
+        @component-selected=${(e: CustomEvent) =>
+          this.behaviorPickerService.select(e.detail.pickerId, e.detail.component)}
+        @component-picker-cancelled=${(e: CustomEvent) =>
+          this.behaviorPickerService.cancel(e.detail.pickerId)}
+        @component-picker-create-new=${(e: CustomEvent) => this.onComponentPickerCreateNew(e)}
+      >
+        ${this.componentPickers.map(
+          picker => html`<pix3-behavior-picker .pickerId=${picker.id}></pix3-behavior-picker>`
+        )}
       </div>
     `;
   }
 
-  private renderProjectSyncHost() {
-    if (!this.activeProjectSyncDialog) {
-      return null;
-    }
+  private onComponentPickerCreateNew(e: CustomEvent): void {
+    const { pickerId } = e.detail;
+    this.behaviorPickerService.cancel(pickerId);
+    // The inspector that opened the picker listens for this and opens the script creator.
+    this.dispatchEvent(
+      new CustomEvent('script-creator-requested', {
+        detail: { pickerId },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
 
+  private renderEffectPickerHost() {
     return html`
-      <div class="project-sync-host" @pix3-auth:request=${this.onAuthRequest}>
-        <pix3-project-sync-dialog></pix3-project-sync-dialog>
+      <div
+        class="picker-host"
+        @effect-selected=${(e: CustomEvent) =>
+          this.effectPickerService.select(e.detail.pickerId, e.detail.effectType)}
+        @effect-picker-cancelled=${(e: CustomEvent) =>
+          this.effectPickerService.cancel(e.detail.pickerId)}
+      >
+        ${this.effectPickers.map(
+          picker => html`
+            <pix3-effect-picker
+              .pickerId=${picker.id}
+              .excludeTypes=${picker.excludeTypes}
+              .target=${picker.target}
+            ></pix3-effect-picker>
+          `
+        )}
       </div>
     `;
+  }
+
+  private renderScriptCreatorHost() {
+    return html`
+      <div
+        class="script-creator-host"
+        @script-create-confirmed=${(e: CustomEvent) =>
+          void this.scriptCreatorService.confirm(e.detail.dialogId, e.detail.scriptName)}
+        @script-create-cancelled=${(e: CustomEvent) =>
+          this.scriptCreatorService.cancel(e.detail.dialogId)}
+      >
+        ${this.scriptCreators.map(
+          creator => html`
+            <pix3-script-creator
+              .dialogId=${creator.id}
+              .defaultName=${creator.params.defaultName || creator.params.scriptName}
+            ></pix3-script-creator>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderProjectSettingsHost() {
+    return this.activeProjectSettingsDialog
+      ? html`<div class="project-settings-host">
+          <pix3-project-settings-dialog></pix3-project-settings-dialog>
+        </div>`
+      : null;
   }
 
   private renderEditorSettingsHost() {
-    if (!this.activeEditorSettingsDialog) {
-      return null;
-    }
-
-    return html`
-      <div class="editor-settings-host">
-        <pix3-editor-settings-dialog></pix3-editor-settings-dialog>
-      </div>
-    `;
+    return this.activeEditorSettingsDialog
+      ? html`<div class="editor-settings-host">
+          <pix3-editor-settings-dialog></pix3-editor-settings-dialog>
+        </div>`
+      : null;
   }
 
   private renderAnimationAutoSliceHost() {
-    if (!this.activeAnimationAutoSliceDialog) {
+    const dialog = this.activeAnimationAutoSliceDialog;
+    if (!dialog) {
       return null;
     }
-
+    const { params } = dialog;
     return html`
       <div
         class="animation-auto-slice-host"
-        @animation-auto-slice-confirmed=${(event: CustomEvent) =>
-          this.onAnimationAutoSliceConfirmed(event)}
-        @animation-auto-slice-cancelled=${(event: CustomEvent) =>
-          this.onAnimationAutoSliceCancelled(event)}
+        @animation-auto-slice-confirmed=${this.onAnimationAutoSliceConfirmed}
+        @animation-auto-slice-cancelled=${(event: CustomEvent<{ dialogId?: string }>) => {
+          if (typeof event.detail.dialogId === 'string') {
+            this.animationAutoSliceDialogService.cancel(event.detail.dialogId);
+          }
+        }}
       >
         <pix3-animation-auto-slice-dialog
-          .dialogId=${this.activeAnimationAutoSliceDialog.id}
-          .texturePath=${this.activeAnimationAutoSliceDialog.params.texturePath}
-          .contextLabel=${this.activeAnimationAutoSliceDialog.params.contextLabel}
-          .contextCaption=${this.activeAnimationAutoSliceDialog.params.contextCaption ??
-          'Active clip'}
-          .confirmNote=${this.activeAnimationAutoSliceDialog.params.confirmNote ??
+          .dialogId=${dialog.id}
+          .texturePath=${params.texturePath}
+          .contextLabel=${params.contextLabel}
+          .contextCaption=${params.contextCaption ?? 'Active clip'}
+          .confirmNote=${params.confirmNote ??
           'Confirm to append the generated frame sequence to the active clip.'}
-          .confirmLabel=${this.activeAnimationAutoSliceDialog.params.confirmLabel ?? 'Slice Frames'}
-          .cancelLabel=${this.activeAnimationAutoSliceDialog.params.cancelLabel ??
-          'Keep Without Slicing'}
-          .defaultColumns=${this.activeAnimationAutoSliceDialog.params.defaultColumns || 1}
-          .defaultRows=${this.activeAnimationAutoSliceDialog.params.defaultRows || 1}
+          .confirmLabel=${params.confirmLabel ?? 'Slice Frames'}
+          .cancelLabel=${params.cancelLabel ?? 'Keep Without Slicing'}
+          .defaultColumns=${params.defaultColumns || 1}
+          .defaultRows=${params.defaultRows || 1}
         ></pix3-animation-auto-slice-dialog>
       </div>
     `;
   }
 
-  private onAnimationAutoSliceConfirmed(event: CustomEvent): void {
-    const { dialogId, columns, rows } = event.detail as {
-      dialogId?: string;
-      columns?: number;
-      rows?: number;
-    };
-
+  private onAnimationAutoSliceConfirmed = (
+    event: CustomEvent<{ dialogId?: string; columns?: number; rows?: number }>
+  ): void => {
+    const { dialogId, columns, rows } = event.detail;
     if (
       typeof dialogId !== 'string' ||
       typeof columns !== 'number' ||
@@ -1885,76 +668,64 @@ export class Pix3EditorShell extends ComponentBase {
     ) {
       return;
     }
-
     this.animationAutoSliceDialogService.confirm(dialogId, {
       columns: Math.max(1, Math.round(columns)),
       rows: Math.max(1, Math.round(rows)),
     });
-  }
-
-  private onAnimationAutoSliceCancelled(event: CustomEvent): void {
-    const { dialogId } = event.detail as { dialogId?: string };
-    if (typeof dialogId !== 'string') {
-      return;
-    }
-
-    this.animationAutoSliceDialogService.cancel(dialogId);
-  }
+  };
 
   private renderAssetImportHost() {
-    if (!this.activeAssetImportDialog) {
+    const dialog = this.activeAssetImportDialog;
+    if (!dialog) {
       return null;
     }
-
     return html`
       <div
         class="asset-import-host"
-        @asset-import-confirmed=${(event: CustomEvent) => this.onAssetImportConfirmed(event)}
-        @asset-import-cancelled=${(event: CustomEvent) => this.onAssetImportCancelled(event)}
+        @asset-import-confirmed=${(
+          event: CustomEvent<{ dialogId?: string; importedPaths?: string[] }>
+        ) => {
+          const { dialogId, importedPaths } = event.detail;
+          if (typeof dialogId === 'string') {
+            this.assetImportDialogService.confirm(dialogId, {
+              importedPaths: Array.isArray(importedPaths) ? importedPaths : [],
+            });
+          }
+        }}
+        @asset-import-cancelled=${(event: CustomEvent<{ dialogId?: string }>) => {
+          if (typeof event.detail.dialogId === 'string') {
+            this.assetImportDialogService.cancel(event.detail.dialogId);
+          }
+        }}
       >
         <pix3-asset-import-dialog
-          .dialogId=${this.activeAssetImportDialog.id}
-          .targetDirectory=${this.activeAssetImportDialog.params.targetDirectory}
+          .dialogId=${dialog.id}
+          .targetDirectory=${dialog.params.targetDirectory}
         ></pix3-asset-import-dialog>
       </div>
     `;
   }
 
-  private onAssetImportConfirmed(event: CustomEvent): void {
-    const { dialogId, importedPaths } = event.detail as {
-      dialogId?: string;
-      importedPaths?: string[];
-    };
-
-    if (typeof dialogId !== 'string') {
-      return;
-    }
-
-    this.assetImportDialogService.confirm(dialogId, {
-      importedPaths: Array.isArray(importedPaths) ? importedPaths : [],
-    });
-  }
-
-  private onAssetImportCancelled(event: CustomEvent): void {
-    const { dialogId } = event.detail as { dialogId?: string };
-    if (typeof dialogId !== 'string') {
-      return;
-    }
-
-    this.assetImportDialogService.cancel(dialogId);
-  }
-
   private renderSaveGeneratedAssetHost() {
-    if (!this.activeSaveGeneratedAssetDialog) {
+    const dialog = this.activeSaveGeneratedAssetDialog;
+    if (!dialog) {
       return null;
     }
-
-    const { id, params } = this.activeSaveGeneratedAssetDialog;
+    const { id, params } = dialog;
     return html`
       <div
         class="save-asset-host"
-        @save-asset-confirmed=${(event: CustomEvent) => this.onSaveGeneratedAssetConfirmed(event)}
-        @save-asset-cancelled=${(event: CustomEvent) => this.onSaveGeneratedAssetCancelled(event)}
+        @save-asset-confirmed=${(event: CustomEvent<{ dialogId?: string; fileName?: string }>) => {
+          const { dialogId, fileName } = event.detail;
+          if (typeof dialogId === 'string' && typeof fileName === 'string' && fileName) {
+            this.saveGeneratedAssetDialogService.confirm(dialogId, { fileName });
+          }
+        }}
+        @save-asset-cancelled=${(event: CustomEvent<{ dialogId?: string }>) => {
+          if (typeof event.detail.dialogId === 'string') {
+            this.saveGeneratedAssetDialogService.cancel(event.detail.dialogId);
+          }
+        }}
       >
         <pix3-save-asset-dialog
           .dialogId=${id}
@@ -1968,186 +739,29 @@ export class Pix3EditorShell extends ComponentBase {
     `;
   }
 
-  private onSaveGeneratedAssetConfirmed(event: CustomEvent): void {
-    const { dialogId, fileName } = event.detail as { dialogId?: string; fileName?: string };
-    if (typeof dialogId !== 'string' || typeof fileName !== 'string' || fileName.length === 0) {
-      return;
-    }
-
-    this.saveGeneratedAssetDialogService.confirm(dialogId, { fileName });
-  }
-
-  private onSaveGeneratedAssetCancelled(event: CustomEvent): void {
-    const { dialogId } = event.detail as { dialogId?: string };
-    if (typeof dialogId !== 'string') {
-      return;
-    }
-
-    this.saveGeneratedAssetDialogService.cancel(dialogId);
-  }
-
-  private renderWorkspaceConnectHost() {
-    const request = this.activeWorkspaceConnectDialog;
-    if (!request) {
-      return null;
-    }
-    // Keyed by request id so a re-open (e.g. after a rejected token) starts from fresh fields.
-    return keyed(
-      request.id,
-      html`<pix3-workspace-connect-dialog
-        .endpoint=${request.endpoint}
-        .initialError=${request.errorMessage}
-        .workspaceName=${request.workspaceName}
-        .workspaceId=${request.workspaceId}
-      ></pix3-workspace-connect-dialog>`
-    );
-  }
-
-  private renderAgentHandoffHost() {
-    const handoff = this.activeAgentHandoff;
-    if (!handoff) {
-      return null;
-    }
-    return keyed(
-      handoff.id,
-      html`<pix3-agent-handoff-dialog .handoff=${handoff}></pix3-agent-handoff-dialog>`
-    );
-  }
-
-  private renderCreateProjectHost() {
-    if (!this.activeCreateProjectDialog) {
-      return null;
-    }
-
-    return html`
-      <pix3-create-project-dialog
-        .dialogId=${this.activeCreateProjectDialog.id}
-        .initialBackend=${this.activeCreateProjectDialog.initialBackend}
-        @pix3-auth:request=${this.onAuthRequest}
-      ></pix3-create-project-dialog>
-    `;
-  }
-
   private renderNodeTypePickerHost() {
-    if (!this.activeNodeTypePicker) {
+    const picker = this.activeNodeTypePicker;
+    if (!picker) {
       return null;
     }
-
     return html`
       <div
         class="node-type-picker-host"
-        @node-type-selected=${(e: CustomEvent) => this.onNodeTypeSelected(e)}
-        @node-type-picker-cancelled=${(e: CustomEvent) => this.onNodeTypePickerCancelled(e)}
+        @node-type-selected=${(event: CustomEvent<{ pickerId?: string; nodeTypeId?: string }>) => {
+          const { pickerId, nodeTypeId } = event.detail;
+          if (typeof pickerId === 'string' && typeof nodeTypeId === 'string') {
+            this.nodeTypePickerService.select(pickerId, nodeTypeId);
+          }
+        }}
+        @node-type-picker-cancelled=${(event: CustomEvent<{ pickerId?: string }>) => {
+          if (typeof event.detail.pickerId === 'string') {
+            this.nodeTypePickerService.cancel(event.detail.pickerId);
+          }
+        }}
       >
-        <pix3-node-type-picker .pickerId=${this.activeNodeTypePicker.id}></pix3-node-type-picker>
+        <pix3-node-type-picker .pickerId=${picker.id}></pix3-node-type-picker>
       </div>
     `;
-  }
-
-  private renderPlayableExportDialogHost() {
-    if (!this.activePlayableExportDialog) {
-      return null;
-    }
-
-    return html`
-      <div
-        class="playable-export-dialog-host"
-        @playable-export-confirmed=${(e: CustomEvent) => this.onPlayableExportConfirmed(e)}
-        @playable-export-cancelled=${(e: CustomEvent) => this.onPlayableExportCancelled(e)}
-      >
-        <pix3-playable-export-dialog
-          .dialogId=${this.activePlayableExportDialog.id}
-          .scenePaths=${this.activePlayableExportDialog.scenePaths}
-          .selectedScenePath=${this.activePlayableExportDialog.selectedScenePath}
-          .offerCompression=${this.activePlayableExportDialog.offerCompression === true}
-          .offerImageCompression=${this.activePlayableExportDialog.offerImageCompression === true}
-        ></pix3-playable-export-dialog>
-      </div>
-    `;
-  }
-
-  private renderPlayableExportProgressDialogHost() {
-    if (!this.activePlayableExportProgressDialog) {
-      return null;
-    }
-
-    return html`
-      <div class="playable-export-progress-dialog-host">
-        <pix3-playable-export-progress-dialog
-          .dialogId=${this.activePlayableExportProgressDialog.id}
-          .title=${this.activePlayableExportProgressDialog.title}
-          .message=${this.activePlayableExportProgressDialog.message}
-        ></pix3-playable-export-progress-dialog>
-      </div>
-    `;
-  }
-
-  private onNodeTypeSelected(e: CustomEvent): void {
-    const { pickerId, nodeTypeId } = e.detail as {
-      pickerId?: string;
-      nodeTypeId?: string;
-    };
-
-    if (typeof pickerId !== 'string' || typeof nodeTypeId !== 'string') {
-      return;
-    }
-
-    this.nodeTypePickerService.select(pickerId, nodeTypeId);
-  }
-
-  private onNodeTypePickerCancelled(e: CustomEvent): void {
-    const { pickerId } = e.detail as { pickerId?: string };
-    if (typeof pickerId !== 'string') {
-      return;
-    }
-
-    this.nodeTypePickerService.cancel(pickerId);
-  }
-
-  private onPlayableExportConfirmed(e: CustomEvent): void {
-    const { dialogId, scenePath, compress, compressImages } = e.detail as {
-      dialogId?: string;
-      scenePath?: string;
-      compress?: boolean;
-      compressImages?: boolean;
-    };
-
-    if (typeof dialogId !== 'string' || typeof scenePath !== 'string') {
-      return;
-    }
-
-    this.playableExportDialogService.confirm(dialogId, {
-      scenePath,
-      compress: compress === true,
-      compressImages: compressImages === true,
-    });
-  }
-
-  private onPlayableExportCancelled(e: CustomEvent): void {
-    const { dialogId } = e.detail as { dialogId?: string };
-    if (typeof dialogId !== 'string') {
-      return;
-    }
-
-    this.playableExportDialogService.cancel(dialogId);
-  }
-
-  /**
-   * Wait for project scripts to reach 'ready' or 'error'.
-   *
-   * Delegates to the loader rather than watching `scriptsStatus` directly, because the local copy
-   * could wait forever: `syncAndBuild` returns without touching the status when the page is not
-   * visible/focused — and picking a project directory is precisely a focus-losing interaction — so
-   * the restore that follows this call never ran. `ensureReady` forces the build in that case,
-   * re-checks the project the status belongs to, and gives up after 15 s.
-   */
-  private async waitForScripts(): Promise<void> {
-    await this.projectScriptLoader.ensureReady();
-  }
-
-  private onDialogSecondary(e: CustomEvent): void {
-    const { dialogId } = e.detail;
-    this.dialogService.secondary(dialogId);
   }
 }
 

@@ -1,5 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// golden-layout's CJS build (what Node resolves in specs) requires `tslib`, which it does not
+// declare and the workspace does not install; nothing here needs a real layout.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
+
 // Keep the heavy service and child-component modules out of the jsdom run: the panel
 // only needs the injected classes to exist for the @inject decorators, and lightweight
 // stub custom elements so the template renders and the `ref` callbacks resolve.

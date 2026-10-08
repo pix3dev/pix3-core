@@ -1510,7 +1510,6 @@ describe('ViewportRendererService — parking the on-demand loop', () => {
   } {
     resetAppState();
     appState.ui.pauseRenderingOnUnfocus = true;
-    appState.collaboration.accessMode = 'local';
 
     const service = new ViewportRendererService();
     const renderFrame = vi.fn();
@@ -1579,7 +1578,6 @@ describe('ViewportRendererService — agent keepalive', () => {
   function makeService() {
     resetAppState();
     appState.ui.pauseRenderingOnUnfocus = true;
-    appState.collaboration.accessMode = 'local';
     worker = new FakeTickWorker();
     setTickWorkerFactory(() => worker);
     vi.stubGlobal(
@@ -1642,120 +1640,6 @@ describe('ViewportRendererService — agent keepalive', () => {
     service.requestRender();
     expect(renderFrame.mock.calls.length).toBe(before + 1);
     service.dispose();
-  });
-});
-
-/**
- * Vibe puts the whole Studio workspace — the editor viewport included — behind `display:none`, so
- * anything painted there is stolen from the game on the Vibe stage.
- */
-describe('ViewportRendererService — hidden workspace', () => {
-  afterEach(() => {
-    resetAppState();
-  });
-
-  function makeService(): {
-    service: ViewportRendererService;
-    renderFrame: ReturnType<typeof vi.fn>;
-    internals: {
-      isPaused: boolean;
-      isWindowFocused: boolean;
-      animationId?: number;
-      renderRequested: boolean;
-      handleFocusPause(): void;
-    };
-  } {
-    resetAppState();
-    appState.ui.pauseRenderingOnUnfocus = true;
-    appState.collaboration.accessMode = 'local';
-
-    const service = new ViewportRendererService();
-    const renderFrame = vi.fn();
-    Object.defineProperty(service, 'renderFrame', { value: renderFrame, configurable: true });
-    Object.defineProperty(service, 'cancelPanMomentum', { value: () => {}, configurable: true });
-    return {
-      service,
-      renderFrame,
-      internals: service as unknown as {
-        isPaused: boolean;
-        isWindowFocused: boolean;
-        animationId?: number;
-        renderRequested: boolean;
-        handleFocusPause(): void;
-      },
-    };
-  }
-
-  it('marks dirty without painting while Vibe is on screen', () => {
-    const { service, renderFrame, internals } = makeService();
-    internals.isPaused = false;
-    internals.isWindowFocused = true;
-    internals.animationId = undefined;
-    appState.ui.workspaceMode = 'flow';
-
-    service.requestRender();
-
-    expect(renderFrame).not.toHaveBeenCalled();
-    expect(internals.renderRequested).toBe(true);
-  });
-
-  it('parks the loop when the workspace goes away, and keeps the frame pending', () => {
-    const { renderFrame, internals } = makeService();
-    internals.isPaused = false;
-    internals.isWindowFocused = true;
-    internals.animationId = 1;
-    internals.renderRequested = true;
-    appState.ui.workspaceMode = 'flow';
-
-    internals.handleFocusPause();
-
-    expect(internals.animationId).toBeUndefined();
-    // Not flushed: nobody can see it. The dirty flag waits for Studio to come back.
-    expect(renderFrame).not.toHaveBeenCalled();
-    expect(internals.renderRequested).toBe(true);
-  });
-
-  /**
-   * Vibe's scene view mounts the SAME shared canvas as a real, visible surface. Suppressing there
-   * is what used to make it render black, so the flag it raises has to reach the renderer.
-   */
-  it('paints in Flow once the scene view is the surface on screen', () => {
-    const { service, renderFrame, internals } = makeService();
-    internals.isPaused = false;
-    internals.isWindowFocused = true;
-    internals.animationId = undefined;
-    appState.ui.workspaceMode = 'flow';
-    appState.ui.flowSceneViewVisible = true;
-
-    service.requestRender();
-
-    expect(renderFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('goes back to suppressing when the scene view is closed again', () => {
-    const { service, renderFrame, internals } = makeService();
-    internals.isPaused = false;
-    internals.isWindowFocused = true;
-    internals.animationId = undefined;
-    appState.ui.workspaceMode = 'flow';
-    appState.ui.flowSceneViewVisible = false;
-
-    service.requestRender();
-
-    expect(renderFrame).not.toHaveBeenCalled();
-    expect(internals.renderRequested).toBe(true);
-  });
-
-  it('still paints on demand once Studio is back', () => {
-    const { service, renderFrame, internals } = makeService();
-    internals.isPaused = false;
-    internals.isWindowFocused = true;
-    internals.animationId = undefined;
-    appState.ui.workspaceMode = 'studio';
-
-    service.requestRender();
-
-    expect(renderFrame).toHaveBeenCalledTimes(1);
   });
 });
 

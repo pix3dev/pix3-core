@@ -6,7 +6,6 @@ import {
   type CommandPreconditionResult,
 } from '@/core/command';
 import { OperationService } from '@/services/core/OperationService';
-import { FileSystemAPIService } from '@/services/project/FileSystemAPIService';
 import {
   SaveAsSceneOperation,
   type SaveAsSceneOperationParams,
@@ -53,18 +52,6 @@ export class SaveAsSceneCommand extends CommandBase<void, void> {
       };
     }
 
-    // Save As without a target path opens the browser's save picker, which only knows this
-    // computer's folders — a `pix3 serve` workspace lives on another machine.
-    if (context.state.project.backend === 'workspace' && !this.params?.filePath) {
-      return {
-        canExecute: false,
-        reason:
-          'Save As is not available for a workspace project yet: save the scene, or duplicate ' +
-          'the file in the asset browser.',
-        scope: 'project',
-      };
-    }
-
     const activeGraph = sceneManager.getActiveSceneGraph();
     const hasActiveScene = Boolean(activeGraph);
     console.debug('[SaveAsSceneCommand] Active scene check', {
@@ -88,82 +75,26 @@ export class SaveAsSceneCommand extends CommandBase<void, void> {
     const operationService = context.container.getService<OperationService>(
       context.container.getOrCreateToken(OperationService)
     );
-    const fileSystemService = context.container.getService<FileSystemAPIService>(
-      context.container.getOrCreateToken(FileSystemAPIService)
-    );
 
-    // If no params provided, open a file picker
+    // No file picker in a dev-server editor: the target is a project path.
+    // TODO(editor-core port): a proper path dialog (`.plans/editor-core-port.md` progress notes).
     let filePath = this.params?.filePath;
-    let fileHandle: FileSystemFileHandle | undefined;
-    let isHandleInProject = false;
-
     if (!filePath) {
-      try {
-        // Use showSaveFilePicker API to let user choose destination
-        type ShowSaveFilePickerFn = (opts?: unknown) => Promise<FileSystemFileHandle>;
-        type WindowWithSave = { showSaveFilePicker?: ShowSaveFilePickerFn };
-        const w = window as unknown as WindowWithSave;
-        const showSaveFilePicker = w.showSaveFilePicker;
-
-        const handle = await showSaveFilePicker?.({
-          suggestedName: 'scene.pix3scene',
-          types: [
-            {
-              description: 'Pix3 Scene Files',
-              accept: { 'application/yaml': ['.pix3scene'] },
-            },
-          ],
-        });
-
-        if (!handle) {
-          console.warn('[SaveAsSceneCommand] User cancelled file picker');
-          return { didMutate: false, payload: undefined };
-        }
-
-        console.debug('[SaveAsSceneCommand] User selected file:', handle.name);
-        fileHandle = handle;
-
-        // Check if the selected file is within the project
-        if (fileHandle) {
-          isHandleInProject = await fileSystemService.isHandleInProject(fileHandle);
-          if (isHandleInProject) {
-            const resolved = await fileSystemService.resolveHandleToResourcePath(fileHandle);
-            if (resolved) {
-              filePath = resolved;
-            }
-          }
-          console.debug('[SaveAsSceneCommand] Checked if file is in project', {
-            fileName: fileHandle.name,
-            isInProject: isHandleInProject,
-          });
-        }
-      } catch (error) {
-        // User cancelled or error occurred
-        if (error instanceof Error && error.name !== 'AbortError') {
-          console.error('[SaveAsSceneCommand] File picker error:', error);
-        }
+      const current = context.state.scenes.activeSceneId
+        ? context.state.scenes.descriptors[context.state.scenes.activeSceneId]?.filePath
+        : undefined;
+      const suggested = (current ?? 'res://scenes/scene.pix3scene').replace(
+        /\.pix3scene$/,
+        '-copy.pix3scene'
+      );
+      const answer = window.prompt('Save scene as (path inside the project):', suggested);
+      if (!answer) {
         return { didMutate: false, payload: undefined };
       }
+      filePath = answer.startsWith('res://') ? answer : `res://${answer.replace(/^\/+/, '')}`;
     }
 
-    if (!filePath && !fileHandle) {
-      console.error('[SaveAsSceneCommand] No file path or handle available');
-      return { didMutate: false, payload: undefined };
-    }
-
-    console.debug('[SaveAsSceneCommand] Executing save', {
-      filePath,
-      hasFileHandle: !!fileHandle,
-      fileName: fileHandle?.name,
-      isHandleInProject,
-    });
-
-    const op = new SaveAsSceneOperation({
-      filePath: filePath || '',
-      fileHandle,
-      isHandleInProject,
-      sceneId: undefined,
-    });
+    const op = new SaveAsSceneOperation({ filePath, sceneId: undefined });
     const pushed = await operationService.invokeAndPush(op);
 
     if (pushed) {

@@ -17,7 +17,7 @@ import { openGameSurface } from '@/features/scripts/play-workspace';
  * `Window ▸ <panel>` — open-or-focus one dockable panel.
  *
  * Every closable panel needs a way back after its tab was closed (spec §2.5), and there are seven
- * of them missing before this file: Scene Tree, Inspector, Assets, Logs, Profiler, Runtime, Game.
+ * of them: Scene Tree, Inspector, Assets, Logs, History, Runtime, Game.
  * Seven bespoke command classes would be seven copies of the same three lines, so this is one base
  * class plus one thin subclass per panel — the subclass carries nothing but the panel it shows and
  * its own metadata literal.
@@ -116,14 +116,14 @@ export class ShowLogsPanelCommand extends ShowPanelCommand {
   };
 }
 
-export class ShowProfilerPanelCommand extends ShowPanelCommand {
-  protected readonly panel: PanelComponentType = PANEL_COMPONENT_TYPES.profiler;
+export class ShowHistoryPanelCommand extends ShowPanelCommand {
+  protected readonly panel: PanelComponentType = PANEL_COMPONENT_TYPES.history;
 
   readonly metadata: CommandMetadata = {
-    id: 'window.show-profiler',
-    title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.profiler],
-    description: 'Show the Profiler panel',
-    keywords: ['profiler', 'performance', 'fps', 'stats', 'panel', 'window'],
+    id: 'window.show-history',
+    title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.history],
+    description: 'Show the undo History panel',
+    keywords: ['history', 'undo', 'redo', 'edits', 'panel', 'window'],
     menuPath: 'window',
     addToMenu: true,
     menuOrder: 220,
@@ -146,8 +146,7 @@ export class ShowRuntimePanelCommand extends ShowPanelCommand {
 
 /**
  * The Game surface is a *document* in the editor stack, not a docked panel: it is keyed by a tab id
- * and has no place to be docked into. `openGameSurface()` is the existing open-or-focus for it
- * (and the only one that is Flow-aware — Flow mounts the stage permanently and has no tabs), so
+ * and has no place to be docked into. `openGameSurface()` is the existing open-or-focus for it, so
  * this row delegates there instead of to `LayoutManager.showPanel()`.
  */
 export class ShowGamePanelCommand extends ShowPanelCommand {
@@ -174,7 +173,7 @@ export const createShowPanelCommands = (): ShowPanelCommand[] => [
   new ShowInspectorPanelCommand(),
   new ShowAssetsPanelCommand(),
   new ShowLogsPanelCommand(),
-  new ShowProfilerPanelCommand(),
+  new ShowHistoryPanelCommand(),
   new ShowRuntimePanelCommand(),
   new ShowGamePanelCommand(),
 ];

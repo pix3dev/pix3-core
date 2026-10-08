@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Only the panel tables are read here; golden-layout's CJS build needs `tslib`, which the
+// workspace does not install, so keep the real module out of this spec.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
 import { PANEL_DISPLAY_TITLES, type PanelComponentType } from '@/core/LayoutManager';
 import { KeybindingService } from '@/services/editor/KeybindingService';
@@ -19,7 +23,7 @@ describe('Window menu rows', () => {
       'inspector',
       'assets',
       'logs',
-      'profiler',
+      'history',
       'runtime',
       'game',
     ]);
@@ -54,7 +58,7 @@ describe('Window menu rows', () => {
       ['Inspector', 110],
       ['Assets', 120],
       ['Logs', 210],
-      ['Profiler', 220],
+      ['History', 220],
       ['Runtime', 230],
       ['Game', 500],
       ['Reset Layout…', 900],

@@ -93,25 +93,14 @@ export class LoadSceneCommand extends CommandBase<LoadSceneCommandPayload, void>
       const existing = state.scenes.descriptors[activeId] ?? null;
       const sceneName = this.deriveSceneName(filePath, graph.metadata ?? {}, existing?.name);
 
-      // Try to get file handle and modification time for file watching
-      let fileHandle: FileSystemFileHandle | null = null;
       let lastModifiedTime: number | null = null;
-
       try {
-        // Only get handle for res:// paths (project files)
         if (filePath.startsWith('res://')) {
-          fileHandle = await this.storage.getFileHandle(filePath);
           lastModifiedTime = await this.storage.getLastModified(filePath);
-
-          // Do not mutate project root from the active scene path.
-          // FileSystemAPIService project directory must always remain the opened project root.
         }
       } catch (error) {
-        // File handle retrieval failed, but we can still load the scene
-        console.debug('[LoadSceneCommand] Could not get file handle for watching:', error);
+        console.debug('[LoadSceneCommand] Could not read the modification time:', error);
       }
-
-      const storedFileHandle = fileHandle ? ref(fileHandle) : null;
 
       if (!existing) {
         state.scenes.descriptors[activeId] = {
@@ -121,7 +110,6 @@ export class LoadSceneCommand extends CommandBase<LoadSceneCommandPayload, void>
           version: graph.version ?? '1.0.0',
           isDirty: false,
           lastSavedAt: null,
-          fileHandle: storedFileHandle,
           lastModifiedTime,
         };
         state.scenes.activeSceneId = activeId;
@@ -132,7 +120,6 @@ export class LoadSceneCommand extends CommandBase<LoadSceneCommandPayload, void>
           name: sceneName,
           version: graph.version ?? existing.version,
           isDirty: false,
-          fileHandle: storedFileHandle,
           lastModifiedTime,
         } as typeof existing;
         state.scenes.activeSceneId = activeId;

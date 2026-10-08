@@ -1,8 +1,7 @@
 import { ComponentBase, customElement, html, inject, state, css, unsafeCSS } from '@/fw';
 import { LoggingService, type LogLevel, type LogEntry } from '@/services/core/LoggingService';
 import { IconService, IconSize } from '@/services/editor/IconService';
-import { AgentChatService } from '@/services/agent/AgentChatService';
-import { LayoutManagerService } from '@/core/LayoutManager';
+import { buildLogErrorPrompt, copyTextForAgent } from '@/ui/shared/copy-for-agent';
 import styles from './logs-panel.ts.css?raw';
 
 @customElement('pix3-logs-panel')
@@ -19,12 +18,6 @@ export class LogsPanel extends ComponentBase {
   @inject(IconService)
   private readonly iconService!: IconService;
 
-  @inject(AgentChatService)
-  private readonly agentChat!: AgentChatService;
-
-  @inject(LayoutManagerService)
-  private readonly layoutManager!: LayoutManagerService;
-
   @state()
   private logs: LogEntry[] = [];
 
@@ -33,6 +26,12 @@ export class LogsPanel extends ComponentBase {
 
   @state()
   private expandedLogs: Set<string> = new Set();
+
+  /** Log entry whose agent prompt was just copied (the button shows a check for a moment). */
+  @state()
+  private copiedLogId: string | null = null;
+
+  private copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** '' = editor logs, 'all' = everything, otherwise a remote source label. */
   @state()
@@ -60,6 +59,10 @@ export class LogsPanel extends ComponentBase {
   disconnectedCallback() {
     this.disposeListen?.();
     this.disposeListen = undefined;
+    if (this.copiedResetTimer) {
+      clearTimeout(this.copiedResetTimer);
+      this.copiedResetTimer = null;
+    }
     super.disconnectedCallback();
   }
 
@@ -94,20 +97,21 @@ export class LogsPanel extends ComponentBase {
     this.sourceFilter = (event.currentTarget as HTMLSelectElement).value;
   }
 
-  /** Open a fresh agent chat prefilled with this log entry so the agent can fix the cause. */
-  private handleFixWithAgent(log: LogEntry, event: Event) {
+  /** Copy a prompt describing this log entry, for the coding agent in the developer's terminal. */
+  private async handleCopyForAgent(log: LogEntry, event: Event) {
     event.stopPropagation();
-    const details = this.formatErrorDetails(log.data);
-    const prompt = [
-      'Fix this error reported in the editor logs. Investigate the root cause and fix it.',
-      '',
-      `[${log.level.toUpperCase()}] ${log.message}`,
-      ...(details ? ['', details] : []),
-      '',
-      'Use read_errors and read_logs for more context, inspect the relevant node/script, fix the cause, then verify your fix.',
-    ].join('\n');
-    this.layoutManager.revealAgentPanel();
-    void this.agentChat.composeFix(prompt);
+    const prompt = buildLogErrorPrompt(log.level, log.message, this.formatErrorDetails(log.data));
+    if (!(await copyTextForAgent(prompt))) {
+      return;
+    }
+    this.copiedLogId = log.id;
+    if (this.copiedResetTimer) {
+      clearTimeout(this.copiedResetTimer);
+    }
+    this.copiedResetTimer = setTimeout(() => {
+      this.copiedLogId = null;
+      this.copiedResetTimer = null;
+    }, 1500);
   }
 
   /** Distinct remote source labels present in the current log buffer. */
@@ -299,11 +303,14 @@ export class LogsPanel extends ComponentBase {
                           ${log.level === 'error'
                             ? html`<button
                                 class="log-fix-btn"
-                                title="Fix with Agent"
-                                aria-label="Fix with Agent"
-                                @click=${(event: Event) => this.handleFixWithAgent(log, event)}
+                                title="Copy for agent"
+                                aria-label="Copy for agent"
+                                @click=${(event: Event) => void this.handleCopyForAgent(log, event)}
                               >
-                                ${this.iconService.getIcon('tool', IconSize.SMALL)}
+                                ${this.iconService.getIcon(
+                                  this.copiedLogId === log.id ? 'check' : 'clipboard',
+                                  IconSize.SMALL
+                                )}
                               </button>`
                             : ''}
                         </div>

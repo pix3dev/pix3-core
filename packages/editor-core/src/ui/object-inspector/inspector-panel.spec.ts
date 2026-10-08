@@ -762,12 +762,13 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showConfirmation: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'fileSystemAPI', {
-      value: { readBlob: vi.fn(), listDirectory: vi.fn(async () => []) },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'projectStorage', {
-      value: { readTextFile: vi.fn(async () => '') },
+      value: {
+        readBlob: vi.fn(),
+        listDirectory: vi.fn(async () => []),
+        readTextFile: vi.fn(async () => ''),
+        normalizeResourcePath: (path: string) => path.replace(/^res:\/\//, ''),
+      },
       configurable: true,
     });
     Object.defineProperty(panel, 'assetsPreviewService', {
@@ -848,12 +849,13 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showConfirmation: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'fileSystemAPI', {
-      value: { readBlob: vi.fn(), listDirectory: vi.fn(async () => []) },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'projectStorage', {
-      value: { readTextFile: vi.fn(async () => '') },
+      value: {
+        readBlob: vi.fn(),
+        listDirectory: vi.fn(async () => []),
+        readTextFile: vi.fn(async () => ''),
+        normalizeResourcePath: (path: string) => path.replace(/^res:\/\//, ''),
+      },
       configurable: true,
     });
     Object.defineProperty(panel, 'assetsPreviewService', {
@@ -940,12 +942,13 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showConfirmation: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'fileSystemAPI', {
-      value: { readBlob: vi.fn(), listDirectory: vi.fn(async () => []) },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'projectStorage', {
-      value: { readTextFile },
+      value: {
+        readBlob: vi.fn(),
+        listDirectory: vi.fn(async () => []),
+        readTextFile,
+        normalizeResourcePath: (path: string) => path.replace(/^res:\/\//, ''),
+      },
       configurable: true,
     });
     Object.defineProperty(panel, 'assetsPreviewService', {
@@ -1019,8 +1022,13 @@ describe('InspectorPanel asset preview rendering', () => {
       audioTrack: 'res://assets/sfx/click.wav',
     });
 
-    Object.defineProperty(panel, 'fileSystemAPI', {
-      value: { readBlob, listDirectory: vi.fn(async () => []) },
+    Object.defineProperty(panel, 'projectStorage', {
+      value: {
+        readBlob,
+        listDirectory: vi.fn(async () => []),
+        readTextFile: vi.fn(async () => ''),
+        normalizeResourcePath: (path: string) => path.replace(/^res:\/\//, ''),
+      },
       configurable: true,
     });
     Object.defineProperty(panel, 'sceneManager', {
@@ -1434,12 +1442,13 @@ async function setupInspectorForNode(
     value: { showConfirmation: vi.fn() },
     configurable: true,
   });
-  Object.defineProperty(panel, 'fileSystemAPI', {
-    value: { readBlob: vi.fn(), listDirectory: vi.fn(async () => []) },
-    configurable: true,
-  });
   Object.defineProperty(panel, 'projectStorage', {
-    value: { readTextFile: vi.fn(async () => '') },
+    value: {
+      readBlob: vi.fn(),
+      listDirectory: vi.fn(async () => []),
+      readTextFile: vi.fn(async () => ''),
+      normalizeResourcePath: (path: string) => path.replace(/^res:\/\//, ''),
+    },
     configurable: true,
   });
   Object.defineProperty(panel, 'assetsPreviewService', {

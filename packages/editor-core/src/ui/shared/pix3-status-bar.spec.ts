@@ -1,292 +1,138 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceContainer } from '@/fw/di';
-import { DialogService } from '@/services/editor/DialogService';
 import { LoggingService } from '@/services/core/LoggingService';
-import { UpdateCheckService, type UpdateCheckState } from '@/services/editor/UpdateCheckService';
-import { BridgeConnectionService } from '@/services/llm/BridgeConnectionService';
-import { AgentSettingsService } from '@/services/agent/AgentSettingsService';
-import { EditorSettingsService } from '@/services/editor/EditorSettingsService';
+import { LayoutManagerService } from '@/core/LayoutManager';
+import { HostService } from '@/host/HostService';
+import { FakeHost } from '@/host/testing/fake-host';
 import { appState, resetAppState } from '@/state';
+
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
 type TestStatusBarElement = HTMLElement & { updateComplete: Promise<unknown> };
 
-class UpdateCheckServiceStub {
-  private state: UpdateCheckState = {
-    status: 'idle',
-    currentVersion: { version: '0.0.1', build: 7, displayVersion: 'v0.0.1 (build 7)' },
-    latestVersion: null,
-  };
-
-  subscribe(listener: (state: UpdateCheckState) => void): () => void {
-    listener(this.state);
-    return () => undefined;
-  }
-
-  setState(state: UpdateCheckState): void {
-    this.state = state;
-  }
+class LayoutManagerStub {
+  showPanel = vi.fn();
 }
 
-class DialogServiceStub {
-  showConfirmation = vi.fn(async () => false);
-}
+const settle = async (element: TestStatusBarElement): Promise<void> => {
+  // Valtio notifies in a microtask; Lit renders in the next one.
+  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await element.updateComplete;
+};
+
+const mount = async (): Promise<TestStatusBarElement> => {
+  const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
+  document.body.appendChild(statusBar);
+  await statusBar.updateComplete;
+  return statusBar;
+};
+
+const hostPill = (element: HTMLElement): HTMLElement | null =>
+  element.querySelector<HTMLElement>('.status-host');
 
 beforeAll(async () => {
-  vi.mock('golden-layout', () => ({}));
   await import('./pix3-status-bar');
+});
+
+beforeEach(() => {
+  const container = ServiceContainer.getInstance();
+  container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
+  container.addService(
+    container.getOrCreateToken(LayoutManagerService),
+    LayoutManagerStub,
+    'singleton'
+  );
+  HostService.install(new FakeHost({ projectName: 'demo' }));
+  appState.project.projectName = 'demo';
 });
 
 afterEach(() => {
   document.body.innerHTML = '';
+  HostService.reset();
   resetAppState();
   vi.restoreAllMocks();
 });
 
 describe('Pix3StatusBar', () => {
-  it('renders current version in the status area', async () => {
-    const container = ServiceContainer.getInstance();
-
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      UpdateCheckServiceStub,
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-
-    expect(statusBar.textContent).toContain('v0.0.1 (build 7)');
+  it('shows the editor-core version the dev server reports, and every version in its tooltip', async () => {
+    const statusBar = await mount();
+    const version = statusBar.querySelector<HTMLElement>('.status-version');
+    expect(version?.textContent).toBe('v0.0.0');
+    expect(version?.title).toContain('@pix3/vite-plugin 0.0.0');
+    expect(version?.title).toContain('Vite 0.0.0');
   });
 
-  it('shows update indicator only when update is available', async () => {
-    const container = ServiceContainer.getInstance();
-
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      class extends UpdateCheckServiceStub {
-        constructor() {
-          super();
-          this.setState({
-            status: 'update-available',
-            currentVersion: { version: '0.0.1', build: 7, displayVersion: 'v0.0.1 (build 7)' },
-            latestVersion: { version: '0.0.1', build: 8, displayVersion: 'v0.0.1 (build 8)' },
-          });
-        }
-      },
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-
-    expect(statusBar.textContent).toContain('Update available: v0.0.1 (build 8)');
-    expect(statusBar.textContent).toContain('v0.0.1 (build 7)');
+  it('reports a closed dev-server connection before anything else', async () => {
+    appState.project.host.connection = 'closed';
+    appState.project.host.writer = 'other';
+    const statusBar = await mount();
+    expect(hostPill(statusBar)?.classList.contains('is-error')).toBe(true);
+    expect(hostPill(statusBar)?.textContent).toContain('Disconnected');
   });
 
-  it('keeps existing project and play mode indicators', async () => {
-    const container = ServiceContainer.getInstance();
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      UpdateCheckServiceStub,
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
+  it('marks a tab without the writer claim read-only', async () => {
+    appState.project.host.connection = 'open';
+    appState.project.host.writer = 'other';
+    const statusBar = await mount();
+    expect(hostPill(statusBar)?.textContent).toContain('Read-only');
+    expect(hostPill(statusBar)?.title).toContain('another tab');
+  });
 
-    appState.project.projectName = 'Demo Project';
+  it('counts unsaved scenes, then reads Saved once they are written', async () => {
+    appState.project.host.connection = 'open';
+    appState.project.host.writer = 'self';
+    appState.scenes.descriptors['main'] = {
+      id: 'main',
+      filePath: 'res://scenes/main.pix3scene',
+      name: 'main',
+      version: '1',
+      isDirty: true,
+      lastSavedAt: null,
+    };
+    const statusBar = await mount();
+    expect(hostPill(statusBar)?.textContent).toContain('1 unsaved');
+
+    appState.scenes.descriptors['main'].isDirty = false;
+    await settle(statusBar);
+    expect(hostPill(statusBar)?.textContent).toContain('Saved');
+    expect(hostPill(statusBar)?.classList.contains('is-ok')).toBe(true);
+  });
+
+  it('lists scenes that changed on disk while edited here', async () => {
+    appState.project.host.connection = 'open';
+    appState.project.host.writer = 'self';
+    appState.project.host.staleScenes = ['scenes/main.pix3scene'];
+    const statusBar = await mount();
+    expect(hostPill(statusBar)?.textContent).toContain('1 changed on disk');
+    expect(hostPill(statusBar)?.title).toContain('scenes/main.pix3scene');
+  });
+
+  it('counts new errors and opens the Logs panel when clicked, resetting the count', async () => {
+    const statusBar = await mount();
+    const container = ServiceContainer.getInstance();
+    const logger = container.getService<LoggingService>(container.getOrCreateToken(LoggingService));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    logger.error('boom');
+    await settle(statusBar);
+    const button = statusBar.querySelector<HTMLButtonElement>('.status-diagnostics');
+    expect(button?.classList.contains('error')).toBe(true);
+    expect(button?.textContent).toContain('1');
+
+    button?.click();
+    await settle(statusBar);
+    const layout = container.getService<LayoutManagerStub>(
+      container.getOrCreateToken(LayoutManagerService)
+    );
+    expect(layout.showPanel).toHaveBeenCalledWith('logs');
+    expect(statusBar.querySelector('.status-diagnostics')).toBeNull();
+  });
+
+  it('shows the play indicator while playing', async () => {
     appState.ui.isPlaying = true;
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-
-    expect(statusBar.textContent).toContain('Playing');
-    expect(statusBar.textContent).toContain('Demo Project');
-  });
-
-  it('opens a reload confirmation dialog and reloads when user confirms', async () => {
-    const container = ServiceContainer.getInstance();
-    const showConfirmation = vi.fn(async () => true);
-
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      class extends UpdateCheckServiceStub {
-        constructor() {
-          super();
-          this.setState({
-            status: 'update-available',
-            currentVersion: { version: '0.0.1', build: 7, displayVersion: 'v0.0.1 (build 7)' },
-            latestVersion: { version: '0.0.1', build: 8, displayVersion: 'v0.0.1 (build 8)' },
-          });
-        }
-      },
-      'singleton'
-    );
-    container.addService(
-      container.getOrCreateToken(DialogService),
-      class extends DialogServiceStub {
-        showConfirmation = showConfirmation;
-      },
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-
-    const replaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-
-    const button = statusBar.querySelector('.status-update-button') as HTMLButtonElement;
-    expect(button).toBeTruthy();
-
-    button.click();
-    await Promise.resolve();
-
-    expect(showConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: 'Update Available',
-        confirmLabel: 'Reload Now',
-        cancelLabel: 'Later',
-      })
-    );
-    expect(replaceSpy).toHaveBeenCalledWith(expect.stringContaining('pix3_refresh='));
-  });
-
-  it('reports both agent lanes and opens Agent settings when one is clicked', async () => {
-    const container = ServiceContainer.getInstance();
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      UpdateCheckServiceStub,
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-    container.addService(
-      container.getOrCreateToken(BridgeConnectionService),
-      class {
-        subscribe = () => () => undefined;
-        isAvailable = () => true;
-        getEntries = () => [{ id: 'openai', label: 'OpenAI', kind: 'openai' as const }];
-      },
-      'singleton'
-    );
-    container.addService(
-      container.getOrCreateToken(AgentSettingsService),
-      class {
-        subscribe = (listener: (prefs: unknown) => void) => {
-          listener({});
-          return () => undefined;
-        };
-        // No built-in provider key stored: the two lanes must be able to disagree.
-        hasApiKey = async () => false;
-      },
-      'singleton'
-    );
-    const showSettings = vi.fn(async () => undefined);
-    container.addService(
-      container.getOrCreateToken(EditorSettingsService),
-      class {
-        showSettings = showSettings;
-      },
-      'singleton'
-    );
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-    await Promise.resolve();
-    await statusBar.updateComplete;
-
-    const lanes = [...statusBar.querySelectorAll('.status-lane')] as HTMLButtonElement[];
-    expect(lanes).toHaveLength(2);
-    expect(lanes[0].textContent).toContain('Bridge');
-    expect(lanes[0].classList.contains('is-on')).toBe(true);
-    // With no key of its own the lane names the setting, not a provider.
-    expect(lanes[1].textContent).toContain('Keys');
-    expect(lanes[1].classList.contains('is-off')).toBe(true);
-
-    lanes[1].click();
-    expect(showSettings).toHaveBeenCalledWith('agent');
-  });
-
-  it('names the built-in providers this browser holds a key for', async () => {
-    const container = ServiceContainer.getInstance();
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      UpdateCheckServiceStub,
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-    container.addService(
-      container.getOrCreateToken(BridgeConnectionService),
-      class {
-        subscribe = () => () => undefined;
-        isAvailable = () => false;
-        getEntries = () => [];
-      },
-      'singleton'
-    );
-    container.addService(
-      container.getOrCreateToken(AgentSettingsService),
-      class {
-        subscribe = (listener: (prefs: unknown) => void) => {
-          listener({});
-          return () => undefined;
-        };
-        // Only OpenRouter is configured — the lane must say so rather than report "no key".
-        hasApiKey = async (providerId: string) => providerId === 'openrouter';
-      },
-      'singleton'
-    );
-    container.addService(
-      container.getOrCreateToken(EditorSettingsService),
-      class {
-        showSettings = vi.fn(async () => undefined);
-      },
-      'singleton'
-    );
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    // The key probe is async (one secret lookup per built-in provider), so let it settle.
-    for (let i = 0; i < 5; i += 1) {
-      await Promise.resolve();
-      await statusBar.updateComplete;
-    }
-
-    const lanes = [...statusBar.querySelectorAll('.status-lane')] as HTMLButtonElement[];
-    expect(lanes[1].textContent).toContain('OpenRouter');
-    expect(lanes[1].textContent).not.toContain('Gemini');
-    expect(lanes[1].classList.contains('is-on')).toBe(true);
-  });
-
-  it('drops the perf readout in Vibe, where the panels it measures are hidden', async () => {
-    const container = ServiceContainer.getInstance();
-    container.addService(
-      container.getOrCreateToken(UpdateCheckService),
-      UpdateCheckServiceStub,
-      'singleton'
-    );
-    container.addService(container.getOrCreateToken(DialogService), DialogServiceStub, 'singleton');
-    container.addService(container.getOrCreateToken(LoggingService), LoggingService, 'singleton');
-
-    appState.ui.workspaceMode = 'flow';
-
-    const statusBar = document.createElement('pix3-status-bar') as TestStatusBarElement;
-    document.body.appendChild(statusBar);
-    await statusBar.updateComplete;
-
-    expect(statusBar.querySelector('.status-perf')).toBeNull();
-    // The bar itself still reports — it is shared by both shells.
-    expect(statusBar.textContent).toContain('v0.0.1 (build 7)');
+    const statusBar = await mount();
+    expect(statusBar.querySelector('.status-indicator.playing')?.textContent).toContain('Playing');
   });
 });

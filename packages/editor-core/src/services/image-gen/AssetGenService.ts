@@ -7,11 +7,6 @@ import {
   type Background,
   type ReferenceImage,
 } from '@/services/image-gen/ImageGenTypes';
-import {
-  BackgroundRemovalService,
-  type BgRemovalEngine,
-  type BgRemovalQuality,
-} from '@/services/bg-removal/BackgroundRemovalService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { ensureProjectParentDirectory } from '@/services/project/project-file-writes';
 import { GenerationHistoryService } from '@/services/image-gen/GenerationHistoryService';
@@ -35,7 +30,7 @@ import {
   type FlipAxis,
   type ImageEncoding,
   type QuarterTurns,
-} from '@/services/image-gen/image-ops';
+} from '@/core/image-ops';
 
 /** Where an in-memory image handle came from (informational). */
 export type AssetImageSource =
@@ -47,7 +42,6 @@ export type AssetImageSource =
   | 'trimmed'
   | 'rotated'
   | 'flipped'
-  | 'bg-removed'
   | 'compressed'
   | 'import';
 
@@ -134,12 +128,6 @@ export interface AssetGenCompressOptions extends AssetGenResizeOptions {
   format?: ImageEncoding;
 }
 
-export interface AssetGenBgOptions {
-  engine?: BgRemovalEngine;
-  quality?: BgRemovalQuality;
-  fillHoles?: boolean;
-}
-
 export interface AssetGenTrimOptions {
   /** Transparent padding (px) kept around the opaque content. Default 2. */
   padding?: number;
@@ -151,7 +139,8 @@ export interface AssetGenTrimOptions {
 
 /**
  * Game-ready post-processing preset for a generated/opened image:
- * - `sprite` — remove background, trim to the opaque bounding box, downscale.
+ * - `sprite` — trim to the opaque bounding box, downscale. (2.x has no local background removal:
+ *   ask the provider for a transparent background instead.)
  * - `icon` — as `sprite`, then center on a square canvas so icon grids align.
  * - `texture` — downscale only, keep the background (tiles, photos, backgrounds).
  * - `none` — no processing (raw save).
@@ -174,8 +163,6 @@ const PRESET_DEFAULT_MAX_SIZE: Record<AssetPostProcessPreset, number> = {
 export interface AssetPostProcessOptions {
   /** Longest-edge cap in px; defaults to the AI-image preference `defaultSaveMaxSize`. */
   maxSize?: number;
-  bgEngine?: BgRemovalEngine;
-  bgQuality?: BgRemovalQuality;
 }
 
 export interface AssetGenSaveOptions {
@@ -234,9 +221,6 @@ export class AssetGenService {
 
   @inject(AiImageSettingsService)
   private readonly aiSettings!: AiImageSettingsService;
-
-  @inject(BackgroundRemovalService)
-  private readonly bgRemoval!: BackgroundRemovalService;
 
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
@@ -477,23 +461,11 @@ export class AssetGenService {
     return this.toMeta(stored);
   }
 
-  async removeBackground(id: string, options: AssetGenBgOptions = {}): Promise<AssetImageMeta> {
-    const image = this.require(id);
-    const prefs = this.aiSettings.getPreferences();
-    const output = await this.bgRemoval.removeBackground(image.blob, {
-      engine: options.engine ?? prefs.bgRemovalEngine,
-      quality: options.quality ?? prefs.bgRemovalQuality,
-      fillHoles: options.fillHoles ?? prefs.bgFillHoles,
-    });
-    const stored = await this.store(output, 'image/png', 'bg-removed', image.prompt);
-    return this.toMeta(stored);
-  }
-
   /**
    * Run the game-ready pipeline for a {@link AssetPostProcessPreset} over a handle and return the
-   * final handle's metadata. Intermediate handles are freed automatically. Background removal is
-   * best-effort — a worker failure falls back to the un-cut image so a save is never blocked. The
-   * input handle `id` is left intact for the caller to discard.
+   * final handle's metadata. Intermediate handles are freed automatically. Trimming is best-effort —
+   * a failure keeps the untrimmed image so a save is never blocked. The input handle `id` is left
+   * intact for the caller to discard.
    */
   async postProcess(
     id: string,
@@ -508,17 +480,6 @@ export class AssetGenService {
     try {
       if (preset === 'sprite' || preset === 'icon') {
         try {
-          // Vector output (and any provider that returned real alpha) is already cut out. Running
-          // ISNet over it can only damage it — the matting model re-segments clean edges and eats
-          // thin details — so the cutout pass is skipped and only trim/downscale run.
-          if (!(await this.hasRealAlpha(currentId))) {
-            const bg = await this.removeBackground(currentId, {
-              engine: options.bgEngine,
-              quality: options.bgQuality,
-            });
-            intermediates.push(bg.id);
-            currentId = bg.id;
-          }
           const trimmed = await this.trim(currentId, {
             padding: 2,
             alphaThreshold: 8,
@@ -527,9 +488,7 @@ export class AssetGenService {
           intermediates.push(trimmed.id);
           currentId = trimmed.id;
         } catch {
-          // Background removal is best-effort: a worker hiccup must not block the save. Keep the
-          // un-cut image and still downscale below; the caller's preview shows the result so the
-          // agent/user can retry via process_asset.
+          // Trimming is best-effort: keep the untrimmed image and still downscale below.
         }
       }
       // Explicit arg wins; else the user's configured default; else a sane per-preset cap so an
@@ -715,27 +674,6 @@ export class AssetGenService {
   }
 
   // -- internals -------------------------------------------------------------
-
-  /**
-   * Whether a handle already carries a genuine cutout, so background removal would be destructive
-   * rather than useful. A handle with a kept vector source is one by construction; anything else is
-   * measured — {@link imageAlphaStats} reads the alpha channel, the only reliable way to know
-   * (a vision model sees transparency flattened onto white). Measured false on a decode failure,
-   * which keeps the previous behaviour wherever there is no canvas.
-   */
-  private async hasRealAlpha(id: string): Promise<boolean> {
-    const image = this.require(id);
-    if (image.svgSource) {
-      return true;
-    }
-    try {
-      const stats = await imageAlphaStats(image.blob);
-      // A hairline of anti-aliased edge pixels is not a cutout; a real one leaves a wide margin.
-      return stats.hasAlpha && stats.transparentFraction >= 0.02;
-    } catch {
-      return false;
-    }
-  }
 
   private require(id: string): AssetImage {
     const image = this.images.get(id);

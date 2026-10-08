@@ -6,16 +6,12 @@ import type {
 } from '@/core/Operation';
 import { SceneManager } from '@pix3/runtime';
 import { getAppStateSnapshot } from '@/state';
-import { FileSystemAPIService } from '@/services/project/FileSystemAPIService';
-import { FileWatchService } from '@/services/project/FileWatchService';
 import { LoggingService } from '@/services/core/LoggingService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { ref } from 'valtio/vanilla';
 
 export interface SaveAsSceneOperationParams {
-  filePath: string; // res:// path (only used if fileHandle not provided)
-  fileHandle?: FileSystemFileHandle; // Direct file handle from showSaveFilePicker
-  isHandleInProject?: boolean; // Whether the fileHandle is within the project directory
+  /** `res://` path inside the project. */
+  filePath: string;
   sceneId?: string; // optional scene id to save (defaults to active scene)
 }
 
@@ -36,21 +32,14 @@ export class SaveAsSceneOperation implements Operation<OperationInvokeResult> {
     const { state } = context;
     console.debug('[SaveAsSceneOperation] Starting perform', {
       filePath: this.params.filePath,
-      hasFileHandle: !!this.params.fileHandle,
       activeSceneId: state.scenes.activeSceneId,
     });
 
     const sceneManager = context.container.getService<SceneManager>(
       context.container.getOrCreateToken(SceneManager)
     );
-    const fileSystem = context.container.getService<FileSystemAPIService>(
-      context.container.getOrCreateToken(FileSystemAPIService)
-    );
     const storage = context.container.getService<ProjectStorageService>(
       context.container.getOrCreateToken(ProjectStorageService)
-    );
-    const fileWatchService = context.container.getService<FileWatchService>(
-      context.container.getOrCreateToken(FileWatchService)
     );
     const logger = context.container.getService<LoggingService>(
       context.container.getOrCreateToken(LoggingService)
@@ -82,64 +71,7 @@ export class SaveAsSceneOperation implements Operation<OperationInvokeResult> {
     let savedFilePath: string | undefined;
     let isInProject = false;
 
-    // Write to file - either directly via fileHandle or to project
-    if (this.params.fileHandle) {
-      try {
-        console.debug(
-          '[SaveAsSceneOperation] Writing to external file via handle:',
-          this.params.fileHandle.name
-        );
-        const writable = await this.params.fileHandle.createWritable();
-        await writable.write(sceneYaml);
-        await writable.close();
-        console.info('[SaveAsSceneOperation] File written successfully to external location', {
-          fileName: this.params.fileHandle.name,
-          byteSize: sceneYaml.length,
-        });
-        // Prefer keeping a stable res:// path if the chosen handle is within the project.
-        isInProject = this.params.isHandleInProject ?? false;
-        if (isInProject) {
-          const resolved = await fileSystem.resolveHandleToResourcePath(this.params.fileHandle);
-          savedFilePath = resolved ?? this.params.filePath;
-        } else {
-          // External save: keep descriptor.filePath unchanged.
-          savedFilePath = this.params.fileHandle.name;
-        }
-
-        // Best-effort: read updated mtime after write to suppress watcher reload.
-        let lastModifiedTime: number | null = null;
-        try {
-          const file = await this.params.fileHandle.getFile();
-          lastModifiedTime = file.lastModified;
-        } catch {
-          // ignore
-        }
-
-        // Only update scene descriptor if we saved to project
-        const descriptorForSave = state.scenes.descriptors[sceneId];
-        if (
-          isInProject &&
-          descriptorForSave &&
-          savedFilePath &&
-          savedFilePath.startsWith('res://')
-        ) {
-          descriptorForSave.fileHandle = ref(this.params.fileHandle);
-          descriptorForSave.lastModifiedTime = lastModifiedTime;
-          fileWatchService.setLastKnownModifiedTime(savedFilePath, lastModifiedTime);
-        }
-        console.debug('[SaveAsSceneOperation] File handle project containment check', {
-          fileName: this.params.fileHandle.name,
-          isInProject,
-        });
-      } catch (error) {
-        console.error('[SaveAsSceneOperation] Failed to write to external file', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw new Error(
-          `Failed to save scene: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    } else if (this.params.filePath) {
+    if (this.params.filePath) {
       // Validate that the path is within the project (res:// prefix)
       if (!this.params.filePath.startsWith('res://')) {
         console.error('[SaveAsSceneOperation] Invalid file path - must be within project', {
@@ -168,7 +100,7 @@ export class SaveAsSceneOperation implements Operation<OperationInvokeResult> {
         );
       }
     } else {
-      throw new Error('No file path or handle provided');
+      throw new Error('No file path provided');
     }
 
     // Only update scene descriptor if we saved to project
@@ -180,23 +112,8 @@ export class SaveAsSceneOperation implements Operation<OperationInvokeResult> {
       }
       descriptor.lastSavedAt = Date.now();
 
-      // If we saved using a handle inside the project, ensure the descriptor has the up-to-date handle.
-      if (this.params.fileHandle) {
-        descriptor.fileHandle = ref(this.params.fileHandle);
-      }
-
-      // Best-effort: record modification time so the watcher does not immediately reload.
       try {
-        if (descriptor.fileHandle) {
-          const file = await descriptor.fileHandle.getFile();
-          descriptor.lastModifiedTime = file.lastModified;
-          fileWatchService.setLastKnownModifiedTime(
-            descriptor.filePath,
-            descriptor.lastModifiedTime
-          );
-        } else {
-          descriptor.lastModifiedTime = await storage.getLastModified(descriptor.filePath);
-        }
+        descriptor.lastModifiedTime = await storage.getLastModified(descriptor.filePath);
       } catch {
         // ignore
       }

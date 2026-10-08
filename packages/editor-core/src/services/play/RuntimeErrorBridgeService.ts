@@ -12,14 +12,20 @@ import { subscribe } from 'valtio/vanilla';
 import { stringifyLogArgument } from '@/core/log-argument';
 import { LoggingService, type LogLevel } from '@/services/core/LoggingService';
 
+/** A frame of a project script as Vite serves it: `<base>scripts/…`, `<base>src/scripts/…`, bots. */
+const PROJECT_SCRIPT_FRAME = /\/(?:src\/)?scripts\/|\/design\/tests\/bots\//;
+/** Frames that are never the game's own code, whatever their path contains. */
+const NON_GAME_FRAME = /\/node_modules\/|\/@fs\/|\/__pix3\//;
+
 /**
  * Does this stack belong to the game rather than to the editor?
  *
- * In-editor user scripts are compiled to a bundle and imported from a **blob URL** (see
- * `ProjectScriptLoaderService.loadBundle`), so their frames carry a `blob:` origin that no
- * editor-bundle frame has. That is the only non-guessing discriminator available while both run in
- * one page — matching on message prefixes would drop a game's own `[Board] reset` just as happily
- * as an editor service's line.
+ * Project scripts are imported by Vite through the plugin's script roots, so their frames carry
+ * the project's own script paths (`/scripts/Foo.ts?t=…`), which no editor frame has (the editor is
+ * `/__pix3/…` or a `node_modules`/`@fs` path). A `blob:` frame (a script evaluated from a string)
+ * counts too. That is the only non-guessing discriminator available while both run in one page —
+ * matching on message prefixes would drop a game's own `[Board] reset` just as happily as an
+ * editor service's line.
  *
  * Fails OPEN: no stack means the log is forwarded rather than swallowed. Losing the game's output
  * is the failure that matters; a little extra noise is not.
@@ -28,7 +34,12 @@ export function isGameOriginatedStack(stack: string | undefined): boolean {
   if (!stack) {
     return true;
   }
-  return stack.includes('blob:');
+  return stack
+    .split('\n')
+    .some(
+      line =>
+        line.includes('blob:') || (PROJECT_SCRIPT_FRAME.test(line) && !NON_GAME_FRAME.test(line))
+    );
 }
 
 /**

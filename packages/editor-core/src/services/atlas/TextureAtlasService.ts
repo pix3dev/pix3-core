@@ -4,7 +4,7 @@ import { injectable, inject } from '@/fw/di';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { AtlasCacheStore } from '@/services/atlas/AtlasCacheStore';
 import { packMaxRects, type PackItem } from '@/services/atlas/MaxRectsPacker';
-import { sha256Hex } from '@/core/remote-preview/protocol';
+import { sha256Hex } from '@/core/hash';
 import {
   ATLAS_SHEET_SCHEME,
   configure2DTexture,

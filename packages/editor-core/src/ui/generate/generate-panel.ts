@@ -1,6 +1,3 @@
-import type { AgentEvent } from '@txt2sfx/agent';
-import type { ValidationIssue } from '@txt2sfx/shared';
-
 import { ComponentBase, customElement, html, inject, state } from '@/fw';
 import { appState } from '@/state';
 import { AiImageSettingsService } from '@/services/image-gen/AiImageSettingsService';
@@ -10,29 +7,18 @@ import {
   modelPickerLabel,
   type AspectRatio,
 } from '@/services/image-gen/ImageGenTypes';
-import { DEFAULT_SVG_SPRITE_SIZE } from '@/services/image-gen/SvgLlmImageProvider';
 import { MAX_SPRITE_SIZE, MIN_SPRITE_SIZE, clampSpriteSize } from '@/services/image-gen/svg-render';
 import {
   GenerationHistoryService,
   type GenerationRecord,
 } from '@/services/image-gen/GenerationHistoryService';
 import {
-  SFX_DIRECTORY,
-  SfxGenService,
-  describeSfxEvent,
-  describeSfxOutcome,
-  type SfxPlayback,
-  type SfxResult,
-} from '@/services/sfx-gen/SfxGenService';
-import {
   ImageEditTargetService,
   type ImageEditTargetSnapshot,
 } from '@/services/image-gen/ImageEditTargetService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { EditorSettingsService } from '@/services/editor/EditorSettingsService';
-import { EditorTabService } from '@/services/editor/EditorTabService';
 import { IconService, IconSize } from '@/services/editor/IconService';
-import { AssetLibraryService } from '@/services/library/AssetLibraryService';
 import { getDroppedAssetResourcePath, hasAssetDragData } from '@/ui/shared/asset-drag-drop';
 import { setGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import './generate-panel.ts.css';
@@ -45,14 +31,13 @@ interface ReferenceItem {
   label: string;
 }
 
-/** Which artifact the panel is generating. Shared chrome, two lanes. */
-type GenerateMode = 'image' | 'sound';
+/** Default exact output size (px) for providers that take one. */
+const DEFAULT_EXACT_SIZE = 128;
 
 /**
  * A generated image with nowhere to go: no editor is bound (or the bound canvas
  * stands in for a frame it cannot write back to yet), so the panel keeps it and
- * offers the original Asset Generator endings — save into the project, open it in
- * the Sprite Editor, or download it.
+ * offers the original Asset Generator endings — save into the project or download it.
  */
 interface PendingResult {
   blob: Blob;
@@ -66,16 +51,14 @@ interface PendingResult {
 }
 
 /**
- * The dockable "Generate" panel (§9.8). Everything that used to be the Sprite
- * Editor's right-hand AI rail — references, prompt, provider/model + key popover,
- * the Generate button and the generation history — lives here instead, because
- * none of it is per-editor-tab state: the history, the API key and the selected
- * model outlive any one document.
+ * The dockable "Generate" panel (§9.8): references, prompt, provider/model + key
+ * popover, the Generate button and the generation history. None of it is
+ * per-editor-tab state: the history, the API key and the selected model outlive
+ * any one document.
  *
- * It is general-purpose, not a Sprite Editor accessory. With an editor registered
- * through {@link ImageEditTargetService} a generation lands on that editor's
- * canvas; with none it lands in this panel's own result block, which is the
- * behaviour the standalone Asset Generator always had.
+ * With an image editor registered through {@link ImageEditTargetService} a
+ * generation lands on that editor's canvas; with none (the 2.x default — the 1.x
+ * Sprite Editor is gone) it lands in this panel's own result block.
  */
 @customElement('pix3-generate-panel')
 export class GeneratePanel extends ComponentBase {
@@ -97,19 +80,9 @@ export class GeneratePanel extends ComponentBase {
   @inject(EditorSettingsService)
   private readonly editorSettings!: EditorSettingsService;
 
-  @inject(EditorTabService)
-  private readonly editorTabs!: EditorTabService;
-
-  @inject(AssetLibraryService)
-  private readonly assetLibrary!: AssetLibraryService;
-
   @inject(IconService)
   private readonly icons!: IconService;
 
-  @inject(SfxGenService)
-  private readonly sfxGen!: SfxGenService;
-
-  @state() private mode: GenerateMode = 'image';
   @state() private prompt = '';
   @state() private providerId = '';
   @state() private modelId = '';
@@ -118,8 +91,8 @@ export class GeneratePanel extends ComponentBase {
   @state() private quality = '';
   @state() private transparentBackground = false;
   /** Exact output size, used instead of aspect/size for providers that honour one. */
-  @state() private outputWidth = DEFAULT_SVG_SPRITE_SIZE;
-  @state() private outputHeight = DEFAULT_SVG_SPRITE_SIZE;
+  @state() private outputWidth = DEFAULT_EXACT_SIZE;
+  @state() private outputHeight = DEFAULT_EXACT_SIZE;
   @state() private lockRatio = true;
   /**
    * "Ready to generate", not literally "a key is stored" — a provider that borrows the agent's LLM
@@ -146,31 +119,6 @@ export class GeneratePanel extends ComponentBase {
   /** Whether the next Generate edits the current result's SVG source instead of drawing afresh. */
   @state() private editSource = false;
 
-  // -- sound mode ------------------------------------------------------------
-  /** Sound prompt, kept apart from the image prompt: switching lanes must not lose either. */
-  @state() private soundPrompt = '';
-  @state() private soundGenerating = false;
-  @state() private soundError: string | null = null;
-  /** One updating progress line, not a log — a fit emits an event per generation. */
-  @state() private soundProgress: string | null = null;
-  @state() private soundResult: SfxResult | null = null;
-  /** The verdict sentence for the current result (a refusal is a result, not an error). */
-  @state() private soundOutcomeNote: string | null = null;
-  @state() private soundSaveName = '';
-  @state() private soundSaveMessage: string | null = null;
-  @state() private soundSaveError: string | null = null;
-  @state() private soundSourceOpen = false;
-  @state() private soundSourceCopied = false;
-  @state() private soundPlaying = false;
-  /** The change to ask for on the next Generate ("duller, 100 ms shorter"). */
-  @state() private soundFeedback = '';
-  @state() private soundHistory: GenerationRecord[] = [];
-  /** True when an LLM lane is reachable — the only gate; sound generation owns no key. */
-  @state() private soundLaneReady = false;
-
-  private soundAbortController: AbortController | null = null;
-  private soundPlayback: SfxPlayback | null = null;
-
   private readonly ownedUrls = new Set<string>();
   private readonly historyUrls = new Map<string, string>();
   private abortController: AbortController | null = null;
@@ -178,11 +126,6 @@ export class GeneratePanel extends ComponentBase {
   private disposeAiSettingsSubscription?: () => void;
   private disposeTargetSubscription?: () => void;
   private pasteHandler?: (event: ClipboardEvent) => void;
-  /**
-   * Set by "Open in Sprite Editor": the shell registers itself asynchronously, so
-   * the image is handed over from the target subscription once it arrives.
-   */
-  private pendingHandoff: PendingResult | null = null;
 
   private readonly onDocPointerDown = (event: PointerEvent): void => {
     if (!this.apiKeyPopoverOpen) {
@@ -206,7 +149,6 @@ export class GeneratePanel extends ComponentBase {
     this.disposeAiSettingsSubscription = this.aiSettings.subscribe(() => this.loadPreferences());
     this.disposeTargetSubscription = this.imageEditTargets.subscribe(snapshot => {
       this.targetSnapshot = snapshot.targetSnapshot;
-      this.flushPendingHandoff();
     });
     this.pasteHandler = (event: ClipboardEvent) => this.onPaste(event);
     this.addEventListener('paste', this.pasteHandler);
@@ -216,13 +158,9 @@ export class GeneratePanel extends ComponentBase {
     // blobs survive but their object URLs were revoked on disconnect.
     this.rehydrateObjectUrls();
     void this.reloadHistory();
-    void this.refreshSoundLane();
   }
 
   disconnectedCallback(): void {
-    this.stopSoundPlayback();
-    this.soundAbortController?.abort();
-    this.soundAbortController = null;
     this.disposeHistorySubscription?.();
     this.disposeHistorySubscription = undefined;
     this.disposeAiSettingsSubscription?.();
@@ -281,8 +219,8 @@ export class GeneratePanel extends ComponentBase {
         : (qualities.find(q => q === 'medium') ?? qualities[0] ?? '');
     this.transparentBackground =
       Boolean(model?.capabilities.supportsTransparency) && prefs.transparentBackground;
-    this.outputWidth = clampSpriteSize(prefs.defaultExactWidth, DEFAULT_SVG_SPRITE_SIZE);
-    this.outputHeight = clampSpriteSize(prefs.defaultExactHeight, DEFAULT_SVG_SPRITE_SIZE);
+    this.outputWidth = clampSpriteSize(prefs.defaultExactWidth, DEFAULT_EXACT_SIZE);
+    this.outputHeight = clampSpriteSize(prefs.defaultExactHeight, DEFAULT_EXACT_SIZE);
     void this.refreshKeyStatus();
   }
 
@@ -361,22 +299,11 @@ export class GeneratePanel extends ComponentBase {
     this.saveName = deriveSaveName(image.prompt, image.mimeType);
   }
 
-  /** The "Open in Sprite Editor" handoff: apply as soon as a target registers. */
-  private flushPendingHandoff(): void {
-    const pending = this.pendingHandoff;
-    if (!pending || !this.canApplyToTarget) {
-      return;
-    }
-    this.pendingHandoff = null;
-    this.deliver(pending);
-  }
-
   // -- rendering -------------------------------------------------------------
 
   protected render() {
     const model = this.providers.get(this.providerId)?.getModel(this.modelId);
     const maxReferences = model?.capabilities.maxReferenceImages ?? 0;
-    const sound = this.mode === 'sound';
 
     return html`
       <section
@@ -387,54 +314,25 @@ export class GeneratePanel extends ComponentBase {
       >
         ${this.renderHead()}
         <div class="gp-body">
-          ${sound
-            ? this.renderSoundLane()
-            : html`${this.renderReferences(maxReferences)} ${this.renderSizeRow()}
-              ${this.renderPromptBar()} ${this.renderResult()} ${this.renderHistory()}`}
+          ${this.renderReferences(maxReferences)} ${this.renderSizeRow()} ${this.renderPromptBar()}
+          ${this.renderResult()} ${this.renderHistory()}
         </div>
-        ${this.isDragActive && !sound
+        ${this.isDragActive
           ? html`<div class="gp-drop-overlay">Drop image to add as reference</div>`
           : null}
       </section>
     `;
   }
 
-  /**
-   * Image | Sound. A mode toggle rather than a second panel: the head, the settings entry point and
-   * the generation history are the same chrome, and only the middle of the body differs.
-   */
-  private renderModeToggle() {
-    return html`
-      <div class="gp-mode-toggle" role="group" aria-label="What to generate">
-        ${(['image', 'sound'] as const).map(
-          mode => html`
-            <button
-              class="gp-mode-button ${this.mode === mode ? 'is-active' : ''}"
-              type="button"
-              aria-pressed=${this.mode === mode ? 'true' : 'false'}
-              @click=${() => this.setMode(mode)}
-            >
-              ${this.icons.getIcon(mode === 'image' ? 'image' : 'volume-2', 12)}
-              <span>${mode === 'image' ? 'Image' : 'Sound'}</span>
-            </button>
-          `
-        )}
-      </div>
-    `;
-  }
-
   private renderHead() {
     const snapshot = this.targetSnapshot;
-    const destination =
-      this.mode === 'sound'
-        ? `Sounds are baked to WAV and saved under res://${SFX_DIRECTORY}/`
-        : !snapshot
-          ? 'No image editor open — results are saved from here.'
-          : this.canApplyToTarget
-            ? snapshot.boundFrameTexturePath
-              ? `Results go into the selected frame of ${snapshot.label}`
-              : `Results go to ${snapshot.label}`
-            : `${snapshot.label} cannot take a generated frame right now — results stay here.`;
+    const destination = !snapshot
+      ? 'No image editor open — results are saved from here.'
+      : this.canApplyToTarget
+        ? snapshot.boundFrameTexturePath
+          ? `Results go into the selected frame of ${snapshot.label}`
+          : `Results go to ${snapshot.label}`
+        : `${snapshot.label} cannot take a generated frame right now — results stay here.`;
 
     return html`
       <header class="gp-head">
@@ -442,7 +340,6 @@ export class GeneratePanel extends ComponentBase {
           ${this.icons.getIcon('sparkles', IconSize.SMALL)}
           <span>Generate</span>
         </span>
-        ${this.renderModeToggle()}
         <button
           class="gp-icon-button"
           type="button"
@@ -452,10 +349,7 @@ export class GeneratePanel extends ComponentBase {
         >
           ${this.icons.getIcon('settings', IconSize.SMALL)}
         </button>
-        <div
-          class="gp-target ${this.mode === 'sound' || snapshot ? 'is-bound' : ''}"
-          title=${destination}
-        >
+        <div class="gp-target ${snapshot ? 'is-bound' : ''}" title=${destination}>
           ${destination}
         </div>
       </header>
@@ -669,26 +563,14 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  /**
-   * For a provider with no key of its own (`svg-llm` draws with the agent's model). Asking for a key
-   * here would be a nag for something nothing reads; what the user needs instead is the one hint the
-   * chat already gives when no model is reachable.
-   */
+  /** For a provider with no key of its own: nothing to enter, just its readiness. */
   private renderBorrowedCredentialRow() {
     return html`
       <div class="gp-key-status-row">
         <span class="gp-field-label">Model access</span>
         <span class="gp-key-status ${this.keyConfigured ? 'is-set' : 'is-unset'}">
-          ${this.keyConfigured ? 'Agent LLM ready' : 'No LLM configured'}
+          ${this.keyConfigured ? 'Ready' : 'Not available'}
         </span>
-      </div>
-      <div class="gp-popover-hint">
-        ${this.keyConfigured
-          ? html`Draws with the Agent chat’s model — no separate key.`
-          : html`Configure a provider in Agent settings first.`}
-        <button class="gp-link-button" @click=${this.openAgentSettings}>
-          Open Agent settings…
-        </button>
       </div>
     `;
   }
@@ -817,16 +699,6 @@ export class GeneratePanel extends ComponentBase {
           >
             Save to project
           </button>
-          <button
-            class="gp-action-button"
-            ?disabled=${!this.saveName.trim() || !this.assetLibrary.isUserScopeSupported()}
-            @click=${this.onSaveToLibrary}
-          >
-            Save to Library
-          </button>
-          <button class="gp-action-button" @click=${this.onOpenInSpriteEditor}>
-            Open in Sprite Editor
-          </button>
           <button class="gp-action-button" @click=${this.onDownload}>Download</button>
         </div>
         ${this.saveMessage ? html`<div class="gp-success">${this.saveMessage}</div>` : null}
@@ -885,7 +757,7 @@ export class GeneratePanel extends ComponentBase {
     const canApplyToFrame = this.canApplyToFrame;
     const frameApplyLabel = canApplyToFrame
       ? 'Apply to current frame'
-      : 'No frame is bound — select a frame in the Sprite Editor';
+      : 'No frame is bound — open an image editor on a frame first';
     return html`
       <footer class="gp-history">
         <div class="gp-history-head">
@@ -933,501 +805,6 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  // -- sound mode ------------------------------------------------------------
-
-  /**
-   * The Sound lane: prompt → generate → listen → tweak by words → save.
-   *
-   * Deliberately small. The pipeline is an LLM writing a `soundline` recipe, txt2sfx validating it
-   * against the physics of its category, rendering it offline and fitting the numbers the model was
-   * unsure of — and the artifact is an ordinary WAV under `res://sfx/` that a designer's final file
-   * later replaces. There is no key to nag for: the recipe is written by the agent chat's own model.
-   */
-  private renderSoundLane() {
-    return html`
-      ${this.renderSoundPromptBar()} ${this.renderSoundProgress()} ${this.renderSoundResult()}
-      ${this.renderSoundHistory()}
-    `;
-  }
-
-  private renderSoundPromptBar() {
-    const canGenerate =
-      this.soundLaneReady && this.soundPrompt.trim().length > 0 && !this.soundGenerating;
-    return html`
-      <div class="gp-prompt-bar">
-        ${this.soundError ? html`<div class="gp-error">${this.soundError}</div>` : null}
-        ${this.soundLaneReady ? null : this.renderSoundLaneHint()}
-        <div class="gp-prompt-box">
-          <textarea
-            class="gp-sound-prompt"
-            rows="2"
-            aria-label="Sound prompt"
-            placeholder="Describe the sound… e.g. “crisp coin pickup”. Ctrl+Enter to generate."
-            .value=${this.soundPrompt}
-            @input=${this.onSoundPromptInput}
-            @keydown=${this.onSoundPromptKeyDown}
-          ></textarea>
-          <div class="gp-prompt-toolbar">
-            <span class="gp-hint"
-              >Prototype SFX — a placeholder a designer's file replaces later.</span
-            >
-            <div class="gp-spacer"></div>
-            ${this.soundGenerating
-              ? html`<button class="gp-cancel-button" @click=${this.onCancelSoundGenerate}>
-                  Cancel
-                </button>`
-              : null}
-            <button
-              class="gp-generate-button"
-              ?disabled=${!canGenerate}
-              @click=${this.onGenerateSound}
-            >
-              ${this.soundGenerating ? 'Generating…' : 'Generate'}
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  /**
-   * The one hint shown when no model is reachable — the same sentence the chat gives, and the same
-   * escape hatch. Never an API-key prompt: there is no key here to store.
-   */
-  private renderSoundLaneHint() {
-    return html`
-      <div class="gp-sound-hint">
-        <span
-          >Configure a provider in Agent settings first — sounds are written by your model.</span
-        >
-        <button class="gp-link-button" @click=${this.openAgentSettings}>
-          Open Agent settings…
-        </button>
-      </div>
-    `;
-  }
-
-  /**
-   * One updating line, not a log. `generateSound` emits an event per stage and a *per generation*
-   * event during the fit, which is the slow part — forty-four appended lines would bury the shape of
-   * the run, and a spinner would hide the fact that the search is working.
-   */
-  private renderSoundProgress() {
-    if (!this.soundProgress) {
-      return null;
-    }
-    return html`<div class="gp-sound-progress" role="status">${this.soundProgress}</div>`;
-  }
-
-  private renderSoundResult() {
-    const result = this.soundResult;
-    if (!result) {
-      return null;
-    }
-    const projectReady = appState.project.status === 'ready';
-    const playable = Boolean(result.wav);
-    return html`
-      <div class="gp-sound-result">
-        <div class="gp-sound-row">
-          <button
-            class="gp-sound-play"
-            type="button"
-            ?disabled=${!playable}
-            title=${this.soundPlaying ? 'Stop' : 'Play the live graph'}
-            aria-label=${this.soundPlaying ? 'Stop playback' : 'Play the generated sound'}
-            @click=${this.onToggleSoundPlayback}
-          >
-            ${this.icons.getIcon(this.soundPlaying ? 'square' : 'play', IconSize.SMALL)}
-          </button>
-          <div class="gp-sound-meta">
-            <span class="gp-field-label"
-              >${result.soundline ? soundlineName(result) : 'Result'}</span
-            >
-            <span class="gp-hint">
-              ${result.durationMs ? `${result.durationMs} ms` : 'no audio'}
-              ${result.peak === undefined ? '' : `· peak ${result.peak.toFixed(2)}`}
-            </span>
-          </div>
-          ${result.clipped
-            ? html`<span class="gp-badge is-warning" title="The mix exceeds full scale"
-                >Clipped</span
-              >`
-            : null}
-        </div>
-        ${this.soundOutcomeNote
-          ? html`<div class="gp-sound-outcome ${result.accepted ? '' : 'is-refused'}">
-              ${this.soundOutcomeNote}
-            </div>`
-          : null}
-        ${this.renderSoundIssues(result.issues)} ${this.renderSoundSource(result)}
-        ${playable ? this.renderSoundSave(projectReady) : null}
-        ${playable ? this.renderSoundFeedback() : null}
-        ${this.soundSaveMessage
-          ? html`<div class="gp-success">${this.soundSaveMessage}</div>`
-          : null}
-        ${this.soundSaveError ? html`<div class="gp-error">${this.soundSaveError}</div>` : null}
-      </div>
-    `;
-  }
-
-  /**
-   * Validator output, warnings included. A warning survives acceptance on purpose — "this decay is
-   * long for its category" is worth reading before the sound ships, and hiding it would leave the
-   * user wondering why the sound feels wrong when the pipeline said yes.
-   */
-  private renderSoundIssues(issues: readonly ValidationIssue[]) {
-    if (issues.length === 0) {
-      return null;
-    }
-    return html`
-      <ul class="gp-sound-issues">
-        ${issues.map(
-          issue => html`
-            <li class="gp-sound-issue is-${issue.severity}">
-              ${this.icons.getIcon(
-                issue.severity === 'error' ? 'alert-octagon' : 'alert-triangle',
-                12
-              )}
-              <span
-                >${issue.layer ? `${issue.layer}: ` : ''}${issue.hint}
-                <span class="gp-sound-rule">(${issue.rule})</span></span
-              >
-            </li>
-          `
-        )}
-      </ul>
-    `;
-  }
-
-  /**
-   * The recipe behind the WAV, read-only with a copy button. It earns its place because the WAV is
-   * *baked from* this text: seeing it is how a user learns the sound can be changed by asking, and
-   * copying it is the escape hatch into txt2sfx itself.
-   */
-  private renderSoundSource(result: SfxResult) {
-    const source = result.soundline;
-    if (!source.trim()) {
-      return null;
-    }
-    return html`
-      <div class="gp-source">
-        <div class="gp-source-head">
-          <button
-            class="gp-source-toggle"
-            type="button"
-            aria-expanded=${this.soundSourceOpen ? 'true' : 'false'}
-            @click=${this.onToggleSoundSource}
-          >
-            ${this.icons.getIcon(this.soundSourceOpen ? 'chevron-down' : 'chevron-right', 12)}
-            <span>soundline source (${result.grammarVersion})</span>
-          </button>
-          <button
-            class="gp-link-button"
-            type="button"
-            @click=${() => void this.onCopySoundSource(source)}
-          >
-            ${this.soundSourceCopied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        ${this.soundSourceOpen
-          ? html`<pre class="gp-source-code" tabindex="0">${source}</pre>`
-          : null}
-      </div>
-    `;
-  }
-
-  private renderSoundSave(projectReady: boolean) {
-    return html`
-      <input
-        class="gp-sound-name"
-        type="text"
-        aria-label="Sound file name"
-        placeholder="coin_pickup"
-        .value=${this.soundSaveName}
-        @input=${this.onSoundSaveNameInput}
-      />
-      <div class="gp-result-actions">
-        <button
-          class="gp-action-button"
-          ?disabled=${!projectReady || !this.soundSaveName.trim()}
-          @click=${this.onSaveSound}
-        >
-          Save to ${`res://${SFX_DIRECTORY}/`}
-        </button>
-      </div>
-      ${projectReady ? null : html`<div class="gp-hint">Open a project to save into it.</div>`}
-    `;
-  }
-
-  /**
-   * Tweak by words. This is the whole reason the recipe is kept: "duller, and 100 ms shorter" is a
-   * deterministic edit of known text, not a re-roll that also changes the six things the user liked.
-   */
-  private renderSoundFeedback() {
-    return html`
-      <div class="gp-sound-feedback">
-        <textarea
-          class="gp-sound-feedback-input"
-          rows="2"
-          aria-label="What to change"
-          placeholder="What to change — “duller, 100 ms shorter, less metallic”"
-          .value=${this.soundFeedback}
-          @input=${this.onSoundFeedbackInput}
-        ></textarea>
-        <button
-          class="gp-action-button"
-          ?disabled=${this.soundGenerating || !this.soundFeedback.trim()}
-          @click=${this.onRegenerateSound}
-        >
-          Apply change
-        </button>
-      </div>
-    `;
-  }
-
-  private renderSoundHistory() {
-    if (this.soundHistory.length === 0) {
-      return null;
-    }
-    return html`
-      <footer class="gp-history">
-        <div class="gp-history-head">
-          <span class="gp-field-label">Sound history (${this.soundHistory.length})</span>
-          <span class="gp-history-hint">Open one to replay or keep editing its recipe.</span>
-        </div>
-        <ul class="gp-sound-history-list">
-          ${this.soundHistory.map(
-            record => html`
-              <li class="gp-sound-history-row">
-                <button
-                  class="gp-sound-history-open"
-                  type="button"
-                  title=${record.prompt}
-                  @click=${() => void this.openSoundHistoryRecord(record)}
-                >
-                  ${this.icons.getIcon('play', 12)}
-                  <span class="gp-sound-history-prompt">${record.prompt}</span>
-                  <span class="gp-hint">${record.durationMs ? `${record.durationMs} ms` : ''}</span>
-                </button>
-                <button
-                  class="gp-history-delete"
-                  title="Delete from history"
-                  aria-label="Delete from history"
-                  @click=${() => void this.deleteSoundHistoryRecord(record.id)}
-                >
-                  ${this.icons.getIcon('x', 12)}
-                </button>
-              </li>
-            `
-          )}
-        </ul>
-      </footer>
-    `;
-  }
-
-  // -- sound handlers --------------------------------------------------------
-
-  private setMode(mode: GenerateMode): void {
-    if (this.mode === mode) {
-      return;
-    }
-    this.stopSoundPlayback();
-    this.mode = mode;
-    if (mode === 'sound') {
-      void this.refreshSoundLane();
-      void this.reloadSoundHistory();
-    }
-  }
-
-  /** Re-check whether a model is reachable. Cheap, and the answer changes when Agent settings do. */
-  private async refreshSoundLane(): Promise<void> {
-    try {
-      this.soundLaneReady = await this.sfxGen.isAvailable();
-    } catch {
-      this.soundLaneReady = false;
-    }
-  }
-
-  private onSoundPromptInput(event: Event): void {
-    this.soundPrompt = (event.target as HTMLTextAreaElement).value;
-  }
-
-  private onSoundPromptKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      void this.onGenerateSound();
-    }
-  }
-
-  private onSoundFeedbackInput(event: Event): void {
-    this.soundFeedback = (event.target as HTMLTextAreaElement).value;
-  }
-
-  private onSoundSaveNameInput(event: Event): void {
-    this.soundSaveName = (event.target as HTMLInputElement).value;
-    this.soundSaveMessage = null;
-    this.soundSaveError = null;
-  }
-
-  private onToggleSoundSource(): void {
-    this.soundSourceOpen = !this.soundSourceOpen;
-  }
-
-  private async onCopySoundSource(source: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(source);
-      this.soundSourceCopied = true;
-      window.setTimeout(() => {
-        this.soundSourceCopied = false;
-      }, 1500);
-    } catch (error) {
-      this.soundSaveError = `Could not copy the recipe: ${describeError(error)}`;
-    }
-  }
-
-  private onGenerateSound(): Promise<void> {
-    return this.runSoundGeneration(this.soundPrompt.trim());
-  }
-
-  /** Apply the feedback to the CURRENT recipe — a source edit, not a fresh design. */
-  private onRegenerateSound(): Promise<void> {
-    const soundline = this.soundResult?.soundline;
-    const feedback = this.soundFeedback.trim();
-    if (!soundline || !feedback) {
-      return Promise.resolve();
-    }
-    return this.runSoundGeneration(feedback, soundline);
-  }
-
-  private async runSoundGeneration(prompt: string, soundline?: string): Promise<void> {
-    if (!prompt || this.soundGenerating) {
-      return;
-    }
-    this.stopSoundPlayback();
-    this.soundError = null;
-    this.soundSaveMessage = null;
-    this.soundSaveError = null;
-    this.soundOutcomeNote = null;
-    this.soundProgress = 'Starting…';
-    this.soundGenerating = true;
-    this.soundAbortController = new AbortController();
-    try {
-      const result = await this.sfxGen.generate({
-        prompt,
-        ...(soundline === undefined ? {} : { soundline }),
-        onEvent: (event: AgentEvent) => {
-          this.soundProgress = describeSfxEvent(event);
-        },
-        signal: this.soundAbortController.signal,
-      });
-      this.adoptSoundResult(result);
-      // The prompt the user asked for, not the edit instruction, is what a history row should read.
-      await this.sfxGen.remember(result, soundline ? `${prompt} (edit)` : prompt);
-      await this.reloadSoundHistory();
-      if (soundline) {
-        this.soundFeedback = '';
-      }
-    } catch (error) {
-      this.soundProgress = null;
-      this.soundError = describeError(error);
-    } finally {
-      this.soundGenerating = false;
-      this.soundAbortController = null;
-    }
-  }
-
-  private onCancelSoundGenerate(): void {
-    this.soundAbortController?.abort();
-  }
-
-  private adoptSoundResult(result: SfxResult): void {
-    this.soundResult = result;
-    this.soundOutcomeNote = describeSfxOutcome(result);
-    this.soundSourceOpen = false;
-    this.soundSourceCopied = false;
-    this.soundSaveName = result.suggestedName ?? '';
-    this.soundProgress = null;
-  }
-
-  private onToggleSoundPlayback(): void {
-    if (this.soundPlaying) {
-      this.stopSoundPlayback();
-      return;
-    }
-    const soundline = this.soundResult?.soundline;
-    if (!soundline) {
-      return;
-    }
-    try {
-      // The LIVE graph, which is the actual product — not a preview of it.
-      this.soundPlayback = this.sfxGen.play(soundline);
-      this.soundPlaying = true;
-      const durationMs = this.soundResult?.durationMs ?? 500;
-      window.setTimeout(() => {
-        if (this.soundPlaying) {
-          this.stopSoundPlayback();
-        }
-      }, durationMs + 400);
-    } catch (error) {
-      this.soundError = describeError(error);
-    }
-  }
-
-  private stopSoundPlayback(): void {
-    this.soundPlayback?.stop();
-    this.soundPlayback = null;
-    this.soundPlaying = false;
-  }
-
-  private async onSaveSound(): Promise<void> {
-    const result = this.soundResult;
-    if (!result) {
-      return;
-    }
-    this.soundSaveMessage = null;
-    this.soundSaveError = null;
-    try {
-      const saved = await this.sfxGen.save(result, this.soundSaveName);
-      this.soundSaveMessage = `Saved to res://${saved.path}`;
-    } catch (error) {
-      this.soundSaveError = `Save failed: ${describeError(error)}`;
-    }
-  }
-
-  private async reloadSoundHistory(): Promise<void> {
-    try {
-      this.soundHistory = await this.history.list(40, 'sound');
-    } catch (error) {
-      console.warn('[GeneratePanel] Failed to load sound history', error);
-    }
-  }
-
-  /**
-   * Bring a stored sound back: the recipe is re-rendered rather than the stored WAV replayed, so the
-   * result is immediately editable *and* auditionable through the live graph. Costs one local render
-   * and no model call.
-   */
-  private async openSoundHistoryRecord(record: GenerationRecord): Promise<void> {
-    const source = record.soundlineSource;
-    if (!source) {
-      this.soundError = 'That record has no recipe stored — nothing to re-render or edit.';
-      return;
-    }
-    this.stopSoundPlayback();
-    this.soundPrompt = record.prompt;
-    this.soundError = null;
-    try {
-      this.adoptSoundResult(await this.sfxGen.rerender(source));
-    } catch (error) {
-      this.soundError = describeError(error);
-    }
-  }
-
-  private async deleteSoundHistoryRecord(id: string): Promise<void> {
-    await this.history.delete(id);
-    await this.reloadSoundHistory();
-  }
-
   // -- input handlers --------------------------------------------------------
 
   private onPromptInput(event: Event): void {
@@ -1452,15 +829,6 @@ export class GeneratePanel extends ComponentBase {
   private openFullSettings = (): void => {
     this.apiKeyPopoverOpen = false;
     void this.editorSettings.showSettings('images');
-  };
-
-  /** Where the credentials for a borrowed-LLM provider actually live — both borrowers re-check after. */
-  private openAgentSettings = (): void => {
-    this.apiKeyPopoverOpen = false;
-    void this.editorSettings.showSettings('agent').then(async () => {
-      await this.refreshKeyStatus();
-      await this.refreshSoundLane();
-    });
   };
 
   private onWidthChange(event: Event): void {
@@ -1731,8 +1099,7 @@ export class GeneratePanel extends ComponentBase {
     this.abortController = new AbortController();
 
     try {
-      // A provider that borrows the agent's LLM credentials has no key here; asking for one would
-      // block a lane that is already configured in Agent settings.
+      // A provider without a key of its own (`requiresApiKey: false`) is never asked for one.
       const keyRequired = provider.requiresApiKey !== false;
       const apiKey = keyRequired ? await this.aiSettings.getApiKey(this.providerId) : '';
       if (keyRequired && !apiKey) {
@@ -1842,68 +1209,6 @@ export class GeneratePanel extends ComponentBase {
       this.saveError = `Save failed: ${describeError(error)}`;
       return null;
     }
-  }
-
-  /** Personal Asset Library (editor-level; no project needed) — a one-file `image` bundle. */
-  private async onSaveToLibrary(): Promise<void> {
-    const result = this.result;
-    if (!result) {
-      return;
-    }
-    const fileName = ensureImageExt(normalizeRelativePath(this.saveName), result.mimeType)
-      .split('/')
-      .pop();
-    if (!fileName) {
-      this.saveError = 'Enter a file name.';
-      return;
-    }
-    const name = fileName.replace(/\.[^.]+$/, '') || 'Generated image';
-    this.saveError = null;
-    this.saveMessage = null;
-    try {
-      const slug = await this.assetLibrary.suggestSlug(name);
-      await this.assetLibrary.putUserItem({
-        manifest: {
-          id: crypto.randomUUID(),
-          slug,
-          name,
-          type: 'image',
-          tags: ['generated'],
-          description: result.prompt || undefined,
-          preview: fileName,
-          entry: fileName,
-          files: [fileName],
-          source: 'generated',
-          createdAt: 0,
-          updatedAt: 0,
-        },
-        files: new Map<string, Blob>([[fileName, result.blob]]),
-      });
-      this.saveMessage = `Saved "${name}" to your library.`;
-    } catch (error) {
-      this.saveError = `Save to Library failed: ${describeError(error)}`;
-    }
-  }
-
-  /**
-   * Open (or focus) the Sprite Editor and hand the result to it. The shell
-   * registers itself asynchronously, so the image is parked in `pendingHandoff`
-   * and delivered from the target subscription.
-   */
-  private async onOpenInSpriteEditor(): Promise<void> {
-    const result = this.result;
-    if (!result) {
-      return;
-    }
-    this.pendingHandoff = result;
-    try {
-      await this.editorTabs.focusOrOpenSpriteEditor();
-    } catch (error) {
-      this.pendingHandoff = null;
-      this.saveError = `Could not open the Sprite Editor: ${describeError(error)}`;
-      return;
-    }
-    this.flushPendingHandoff();
   }
 
   private async onDownload(): Promise<void> {
@@ -2164,10 +1469,6 @@ const ensureImageExt = (path: string, mimeType: string): string => {
  */
 const deriveSaveName = (prompt: string, mimeType: string): string =>
   ensureImageExt(`sprites/generated/${slugify(prompt) || 'generated'}`, mimeType);
-
-/** The name the recipe gave itself, read straight off its header line — no parse needed for a label. */
-const soundlineName = (result: SfxResult): string =>
-  /^\s*sound\s+"([^"]+)"/m.exec(result.soundline)?.[1] ?? 'Result';
 
 const describeError = (error: unknown): string => {
   if (error instanceof ImageGenError) {

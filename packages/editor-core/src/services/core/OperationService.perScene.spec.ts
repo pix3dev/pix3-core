@@ -16,7 +16,6 @@ function openScene(id: string): void {
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
 }

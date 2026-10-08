@@ -2,25 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appState, resetAppState } from '@/state';
 import { EditorTabService } from '@/services/editor/EditorTabService';
+import { deriveSceneIdFromResourcePath } from '@/core/scene-id';
 
-describe('EditorTabService (code tabs)', () => {
+// golden-layout's CJS build (what Node resolves in specs) requires `tslib`, which it does not
+// declare and the workspace does not install; nothing here needs a real layout.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
+
+const SCENE = 'res://scenes/main.pix3scene';
+const OTHER_SCENE = 'res://scenes/level.pix3scene';
+
+describe('EditorTabService', () => {
   beforeEach(() => {
     resetAppState();
+    localStorage.clear();
     vi.restoreAllMocks();
     appState.project.status = 'ready';
   });
 
   const createService = () => {
     const service = new EditorTabService();
-    let documentSnapshot = {
-      resourcePath: 'res://scripts/player.ts',
-      language: 'typescript' as const,
-      text: 'export class Player {}',
-      savedText: 'export class Player {}',
-      isDirty: false,
-      lastModifiedTime: 1,
-    };
-    let listener: (() => void) | null = null;
+    const sceneWrite = { saveScene: vi.fn(async () => 'saved' as const) };
 
     Object.defineProperty(service, 'layoutManager', {
       value: {
@@ -36,13 +37,13 @@ describe('EditorTabService (code tabs)', () => {
       value: { showChoice: vi.fn().mockResolvedValue('confirm') },
     });
     Object.defineProperty(service, 'commandDispatcher', {
-      value: { execute: vi.fn(), executeById: vi.fn() },
+      value: { execute: vi.fn().mockResolvedValue(undefined), executeById: vi.fn() },
     });
     Object.defineProperty(service, 'viewportRenderer', {
       value: { captureCameraState: vi.fn(), applyCameraState: vi.fn() },
     });
     Object.defineProperty(service, 'sceneManager', {
-      value: { removeSceneGraph: vi.fn() },
+      value: { removeSceneGraph: vi.fn(), setActiveScene: vi.fn() },
     });
     Object.defineProperty(service, 'operationService', {
       value: { invoke: vi.fn() },
@@ -50,91 +51,62 @@ describe('EditorTabService (code tabs)', () => {
     Object.defineProperty(service, 'animationEditorService', {
       value: { setActiveAssetPath: vi.fn(), getActiveAssetPath: vi.fn().mockReturnValue(null) },
     });
-    Object.defineProperty(service, 'codeDocumentService', {
-      value: {
-        subscribeAll: (next: () => void) => {
-          listener = next;
-          return () => {
-            listener = null;
-          };
-        },
-        ensureLoaded: vi.fn(async () => documentSnapshot),
-        getDocument: vi.fn(() => documentSnapshot),
-        save: vi.fn(async () => {
-          documentSnapshot = {
-            ...documentSnapshot,
-            savedText: documentSnapshot.text,
-            isDirty: false,
-          };
-          listener?.();
-          return documentSnapshot;
-        }),
-        close: vi.fn(),
-      },
-    });
-
-    Object.defineProperty(service, 'previewHostService', {
-      value: { isActive: vi.fn().mockReturnValue(false), stop: vi.fn() },
-    });
     Object.defineProperty(service, 'projectScriptLoader', {
-      value: { waitForScripts: vi.fn(async () => undefined) },
+      value: { ensureReady: vi.fn(async () => undefined) },
     });
+    Object.defineProperty(service, 'sceneWrite', { value: sceneWrite });
     Object.defineProperty(service, 'storage', {
       value: { getLastModified: vi.fn(async () => 1) },
       configurable: true,
     });
 
-    return {
-      service,
-      setDocument(next: Partial<typeof documentSnapshot>) {
-        documentSnapshot = { ...documentSnapshot, ...next };
-        listener?.();
-      },
-    };
+    return { service, sceneWrite };
   };
 
-  it('opens, syncs dirty state, and saves code tabs', async () => {
-    const { service, setDocument } = createService();
+  const describeScene = (resourcePath: string, isDirty: boolean) => {
+    const id = deriveSceneIdFromResourcePath(resourcePath);
+    appState.scenes.descriptors[id] = {
+      id,
+      filePath: resourcePath,
+      name: resourcePath,
+      version: '1',
+      isDirty,
+      lastSavedAt: null,
+    };
+    return id;
+  };
 
-    await service.openResourceTab('code', 'res://scripts/player.ts');
-    expect(appState.tabs.activeTabId).toBe('code:res://scripts/player.ts');
-    expect(appState.tabs.tabs[0]?.type).toBe('code');
+  it('opens a scene tab, mirrors its dirty state, and saves through SceneWriteService', async () => {
+    const { service, sceneWrite } = createService();
 
-    setDocument({ isDirty: true });
+    await service.openResourceTab('scene', SCENE);
+    expect(appState.tabs.activeTabId).toBe(`scene:${SCENE}`);
+
+    const sceneId = describeScene(SCENE, true);
+    await Promise.resolve();
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
     expect(appState.tabs.tabs[0]?.isDirty).toBe(true);
-    // Dirty state is shown by a tab dot now, not a `*` title prefix — the title stays clean.
-    expect(appState.tabs.tabs[0]?.title).toBe('player.ts');
+    // Dirty state is shown by a tab dot, not a `*` title prefix — the title stays clean.
+    expect(appState.tabs.tabs[0]?.title).toBe('main.pix3scene');
 
     await service.saveActiveTab();
-    expect(appState.tabs.tabs[0]?.isDirty).toBe(false);
-    expect(appState.tabs.tabs[0]?.title).toBe('player.ts');
+    expect(sceneWrite.saveScene).toHaveBeenCalledWith(sceneId);
   });
 
-  it('keeps dirty code tabs saveable in cloud projects', () => {
+  it('reports every dirty tab as dirty', () => {
     const { service } = createService();
-    appState.project.backend = 'cloud';
     appState.tabs.tabs = [
+      { id: `scene:${SCENE}`, resourceId: SCENE, type: 'scene', title: 'main', isDirty: true },
       {
-        id: 'code:res://scripts/player.ts',
-        resourceId: 'res://scripts/player.ts',
-        type: 'code',
-        title: '*player.ts',
-        isDirty: true,
-        contextState: {},
-      },
-      {
-        id: 'scene:res://scenes/main.pix3scene',
-        resourceId: 'res://scenes/main.pix3scene',
+        id: `scene:${OTHER_SCENE}`,
+        resourceId: OTHER_SCENE,
         type: 'scene',
-        title: '*main.pix3scene',
-        isDirty: true,
-        contextState: {},
+        title: 'level',
+        isDirty: false,
       },
     ];
 
-    const dirtyTabs = service.getDirtyTabs();
-    expect(dirtyTabs).toHaveLength(1);
-    expect(dirtyTabs[0]?.type).toBe('code');
+    expect(service.getDirtyTabs().map(tab => tab.id)).toEqual([`scene:${SCENE}`]);
   });
 
   // Valtio batches subscription callbacks into a microtask.
@@ -144,9 +116,9 @@ describe('EditorTabService (code tabs)', () => {
     const { service } = createService();
     appState.project.id = 'project-a';
 
-    await service.openResourceTab('code', 'res://scripts/player.ts');
+    await service.openResourceTab('scene', SCENE);
     await flush();
-    expect(localStorage.getItem('pix3.projectTabs:project-a')).toContain('res://scripts/player.ts');
+    expect(localStorage.getItem('pix3.projectTabs:project-a')).toContain(SCENE);
 
     appState.project.id = 'project-b';
     await flush();
@@ -154,7 +126,7 @@ describe('EditorTabService (code tabs)', () => {
     expect(appState.tabs.tabs).toHaveLength(0);
     expect(appState.tabs.activeTabId).toBeNull();
     // project-a keeps its session; project-b never inherits the foreign tab.
-    expect(localStorage.getItem('pix3.projectTabs:project-a')).toContain('res://scripts/player.ts');
+    expect(localStorage.getItem('pix3.projectTabs:project-a')).toContain(SCENE);
     expect(localStorage.getItem('pix3.projectTabs:project-b')).toBeNull();
   });
 
@@ -163,9 +135,7 @@ describe('EditorTabService (code tabs)', () => {
     appState.project.id = 'project-a';
     Object.defineProperty(service, 'storage', {
       value: {
-        getLastModified: vi.fn(async (path: string) =>
-          path === 'res://scripts/player.ts' ? 1 : null
-        ),
+        getLastModified: vi.fn(async (path: string) => (path === SCENE ? 1 : null)),
       },
     });
 
@@ -173,16 +143,16 @@ describe('EditorTabService (code tabs)', () => {
       'pix3.projectTabs:project-a',
       JSON.stringify({
         tabs: [
-          { resourceId: 'res://scripts/player.ts', type: 'code', title: 'player.ts' },
+          { resourceId: SCENE, type: 'scene', title: 'main.pix3scene' },
           { resourceId: 'res://scenes/gone.pix3scene', type: 'scene', title: 'gone.pix3scene' },
         ],
-        activeTabId: 'code:res://scripts/player.ts',
+        activeTabId: `scene:${SCENE}`,
       })
     );
 
     await service.restoreProjectSession('project-a');
 
-    expect(appState.tabs.tabs.map(tab => tab.resourceId)).toEqual(['res://scripts/player.ts']);
+    expect(appState.tabs.tabs.map(tab => tab.resourceId)).toEqual([SCENE]);
   });
 
   it('drops a stored session whose resources have all disappeared', async () => {
@@ -239,58 +209,24 @@ describe('EditorTabService (code tabs)', () => {
     );
   });
 
-  /**
-   * §9.8 — double-clicking a second image used to spawn a *second* editor beside
-   * the first. There is one Sprite Editor; it gets pointed at the new image.
-   */
-  it('rebinds the open Sprite Editor instead of opening a second one', async () => {
+  it('does not restore tab types 2.x dropped from a stored 1.x session', async () => {
     const { service } = createService();
-    const layoutManager = (
-      service as unknown as {
-        layoutManager: { rebindEditorTab: ReturnType<typeof vi.fn> };
-      }
-    ).layoutManager;
-    layoutManager.rebindEditorTab = vi.fn();
+    appState.project.id = 'project-a';
 
-    await service.focusOrOpenSpriteEditor();
-    expect(appState.tabs.tabs.map(tab => tab.id)).toEqual(['sprite-editor:sprite-editor://new']);
-
-    await service.focusOrOpenSpriteEditor('res://sprites/ex0059.png');
-
-    expect(appState.tabs.tabs).toHaveLength(1);
-    const [tab] = appState.tabs.tabs;
-    expect(tab.id).toBe('sprite-editor:res://sprites/ex0059.png');
-    expect(tab.resourceId).toBe('res://sprites/ex0059.png');
-    expect(tab.title).toBe('ex0059.png');
-    expect(appState.tabs.activeTabId).toBe('sprite-editor:res://sprites/ex0059.png');
-    expect(layoutManager.rebindEditorTab).toHaveBeenCalledWith(
-      'sprite-editor:sprite-editor://new',
-      'sprite-editor:res://sprites/ex0059.png',
-      'ex0059.png'
+    localStorage.setItem(
+      'pix3.projectTabs:project-a',
+      JSON.stringify({
+        tabs: [
+          { resourceId: 'res://scripts/player.ts', type: 'code', title: 'player.ts' },
+          { resourceId: 'res://sprites/a.png', type: 'sprite-editor', title: 'a.png' },
+          { resourceId: SCENE, type: 'scene', title: 'main.pix3scene' },
+        ],
+        activeTabId: 'code:res://scripts/player.ts',
+      })
     );
 
-    // Rebinding again from the menu (no path) keeps the current binding.
-    await service.focusOrOpenSpriteEditor();
-    expect(appState.tabs.tabs).toHaveLength(1);
-    expect(appState.tabs.tabs[0]?.resourceId).toBe('res://sprites/ex0059.png');
-  });
+    await service.restoreProjectSession('project-a');
 
-  it('leaves other editor tabs alone when the Sprite Editor rebinds', async () => {
-    const { service } = createService();
-    const layoutManager = (
-      service as unknown as {
-        layoutManager: { rebindEditorTab: ReturnType<typeof vi.fn> };
-      }
-    ).layoutManager;
-    layoutManager.rebindEditorTab = vi.fn();
-
-    await service.openResourceTab('code', 'res://scripts/player.ts');
-    await service.focusOrOpenSpriteEditor('res://sprites/a.png');
-    await service.focusOrOpenSpriteEditor('res://sprites/b.png');
-
-    expect(appState.tabs.tabs.map(tab => tab.id)).toEqual([
-      'code:res://scripts/player.ts',
-      'sprite-editor:res://sprites/b.png',
-    ]);
+    expect(appState.tabs.tabs.map(tab => tab.id)).toEqual([`scene:${SCENE}`]);
   });
 });

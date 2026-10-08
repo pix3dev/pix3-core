@@ -31,10 +31,6 @@ import {
   resolveViewportPopOut,
   type ScopeNodeLookup,
 } from '@/features/selection/SelectionScopeResolver';
-import {
-  OpenSpriteEditorForNodeCommand,
-  isSpriteEditableNode,
-} from '@/features/editor/OpenSpriteEditorForNodeCommand';
 import { AddModelCommand } from '@/features/scene/AddModelCommand';
 import { CreateAnimatedSprite2DCommand } from '@/features/scene/CreateAnimatedSprite2DCommand';
 import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
@@ -64,11 +60,8 @@ import {
   classifySceneCreateAssetResource,
   deriveAssetNodeName,
   getDroppedAssetResourcePath,
-  getLibraryItemDragData,
   hasAssetDragData,
-  hasLibraryItemDragData,
 } from '@/ui/shared/asset-drag-drop';
-import { LibraryInsertService } from '@/services/library/LibraryInsertService';
 import {
   renderTransformToolbarOverlay,
   renderViewportToolbar,
@@ -114,9 +107,6 @@ export class EditorTabComponent extends ComponentBase {
 
   @inject(SceneManager)
   private readonly sceneManager!: SceneManager;
-
-  @inject(LibraryInsertService)
-  private readonly libraryInsert!: LibraryInsertService;
 
   @inject(LocalizationEditorService)
   private readonly localizationEditorService!: LocalizationEditorService;
@@ -179,8 +169,6 @@ export class EditorTabComponent extends ComponentBase {
    * re-attach: framing is a first-impression fix, not something to redo behind the user's back.
    */
   private hasFramedStandalone = false;
-  /** Last observed workspace, so the `appState.ui` subscription can spot the Vibe→Studio switch. */
-  private lastWorkspaceMode = appState.ui.workspaceMode;
   private disposeUiSubscription?: () => void;
   private disposeTabsSubscription?: () => void;
   private disposeScenesSubscription?: () => void;
@@ -269,27 +257,7 @@ export class EditorTabComponent extends ComponentBase {
     this.syncAlignmentToolbarState();
     this.syncSceneLayerCapabilities();
 
-    this.lastWorkspaceMode = appState.ui.workspaceMode;
-
     this.disposeUiSubscription = subscribe(appState.ui, () => {
-      if (appState.ui.workspaceMode !== this.lastWorkspaceMode) {
-        this.lastWorkspaceMode = appState.ui.workspaceMode;
-        // Coming back to Studio: the shared canvas is still parented into Vibe's scene view, whose
-        // host was just torn out of the DOM with the Flow shell. Nothing mutates `appState.tabs` on
-        // a workspace switch, so without this reclaim the Studio viewport stays empty until the
-        // next tab change.
-        //
-        // Only a DOCKED tab may reclaim here. Vibe's standalone view is still connected and still
-        // subscribed at this point — Valtio notifies in a microtask, well before Lit re-renders the
-        // shell and unmounts the Flow branch — and it subscribed *after* the Studio tab, so it was
-        // notified last and won the arbitration for the one shared canvas, parenting it into a host
-        // that was about to leave the DOM. That is the "Vibe -> Studio leaves an empty viewport,
-        // reopening the scene fixes it" bug: reopening builds a fresh tab whose connect re-attaches.
-        // The standalone view needs no reclaim of its own; Vibe always mounts it fresh.
-        if (!this.standalone && appState.ui.workspaceMode === 'studio') {
-          this.syncActiveState();
-        }
-      }
       this.syncToggleStatesFromCommands();
       this.navigationMode = appState.ui.navigationMode;
       this.editorCameraProjection = appState.ui.editorCameraProjection;
@@ -522,7 +490,7 @@ export class EditorTabComponent extends ComponentBase {
 
   private handleDragOver = (event: DragEvent): void => {
     const dataTransfer = event.dataTransfer ?? null;
-    if (!hasAssetDragData(dataTransfer) && !hasLibraryItemDragData(dataTransfer)) {
+    if (!hasAssetDragData(dataTransfer)) {
       return;
     }
 
@@ -542,12 +510,6 @@ export class EditorTabComponent extends ComponentBase {
     event.stopPropagation();
 
     this.isAssetDragOver = false;
-
-    const libraryDrag = getLibraryItemDragData(event.dataTransfer ?? null);
-    if (libraryDrag) {
-      this.dropLibraryItem(libraryDrag.itemId, this.getViewportScreenPoint(event));
-      return;
-    }
 
     const resourcePath = getDroppedAssetResourcePath(event.dataTransfer ?? null);
     if (!resourcePath) {
@@ -603,27 +565,6 @@ export class EditorTabComponent extends ComponentBase {
       void this.commandDispatcher.execute(command);
     }
   };
-
-  private dropLibraryItem(itemId: string, screenPoint: { x: number; y: number } | null): void {
-    void (async () => {
-      const inserted = await this.libraryInsert.copyBundleIntoProject(itemId);
-      if (!inserted || !inserted.entryResourcePath) {
-        return;
-      }
-      if (inserted.type === 'image') {
-        const placement = this.resolve2DAssetDropPlacement(screenPoint);
-        await this.libraryInsert.dispatchInsertCommand(inserted, {
-          parentNodeId: placement.parentNodeId,
-          position: placement.position,
-        });
-        return;
-      }
-      // Prefab/scene: position at the drop point (CreatePrefabInstance handles the rest).
-      await this.libraryInsert.dispatchInsertCommand(inserted, {
-        viewportScreenPoint: screenPoint,
-      });
-    })();
-  }
 
   private getViewportScreenPoint(event: DragEvent): { x: number; y: number } | null {
     const canvas = this.viewportRenderer.getCanvasElement();
@@ -751,18 +692,6 @@ export class EditorTabComponent extends ComponentBase {
     if (!this.standalone && !this.tabId) return;
     if (!this.isActiveTab) return;
     if (!this.canvasHost) return;
-    // Arbitration for the ONE shared canvas: while Vibe's scene view is on screen it owns it.
-    // A Studio tab would otherwise reclaim the canvas on any `appState.tabs` mutation — including
-    // the offscreen Studio branch an agent mounts for screenshots — and leave the user's visible
-    // viewport blank. Screenshots do not suffer: it is the same canvas either way.
-    if (
-      !this.standalone &&
-      appState.ui.workspaceMode === 'flow' &&
-      appState.ui.flowSceneViewVisible
-    ) {
-      return;
-    }
-
     this.viewportRenderer.attachToHost(this.canvasHost);
 
     // Bind wheel listener to the actual renderer canvas (it is moved between hosts).
@@ -1484,23 +1413,6 @@ export class EditorTabComponent extends ComponentBase {
       const resolution = modifiers.doubleClick
         ? resolveViewportDoubleClick(getNode, focusId, leaf.nodeId)
         : resolveViewportClick(getNode, focusId, leaf.nodeId, { deep: modifiers.deep });
-
-      // Drill-until-leaf-then-open (Figma's "double-click again to enter
-      // vector-edit mode"): once the double-click has nothing deeper to drill
-      // into and the node it lands on is already the direct selection, the
-      // second double-click opens that sprite's editor instead of no-opping.
-      if (
-        modifiers.doubleClick &&
-        resolution.candidateId === leaf.nodeId &&
-        appState.selection.nodeIds.length === 1 &&
-        appState.selection.nodeIds[0] === leaf.nodeId &&
-        isSpriteEditableNode(leaf)
-      ) {
-        await this.commandDispatcher.execute(
-          new OpenSpriteEditorForNodeCommand({ nodeId: leaf.nodeId })
-        );
-        return;
-      }
 
       await this.commandDispatcher.execute(
         selectObjectInScope(resolution.candidateId, resolution.nextFocusId, modifiers.additive)

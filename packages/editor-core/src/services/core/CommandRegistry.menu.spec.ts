@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Command, CommandMetadata } from '@/core/command';
 import { KeybindingService } from '@/services/editor/KeybindingService';
 import { CommandRegistry } from '@/services/core/CommandRegistry';
-import { SwitchWorkspaceModeCommand } from '@/features/editor/SwitchWorkspaceModeCommand';
 import {
   createTransformModeCommands,
   transformModeCommandId,
@@ -240,16 +239,6 @@ describe('CommandRegistry.isChecked', () => {
         .filter(id => registry.isChecked(id) === true);
       expect(checkedIds).toEqual([transformModeCommandId(mode)]);
     }
-  });
-
-  it('reports the workspace toggle as checked only in Flow', () => {
-    const registry = registryWith(new SwitchWorkspaceModeCommand().metadata);
-
-    appState.ui.workspaceMode = 'studio';
-    expect(registry.isChecked('editor.switch-workspace-mode')).toBe(false);
-
-    appState.ui.workspaceMode = 'flow';
-    expect(registry.isChecked('editor.switch-workspace-mode')).toBe(true);
   });
 });
 

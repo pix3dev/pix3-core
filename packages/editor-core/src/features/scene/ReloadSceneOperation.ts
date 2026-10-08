@@ -4,7 +4,6 @@ import { SceneValidationError } from '@pix3/runtime';
 import { ref } from 'valtio/vanilla';
 import { optionalService } from '@/services/project/coauthoring/optional-service';
 import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
-import { RecoveryJournalService } from '@/services/project/coauthoring/RecoveryJournalService';
 import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import {
@@ -49,7 +48,7 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
     title: 'Reload Scene',
     description: 'Reload scene from file (triggered by external change)',
     // Applying a version from disk is not a human edit: it must never be recorded into the
-    // protected set `P` (`src/services/project/coauthoring/ProtectedSetService.ts`).
+    // protected set `P` of 1.x).
     tags: [NON_HUMAN_OPERATION_TAG],
   };
 
@@ -115,23 +114,6 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
         throw new Error(`Scene descriptor not found: ${sceneId}`);
       }
 
-      // An external version is about to replace the in-memory one. If that one carries manual
-      // edits not on disk yet, journal it first (plan §4.3: "каждая ручная версия, которую
-      // редактор собирается заменить внешней, кладётся туда до замены").
-      const previousGraph = sceneManager.getSceneGraph(sceneId);
-      if (descriptor.isDirty && previousGraph) {
-        const journal = optionalService(container, RecoveryJournalService);
-        try {
-          await journal?.recordVersion(
-            filePath,
-            sceneManager.serializeScene(previousGraph),
-            'before-external'
-          );
-        } catch (error) {
-          console.warn('[ReloadSceneOperation] Could not journal the manual version', error);
-        }
-      }
-
       // Update scene manager with new graph
       sceneManager.setActiveSceneGraph(sceneId, graph);
       if (diskState) {
@@ -175,16 +157,6 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
 
       // Not dirty: it is what is on disk — unless it is a merge result still to be written back.
       descriptor.isDirty = this.params.markDirty === true;
-
-      // Update modification time
-      try {
-        if (descriptor.fileHandle) {
-          const file = await descriptor.fileHandle.getFile();
-          descriptor.lastModifiedTime = file.lastModified;
-        }
-      } catch (error) {
-        console.debug('[ReloadSceneOperation] Could not update modification time:', error);
-      }
 
       state.scenes.loadState = 'ready';
       state.scenes.loadError = null;

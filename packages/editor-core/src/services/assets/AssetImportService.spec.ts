@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   isTextAsset,
   normalizeImportDirectory,
   resolveUniqueAssetName,
 } from '@/services/assets/AssetImportService';
+
+// golden-layout's CJS build (what Node resolves in specs) requires `tslib`, which it does not
+// declare and the workspace does not install; nothing here needs a real layout.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
 describe('resolveUniqueAssetName', () => {
   it('returns the original name when there is no collision', () => {

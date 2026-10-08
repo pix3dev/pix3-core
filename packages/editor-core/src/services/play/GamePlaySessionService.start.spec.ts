@@ -27,7 +27,6 @@ const runtime = vi.hoisted(() => {
       this.paused = false;
     });
     setFrameScheduler = vi.fn();
-    setNetworkService = vi.fn();
     setBatching2DEnabled = vi.fn();
     setEditorPeekMask = vi.fn();
     setProjectFonts = vi.fn();
@@ -61,7 +60,6 @@ vi.mock('@pix3/runtime', async importOriginal => ({
 
 interface SessionInternals {
   initialized: boolean;
-  networkService: unknown;
   tabHost: {
     kind: 'tab';
     mount: HTMLElement;
@@ -80,8 +78,6 @@ function makeSession() {
   const invoke = vi.fn(async (operation: Operation) => operation.perform(createOperationContext()));
   const setAtlasResolver = vi.fn();
   const setRuntimeSink = vi.fn();
-  const endSession = vi.fn();
-  const disconnect = vi.fn();
 
   Object.defineProperties(service, {
     sceneManager: { value: {} },
@@ -89,16 +85,12 @@ function makeSession() {
     assetLoader: { value: { setAtlasResolver } },
     operationService: { value: { invoke } },
     runtimeErrorBridge: { value: errorBridge },
-    profilerSessionService: {
-      value: { beginSession: vi.fn(), bindRuntime: vi.fn(), endSession },
-    },
     textureAtlasService: { value: { prepareForPlay: vi.fn(async () => {}) } },
     localizationEditorService: { value: { getRuntimeConfig: () => null } },
     peekService: { value: { setRuntimeSink } },
   });
   // Keep state subscriptions out of the harness; tests explicitly drain the follow-up sync.
   internals.initialized = true;
-  internals.networkService = { disconnect, dispose: vi.fn() };
   internals.tabHost = {
     kind: 'tab',
     mount: document.createElement('div'),
@@ -106,7 +98,7 @@ function makeSession() {
     setRunningState: vi.fn(),
   };
 
-  return { service, internals, invoke, setAtlasResolver, setRuntimeSink, endSession, disconnect };
+  return { service, internals, invoke, setAtlasResolver, setRuntimeSink };
 }
 
 describe('GamePlaySessionService — failed launch cleanup', () => {
@@ -153,13 +145,14 @@ describe('GamePlaySessionService — failed launch cleanup', () => {
     expect(session.internals.tabHost.setRunningState).toHaveBeenLastCalledWith(false);
     expect(appState.ui.isPlaying).toBe(false);
     expect(appState.ui.playModeStatus).toBe('stopped');
+    expect(appState.ui.playOwner).toBeNull();
+    expect(appState.ui.playStartedAt).toBeNull();
     expect(appState.ui.playModeError?.message).toBe(
       'Failed to start the scene: Failed to clone scene'
     );
 
     // The state subscription's follow-up stop must not erase the only visible failure reason.
     await session.internals.syncRuntimeToUiState();
-    expect(session.disconnect).toHaveBeenCalledOnce();
     expect(appState.ui.playModeError?.message).toBe(
       'Failed to start the scene: Failed to clone scene'
     );
@@ -193,7 +186,6 @@ describe('GamePlaySessionService — failed launch cleanup', () => {
     await started;
     await session.internals.startRuntime(session.internals.tabHost);
     const current = session.service.getActiveRuntime();
-    session.endSession.mockClear();
     session.setRuntimeSink.mockClear();
     session.setAtlasResolver.mockClear();
 
@@ -204,7 +196,6 @@ describe('GamePlaySessionService — failed launch cleanup', () => {
     expect(runtime.runners[1].running).toBe(true);
     expect(runtime.runners[1].stop).not.toHaveBeenCalled();
     expect(runtime.renderers[1].dispose).not.toHaveBeenCalled();
-    expect(session.endSession).not.toHaveBeenCalled();
     expect(session.setRuntimeSink).not.toHaveBeenCalled();
     expect(session.setAtlasResolver).not.toHaveBeenCalled();
     expect(session.invoke).not.toHaveBeenCalled();

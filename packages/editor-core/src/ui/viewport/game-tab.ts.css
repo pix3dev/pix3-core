@@ -133,14 +133,6 @@
   pointer-events: none;
 }
 
-/* The remote preview card is interactive (copy/stop/restart) and can exceed
-   small panels vertically. */
-.game-placeholder-remote {
-  pointer-events: auto;
-  overflow-y: auto;
-  align-items: safe center;
-}
-
 .game-placeholder-card {
   width: min(420px, 100%);
   padding: 28px;
@@ -260,6 +252,8 @@
 }
 
 .game-error-dismiss {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   color: var(--danger);
@@ -273,16 +267,4 @@
 .game-error-dismiss:hover {
   color: var(--fg-0);
   background: var(--bg-2);
-}
-
-/* Multiplayer session card — floats over the running game (Play Online, plan step 1.5).
-   `pointer-events: none` on the wrapper keeps the game clickable around the card. */
-.online-session-overlay {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 6;
-  pointer-events: none;
-  max-height: calc(100% - 24px);
-  overflow: auto;
 }

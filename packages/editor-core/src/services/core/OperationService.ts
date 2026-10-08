@@ -21,7 +21,6 @@ import {
 import { appState, type AppState, type AppStateSnapshot } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import { LoggingService } from '@/services/core/LoggingService';
-import { CollaborationService } from '@/services/collab/CollaborationService';
 
 export type OperationEvent =
   | {
@@ -289,12 +288,6 @@ export class OperationService {
   async undo(): Promise<boolean> {
     this.ensureWritable('history.undo');
     this.repointHistory();
-    // Route through Y.UndoManager when collaboration is active
-    const collabUndone = this.tryCollabUndo();
-    if (collabUndone !== null) {
-      return collabUndone;
-    }
-
     if (!this.history.canUndo) {
       return false;
     }
@@ -327,12 +320,6 @@ export class OperationService {
   async redo(): Promise<boolean> {
     this.ensureWritable('history.redo');
     this.repointHistory();
-    // Route through Y.UndoManager when collaboration is active
-    const collabRedone = this.tryCollabRedo();
-    if (collabRedone !== null) {
-      return collabRedone;
-    }
-
     if (!this.history.canRedo) {
       return false;
     }
@@ -386,54 +373,6 @@ export class OperationService {
     for (const manager of this.histories.values()) {
       manager.setCapacity(capacity);
     }
-  }
-
-  /**
-   * Try to undo via Y.UndoManager if collaboration is active.
-   * Returns null if collab is not active (fallback to local history).
-   */
-  private tryCollabUndo(): boolean | null {
-    try {
-      const container = ServiceContainer.getInstance();
-      const token = container.getOrCreateToken(CollaborationService);
-      const collabService = container.getService<CollaborationService>(token);
-      if (collabService?.isConnected()) {
-        const um = collabService.getUndoManager();
-        if (um && um.undoStack.length > 0) {
-          um.undo();
-          this.state.scenes.nodeDataChangeSignal++;
-          return true;
-        }
-        return false;
-      }
-    } catch {
-      // CollaborationService not registered, fall through to local history
-    }
-    return null;
-  }
-
-  /**
-   * Try to redo via Y.UndoManager if collaboration is active.
-   * Returns null if collab is not active (fallback to local history).
-   */
-  private tryCollabRedo(): boolean | null {
-    try {
-      const container = ServiceContainer.getInstance();
-      const token = container.getOrCreateToken(CollaborationService);
-      const collabService = container.getService<CollaborationService>(token);
-      if (collabService?.isConnected()) {
-        const um = collabService.getUndoManager();
-        if (um && um.redoStack.length > 0) {
-          um.redo();
-          this.state.scenes.nodeDataChangeSignal++;
-          return true;
-        }
-        return false;
-      }
-    } catch {
-      // CollaborationService not registered, fall through to local history
-    }
-    return null;
   }
 
   private async executeOperation<TInvokeResult extends OperationInvokeResult>(
@@ -618,11 +557,12 @@ export class OperationService {
     }
   }
 
+  /** A tab that is not the writer (another tab took over) only follows the disk. */
   private ensureWritable(actionId: string): void {
-    if (!appState.collaboration.isReadOnly || READ_ONLY_ALLOWED_OPERATIONS.has(actionId)) {
+    if (appState.project.host.writer !== 'other' || READ_ONLY_ALLOWED_OPERATIONS.has(actionId)) {
       return;
     }
 
-    throw new Error(`Read-only collaboration mode blocks "${actionId}".`);
+    throw new Error(`This tab is read-only (another tab is writing); "${actionId}" was refused.`);
   }
 }

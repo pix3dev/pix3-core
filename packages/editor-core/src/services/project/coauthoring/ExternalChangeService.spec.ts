@@ -15,14 +15,14 @@ function createService() {
     storage,
     diskState,
     logger,
-    journal: { reset: vi.fn() },
+    hostService: { projectPath: (path: string) => path },
   });
   let now = 1_000_000;
   // Timers never fire on their own: the spec drives every step with `tick()`.
   service.configureForTests({ now: () => now, stabilityIntervalMs: 1e9 });
   const batches: string[][] = [];
   let failNext: string[] = [];
-  service.onExternalBatch(paths => {
+  service.onExternalBatch((paths: readonly string[]) => {
     batches.push([...paths]);
     const failed = failNext;
     failNext = [];
@@ -111,14 +111,14 @@ describe('ExternalChangeService — stabilisation window', () => {
     expect(h.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('File not readable: scenes/a.pix3scene')
     );
-    expect(appState.project.coauthoring.unreadablePaths).toEqual(['scenes/a.pix3scene']);
+    expect(h.service.getUnreadablePaths()).toEqual(['scenes/a.pix3scene']);
     expect(h.diskState.isPendingExternal('scenes/a.pix3scene')).toBe(true);
 
     h.storage.files.set('scenes/a.pix3scene', SCENE('fixed'));
     await h.service.tick();
     await h.service.tick();
     expect(h.batches).toEqual([['scenes/a.pix3scene']]);
-    expect(appState.project.coauthoring.unreadablePaths).toEqual([]);
+    expect(h.service.getUnreadablePaths()).toEqual([]);
   });
 
   it('a broken write restored to the loaded bytes clears pending + unreadable (no reload)', async () => {
@@ -137,7 +137,7 @@ describe('ExternalChangeService — stabilisation window', () => {
     await h.service.tick();
     h.advance(UNREADABLE_NOTICE_MS);
     await h.service.tick();
-    expect(appState.project.coauthoring.unreadablePaths).toEqual([path]);
+    expect(h.service.getUnreadablePaths()).toEqual([path]);
     expect(h.diskState.isPendingExternal(path)).toBe(true);
 
     // (3) It restores exactly the previous bytes — and nothing reports it (no new push; the
@@ -147,8 +147,8 @@ describe('ExternalChangeService — stabilisation window', () => {
     await h.service.tick();
     await h.service.tick();
     expect(h.diskState.isPendingExternal(path)).toBe(false);
-    expect(appState.project.coauthoring.unreadablePaths).toEqual([]);
-    expect(appState.project.coauthoring.pendingExternalPaths).toEqual([]);
+    expect(h.service.getUnreadablePaths()).toEqual([]);
+    expect(h.diskState.getPendingExternalPaths()).toEqual([]);
     expect(diskChanges).toHaveBeenCalled(); // AutosaveService's cue to run a held save
     expect(h.batches).toEqual([]); // the graph already is H: not reloaded
     expect(h.service.isPending(path)).toBe(false);
@@ -167,13 +167,13 @@ describe('ExternalChangeService — stabilisation window', () => {
     await vi.waitFor(() => expect(h.diskState.isPendingExternal(path)).toBe(true));
     await new Promise(resolve => setTimeout(resolve, 30));
     h.advance(UNREADABLE_NOTICE_MS);
-    await vi.waitFor(() => expect(appState.project.coauthoring.unreadablePaths).toEqual([path]));
+    await vi.waitFor(() => expect(h.service.getUnreadablePaths()).toEqual([path]));
 
     h.storage.files.set(path, good);
     await vi.waitFor(() => expect(h.diskState.isPendingExternal(path)).toBe(false), {
       timeout: 3_000,
     });
-    expect(appState.project.coauthoring.unreadablePaths).toEqual([]);
+    expect(h.service.getUnreadablePaths()).toEqual([]);
     expect(h.batches).toEqual([]);
     h.service.dispose();
   });
@@ -202,11 +202,11 @@ describe('ExternalChangeService — stabilisation window', () => {
     await h.service.tick();
     await h.service.tick();
     expect(h.batches).toEqual([]);
-    expect(appState.project.coauthoring.stale).toBe(true);
+    expect(h.service.isStale()).toBe(true);
 
     appState.ui.isPlaying = false;
     await vi.waitFor(() => expect(h.batches).toEqual([['scenes/a.pix3scene']]));
-    expect(appState.project.coauthoring.stale).toBe(false);
+    expect(h.service.isStale()).toBe(false);
     h.service.dispose();
   });
 

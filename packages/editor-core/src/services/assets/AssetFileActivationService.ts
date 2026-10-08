@@ -5,7 +5,9 @@ import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
 import { SceneManager } from '@pix3/runtime';
 import type { SceneGraph } from '@pix3/runtime';
 import { EditorTabService } from '@/services/editor/EditorTabService';
-import { isCodeDocumentExtension } from '@/services/scripting/CodeDocumentService';
+import { IdeLauncherService } from '@/services/editor/IdeLauncherService';
+import { LightboxService } from '@/services/editor/LightboxService';
+import { HostService } from '@/host/HostService';
 
 export interface AssetActivation {
   name: string;
@@ -20,8 +22,7 @@ export interface AssetActivation {
  * It dispatches appropriate commands based on file type (e.g., LoadSceneCommand for .pix3scene files).
  */
 export class AssetFileActivationService {
-  // Raster image formats the Sprite Editor can open/edit. (Previously listed 'webm'/'aif' — a
-  // video and an audio extension — which were bugs; the real intent is the web image set.)
+  /** Image formats a double-click previews full-screen. */
   static readonly SUPPORTED_IMAGE_EXTENSIONS = new Set([
     'png',
     'jpg',
@@ -34,6 +35,29 @@ export class AssetFileActivationService {
     'tiff',
     'avif',
   ]);
+  /**
+   * Text files that open in the developer's IDE (2.x has no in-browser code editor). `pix3anim` is
+   * here too: its 1.x editor was the dropped Sprite Editor, and the file is plain YAML.
+   */
+  static readonly IDE_EXTENSIONS = new Set([
+    'ts',
+    'tsx',
+    'js',
+    'jsx',
+    'mjs',
+    'cjs',
+    'json',
+    'md',
+    'txt',
+    'yaml',
+    'yml',
+    'html',
+    'css',
+    'glsl',
+    'frag',
+    'vert',
+    'pix3anim',
+  ]);
   private static readonly UI_LAYER_NAME = 'UI Layer';
 
   @inject(CommandDispatcher)
@@ -44,6 +68,15 @@ export class AssetFileActivationService {
 
   @inject(EditorTabService)
   private readonly editorTabService!: EditorTabService;
+
+  @inject(IdeLauncherService)
+  private readonly ideLauncher!: IdeLauncherService;
+
+  @inject(LightboxService)
+  private readonly lightbox!: LightboxService;
+
+  @inject(HostService)
+  private readonly hostService!: HostService;
 
   /**
    * Handle activation of an asset file from the project tree.
@@ -63,36 +96,35 @@ export class AssetFileActivationService {
       return;
     }
 
-    if (extension === 'pix3anim') {
-      await this.editorTabService.focusOrOpenAnimation(resourcePath);
-      return;
-    }
-
     if (extension === 'glb' || extension === 'gltf') {
       const command = new AddModelCommand({ modelPath: resourcePath, modelName: name });
       await this.commandDispatcher.execute(command);
       return;
     }
 
-    // Text-editable files (scripts, JSON, markdown, config, plain text, …) open
-    // in the built-in Monaco editor. CodeDocumentService owns the supported set.
-    if (isCodeDocumentExtension(extension)) {
-      await this.editorTabService.focusOrOpenCode(resourcePath);
+    // Scripts, JSON, markdown, config, … open in the IDE through the dev server.
+    if (AssetFileActivationService.IDE_EXTENSIONS.has(extension)) {
+      if (!(await this.ideLauncher.open(resourcePath))) {
+        console.info('[AssetFileActivationService] No IDE hook on this host for', resourcePath);
+      }
       return;
     }
 
-    // TODO: other asset types (images -> Sprite2D, audio, prefabs, etc.)
     console.info('[AssetFileActivationService] No handler for asset type', payload);
   }
 
   /**
-   * Double-clicking an image asset opens it in the Sprite Editor (edit/generate), matching how
-   * scenes, animations and code files open on activation. Creating a Sprite2D node from an image is
-   * an explicit action instead — drag the asset into the viewport/tree, or the asset context menu's
-   * "Add to Scene as Sprite2D" (see {@link createSpriteFromImage}).
+   * Double-clicking an image asset previews it full-screen (the 1.x Sprite Editor is not part of
+   * 2.x). Creating a Sprite2D node from an image is an explicit action instead — drag the asset into
+   * the viewport/tree, or the asset context menu's "Add to Scene as Sprite2D" (see
+   * {@link createSpriteFromImage}).
    */
   private async handleImageAsset(payload: AssetActivation): Promise<void> {
-    await this.editorTabService.focusOrOpenSpriteEditor(payload.resourcePath ?? undefined);
+    if (!payload.resourcePath || !HostService.isInstalled()) {
+      return;
+    }
+    const url = this.hostService.host.files.url(this.hostService.wirePath(payload.resourcePath));
+    this.lightbox.open([{ kind: 'image', title: payload.name, url, path: payload.path }]);
   }
 
   /**

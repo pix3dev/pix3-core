@@ -2,9 +2,11 @@ import { inject, injectable } from '@/fw/di';
 import { SecretStorageService } from '@/services/core/SecretStorageService';
 import { ImageGenProviderRegistry } from '@/services/image-gen/ImageGenProviderRegistry';
 import type { AspectRatio, ImageGenProvider } from '@/services/image-gen/ImageGenTypes';
-import { DEFAULT_SVG_SPRITE_SIZE } from '@/services/image-gen/SvgLlmImageProvider';
 import { clampSpriteSize } from '@/services/image-gen/svg-render';
-import type { BgRemovalEngine, BgRemovalQuality } from '@/services/bg-removal/types';
+import { appState } from '@/state';
+
+/** Default exact output size (px) for providers that honour one. */
+const DEFAULT_EXACT_SIZE = 128;
 
 export interface AiImagePreferences {
   selectedProviderId: string;
@@ -28,11 +30,6 @@ export interface AiImagePreferences {
    * the full 1K/2K generation. `0` = keep the original size. Downscale-only (never upscales).
    */
   defaultSaveMaxSize: number;
-  /** Local background-removal engine + model tier (used by u2net and birefnet). */
-  bgRemovalEngine: BgRemovalEngine;
-  bgRemovalQuality: BgRemovalQuality;
-  /** Fill enclosed transparent holes in the cutout (recovers wrongly-removed object interiors). */
-  bgFillHoles: boolean;
 }
 
 const STORAGE_KEY = 'pix3.aiImageSettings:v1';
@@ -46,7 +43,8 @@ const isAspectRatio = (value: unknown): value is AspectRatio =>
  * Non-secret preferences for AI image generation (selected provider/model, default size/aspect).
  * Persisted in localStorage — this is app configuration, not scene state, so it deliberately does
  * NOT flow through appState / the undo history. API keys are NOT stored here; they live encrypted
- * in {@link SecretStorageService} and are only referenced by provider secret id.
+ * in {@link SecretStorageService}, keyed by project id + provider secret id (per project until the
+ * dev server's key proxy exists — plan §8.7).
  */
 @injectable()
 export class AiImageSettingsService {
@@ -106,7 +104,7 @@ export class AiImageSettingsService {
     if (!provider) {
       throw new Error(`Unknown image provider: ${providerId}`);
     }
-    await this.secrets.setSecret(provider.apiKeySecretId, apiKey);
+    await this.secrets.setSecret(this.secretIdFor(provider), apiKey);
     this.notify();
   }
 
@@ -115,7 +113,7 @@ export class AiImageSettingsService {
     if (!provider) {
       return;
     }
-    await this.secrets.deleteSecret(provider.apiKeySecretId);
+    await this.secrets.deleteSecret(this.secretIdFor(provider));
     this.notify();
   }
 
@@ -124,7 +122,7 @@ export class AiImageSettingsService {
     if (!provider) {
       return false;
     }
-    return this.secrets.hasSecret(provider.apiKeySecretId);
+    return this.secrets.hasSecret(this.secretIdFor(provider));
   }
 
   async getApiKey(providerId: string): Promise<string | null> {
@@ -132,7 +130,13 @@ export class AiImageSettingsService {
     if (!provider) {
       return null;
     }
-    return this.secrets.getSecret(provider.apiKeySecretId);
+    return this.secrets.getSecret(this.secretIdFor(provider));
+  }
+
+  /** The provider's key, scoped to the open project (`project:<id>:<secret id>`). */
+  private secretIdFor(provider: ImageGenProvider): string {
+    const projectId = appState.project.id;
+    return projectId ? `project:${projectId}:${provider.apiKeySecretId}` : provider.apiKeySecretId;
   }
 
   dispose(): void {
@@ -156,14 +160,11 @@ export class AiImageSettingsService {
       modelByProvider: {},
       defaultAspectRatio: 'Auto',
       defaultImageSize: '1K',
-      defaultExactWidth: DEFAULT_SVG_SPRITE_SIZE,
-      defaultExactHeight: DEFAULT_SVG_SPRITE_SIZE,
+      defaultExactWidth: DEFAULT_EXACT_SIZE,
+      defaultExactHeight: DEFAULT_EXACT_SIZE,
       defaultQuality: '',
       transparentBackground: false,
       defaultSaveMaxSize: 0,
-      bgRemovalEngine: 'u2net',
-      bgRemovalQuality: 'balanced',
-      bgFillHoles: true,
     };
   }
 
@@ -217,18 +218,6 @@ export class AiImageSettingsService {
           parsed.defaultSaveMaxSize >= 0
             ? Math.round(parsed.defaultSaveMaxSize)
             : defaults.defaultSaveMaxSize,
-        // A persisted 'imgly' (the removed AGPL engine) is not in this list, so it falls through to
-        // the default — which is the intended migration for anyone who had it selected.
-        bgRemovalEngine:
-          parsed.bgRemovalEngine === 'u2net' || parsed.bgRemovalEngine === 'birefnet'
-            ? parsed.bgRemovalEngine
-            : defaults.bgRemovalEngine,
-        bgRemovalQuality:
-          parsed.bgRemovalQuality === 'balanced' || parsed.bgRemovalQuality === 'max'
-            ? parsed.bgRemovalQuality
-            : defaults.bgRemovalQuality,
-        bgFillHoles:
-          typeof parsed.bgFillHoles === 'boolean' ? parsed.bgFillHoles : defaults.bgFillHoles,
       };
     } catch {
       return defaults;

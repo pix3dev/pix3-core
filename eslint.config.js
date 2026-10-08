@@ -68,8 +68,6 @@ export default [
       'packages/runtime/src/main.ts',
       'packages/runtime/src/register-project-scripts.ts',
       'packages/runtime/src/generated/**',
-      // Not compiling until the port (plan §G.2); linted from then on.
-      'packages/editor-core/**',
     ],
   },
   js.configs.recommended,
@@ -78,6 +76,7 @@ export default [
     // `@pix3/cli` is Node, with its own tsconfig (`.ts` import extensions).
     ['packages/cli/src/**/*.ts', './packages/cli/tsconfig.json'],
     ['packages/vite-plugin/src/**/*.ts', './packages/vite-plugin/tsconfig.json'],
+    ['packages/editor-core/src/**/*.ts', './packages/editor-core/tsconfig.json'],
   ].map(([files, project]) => ({
     files: [files],
     languageOptions: {

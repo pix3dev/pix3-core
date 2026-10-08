@@ -311,6 +311,28 @@ describe('isGameOriginatedStack', () => {
     ).toBe(true);
   });
 
+  it('accepts a frame from a project script served by Vite', () => {
+    expect(
+      isGameOriginatedStack(
+        'Error\n    at Spin.onUpdate (http://localhost:5173/scripts/Spin.ts?t=1700000000:4:9)'
+      )
+    ).toBe(true);
+    expect(
+      isGameOriginatedStack(
+        'Error\n    at Hud.onStart (http://localhost:5173/game/src/scripts/ui/Hud.ts:1:1)'
+      )
+    ).toBe(true);
+  });
+
+  it('rejects editor and dependency frames even when their path names scripts', () => {
+    expect(
+      isGameOriginatedStack(
+        'Error\n    at x (http://localhost:5173/node_modules/.vite/deps/scripts/chunk.js:1:1)\n' +
+          '    at y (http://localhost:5173/__pix3/scripts/z.js:1:1)'
+      )
+    ).toBe(false);
+  });
+
   it('rejects a frame from the editor bundle', () => {
     expect(
       isGameOriginatedStack(

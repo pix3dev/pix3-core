@@ -15,22 +15,14 @@ export const PANEL_COMPONENT_TYPES = {
   sceneTree: 'scene-tree',
   viewport: 'viewport',
   inspector: 'inspector',
-  profiler: 'profiler',
   assets: 'assets',
-  animation: 'animation',
   animationTimeline: 'animation-timeline',
   logs: 'logs',
-  background: 'background',
   game: 'game',
-  code: 'code',
   runtime: 'runtime',
-  spriteEditor: 'sprite-editor',
-  modelLab: 'model-lab',
-  uiKitForge: 'uikit-forge',
-  agentChat: 'agent-chat',
-  library: 'library',
   localization: 'localization',
   generate: 'generate',
+  history: 'history',
 } as const;
 
 export type PanelComponentType = (typeof PANEL_COMPONENT_TYPES)[keyof typeof PANEL_COMPONENT_TYPES];
@@ -39,50 +31,42 @@ const PANEL_TAG_NAMES = {
   [PANEL_COMPONENT_TYPES.sceneTree]: 'pix3-scene-tree-panel',
   [PANEL_COMPONENT_TYPES.viewport]: 'pix3-editor-tab',
   [PANEL_COMPONENT_TYPES.inspector]: 'pix3-inspector-panel',
-  [PANEL_COMPONENT_TYPES.profiler]: 'pix3-profiler-panel',
   [PANEL_COMPONENT_TYPES.assets]: 'pix3-assets-panel',
-  // Both `animation` and `sprite-editor` tabs render the unified Sprite Editor shell.
-  // The *tab types* stay distinct on purpose (`animation` persists in stored sessions,
-  // `sprite-editor` does not, and tab ids are `${type}:${resourceId}`) — only the
-  // component they mount is shared.
-  [PANEL_COMPONENT_TYPES.animation]: 'pix3-sprite-editor-panel',
   [PANEL_COMPONENT_TYPES.animationTimeline]: 'pix3-animation-timeline-panel',
   [PANEL_COMPONENT_TYPES.logs]: 'pix3-logs-panel',
-  [PANEL_COMPONENT_TYPES.background]: 'pix3-project-home',
   [PANEL_COMPONENT_TYPES.game]: 'pix3-game-tab',
-  [PANEL_COMPONENT_TYPES.code]: 'pix3-code-tab',
   [PANEL_COMPONENT_TYPES.runtime]: 'pix3-runtime-panel',
-  [PANEL_COMPONENT_TYPES.spriteEditor]: 'pix3-sprite-editor-panel',
-  [PANEL_COMPONENT_TYPES.modelLab]: 'pix3-model-lab-panel',
-  [PANEL_COMPONENT_TYPES.uiKitForge]: 'pix3-uikit-forge-panel',
-  [PANEL_COMPONENT_TYPES.agentChat]: 'pix3-agent-chat-panel',
-  [PANEL_COMPONENT_TYPES.library]: 'pix3-library-panel',
   [PANEL_COMPONENT_TYPES.localization]: 'pix3-localization-panel',
   [PANEL_COMPONENT_TYPES.generate]: 'pix3-generate-panel',
+  [PANEL_COMPONENT_TYPES.history]: 'pix3-history-panel',
 } as const;
 
 export const PANEL_DISPLAY_TITLES: Record<PanelComponentType, string> = {
   [PANEL_COMPONENT_TYPES.sceneTree]: 'Scene Tree',
   [PANEL_COMPONENT_TYPES.viewport]: 'Viewport',
   [PANEL_COMPONENT_TYPES.inspector]: 'Inspector',
-  [PANEL_COMPONENT_TYPES.profiler]: 'Profiler',
   [PANEL_COMPONENT_TYPES.assets]: 'Assets',
-  // Both tab types mount the same shell, so they read the same. Editor tabs take
-  // their title from the tab itself; this is only the fallback.
-  [PANEL_COMPONENT_TYPES.animation]: 'Sprite Editor',
   [PANEL_COMPONENT_TYPES.animationTimeline]: 'Animation',
   [PANEL_COMPONENT_TYPES.logs]: 'Logs',
-  [PANEL_COMPONENT_TYPES.background]: 'Home',
   [PANEL_COMPONENT_TYPES.game]: 'Game',
-  [PANEL_COMPONENT_TYPES.code]: 'Code',
   [PANEL_COMPONENT_TYPES.runtime]: 'Runtime',
-  [PANEL_COMPONENT_TYPES.spriteEditor]: 'Sprite Editor',
-  [PANEL_COMPONENT_TYPES.modelLab]: 'Model Lab',
-  [PANEL_COMPONENT_TYPES.uiKitForge]: 'UI Kit',
-  [PANEL_COMPONENT_TYPES.agentChat]: 'Agent',
-  [PANEL_COMPONENT_TYPES.library]: 'Library',
   [PANEL_COMPONENT_TYPES.localization]: 'Localization',
   [PANEL_COMPONENT_TYPES.generate]: 'Asset Generator',
+  [PANEL_COMPONENT_TYPES.history]: 'History',
+};
+
+/**
+ * Lazy panel modules: a panel's element is defined the first time Golden Layout builds it. The
+ * literal `import()` calls are what the dist check requires (plan D12).
+ */
+const PANEL_MODULE_LOADERS: Partial<Record<PanelComponentType, () => Promise<unknown>>> = {
+  [PANEL_COMPONENT_TYPES.runtime]: () => import('@/ui/runtime/runtime-panel'),
+  [PANEL_COMPONENT_TYPES.animationTimeline]: () =>
+    import('@/ui/animation-timeline/animation-timeline-panel'),
+  [PANEL_COMPONENT_TYPES.localization]: () => import('@/ui/localization-view/localization-panel'),
+  [PANEL_COMPONENT_TYPES.generate]: () => import('@/ui/generate/generate-panel'),
+  [PANEL_COMPONENT_TYPES.assets]: () => import('@/ui/assets/assets-panel'),
+  [PANEL_COMPONENT_TYPES.history]: () => import('@/ui/history/history-panel'),
 };
 
 /**
@@ -91,14 +75,8 @@ export const PANEL_DISPLAY_TITLES: Record<PanelComponentType, string> = {
  * one falls back to a generic file icon.
  */
 const EDITOR_TAB_ICON_BY_COMPONENT: Partial<Record<PanelComponentType, string>> = {
-  [PANEL_COMPONENT_TYPES.background]: 'home',
   [PANEL_COMPONENT_TYPES.viewport]: 'film',
-  [PANEL_COMPONENT_TYPES.code]: 'code',
   [PANEL_COMPONENT_TYPES.game]: 'play',
-  [PANEL_COMPONENT_TYPES.spriteEditor]: 'image',
-  [PANEL_COMPONENT_TYPES.modelLab]: 'box',
-  [PANEL_COMPONENT_TYPES.uiKitForge]: 'layers',
-  [PANEL_COMPONENT_TYPES.animation]: 'activity',
 };
 
 /**
@@ -108,12 +86,7 @@ const EDITOR_TAB_ICON_BY_COMPONENT: Partial<Record<PanelComponentType, string>> 
  */
 const EDITOR_DOCUMENT_COMPONENT_TYPES: readonly PanelComponentType[] = [
   PANEL_COMPONENT_TYPES.viewport,
-  PANEL_COMPONENT_TYPES.animation,
   PANEL_COMPONENT_TYPES.game,
-  PANEL_COMPONENT_TYPES.code,
-  PANEL_COMPONENT_TYPES.spriteEditor,
-  PANEL_COMPONENT_TYPES.modelLab,
-  PANEL_COMPONENT_TYPES.uiKitForge,
 ];
 
 /** True for a document component type — see {@link EDITOR_DOCUMENT_COMPONENT_TYPES}. */
@@ -126,9 +99,8 @@ export const isEditorDocumentPanel = (componentType: string | undefined): boolea
  * The value is a list of the panel's default neighbours: `showPanel()` docks the panel into the
  * stack that already hosts the first neighbour it finds, so a re-opened Logs tab lands back beside
  * Assets instead of in a column of its own. A panel with no entry (or whose neighbours are all
- * closed too) falls back to its own column just before the Inspector — the historical behaviour of
- * the `reveal*Panel()` family, which is why Agent/Library/Localization/Asset Generator are
- * deliberately absent from this map.
+ * closed too) falls back to its own column just before the Inspector — which is why Localization
+ * and Asset Generator are deliberately absent from this map.
  *
  * This is data rather than one method per panel: every `Window` row goes through the same code
  * path, and adding a panel type means adding a line here.
@@ -136,14 +108,8 @@ export const isEditorDocumentPanel = (componentType: string | undefined): boolea
 const PANEL_HOME_NEIGHBOURS: Partial<Record<PanelComponentType, readonly PanelComponentType[]>> = {
   [PANEL_COMPONENT_TYPES.sceneTree]: [PANEL_COMPONENT_TYPES.runtime],
   [PANEL_COMPONENT_TYPES.runtime]: [PANEL_COMPONENT_TYPES.sceneTree],
-  [PANEL_COMPONENT_TYPES.inspector]: [
-    PANEL_COMPONENT_TYPES.profiler,
-    PANEL_COMPONENT_TYPES.agentChat,
-  ],
-  [PANEL_COMPONENT_TYPES.profiler]: [
-    PANEL_COMPONENT_TYPES.inspector,
-    PANEL_COMPONENT_TYPES.agentChat,
-  ],
+  [PANEL_COMPONENT_TYPES.inspector]: [PANEL_COMPONENT_TYPES.history],
+  [PANEL_COMPONENT_TYPES.history]: [PANEL_COMPONENT_TYPES.inspector],
   [PANEL_COMPONENT_TYPES.assets]: [
     PANEL_COMPONENT_TYPES.animationTimeline,
     PANEL_COMPONENT_TYPES.logs,
@@ -162,7 +128,6 @@ const DEFAULT_PANEL_VISIBILITY: PanelVisibilityState = {
   sceneTree: true,
   viewport: true,
   inspector: true,
-  profiler: true,
   assets: true,
   animationTimeline: true,
   logs: true,
@@ -212,17 +177,12 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
         width: 55,
         content: [
           {
+            // The document stack (scene / game tabs). Empty until the shell opens the entry scene;
+            // not closable, so closing the last document keeps the drop target in place.
             type: 'stack',
             id: 'editor-stack',
-            content: [
-              {
-                type: 'component',
-                componentType: PANEL_COMPONENT_TYPES.background,
-                title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.background],
-                isClosable: false,
-                reorderEnabled: false,
-              } as ComponentItemConfig,
-            ],
+            isClosable: false,
+            content: [],
           },
           {
             type: 'stack',
@@ -253,7 +213,7 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
 
       {
         type: 'stack',
-        id: 'agent-stack',
+        id: 'inspector-stack',
         width: 25,
         content: [
           {
@@ -264,14 +224,8 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
           },
           {
             type: 'component',
-            componentType: PANEL_COMPONENT_TYPES.profiler,
-            title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.profiler],
-            isClosable: false,
-          },
-          {
-            type: 'component',
-            componentType: PANEL_COMPONENT_TYPES.agentChat,
-            title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.agentChat],
+            componentType: PANEL_COMPONENT_TYPES.history,
+            title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.history],
             isClosable: true,
           },
         ],
@@ -370,11 +324,7 @@ export class LayoutManagerService {
     await this.loadDefaultLayout();
   }
 
-  /**
-   * Re-measure the layout against its container. Needed after the host was `display: none`
-   * (the shell hides Studio rather than unmounting it while Flow is on screen): Golden Layout's
-   * ResizeObserver saw a 0×0 container and would otherwise keep those sizes on the way back.
-   */
+  /** Re-measure the layout against its container (e.g. after the host was resized while hidden). */
   refreshSize(): void {
     this.layout?.updateRootSize(true);
   }
@@ -477,19 +427,7 @@ export class LayoutManagerService {
       const itemConfig: ComponentItemConfig & { popoutEnabled?: boolean } = {
         type: 'component',
         componentType:
-          tab.type === 'game'
-            ? PANEL_COMPONENT_TYPES.game
-            : tab.type === 'animation'
-              ? PANEL_COMPONENT_TYPES.animation
-              : tab.type === 'code'
-                ? PANEL_COMPONENT_TYPES.code
-                : tab.type === 'sprite-editor'
-                  ? PANEL_COMPONENT_TYPES.spriteEditor
-                  : tab.type === 'model-lab'
-                    ? PANEL_COMPONENT_TYPES.modelLab
-                    : tab.type === 'uikit-forge'
-                      ? PANEL_COMPONENT_TYPES.uiKitForge
-                      : PANEL_COMPONENT_TYPES.viewport,
+          tab.type === 'game' ? PANEL_COMPONENT_TYPES.game : PANEL_COMPONENT_TYPES.viewport,
         title: tab.title,
         isClosable: true,
         // PREVENT DRAGGING to enforce Single Document Interface
@@ -555,9 +493,7 @@ export class LayoutManagerService {
 
   /**
    * Re-key an open editor tab in place: same Golden Layout component, same DOM
-   * element, new tab id / title. Used when the Sprite Editor is pointed at another
-   * image instead of spawning a second editor — a remove + re-add would tear the
-   * panel down and lose its working image, references and prompt.
+   * element, new tab id / title (a remove + re-add would tear the panel down).
    *
    * The tab id lives in three places GL and we both read: the container's
    * `componentState`, our two bookkeeping maps, and the element's `tab-id`
@@ -724,9 +660,8 @@ export class LayoutManagerService {
 
   /**
    * The `componentType` of the currently-active tab in the stack that hosts `componentType` — e.g.
-   * pass `profiler` to learn which of {Inspector, Profiler, Agent} is front-most in that shared
-   * stack. Returns null when the panel or its stack can't be found. Used to decide whether play/stop
-   * should be allowed to steal focus from a tab the user has deliberately fronted (e.g. the Agent).
+   * pass `history` to learn which of {Inspector, History} is front-most in that shared stack.
+   * Returns null when the panel or its stack can't be found.
    */
   getActivePanelInStackOf(componentType: PanelComponentType): string | null {
     if (!this.layout) {
@@ -745,29 +680,6 @@ export class LayoutManagerService {
   }
 
   /**
-   * Activate the pinned Project Home tab (the `background` slot, always first in
-   * the editor document stack) and ask it to refresh. Used by the
-   * `editor.open-project-home` command (Mod+1).
-   */
-  focusHomeTab(): void {
-    this.focusPanel(PANEL_COMPONENT_TYPES.background);
-    try {
-      window.dispatchEvent(new CustomEvent('pix3-project-home:activate'));
-    } catch {
-      // ignore in non-DOM environments
-    }
-  }
-
-  /**
-   * Reveal the Agent chat panel. It lives as a docked column to the right of the viewport in the
-   * default layout, so normally this just brings it to the front of its stack; if the user closed
-   * it, {@link showPanel} docks it again.
-   */
-  revealAgentPanel(): void {
-    this.showPanel(PANEL_COMPONENT_TYPES.agentChat);
-  }
-
-  /**
    * Reveal the Localization panel. It is not part of the default layout, so the first open docks
    * it as a new column just before the Inspector.
    */
@@ -776,19 +688,8 @@ export class LayoutManagerService {
   }
 
   /**
-   * Reveal the Asset Library panel. It is not part of the default layout, so the first open docks
-   * it as a new column just before the Inspector. Being a normal docked panel, the user can
-   * drag/snap it anywhere — e.g. beside the viewport so the editor and library sit side by side.
-   */
-  revealLibraryPanel(): void {
-    this.showPanel(PANEL_COMPONENT_TYPES.library);
-  }
-
-  /**
    * Reveal the Generate panel (§9.8). Not part of the default layout: the first open docks it as a
-   * new column just before the Inspector, and the Sprite Editor's `Generate…` toolbar action routes
-   * here so the prompt is always one click from the canvas even though the two now live in
-   * separate docks.
+   * new column just before the Inspector.
    */
   revealGeneratePanel(): void {
     this.showPanel(PANEL_COMPONENT_TYPES.generate);
@@ -805,7 +706,7 @@ export class LayoutManagerService {
    * 1. the stack that already hosts one of the panel's default neighbours (so Logs returns to the
    *    Assets stack rather than to a column of its own);
    * 2. its own column just before the last top-level child (the Inspector stack) — the historical
-   *    behaviour for Agent/Library/Localization/Asset Generator, which have no neighbours listed;
+   *    behaviour for Localization/Asset Generator, which have no neighbours listed;
    * 3. Golden Layout's default placement, if the tree could not be navigated at all.
    *
    * Note this is deliberately *not* a toggle: closing stays on the tab's × (see the spec — a
@@ -817,7 +718,7 @@ export class LayoutManagerService {
       return;
     }
 
-    // Documents (viewport/game/code/sprite-editor/…) are not dockable panels: they live in the
+    // Documents (viewport/game) are not dockable panels: they live in the
     // editor stack and are created through `EditorTabService`, which needs a tab id and a resource
     // this method has no way to invent. Focusing an existing one is all that is safe here.
     if (isEditorDocumentPanel(componentType)) {
@@ -1045,7 +946,7 @@ export class LayoutManagerService {
 
     this.ensureEditorStack();
 
-    // Decorate the initial Home tab (and any tabs restored into the default layout).
+    // Decorate any tabs restored into the default layout.
     this.scheduleEditorTabDecorations();
 
     // Track active editor tab focus changes.
@@ -1065,7 +966,7 @@ export class LayoutManagerService {
             | undefined;
 
           const componentType = itemInfo?.componentType;
-          if (!componentType || componentType === PANEL_COMPONENT_TYPES.background) return;
+          if (!componentType) return;
 
           this.state.ui.focusedPanelId = componentType;
 
@@ -1126,7 +1027,6 @@ export class LayoutManagerService {
         previousPanelVisibility.sceneTree === nextPanelVisibility.sceneTree &&
         previousPanelVisibility.viewport === nextPanelVisibility.viewport &&
         previousPanelVisibility.inspector === nextPanelVisibility.inspector &&
-        previousPanelVisibility.profiler === nextPanelVisibility.profiler &&
         previousPanelVisibility.assets === nextPanelVisibility.assets &&
         previousPanelVisibility.animationTimeline === nextPanelVisibility.animationTimeline &&
         previousPanelVisibility.logs === nextPanelVisibility.logs
@@ -1171,44 +1071,11 @@ export class LayoutManagerService {
   private registerComponents(layout: GoldenLayout): void {
     Object.entries(PANEL_TAG_NAMES).forEach(([componentType, tagName]) => {
       layout.registerComponentFactoryFunction(componentType, container => {
-        if (componentType === PANEL_COMPONENT_TYPES.code) {
-          void import('@/ui/code-editor/code-tab');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.runtime) {
-          void import('@/ui/runtime/runtime-panel');
-        }
-        if (
-          componentType === PANEL_COMPONENT_TYPES.spriteEditor ||
-          componentType === PANEL_COMPONENT_TYPES.animation
-        ) {
-          void import('@/ui/sprite-editor/sprite-editor-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.modelLab) {
-          void import('@/ui/model-lab/pix3-model-lab-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.uiKitForge) {
-          void import('@/ui/uikit-forge/pix3-uikit-forge-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.agentChat) {
-          void import('@/ui/agent-chat/pix3-agent-chat-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.animationTimeline) {
-          void import('@/ui/animation-timeline/animation-timeline-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.library) {
-          void import('@/ui/asset-library/library-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.localization) {
-          void import('@/ui/localization-view/localization-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.generate) {
-          void import('@/ui/generate/generate-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.assets) {
-          void import('@/ui/assets/assets-panel');
-        }
-        if (componentType === PANEL_COMPONENT_TYPES.background) {
-          void import('@/ui/home/pix3-project-home');
+        const loadPanelModule = PANEL_MODULE_LOADERS[componentType as PanelComponentType];
+        if (loadPanelModule) {
+          void loadPanelModule().catch(error =>
+            console.error(`[LayoutManager] Failed to load the ${componentType} panel`, error)
+          );
         }
 
         const tabId = (container.state as { tabId?: string } | undefined)?.tabId;
@@ -1276,7 +1143,7 @@ export class LayoutManagerService {
         this.editorStack = editorStackById;
         return;
       }
-      // Fallback: find stack that owns a viewport or background component (main editor area).
+      // Fallback: find the stack that owns a document component (main editor area).
       const mainStack = this.findMainEditorStack(root);
       this.editorStack = mainStack ?? this.findFirstStack(root);
     } catch (error) {
@@ -1310,11 +1177,7 @@ export class LayoutManagerService {
     if (!node) return null;
     const componentNode = node as ComponentItem & { componentType?: string };
 
-    if (
-      node.type === 'component' &&
-      (this.isEditorTabComponentType(componentNode.componentType) ||
-        componentNode.componentType === PANEL_COMPONENT_TYPES.background)
-    ) {
+    if (node.type === 'component' && this.isEditorTabComponentType(componentNode.componentType)) {
       return this.findClosestStack(
         node.parent ?? (node as { _parent?: ContentItem })._parent ?? null
       );

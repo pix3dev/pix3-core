@@ -20,17 +20,15 @@ import { ScriptCreatorService } from '@/services/scripting/ScriptCreatorService'
 import { ScriptRegistry } from '@pix3/runtime';
 import { IconService } from '@/services/editor/IconService';
 import { DialogService } from '@/services/editor/DialogService';
-import { FileSystemAPIService } from '@/services/project/FileSystemAPIService';
 import { AnimationEditorService } from '@/services/animation/AnimationEditorService';
 import {
   AssetsPreviewService,
   type AssetPreviewItem,
 } from '@/services/assets/AssetsPreviewService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import {
-  LibrarySelectionService,
-  type LibrarySelection,
-} from '@/services/library/LibrarySelectionService';
+import { IdeLauncherService } from '@/services/editor/IdeLauncherService';
+import { LightboxService } from '@/services/editor/LightboxService';
+import { HostService } from '@/host/HostService';
 import type {
   AnimationInspectorController,
   AnimationInspectorSnapshot,
@@ -40,8 +38,8 @@ import { SpineSkeleton2D } from '@pix3/runtime';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { Polygon2DEditController } from '@/services/viewport/Polygon2DEditController';
 import { boxPolygon, serializePolygonConfig } from '@pix3/runtime';
-import { readAlphaMask } from '@/services/image-gen/image-ops';
-import { traceCollisionPolygon } from '@/ui/sprite-editor/contour-trace';
+import { readAlphaMask } from '@/core/image-ops';
+import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
 import { AddComponentCommand } from '@/features/scripts/AddComponentCommand';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';
@@ -58,7 +56,6 @@ import {
 } from './inspector-property-renderers';
 
 import '../shared/pix3-panel';
-import '../asset-library/library-inspector';
 import './inspector-panel.ts.css';
 import './inspector-controls.ts.css';
 import './model-asset-preview';
@@ -103,9 +100,6 @@ export class InspectorPanel extends ComponentBase {
   @inject(DialogService)
   private readonly dialogService!: DialogService;
 
-  @inject(FileSystemAPIService)
-  readonly fileSystemAPI!: FileSystemAPIService;
-
   @inject(ProjectStorageService)
   readonly projectStorage!: ProjectStorageService;
 
@@ -127,15 +121,14 @@ export class InspectorPanel extends ComponentBase {
   @inject(Polygon2DEditController)
   private readonly polygonEditor!: Polygon2DEditController;
 
-  @inject(LibrarySelectionService)
-  private readonly librarySelectionService!: LibrarySelectionService;
+  @inject(IdeLauncherService)
+  readonly ideLauncher!: IdeLauncherService;
 
-  /**
-   * Selected library item. When set, the inspector shows library-item details instead of node
-   * properties (the Library panel writes it; selecting a scene node clears it — last-pick wins).
-   */
-  @state()
-  private librarySelection: LibrarySelection | null = null;
+  @inject(LightboxService)
+  private readonly lightbox!: LightboxService;
+
+  @inject(HostService)
+  private readonly hostService!: HostService;
 
   @state()
   selectedNodes: NodeBase[] = [];
@@ -204,7 +197,6 @@ export class InspectorPanel extends ComponentBase {
   private disposeSceneSubscription?: () => void;
   private disposeUiSubscription?: () => void;
   private disposeLocalizationSubscription?: () => void;
-  private disposeLibrarySelectionSubscription?: () => void;
   private disposeAssetPreviewSubscription?: () => void;
   private disposeAnimationEditorSubscription?: () => void;
   disposeAnimationControllerSubscription?: () => void;
@@ -238,10 +230,6 @@ export class InspectorPanel extends ComponentBase {
     this.isPlaying = appState.ui.isPlaying;
     this.collapsedSections = readInspectorCollapsedSections();
     this.disposeSelectionSubscription = subscribe(appState.selection, () => {
-      // Selecting a scene node takes the inspector back to node properties (last pick wins).
-      if (appState.selection.nodeIds.length > 0) {
-        this.librarySelectionService.clear();
-      }
       this.updateSelectedNodes();
     });
     this.disposeSceneSubscription = subscribe(appState.scenes, () => {
@@ -257,10 +245,6 @@ export class InspectorPanel extends ComponentBase {
     // locale switches or a locale table is edited.
     this.disposeLocalizationSubscription = subscribe(appState.localization, () => {
       this.requestUpdate();
-    });
-    this.librarySelection = this.librarySelectionService.getSelection();
-    this.disposeLibrarySelectionSubscription = this.librarySelectionService.subscribe(() => {
-      this.librarySelection = this.librarySelectionService.getSelection();
     });
     this.disposeAssetPreviewSubscription = this.assetsPreviewService.subscribe(snapshot => {
       this.selectedAssetItem = snapshot.selectedItem;
@@ -311,7 +295,7 @@ export class InspectorPanel extends ComponentBase {
       return;
     }
     // res:// resource URL → project-relative path (matches Asset Browser paths).
-    const path = this.fileSystemAPI.normalizeResourcePath(url);
+    const path = this.projectStorage.normalizeResourcePath(url);
     // syncFromAssetSelection updates the Assets Preview even when the Asset
     // Browser panel is not mounted; the reveal-path event drives the Asset
     // Browser tree (expand + select) when it is — the same channel the Assets
@@ -351,8 +335,6 @@ export class InspectorPanel extends ComponentBase {
     this.disposeUiSubscription = undefined;
     this.disposeLocalizationSubscription?.();
     this.disposeLocalizationSubscription = undefined;
-    this.disposeLibrarySelectionSubscription?.();
-    this.disposeLibrarySelectionSubscription = undefined;
     this.stopLiveTimer();
     // Reset live-mirror UI state so a reused Lit instance starts clean even if it
     // was detached mid-play and play stopped while it was disconnected.
@@ -397,7 +379,7 @@ export class InspectorPanel extends ComponentBase {
 
   private async checkIfScriptFileExists(fileName: string): Promise<boolean> {
     try {
-      const entries = await this.fileSystemAPI.listDirectory('scripts');
+      const entries = await this.projectStorage.listDirectory('scripts');
       return entries.some(e => e.kind === 'file' && e.name === fileName);
     } catch {
       // Directory might not exist yet
@@ -749,14 +731,16 @@ export class InspectorPanel extends ComponentBase {
     void this.applyPropertyChange(propertyName, animationUrl);
   }
 
-  /** Double-clicking a texture property opens that image in the Sprite Editor. */
+  /** Double-clicking a texture property previews that image full-screen. */
   onOpenTextureResource(resourcePath: string): void {
     const trimmedResourcePath = resourcePath.trim();
-    if (!trimmedResourcePath) {
+    if (!trimmedResourcePath || !HostService.isInstalled()) {
       return;
     }
 
-    void this.editorTabService.focusOrOpenSpriteEditor(trimmedResourcePath);
+    const url = this.hostService.host.files.url(this.hostService.wirePath(trimmedResourcePath));
+    const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
+    this.lightbox.open([{ kind: 'image', title, url, path: trimmedResourcePath }]);
   }
 
   onOpenAnimationResource(resourcePath: string): void {
@@ -765,7 +749,8 @@ export class InspectorPanel extends ComponentBase {
       return;
     }
 
-    void this.editorTabService.focusOrOpenAnimation(trimmedResourcePath);
+    // No in-browser animation editor in 2.x: the `.pix3anim` YAML opens in the IDE.
+    void this.ideLauncher.open(trimmedResourcePath);
   }
 
   canCreateAnimationResource(propertyName: string, value: string, readOnly: boolean): boolean {
@@ -1422,20 +1407,6 @@ export class InspectorPanel extends ComponentBase {
   }
 
   protected render() {
-    // A selected library item takes over the inspector with its details; selecting a scene node
-    // clears it (see the selection subscription) and restores the node property view.
-    if (this.librarySelection) {
-      return html`
-        <pix3-panel
-          panel-role="form"
-          panel-description="Details for the selected library item."
-          actions-label="Inspector actions"
-        >
-          <pix3-library-inspector .selection=${this.librarySelection}></pix3-library-inspector>
-        </pix3-panel>
-      `;
-    }
-
     const hasSelection = this.selectedNodes.length > 0;
     const hasAnimationSelection = this.activeAnimationState !== null;
     const hasAssetSelection = this.selectedAssetItem !== null && !hasAnimationSelection;

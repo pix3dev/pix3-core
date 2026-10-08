@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { FileDescriptor } from '@/services/project/FileSystemAPIService';
+import type { FileDescriptor } from '@/services/project/file-descriptor';
 import { groupedCategoryExpansionKey, groupedDirectoryExpansionKey } from '@/core/asset-categories';
 import {
   buildGroupedTree,

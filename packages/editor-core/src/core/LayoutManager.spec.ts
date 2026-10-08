@@ -21,7 +21,7 @@ class FakeGoldenLayout {
           },
           {
             type: 'component',
-            componentType: 'profiler',
+            componentType: 'history',
             parent: null,
           },
           {
@@ -83,7 +83,7 @@ describe('LayoutManagerService', () => {
     vi.restoreAllMocks();
   });
 
-  it('loads default layout with profiler in right sidebar stack', async () => {
+  it('loads the default layout with Inspector and History in the right sidebar stack', async () => {
     const { LayoutManagerService } = await import('./LayoutManager');
 
     const host = document.createElement('div');
@@ -95,14 +95,49 @@ describe('LayoutManagerService', () => {
       root: { content: Array<{ content?: Array<{ componentType?: string }> }> };
     };
 
-    // Inspector, Profiler and Agent chat share the right sidebar stack.
     const rightSidebar = config.root.content[2];
     const componentTypes = rightSidebar.content?.map(item => item.componentType);
 
-    expect(componentTypes).toEqual(['inspector', 'profiler', 'agent-chat']);
+    expect(componentTypes).toEqual(['inspector', 'history']);
   });
 
-  it('registers profiler panel component', async () => {
+  it('starts with an empty, non-closable document stack', async () => {
+    const { LayoutManagerService } = await import('./LayoutManager');
+
+    const service = new LayoutManagerService();
+    await service.initialize(document.createElement('div'));
+
+    const config = loadLayout.mock.calls[0]?.[0] as {
+      root: {
+        content: Array<{
+          content?: Array<{ id?: string; isClosable?: boolean; content?: unknown[] }>;
+        }>;
+      };
+    };
+    const editorStack = config.root.content[1].content?.[0];
+    expect(editorStack).toMatchObject({ id: 'editor-stack', isClosable: false, content: [] });
+  });
+
+  it('registers no panel type 2.x dropped', async () => {
+    const { LayoutManagerService } = await import('./LayoutManager');
+
+    const service = new LayoutManagerService();
+    await service.initialize(document.createElement('div'));
+
+    const registered = registerComponentFactoryFunction.mock.calls.map(call => call[0]);
+    for (const dropped of [
+      'profiler',
+      'code',
+      'background',
+      'sprite-editor',
+      'agent-chat',
+      'library',
+    ]) {
+      expect(registered).not.toContain(dropped);
+    }
+  });
+
+  it('registers the history panel component', async () => {
     const { LayoutManagerService } = await import('./LayoutManager');
 
     const host = document.createElement('div');
@@ -110,19 +145,19 @@ describe('LayoutManagerService', () => {
 
     await service.initialize(host);
 
-    expect(registerComponentFactoryFunction).toHaveBeenCalledWith('profiler', expect.any(Function));
+    expect(registerComponentFactoryFunction).toHaveBeenCalledWith('history', expect.any(Function));
   });
 
-  it('can focus the profiler panel', async () => {
+  it('can focus the history panel', async () => {
     const { LayoutManagerService } = await import('./LayoutManager');
 
     const host = document.createElement('div');
     const service = new LayoutManagerService();
 
     await service.initialize(host);
-    service.focusPanel('profiler');
+    service.focusPanel('history');
 
-    expect(lastActiveComponentItem).toMatchObject({ componentType: 'profiler' });
+    expect(lastActiveComponentItem).toMatchObject({ componentType: 'history' });
   });
 
   it('tracks active non-editor panel in ui state', async () => {
@@ -136,11 +171,11 @@ describe('LayoutManagerService', () => {
     await service.initialize(host);
     activeContentItemChangedHandler?.({
       type: 'component',
-      componentType: 'profiler',
+      componentType: 'history',
       parent: (new FakeGoldenLayout(host).rootItem as { contentItems: unknown[] }).contentItems[0],
     });
 
-    expect(appState.ui.focusedPanelId).toBe('profiler');
+    expect(appState.ui.focusedPanelId).toBe('history');
   });
   /**
    * `showPanel()` is the one path behind every `Window ▸ <panel>` row (and behind the
@@ -154,9 +189,9 @@ describe('LayoutManagerService', () => {
       const service = new LayoutManagerService();
       await service.initialize(document.createElement('div'));
 
-      service.showPanel('profiler');
+      service.showPanel('history');
 
-      expect(lastActiveComponentItem).toMatchObject({ componentType: 'profiler' });
+      expect(lastActiveComponentItem).toMatchObject({ componentType: 'history' });
       expect(stackAddItem).not.toHaveBeenCalled();
     });
 
@@ -179,7 +214,7 @@ describe('LayoutManagerService', () => {
       });
     });
 
-    it('never docks a document type (viewport, game, code, …) as a panel', async () => {
+    it('never docks a document type (viewport, game) as a panel', async () => {
       const { LayoutManagerService } = await import('./LayoutManager');
 
       const service = new LayoutManagerService();

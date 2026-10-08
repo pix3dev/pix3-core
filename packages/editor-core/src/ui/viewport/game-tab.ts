@@ -5,13 +5,10 @@ import { subscribe } from 'valtio/vanilla';
 import styles from './game-tab.ts.css?raw';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
-import { PreviewHostService } from '@/services/play/PreviewHostService';
 import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
-import { AgentChatService } from '@/services/agent/AgentChatService';
 import { LayoutManagerService } from '@/core/LayoutManager';
-import { OnlineSessionService } from '@/services/play/OnlineSessionService';
-import './pix3-remote-preview-card';
-import './pix3-online-session-card';
+import { IconService, IconSize } from '@/services/editor/IconService';
+import { buildPlayModeErrorPrompt, copyTextForAgent } from '@/ui/shared/copy-for-agent';
 
 interface AspectRatioPreset {
   readonly value: GameAspectRatio;
@@ -36,20 +33,14 @@ export class GameViewTab extends ComponentBase {
   @inject(GamePlaySessionService)
   private readonly gamePlaySessionService!: GamePlaySessionService;
 
-  @inject(PreviewHostService)
-  private readonly previewHostService!: PreviewHostService;
-
   @inject(LayoutManagerService)
   private readonly layoutManager!: LayoutManagerService;
 
   @inject(RuntimeErrorBridgeService)
   private readonly runtimeErrorBridge!: RuntimeErrorBridgeService;
 
-  @inject(AgentChatService)
-  private readonly agentChat!: AgentChatService;
-
-  @inject(OnlineSessionService)
-  private readonly onlineSessionService!: OnlineSessionService;
+  @inject(IconService)
+  private readonly icons!: IconService;
 
   @state()
   private aspectRatio: GameAspectRatio = appState.ui.gameAspectRatio;
@@ -73,12 +64,9 @@ export class GameViewTab extends ComponentBase {
   @state()
   private showDirectionAxes = appState.ui.showDirectionAxes;
 
+  /** True for a moment after "Copy for agent" put the error prompt on the clipboard. */
   @state()
-  private isRemotePreviewActive = false;
-
-  /** True from the moment "Play Online" starts creating a room until the session is left. */
-  @state()
-  private isOnlineSessionActive = false;
+  private errorCopied = false;
 
   @state()
   private playModeError: PlayModeError | null = appState.ui.playModeError;
@@ -87,34 +75,11 @@ export class GameViewTab extends ComponentBase {
   private viewportContainer?: HTMLElement;
   private resizeObserver?: ResizeObserver;
   private disposeSubscription?: () => void;
-  private disposePreviewSubscription?: () => void;
-  private disposeOnlineSubscription?: () => void;
-  private disposeWorkspaceSubscription?: () => void;
-  private lastWorkspaceMode = appState.ui.workspaceMode;
+  private copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   connectedCallback(): void {
     super.connectedCallback();
     this.startResizeObserver();
-    // Studio's panels now stay mounted while Flow is on screen, and Flow registers its own stage as
-    // the play host — releasing it (and detaching the runtime) when it unmounts. Nothing would put
-    // the running game back on this tab, so re-claim the host whenever Studio comes back.
-    this.lastWorkspaceMode = appState.ui.workspaceMode;
-    this.disposeWorkspaceSubscription = subscribe(appState.ui, () => {
-      const mode = appState.ui.workspaceMode;
-      if (mode === this.lastWorkspaceMode) {
-        return;
-      }
-      this.lastWorkspaceMode = mode;
-      if (mode === 'studio') {
-        this.claimPlayHost();
-      }
-    });
-    this.disposePreviewSubscription = this.previewHostService.subscribe(state => {
-      this.isRemotePreviewActive = state.status !== 'idle';
-    });
-    this.disposeOnlineSubscription = this.onlineSessionService.subscribe(state => {
-      this.isOnlineSessionActive = state.status !== 'idle';
-    });
   }
 
   disconnectedCallback(): void {
@@ -124,12 +89,10 @@ export class GameViewTab extends ComponentBase {
     }
     this.resizeObserver?.disconnect();
     this.disposeSubscription?.();
-    this.disposePreviewSubscription?.();
-    this.disposePreviewSubscription = undefined;
-    this.disposeOnlineSubscription?.();
-    this.disposeOnlineSubscription = undefined;
-    this.disposeWorkspaceSubscription?.();
-    this.disposeWorkspaceSubscription = undefined;
+    if (this.copiedResetTimer) {
+      clearTimeout(this.copiedResetTimer);
+      this.copiedResetTimer = null;
+    }
   }
 
   /** Make this tab the play host. Idempotent — re-registering the same mount is a no-op resync. */
@@ -274,13 +237,20 @@ export class GameViewTab extends ComponentBase {
     this.runtimeErrorBridge.clearPlayModeError();
   }
 
-  private handleFixWithAgent() {
+  /** Copy a prompt describing the error, for the coding agent in the developer's terminal. */
+  private async handleCopyForAgent() {
     const error = this.playModeError;
-    if (!error) {
+    if (!error || !(await copyTextForAgent(buildPlayModeErrorPrompt(error)))) {
       return;
     }
-    this.layoutManager.revealAgentPanel();
-    void this.agentChat.composeFix(buildPlayModeErrorPrompt(error));
+    this.errorCopied = true;
+    if (this.copiedResetTimer) {
+      clearTimeout(this.copiedResetTimer);
+    }
+    this.copiedResetTimer = setTimeout(() => {
+      this.errorCopied = false;
+      this.copiedResetTimer = null;
+    }, 1500);
   }
 
   private formatErrorLocation(error: PlayModeError): string {
@@ -341,10 +311,10 @@ export class GameViewTab extends ComponentBase {
           <button
             type="button"
             class="game-error-button game-error-button-primary"
-            @click=${this.handleFixWithAgent}
-            title="Open a new agent chat prefilled with this error"
+            @click=${() => void this.handleCopyForAgent()}
+            title="Copy a prompt describing this error, to paste into your coding agent"
           >
-            Fix with Agent
+            ${this.errorCopied ? 'Copied' : 'Copy for agent'}
           </button>
           <button
             type="button"
@@ -369,7 +339,7 @@ export class GameViewTab extends ComponentBase {
             aria-label="Dismiss error"
             title="Dismiss"
           >
-            ✕
+            ${this.icons.getIcon('x', IconSize.SMALL)}
           </button>
         </div>
       </div>
@@ -564,29 +534,16 @@ export class GameViewTab extends ComponentBase {
             <!-- Canvas will be attached here -->
           </div>
           ${this.playModeError ? this.renderErrorBanner(this.playModeError) : null}
-          <!-- Floats over the running game: an online session runs *while* the game does, so the
-               card cannot live in the idle placeholder the way remote preview's does. -->
-          ${this.isOnlineSessionActive
-            ? html`<div class="online-session-overlay">
-                <pix3-online-session-card></pix3-online-session-card>
-              </div>`
-            : null}
           ${this.isRunning
             ? null
-            : this.isRemotePreviewActive
-              ? html`
-                  <div class="game-placeholder game-placeholder-remote" part="game-placeholder">
-                    <pix3-remote-preview-card></pix3-remote-preview-card>
+            : html`
+                <div class="game-placeholder" part="game-placeholder">
+                  <div class="game-placeholder-card">
+                    <p class="game-placeholder-title">${this.getPlaceholderTitle()}</p>
+                    <p class="game-placeholder-copy">${this.getPlaceholderCopy()}</p>
                   </div>
-                `
-              : html`
-                  <div class="game-placeholder" part="game-placeholder">
-                    <div class="game-placeholder-card">
-                      <p class="game-placeholder-title">${this.getPlaceholderTitle()}</p>
-                      <p class="game-placeholder-copy">${this.getPlaceholderCopy()}</p>
-                    </div>
-                  </div>
-                `}
+                </div>
+              `}
         </div>
       </div>
     `;
@@ -596,29 +553,6 @@ export class GameViewTab extends ComponentBase {
     ${unsafeCSS(styles)}
   `;
 }
-
-/** Build the prefilled agent prompt for a play-mode runtime error. */
-const buildPlayModeErrorPrompt = (error: PlayModeError): string => {
-  const lines = ['A runtime error occurred while playing the scene. Investigate and fix it.', ''];
-  lines.push(`Error: ${error.message}`);
-  if (error.phase) {
-    lines.push(`Phase: ${error.phase}`);
-  }
-  if (error.nodeName) {
-    lines.push(
-      error.componentType
-        ? `Node: ${error.nodeName} (component ${error.componentType})`
-        : `Node: ${error.nodeName}`
-    );
-  } else if (error.componentType) {
-    lines.push(`Component: ${error.componentType}`);
-  }
-  lines.push(
-    '',
-    'Use read_errors and read_logs for the full stack, inspect the relevant node/script, fix the root cause, then verify with play_start.'
-  );
-  return lines.join('\n');
-};
 
 declare global {
   interface HTMLElementTagNameMap {

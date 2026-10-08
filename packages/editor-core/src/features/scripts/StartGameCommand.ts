@@ -8,7 +8,7 @@ import {
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { OperationService } from '@/services/core/OperationService';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
+import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlayModeOperation';
 import {
   ensureSceneActive,
   openGameSurface,
@@ -16,8 +16,7 @@ import {
 } from '@/features/scripts/play-workspace';
 
 /**
- * Play the scene the user is looking at — the prototyping default, and what both the Studio toolbar
- * and the Flow stage dispatch. It deliberately never moves the active scene when there already is
+ * Play the scene the user is looking at — the prototyping default, and what the toolbar dispatches. It deliberately never moves the active scene when there already is
  * one: `appState.scenes.activeSceneId` is simultaneously what runs, what the viewport shows and what
  * the agent edits, so a play command that reassigns it moves the user's work out from under them
  * (which is exactly what `game.start-main` does, and why it is no longer the prototyping path).
@@ -38,11 +37,15 @@ export class StartGameCommand extends CommandBase<void, void> {
   private readonly gamePlaySessionService: GamePlaySessionService;
 
   /**
-   * `editorTabService` is accepted for call-site compatibility but no longer used: which surface
-   * the game appears on is decided per workspace in `play-workspace` (Studio = a Golden-Layout
-   * tab, Flow = the permanently mounted stage).
+   * `editorTabService` is accepted for call-site compatibility but no longer used: the game
+   * surface (the Game tab) is opened through `play-workspace`. `options.owner` is who starts play:
+   * `'designer'` (default, the UI) or `'agent'` (the debug bridge).
    */
-  constructor(_editorTabService: EditorTabService, gamePlaySessionService: GamePlaySessionService) {
+  constructor(
+    _editorTabService: EditorTabService,
+    gamePlaySessionService: GamePlaySessionService,
+    private readonly options: { readonly owner?: PlayOwner } = {}
+  ) {
     super();
     this.gamePlaySessionService = gamePlaySessionService;
   }
@@ -71,15 +74,14 @@ export class StartGameCommand extends CommandBase<void, void> {
   }
 
   async execute(context: CommandContext): Promise<CommandExecutionResult<void>> {
-    // "The active scene" can be nothing at all: a fresh Flow project never had a startup scene
-    // opened for it (`PrototypeBootstrapService` skips `openStartupScene`), and a failed reload of an
-    // externally rewritten scene closes the only tab. Opening the gameplay scene here is what lets
-    // the Flow stage launch on gameplay instead of routing through `game.start-main` (the menu).
+    // "The active scene" can be nothing at all: the startup scene failed to open, or a failed
+    // reload of an externally rewritten scene closed the only tab. Opening the gameplay scene here
+    // launches gameplay instead of routing through `game.start-main` (the menu).
     if (!context.state.scenes.activeSceneId) {
       await ensureSceneActive(context.container, resolveGameplayScenePath(context.state));
     }
 
-    // Play mode without an active scene starts nothing while the Game tab, the Flow stage,
+    // Play mode without an active scene starts nothing while the Game tab,
     // `play_start` and every agent verification believe it did — the same guard `game.start-main`
     // carries, and until now the hole this command had.
     if (!context.state.scenes.activeSceneId) {
@@ -94,6 +96,7 @@ export class StartGameCommand extends CommandBase<void, void> {
       new SetPlayModeOperation({
         isPlaying: true,
         status: 'playing',
+        owner: this.options.owner,
       })
     );
 

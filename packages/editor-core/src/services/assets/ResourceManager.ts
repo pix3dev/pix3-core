@@ -1,21 +1,21 @@
 import { inject, injectable } from '@/fw/di';
 import { ResourceManager as RuntimeResourceManager } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { isWorkspaceTransportError } from '@/services/project/workspace/workspace-protocol';
 
 const RES_SCHEME = 'res';
-
-/**
- * A dev/preview server answers unknown paths with the SPA shell (HTTP 200 + index.html) instead of
- * a 404, so an HTML document coming back from the public-URL fallback means the resource simply is
- * not there. Detecting it keeps downstream parsers from reporting nonsense — a missing scene used
- * to surface as a YAML error about `<!doctype html>` rather than "file not found".
- */
-const SPA_FALLBACK_HTML = /^\s*<(?:!doctype\s+html|html[\s>])/i;
 
 const missingResource = (resource: string, cause: unknown): Error =>
   new Error(`Resource not found: ${resource}`, { cause });
 
+const isNotFound = (error: unknown): boolean =>
+  error instanceof Error && error.message.startsWith('File not found');
+
+/**
+ * `res://` reads go to the project through the dev server's file API (`ProjectStorageService`
+ * over `EditorHost.files`). There is deliberately no fallback to the page's own origin: the editor
+ * is served from `/__pix3/`, and nothing it loads may come from the project's `public/` by
+ * accident (plan D11). Other schemes (http(s), data:, blob:) are the runtime's.
+ */
 @injectable()
 class EditorResourceManager extends RuntimeResourceManager {
   @inject(ProjectStorageService)
@@ -26,78 +26,36 @@ class EditorResourceManager extends RuntimeResourceManager {
   }
 
   override async readText(resource: string): Promise<string> {
-    const scheme = this.getScheme(resource);
-
-    if (scheme === RES_SCHEME) {
-      const path = resource.startsWith('res://') ? resource.substring(6) : resource;
-      try {
-        return await this.storage.readTextFile(path);
-      } catch (error) {
-        // A workspace that is unreachable or rejects the token says nothing about the file: a
-        // same-named /public asset must not stand in for it (it would look like a real load).
-        if (isWorkspaceTransportError(error)) {
-          throw error;
-        }
-        // Fallback to network: some resources (templates, bundled sample assets) are served from
-        // /public rather than the project directory.
-        let text: string;
-        try {
-          text = await super.readText(this.buildPublicUrl(resource));
-        } catch {
-          throw missingResource(resource, error);
-        }
-        if (SPA_FALLBACK_HTML.test(text)) {
-          throw missingResource(resource, error);
-        }
-        return text;
-      }
+    if (this.getScheme(resource) !== RES_SCHEME) {
+      return super.readText(resource);
     }
-
-    return super.readText(resource);
+    try {
+      return await this.storage.readTextFile(this.stripScheme(resource));
+    } catch (error) {
+      throw isNotFound(error) ? missingResource(resource, error) : error;
+    }
   }
 
   override async readBlob(resource: string): Promise<Blob> {
-    const scheme = this.getScheme(resource);
-
-    if (scheme === RES_SCHEME) {
-      const path = resource.startsWith('res://') ? resource.substring(6) : resource;
-      try {
-        return await this.storage.readBlob(path);
-      } catch (error) {
-        if (isWorkspaceTransportError(error)) {
-          throw error;
-        }
-        // Fallback to network (see readText).
-        let blob: Blob;
-        try {
-          blob = await super.readBlob(this.buildPublicUrl(resource));
-        } catch {
-          throw missingResource(resource, error);
-        }
-        if (blob.type.startsWith('text/html')) {
-          throw missingResource(resource, error);
-        }
-        return blob;
-      }
+    if (this.getScheme(resource) !== RES_SCHEME) {
+      return super.readBlob(resource);
     }
-
-    return super.readBlob(resource);
+    try {
+      return await this.storage.readBlob(this.stripScheme(resource));
+    } catch (error) {
+      throw isNotFound(error) ? missingResource(resource, error) : error;
+    }
   }
 
   override normalize(resource: string): string {
-    const scheme = this.getScheme(resource);
-    if (scheme === RES_SCHEME) {
+    if (this.getScheme(resource) === RES_SCHEME) {
       return this.storage.normalizeResourcePath(resource);
     }
     return super.normalize(resource);
   }
 
-  private buildPublicUrl(relativePath: string): string {
-    const envBase = import.meta.env.BASE_URL ?? '/';
-    const base = envBase.replace(/\/*$/, '/');
-    const path = relativePath.startsWith('res://') ? relativePath.substring(6) : relativePath;
-    const trimmedPath = path.replace(/^\/+/, '');
-    return `${base}${trimmedPath}`;
+  private stripScheme(resource: string): string {
+    return resource.startsWith('res://') ? resource.substring(6) : resource;
   }
 }
 

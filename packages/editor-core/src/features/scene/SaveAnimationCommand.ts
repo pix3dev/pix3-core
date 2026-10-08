@@ -35,15 +35,6 @@ export class SaveAnimationCommand extends CommandBase<void, void> {
       };
     }
 
-    if (state.project.backend === 'cloud') {
-      return {
-        canExecute: false,
-        reason: 'Cloud animation assets are synchronized automatically.',
-        scope: 'external',
-        recoverable: true,
-      };
-    }
-
     const animationId = this.params?.animationId ?? state.animations.activeAnimationId;
     if (!animationId) {
       return {

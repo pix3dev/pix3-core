@@ -1,7 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { appState, resetAppState } from '@/state';
 import { createDefaultProjectManifest } from '@/core/ProjectManifest';
 import { ProjectSettingsDialog } from './pix3-project-settings-dialog';
+
+// golden-layout's CJS build (what Node resolves in specs) requires `tslib`, which it does not
+// declare and the workspace does not install; nothing here needs a real layout.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
 describe('ProjectSettingsDialog', () => {
   afterEach(() => {

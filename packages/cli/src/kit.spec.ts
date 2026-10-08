@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHECK_CODES, checkProject } from './check/check.ts';
 import { extractCoreComponents, type RuntimeLike } from './kit/core-components.ts';
 import { generateKit, type CoreComponentInfo, type KitManifestFile } from './kit/generate.ts';
+import { RETIRED_EDITOR_TOOL_NAMES } from './kit/retired-editor-tools.ts';
 import {
   AGENTS_ALT_FILE,
   agentKitStep,
@@ -61,7 +62,7 @@ import { WORKSPACE_TOOL_NAMES } from './workspace-agent/tools.ts';
  * - every directive resolved;
  * - every `pix3 <command> [--flag]` the kit shows exists in the CLI's USAGE (with that flag);
  * - every tool name in the live-channel section is one of the 14, and all 14 are there;
- * - no editor-only tool (`AgentToolRegistry`) is named in AGENTS.md / the verify and scripts skills;
+ * - no editor-only tool (`kit/retired-editor-tools.ts`) is named in AGENTS.md / the verify and scripts skills;
  * - `pix3 check --json` `files` entries are documented with the CLI's key (`{ file, sha256 }`);
  * - every diagnostic code named is one `pix3 validate` / `pix3 check` emits;
  * - every node type named in the nodes skill is a type the loader knows;
@@ -238,17 +239,12 @@ describe('kit drift', () => {
   });
 
   it('names no editor-only tool as if the live channel had it', () => {
-    // The in-editor agent has ~100 tools (`AgentToolRegistry`); the workspace channel exposes 14.
-    // A kit that tells an external agent to call `game_trace` / `game_controls` / `node_inspect`
-    // sends it after a tool it does not have. (The scene-format skill's recipe table and the
-    // included spec name in-editor tools on purpose: they translate them into file edits.)
-    const registry = readFileSync(
-      join(repoRootOfCheckout(), 'packages/editor-core/src/services/agent/AgentToolRegistry.ts'),
-      'utf8'
-    );
-    const editorTools = new Set(
-      [...registry.matchAll(/^\s+name: '([a-z]+(?:_[a-z0-9]+)+)',$/gm)].map(m => m[1])
-    );
+    // The retired in-editor agent had ~100 tools (frozen in `kit/retired-editor-tools.ts`); the
+    // workspace channel exposes 14. A kit that tells an external agent to call `game_trace` /
+    // `game_controls` / `node_inspect` sends it after a tool it does not have. (The scene-format
+    // skill's recipe table and the included spec name in-editor tools on purpose: they translate
+    // them into file edits.)
+    const editorTools = new Set(RETIRED_EDITOR_TOOL_NAMES);
     expect(editorTools.size).toBeGreaterThan(WORKSPACE_TOOL_NAMES.length);
     const files = [
       'AGENTS.md',

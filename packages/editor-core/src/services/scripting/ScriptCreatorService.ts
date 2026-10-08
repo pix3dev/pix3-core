@@ -1,6 +1,5 @@
 import { injectable, inject } from '@/fw/di';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 
 export interface ScriptCreationParams {
   scriptName: string;
@@ -18,9 +17,6 @@ export interface ScriptCreationInstance {
 export class ScriptCreatorService {
   @inject(ProjectStorageService)
   private readonly fs!: ProjectStorageService;
-
-  @inject(ProjectScriptLoaderService)
-  private readonly scriptLoader!: ProjectScriptLoaderService;
 
   private creators = new Map<string, ScriptCreationInstance>();
   private nextId = 0;
@@ -111,10 +107,8 @@ export class ScriptCreatorService {
       // Write the script file
       await this.fs.writeTextFile(filePath, template);
 
-      // Trigger script compilation only if auto-compilation is enabled
-      if (this.scriptLoader.enableAutoCompilation) {
-        await this.scriptLoader.syncAndBuild();
-      }
+      // No build here: the plugin's watcher re-imports the script roots for the new file, and
+      // the host's `scripts.onChange` re-registers the components.
 
       // Emit event for asset browser to select the new file
       window.dispatchEvent(

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appState, resetAppState } from '@/state';
-import type { FileDescriptor } from '@/services/project/FileSystemAPIService';
+import type { FileDescriptor } from '@/services/project/file-descriptor';
 import type { AssetsPreviewSnapshot } from '@/services/assets/AssetsPreviewService';
 
 const mockProjectService = {
@@ -239,7 +239,7 @@ describe('AssetsPreviewService', () => {
     }
   });
 
-  it('ignores project-state churn that is not a file mutation (hybrid sync progress)', async () => {
+  it('ignores project-state churn that is not a file mutation (host connection state)', async () => {
     mockProjectService.listDirectory.mockResolvedValue([
       { name: 'config.json', path: 'config.json', kind: 'file' },
     ]);
@@ -247,7 +247,7 @@ describe('AssetsPreviewService', () => {
       createFile('config.json', '{"name":"pix3"}', 'application/json', 11)
     );
     // A stale-but-set modified directory used to make EVERY appState.project write reload the
-    // folder; hybrid sync writes one progress tick per uploaded file.
+    // folder; the dev-server connection state flips without any file changing.
     appState.project.lastModifiedDirectoryPath = '.';
 
     const service = new AssetsPreviewService();
@@ -256,10 +256,8 @@ describe('AssetsPreviewService', () => {
       await vi.waitFor(() => expect(service.getSnapshot().folderItemCount).not.toBeNull());
       const callsAfterLoad = mockProjectService.listDirectory.mock.calls.length;
 
-      appState.project.hybridSync.status = 'syncing';
-      appState.project.hybridSync.totalFileCount = 3;
-      for (let i = 1; i <= 3; i += 1) {
-        appState.project.hybridSync.processedFileCount = i;
+      for (const connection of ['open', 'closed', 'open'] as const) {
+        appState.project.host.connection = connection;
         await Promise.resolve();
       }
       await new Promise(resolve => setTimeout(resolve, 0));

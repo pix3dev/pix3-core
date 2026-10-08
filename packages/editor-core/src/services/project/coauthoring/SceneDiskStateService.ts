@@ -1,13 +1,6 @@
 import { injectable } from '@/fw/di';
-import { appState } from '@/state';
 import { sha256 } from '@/services/project/external-merge/hash';
 import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
-import {
-  parseSceneText,
-  checkDocShape,
-  type MergeDoc,
-} from '@/services/project/external-merge/scene-doc';
-import { toMergeDoc } from '@/services/project/external-merge/human-operation-diff';
 
 /** What the editor last knew to be on disk for one path. */
 export interface KnownDiskVersion {
@@ -22,16 +15,9 @@ export interface KnownDiskVersion {
   readonly at: number;
 }
 
-/** `E` of plan §4.3: the last version the editor wrote or accepted, parsed on first use. */
-export interface EditorVersion {
-  readonly doc: MergeDoc;
-  readonly hash: string;
-}
-
 interface EditorVersionEntry {
   readonly text: string;
   readonly hash: string;
-  parsed?: MergeDoc | null;
 }
 
 /**
@@ -52,8 +38,7 @@ interface EditorVersionEntry {
  *   good graph in the editor; until the human picks "accept" or "keep mine" (or a newer version
  *   arrives), autosave must not write over it. `isPendingExternal` covers both sets.
  *
- * Keys are project paths without a scheme (`scenes/a.pix3scene`). Mirrors the pending set into
- * `appState.project.coauthoring.pendingExternalPaths` for the status bar.
+ * Keys are project paths without a scheme (`scenes/a.pix3scene`).
  */
 @injectable()
 export class SceneDiskStateService {
@@ -110,21 +95,6 @@ export class SceneDiskStateService {
   /** Remember `text` (with byte hash `hash`) as `E` of `path`. */
   setEditorVersion(path: string, text: string, hash: string): void {
     this.editorVersions.set(toProjectPath(path), { text, hash });
-  }
-
-  /** `E` of `path`, or null when unknown or unparsable. */
-  getEditorVersion(path: string): EditorVersion | null {
-    const entry = this.editorVersions.get(toProjectPath(path));
-    if (!entry) return null;
-    if (entry.parsed === undefined) {
-      try {
-        const doc = parseSceneText(entry.text);
-        entry.parsed = checkDocShape(doc).length === 0 ? toMergeDoc(doc) : null;
-      } catch {
-        entry.parsed = null;
-      }
-    }
-    return entry.parsed ? { doc: structuredClone(entry.parsed), hash: entry.hash } : null;
   }
 
   getEditorVersionText(path: string): string | null {
@@ -242,7 +212,7 @@ export class SceneDiskStateService {
   }
 
   private syncState(): void {
-    appState.project.coauthoring.pendingExternalPaths = Array.from(this.pending);
+    // Nothing mirrors the pending set into app state in 2.x; the status bar reads the host slice.
   }
 
   private notify(): void {

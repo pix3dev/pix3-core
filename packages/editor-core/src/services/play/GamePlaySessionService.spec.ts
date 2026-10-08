@@ -208,7 +208,6 @@ describe('GamePlaySessionService — tab host swap', () => {
     internals.initialized = true;
     internals.queueSync = () => {};
     // `@inject` installs getter-only properties on the prototype; shadow them on the instance.
-    Object.defineProperty(service, 'profilerSessionService', { value: { endSession: () => {} } });
     Object.defineProperty(service, 'assetLoader', { value: { setAtlasResolver: () => {} } });
 
     const canvas = canvasDocument.createElement('canvas');
@@ -347,7 +346,7 @@ describe('GamePlaySessionService — launch serialization', () => {
 });
 
 /**
- * The user-facing half of the pause: `appState.ui.playModeStatus` is what the Game tab, the Flow
+ * The user-facing half of the pause: `appState.ui.playModeStatus` is what the Game tab, the
  * stage bar, the popout window, `play_status` and the debug bridge all read, and a Pause button that
  * does not move it leaves every one of them claiming the game is still running. The sync hangs off
  * `setPauseRequested` rather than off `setPaused` alone so that a pause nobody pressed — `game_run`

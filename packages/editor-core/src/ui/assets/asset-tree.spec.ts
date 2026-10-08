@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { resetAppState } from '@/state';
-import type { FileDescriptor } from '@/services/project/FileSystemAPIService';
+import type { FileDescriptor } from '@/services/project/file-descriptor';
 import { ASSET_PATH_LIST_MIME } from '@/ui/shared/asset-drag-drop';
+
+// golden-layout's CJS build (what Node resolves in specs) requires `tslib`, which it does not
+// declare and the workspace does not install; nothing here needs a real layout.
+vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
 const { AssetTree } = await import('./asset-tree');
 

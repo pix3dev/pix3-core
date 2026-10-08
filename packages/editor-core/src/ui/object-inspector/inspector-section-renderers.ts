@@ -27,6 +27,7 @@ import { AddEffectCommand } from '@/features/effects/AddEffectCommand';
 import { RemoveEffectCommand } from '@/features/effects/RemoveEffectCommand';
 import type { InspectorPanel } from './inspector-panel';
 import type { DetachedPropertyOptions } from './inspector-property-renderers';
+import { isReadOnlyTab } from '@/services/editor/read-only';
 
 /**
  * Per-row overrides for the frame property rows: the bounding-box size takes the
@@ -691,7 +692,7 @@ ${textPreview?.content || 'Empty file'}</pre
     const locked = this.host.propertyValues['locked']?.value === 'true';
     // Play mode is a read-only live mirror — gate these flags like every other
     // property editor so they can't silently mutate the authored node.
-    const readOnly = appState.collaboration.isReadOnly || appState.ui.isPlaying;
+    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
 
     return html`
       <div class="property-group-section property-group-section--flags">
@@ -914,14 +915,16 @@ ${textPreview?.content || 'Empty file'}</pre
 
         <div class="scripts-list">
           ${components.map(component => {
-            const isUserScript = component.type.startsWith('user:');
+            // Only openable when the host can open files in the IDE; otherwise no hint, no handler.
+            const isUserScript =
+              component.type.startsWith('user:') && this.host.ideLauncher.available;
             return html`
               <div class="component-block ${component.enabled ? '' : 'component-block--disabled'}">
                 <div
                   class="script-item component-item ${isUserScript
                     ? 'component-item--openable'
                     : ''}"
-                  title=${isUserScript ? 'Double-click to open script file' : ''}
+                  title=${isUserScript ? 'Double-click to open the script in your IDE' : ''}
                   @dblclick=${isUserScript
                     ? () => this.onOpenComponentScript(component.type)
                     : null}
@@ -1014,8 +1017,9 @@ ${textPreview?.content || 'Empty file'}</pre
   }
 
   /**
-   * Double-clicking a user script component opens its source file in a code tab.
-   * Core (`core:`) components are engine built-ins with no project file, so they no-op.
+   * Double-clicking a user script component opens its source file in the IDE (through the dev
+   * server, when the host offers it). Core (`core:`) components are engine built-ins with no
+   * project file, so they no-op.
    */
   onOpenComponentScript(componentType: string): void {
     if (!componentType.startsWith('user:')) return;
@@ -1023,7 +1027,7 @@ ${textPreview?.content || 'Empty file'}</pre
     const scriptName = componentType.slice('user:'.length).trim();
     if (!scriptName) return;
 
-    void this.host.editorTabService.focusOrOpenCode(`res://scripts/${scriptName}.ts`);
+    void this.host.ideLauncher.open(`scripts/${scriptName}.ts`);
   }
 
   onRemoveComponent(componentId: string) {

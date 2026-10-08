@@ -27,9 +27,8 @@ export class StopGameCommand extends CommandBase<void, void> {
   private readonly gamePlaySessionService: GamePlaySessionService;
 
   /**
-   * `editorTabService` is accepted for call-site compatibility but no longer used: which surface
-   * the game appears on is decided per workspace in `play-workspace` (Studio = a Golden-Layout
-   * tab, Flow = the permanently mounted stage).
+   * `editorTabService` is accepted for call-site compatibility but no longer used: the game
+   * surface (the Game tab) is opened through `play-workspace`.
    */
   constructor(_editorTabService: EditorTabService, gamePlaySessionService: GamePlaySessionService) {
     super();

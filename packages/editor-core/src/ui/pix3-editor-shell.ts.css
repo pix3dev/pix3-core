@@ -1,6 +1,6 @@
 :root {
   /* Width reserved at each end of the Studio toolbar: the menu bar is capped to it on the left and
-     the centred project name / mode switch starts after it on both sides, so the two can never
+     the centred project name starts after it on both sides, so the two can never
      collide. Shrinks with the window, at which point the menu folds its tail under "…". */
   --toolbar-side-reserve: min(470px, 36vw);
 
@@ -13,7 +13,7 @@
   --pix3-z-modal-top: 500;
 }
 
-pix3-editor-shell {
+pix3-editor {
   display: block;
   inline-size: 100%;
   block-size: 100%;
@@ -29,42 +29,6 @@ pix3-editor-shell {
   min-block-size: 100dvh;
   background: var(--bg-0);
   color: var(--fg-0);
-}
-
-/* Flow brings its own header and stage; the shell adds only the shared status bar below it. */
-.editor-shell[data-workspace='flow'] {
-  grid-template-rows: minmax(0, 1fr) auto;
-  block-size: 100vh;
-  block-size: 100dvh;
-  overflow: hidden;
-}
-
-/* Once Studio has been on screen its branch stays mounted, because Golden Layout cannot survive
-   having its host element re-created (it would come back as an empty workspace). Flow hides it. */
-.editor-shell[data-workspace='flow'] > .toolbar-layer,
-.editor-shell[data-workspace='flow'] > .workspace {
-  display: none;
-}
-
-/* An agent asked for the edit-mode viewport in a Vibe session that never opened Studio
-   (StudioViewportMountService -> the shell's `mountStudioForAgent`). The branch has to EXIST at a
-   real size: `display: none` gives its host a 0x0 box, so Golden Layout initializes at zero and the
-   WebGL viewport is never resized off 1x1 — the capture comes back blank or fails outright. But the
-   user is still in Vibe and must see nothing change, so it is laid out where nobody can reach it:
-   `visibility: hidden` (which, unlike `display: none`, still produces boxes for ResizeObserver and
-   getBoundingClientRect), parked far off-screen, click-through, and `position: fixed` so it is out
-   of flow and cannot disturb the Flow grid. 1280x720 matches the 16:9 of the default project
-   viewport, which is the aspect the capture path expects to photograph.
-   The toolbar has nothing to contribute to a screenshot and stays hidden. */
-.editor-shell[data-workspace='flow'][data-studio-offscreen='true'] > .workspace {
-  display: block;
-  position: fixed;
-  visibility: hidden;
-  pointer-events: none;
-  inset-block-start: 0;
-  inset-inline-start: -20000px;
-  inline-size: 1280px;
-  block-size: 720px;
 }
 
 .toolbar-layer {
@@ -96,13 +60,11 @@ pix3-toolbar {
   color: var(--fg-1);
 }
 
-/* Centered over the toolbar: project name plus the Studio/Flow switch, the same pairing Flow's
-   header shows. The row stays click-through so it never steals toolbar clicks; only the switch
-   inside it takes pointer events.
-   The symmetric inline inset is the same reserve the menu bar is capped to (`--toolbar-side-reserve`,
-   consumed by `pix3-main-menu`), so the pair stays centred on the window and can never ride over
-   the menu on the left or the play/account controls on the right — on a narrow window the menu
-   folds its tail into a "…" button instead, and the name here ellipsizes. */
+/* Centered over the toolbar: the project name. The row stays click-through so it never steals
+   toolbar clicks. The symmetric inline inset is the same reserve the menu bar is capped to
+   (`--toolbar-side-reserve`, consumed by `pix3-main-menu`), so the name stays centred on the window
+   and can never ride over the menu on the left or the play controls on the right — on a narrow
+   window the menu folds its tail into a "…" button instead, and the name here ellipsizes. */
 .project-identity {
   position: absolute;
   inset-block: 0;
@@ -113,10 +75,6 @@ pix3-toolbar {
   gap: 4px;
   pointer-events: none;
   z-index: var(--pix3-z-base);
-}
-
-.project-identity pix3-mode-switch {
-  pointer-events: auto;
 }
 
 .project-name-label {
@@ -191,199 +149,14 @@ pix3-toolbar {
   inset: 0;
 }
 
-.loading-overlay {
-  position: absolute;
-  inset: 0;
+.shell-message {
   display: grid;
   place-items: center;
-  background: oklch(0 0 0 / 0.55);
-}
-
-/* Welcome UI moved into <pix3-welcome> component */
-
-.loading-label {
-  padding: 10px 14px;
-  border-radius: var(--radius-3);
-  background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  box-shadow: var(--shadow-float);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.loading-progress {
-  display: grid;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.loading-progress__bar {
-  overflow: hidden;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--bg-3);
-}
-
-.loading-progress__fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transition: width 160ms ease-out;
-}
-
-.loading-progress__meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  padding: 2rem;
   color: var(--fg-2);
-  font-size: 11.5px;
+  font-size: 0.9rem;
 }
 
-.loading-progress__path {
-  margin-top: 12px;
-  color: var(--fg-3);
-  font-size: 11px;
-  word-break: break-word;
-}
-
-.collab-join-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--pix3-z-overlay);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: oklch(0 0 0 / 0.55);
-  backdrop-filter: blur(4px);
-}
-
-.collab-join-card {
-  width: min(100%, 560px);
-  padding: 28px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius-3);
-  background: var(--bg-1);
-  box-shadow: var(--shadow-float);
-}
-
-.collab-join-eyebrow {
-  margin-bottom: 10px;
-  color: var(--accent);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.collab-join-title {
-  margin: 0 0 12px;
-  font-size: 18px;
-  line-height: 1.15;
-}
-
-.collab-join-copy {
-  margin: 0 0 18px;
-  color: var(--fg-1);
-  line-height: 1.5;
-}
-
-.collab-join-meta {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 22px;
-  color: var(--fg-1);
-  font-size: 12px;
-  word-break: break-word;
-}
-
-.collab-join-actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.collab-join-actions button {
-  min-width: 190px;
-  height: 28px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 7px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.collab-join-actions button[disabled] {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.auth-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--pix3-z-modal-top);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: oklch(0 0 0 / 0.55);
-  backdrop-filter: blur(4px);
-}
-
-.auth-modal-shell {
-  width: min(100%, 28rem);
-}
-
-.account-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 16px;
-  z-index: var(--pix3-z-popover);
-  min-width: 220px;
-  padding: 8px;
-  border-radius: var(--radius-3);
-  border: 1px solid var(--line-2);
-  background: var(--bg-1);
-  box-shadow: var(--shadow-pop);
-}
-
-.account-popover__name {
-  font-weight: 600;
-  color: var(--fg-0);
-}
-
-.account-popover__email {
-  margin-top: 4px;
-  color: var(--fg-2);
-  font-size: 11.5px;
-  word-break: break-word;
-}
-
-.account-popover__action {
-  width: 100%;
-  margin-top: 12px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: var(--radius-2);
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  color: var(--fg-0);
-  cursor: pointer;
-}
-
-.account-popover__action:hover {
-  background: var(--bg-3);
-}
-
-.account-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+.shell-message--error {
+  color: var(--danger);
 }

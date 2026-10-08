@@ -15,11 +15,11 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "lint": "eslint packages/runtime/src packages/cli/src packages/vite-plugin/src",
-    "lint:fix": "eslint packages/runtime/src packages/cli/src packages/vite-plugin/src --fix",
-    "type-check": "tsc --noEmit -p packages/runtime && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/cli/tsconfig.build.json && tsc --noEmit -p packages/create-pix3 && tsc --noEmit -p packages/vite-plugin && tsc --noEmit -p packages/vite-plugin/tsconfig.build.json",
-    "format": "prettier --write \"packages/{runtime,cli,vite-plugin}/src/**/*.ts\"",
-    "format:check": "prettier --check \"packages/{runtime,cli,vite-plugin}/src/**/*.ts\"",
+    "lint": "eslint packages/runtime/src packages/cli/src packages/vite-plugin/src packages/editor-core/src",
+    "lint:fix": "eslint packages/runtime/src packages/cli/src packages/vite-plugin/src packages/editor-core/src --fix",
+    "type-check": "tsc --noEmit -p packages/runtime && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/cli/tsconfig.build.json && tsc --noEmit -p packages/create-pix3 && tsc --noEmit -p packages/editor-core && tsc --noEmit -p packages/vite-plugin && tsc --noEmit -p packages/vite-plugin/tsconfig.build.json",
+    "format": "prettier --write \"packages/{runtime,cli,vite-plugin,editor-core}/src/**/*.ts\"",
+    "format:check": "prettier --check \"packages/{runtime,cli,vite-plugin,editor-core}/src/**/*.ts\"",
     "version:sync": "node scripts/sync-version.mjs"
   },
   "devDependencies": {

@@ -17,6 +17,17 @@ const DEFAULT_NODE_ICON_OPACITY = 0.95;
 const SELECTED_NODE_ICON_OPACITY = 0.38;
 
 /**
+ * Viewport node icons ship inside the editor-core package (`packages/editor-core/assets/`), never
+ * from the project's `public/` (plan D11). The literal `new URL(…, import.meta.url)` form is what
+ * the library build rewrites into hashed `dist/assets/*` files.
+ */
+const NODE_ICON_URLS = {
+  cam: new URL('../../../assets/cam.png', import.meta.url).href,
+  lamp: new URL('../../../assets/lamp.png', import.meta.url).href,
+  particles: new URL('../../../assets/particles.png', import.meta.url).href,
+} as const;
+
+/**
  * Dependencies the adornment subsystem borrows from {@link ViewportRendererService}.
  * Scoped to exactly what this collaborator needs; the facade owns the scene
  * graph, the editor scene, the layer-visibility policy, and the drag/transform
@@ -60,21 +71,21 @@ export class ViewportAdornments {
 
   private ensureNodeIconTextures(): void {
     if (!this.cameraIconTexture) {
-      new THREE.TextureLoader().load('/cam.png', texture => {
+      new THREE.TextureLoader().load(NODE_ICON_URLS.cam, texture => {
         configureSpriteTexture(texture);
         this.cameraIconTexture = texture;
         this.refreshNodeIconMaterials('camera');
       });
     }
     if (!this.lampIconTexture) {
-      new THREE.TextureLoader().load('/lamp.png', texture => {
+      new THREE.TextureLoader().load(NODE_ICON_URLS.lamp, texture => {
         configureSpriteTexture(texture);
         this.lampIconTexture = texture;
         this.refreshNodeIconMaterials('light');
       });
     }
     if (!this.particlesIconTexture) {
-      new THREE.TextureLoader().load('/particles.png', texture => {
+      new THREE.TextureLoader().load(NODE_ICON_URLS.particles, texture => {
         configureSpriteTexture(texture);
         this.particlesIconTexture = texture;
         this.refreshNodeIconMaterials('particles');

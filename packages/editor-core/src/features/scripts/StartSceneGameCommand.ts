@@ -7,12 +7,14 @@ import {
 } from '@/core/command';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { OperationService } from '@/services/core/OperationService';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
+import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlayModeOperation';
 import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-workspace';
 
 export interface StartSceneGameParams {
   /** Scene to play — `res://` path or project-relative (`scenes/x.pix3scene`). */
   scenePath: string;
+  /** Who starts play: `'designer'` (default, the UI) or `'agent'` (the debug bridge). */
+  owner?: PlayOwner;
 }
 
 /**
@@ -83,8 +85,7 @@ export class StartSceneGameCommand extends CommandBase<void, void> {
     const raw = this.params.scenePath.trim().replace(/\\/g, '/');
     const resourcePath = /^res:\/\//i.test(raw) ? raw : `res://${raw.replace(/^\/+/, '')}`;
 
-    // Making it the active scene is what the runner clones from (a tab in Studio, a direct
-    // scene-graph load in Flow — see play-workspace).
+    // Making it the active scene (its editor tab) is what the runner clones from.
     await ensureSceneActive(container, resourcePath);
 
     // Same guard as `game.start-main`: play mode without an active scene starts nothing while every
@@ -97,6 +98,7 @@ export class StartSceneGameCommand extends CommandBase<void, void> {
       new SetPlayModeOperation({
         isPlaying: true,
         status: 'playing',
+        owner: this.params.owner,
       })
     );
 

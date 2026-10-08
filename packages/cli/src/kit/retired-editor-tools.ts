@@ -1,0 +1,60 @@
+/**
+ * Tool names of the retired in-editor agent (`AgentToolRegistry` in the 1.x editor, last seen at
+ * `35ac1c6:packages/editor-core/src/services/agent/AgentToolRegistry.ts`), frozen here when the
+ * editor-core port dropped the registry (plan `.plans/editor-core-port.md` D15).
+ *
+ * `kit.spec.ts` uses it to keep the kit from telling an external agent to call a tool the live
+ * channel never had. Only snake_case names (the ones that guard can match) are listed. Retired
+ * together with that guard by the kit rewrite.
+ */
+export const RETIRED_EDITOR_TOOL_NAMES: readonly string[] = [
+  'add_component',
+  'analyze_image',
+  'ask_advisor',
+  'ask_user',
+  'check_scripts',
+  'compile_scripts',
+  'convert_node_type',
+  'create_node',
+  'delete_nodes',
+  'engine_read',
+  'engine_search',
+  'find_nodes',
+  'fs_delete',
+  'fs_list',
+  'fs_read',
+  'fs_write',
+  'game_controls',
+  'game_input',
+  'game_observe',
+  'game_run',
+  'game_time',
+  'game_trace',
+  'generate_asset',
+  'generate_model_3d',
+  'generate_scene_3d',
+  'generate_sfx',
+  'get_selection',
+  'list_commands',
+  'list_component_types',
+  'move_node',
+  'node_inspect',
+  'play_restart',
+  'play_start',
+  'play_status',
+  'play_stop',
+  'process_asset',
+  'read_errors',
+  'read_logs',
+  'read_skill',
+  'record_decision',
+  'remove_component',
+  'revert_temporary_edits',
+  'run_command',
+  'scene_tree',
+  'set_component_property',
+  'set_property',
+  'skin_ui',
+  'str_replace',
+  'viewport_screenshot',
+];

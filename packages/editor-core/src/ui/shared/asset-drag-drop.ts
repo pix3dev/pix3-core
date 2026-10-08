@@ -63,57 +63,6 @@ export const getGenerationDragData = (
 };
 
 /**
- * Drag payload used when dragging an Asset Library card into the viewport or scene tree.
- * The bundle itself is resolved by {@link AssetLibraryService}; the drag only carries the
- * item id so a drop target can copy it into the project and insert it.
- */
-const LIBRARY_ITEM_DRAG_MIME = 'application/x-pix3-library-item';
-
-export interface LibraryItemDragPayload {
-  /** AssetLibraryService item id. */
-  itemId: string;
-  /** Item display name, used to pre-fill node names / labels. */
-  name?: string;
-}
-
-export const setLibraryItemDragData = (
-  dataTransfer: DataTransfer,
-  payload: LibraryItemDragPayload
-): void => {
-  dataTransfer.setData(LIBRARY_ITEM_DRAG_MIME, JSON.stringify(payload));
-  if (payload.name) {
-    dataTransfer.setData('text/plain', payload.name);
-  }
-  dataTransfer.effectAllowed = 'copy';
-};
-
-export const hasLibraryItemDragData = (dataTransfer: DataTransfer | null): boolean => {
-  if (!dataTransfer) {
-    return false;
-  }
-  const types = dataTransfer.types ? Array.from(dataTransfer.types) : [];
-  return types.includes(LIBRARY_ITEM_DRAG_MIME);
-};
-
-export const getLibraryItemDragData = (
-  dataTransfer: DataTransfer | null
-): LibraryItemDragPayload | null => {
-  if (!dataTransfer) {
-    return null;
-  }
-  const raw = dataTransfer.getData(LIBRARY_ITEM_DRAG_MIME);
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as LibraryItemDragPayload;
-    return typeof parsed?.itemId === 'string' && parsed.itemId.length > 0 ? parsed : null;
-  } catch {
-    return null;
-  }
-};
-
-/**
  * Project-relative source paths carried by an in-editor asset drag, used by the move
  * (drag-into-folder) drop targets. Prefers the multi-path list MIME set by the Assets
  * content pane so a whole multi-selection moves at once, then the single-path MIME, then

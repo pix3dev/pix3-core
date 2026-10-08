@@ -49,7 +49,7 @@ const createContext = (
     state: {
       selection: { nodeIds: primaryNodeId ? [primaryNodeId] : [], primaryNodeId },
       ui: { isPlaying: overrides.isPlaying ?? false },
-      collaboration: { isReadOnly: overrides.isReadOnly ?? false },
+      project: { host: { writer: overrides.isReadOnly ? 'other' : 'self' } },
     } as CommandContext['state'],
     snapshot: { scenes: { activeSceneId: 'scene-1' } } as CommandContext['snapshot'],
     container: container as CommandContext['container'],

@@ -8,7 +8,7 @@ import { normalizeNodeTypeName } from '@pix3/runtime';
 import type { PropertySchema } from '@pix3/runtime';
 // The routine parser lives with the editor's game-test service; only its runtime-free value chain
 // is loaded here, so this spec runs before editor-core compiles (see ../tsconfig.json).
-import { parseRoutine } from '../../editor-core/src/services/agent/game-routines';
+import { parseRoutine } from '../../editor-core/src/services/game-test/game-routines';
 import { MAX_RECIPE_MD_CHARS, RECIPE_CATALOG, RECIPE_MD_HEADROOM_CHARS } from '../src/recipes';
 
 /**

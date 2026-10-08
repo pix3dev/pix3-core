@@ -32,7 +32,7 @@ export class UnlinkPrefabInstanceCommand extends CommandBase<void, void> {
     if (!context.state.scenes.activeSceneId) {
       return { canExecute: false, reason: 'No active scene', scope: 'scene' };
     }
-    if (context.state.collaboration.isReadOnly) {
+    if (context.state.project.host.writer === 'other') {
       return { canExecute: false, reason: 'Scene is read-only', scope: 'service' };
     }
     if (context.state.ui.isPlaying) {

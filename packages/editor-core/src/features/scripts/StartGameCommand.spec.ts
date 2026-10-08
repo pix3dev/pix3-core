@@ -2,36 +2,35 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CommandContext } from '@/core/command';
 import { appState } from '@/state';
-import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
+import { EditorTabService } from '@/services/editor/EditorTabService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
-import { SceneManager } from '@pix3/runtime';
 
 import { StartGameCommand } from './StartGameCommand';
 import { SetPlayModeOperation } from './SetPlayModeOperation';
 import { resolveGameplayScenePath } from './play-workspace';
 
+// The real EditorTabService pulls in Golden Layout; the specs only need its class as a token.
+vi.mock('@/services/editor/EditorTabService', () => ({
+  EditorTabService: class EditorTabService {},
+}));
+
 /**
- * `game.start` is the prototyping play path (Studio toolbar, Flow stage), so two promises are pinned
- * here: it never moves the active scene when there is one — that field is simultaneously what runs,
- * what the viewport shows and what the agent edits — and it never flips play mode on without one,
- * which used to be possible because its preconditions only checked `isPlaying`.
- *
- * Flow is the workspace under test because it is the one that reaches the fallback: a Flow project
- * is created without ever opening a startup scene (`PrototypeBootstrapService` goes straight to
- * `createNewProjectWithOptions`), so the stage's first launch finds no active scene.
+ * `game.start` is the prototyping play path (toolbar), so two promises are pinned here: it never
+ * moves the active scene when there is one — that field is simultaneously what runs, what the
+ * viewport shows and what the agent edits — and it never flips play mode on without one, which used
+ * to be possible because its preconditions only checked `isPlaying`.
  */
 const invoke = vi.fn(async () => ({ didMutate: true }));
-const setActiveScene = vi.fn();
 const ensureReady = vi.fn(async () => {});
-const dispatch = vi.fn(async (_command: { payload?: unknown }) => true);
+const focusOrOpenScene = vi.fn(async (_path: string) => {});
+const openResourceTab = vi.fn(async () => {});
 
 const createContext = (): CommandContext => {
   const services = new Map<unknown, unknown>([
     [OperationService, { invoke }],
-    [SceneManager, { setActiveScene }],
     [ProjectScriptLoaderService, { ensureReady }],
-    [CommandDispatcher, { execute: dispatch }],
+    [EditorTabService, { focusOrOpenScene, openResourceTab }],
   ]);
   const container = {
     getOrCreateToken: <T>(token: T): T => token,
@@ -96,11 +95,9 @@ describe('resolveGameplayScenePath', () => {
 describe('StartGameCommand', () => {
   beforeEach(() => {
     invoke.mockClear();
-    setActiveScene.mockClear();
     ensureReady.mockClear();
-    dispatch.mockClear();
-    dispatch.mockImplementation(async () => true);
-    appState.ui.workspaceMode = 'flow';
+    focusOrOpenScene.mockReset();
+    openResourceTab.mockClear();
     appState.ui.isPlaying = false;
     appState.project.status = 'ready';
     appState.scenes.descriptors = {};
@@ -113,17 +110,14 @@ describe('StartGameCommand', () => {
     appState.project.manifest = {
       defaultExportScenePath: 'scenes/menu.pix3scene',
     } as unknown as typeof appState.project.manifest;
-    dispatch.mockImplementation(async () => {
+    focusOrOpenScene.mockImplementation(async () => {
       appState.scenes.activeSceneId = 'scenes-main';
-      return true;
     });
 
     await createCommand().execute(createContext());
 
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch.mock.calls[0][0]).toMatchObject({
-      payload: { filePath: 'res://scenes/main.pix3scene' },
-    });
+    expect(focusOrOpenScene).toHaveBeenCalledTimes(1);
+    expect(focusOrOpenScene).toHaveBeenCalledWith('res://scenes/main.pix3scene');
     expect(invoke).toHaveBeenCalledWith(expect.any(SetPlayModeOperation));
   });
 
@@ -135,16 +129,14 @@ describe('StartGameCommand', () => {
 
     await createCommand().execute(createContext());
 
-    // No load, no setActiveScene: whatever the user is looking at is what plays.
-    expect(dispatch).not.toHaveBeenCalled();
-    expect(setActiveScene).not.toHaveBeenCalled();
+    // No tab switch: whatever the user is looking at is what plays.
+    expect(focusOrOpenScene).not.toHaveBeenCalled();
     expect(appState.scenes.activeSceneId).toBe('scenes-menu');
     expect(invoke).toHaveBeenCalledWith(expect.any(SetPlayModeOperation));
   });
 
   it('throws instead of flipping play mode on when no scene could be opened', async () => {
-    dispatch.mockImplementation(async () => false);
-
+    // The tab opened, but no scene became active (the load was refused).
     await expect(createCommand().execute(createContext())).rejects.toThrow(
       /Could not open the scene|no scene could be opened/
     );

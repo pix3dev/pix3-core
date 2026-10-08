@@ -11,8 +11,8 @@ export class SaveActiveResourceCommand extends CommandBase<void, void> {
   readonly metadata: CommandMetadata = {
     id: 'editor.save-active-resource',
     title: 'Save',
-    description: 'Save the active scene, animation, or code document',
-    keywords: ['save', 'scene', 'animation', 'code', 'tab'],
+    description: 'Save the active scene or animation',
+    keywords: ['save', 'scene', 'animation', 'tab'],
     menuPath: 'file',
     keybinding: 'Mod+S',
     when: '!isInputFocused',
@@ -36,25 +36,12 @@ export class SaveActiveResourceCommand extends CommandBase<void, void> {
     if (!activeTab) {
       return {
         canExecute: false,
-        reason: 'An active scene, animation, or code tab is required to save',
+        reason: 'An active scene or animation tab is required to save',
         scope: 'service',
       };
     }
 
-    if (
-      state.project.backend === 'cloud' &&
-      activeTab.type !== 'code' &&
-      activeTab.type !== 'game'
-    ) {
-      return {
-        canExecute: false,
-        reason: 'Cloud scene and animation resources are synchronized automatically.',
-        scope: 'external',
-        recoverable: true,
-      };
-    }
-
-    if (activeTab.type !== 'scene' && activeTab.type !== 'animation' && activeTab.type !== 'code') {
+    if (activeTab.type !== 'scene' && activeTab.type !== 'animation') {
       return {
         canExecute: false,
         reason: 'The active tab does not support saving',

@@ -24,7 +24,6 @@ const createOperationContext = (initialAnimations?: unknown) => {
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
 

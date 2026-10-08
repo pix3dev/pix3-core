@@ -17,19 +17,16 @@ import {
   ASSET_RESOURCE_LIST_MIME,
   ASSET_RESOURCE_MIME,
   getDraggedAssetPaths,
-  getLibraryItemDragData,
   hasAssetDragData,
   hasGenerationDragData,
-  hasLibraryItemDragData,
   toProjectResourcePath,
 } from '@/ui/shared/asset-drag-drop';
-import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GeneratedAssetDropService } from '@/services/image-gen/GeneratedAssetDropService';
-import { LibraryInsertService } from '@/services/library/LibraryInsertService';
 import { DropdownPortal } from '@/ui/shared/dropdown-portal';
 import { appState } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import './assets-content.ts.css';
+import { isReadOnlyTab } from '@/services/editor/read-only';
 
 /** Content-pane layout mode. */
 type ContentView = 'grid' | 'list';
@@ -56,14 +53,8 @@ export class AssetsContent extends ComponentBase {
   @inject(IconService)
   private readonly iconService!: IconService;
 
-  @inject(EditorTabService)
-  private readonly editorTabService!: EditorTabService;
-
   @inject(GeneratedAssetDropService)
   private readonly generatedAssetDropService!: GeneratedAssetDropService;
-
-  @inject(LibraryInsertService)
-  private readonly libraryInsertService!: LibraryInsertService;
 
   @inject(ProjectService)
   private readonly projectService!: ProjectService;
@@ -478,13 +469,6 @@ export class AssetsContent extends ComponentBase {
                     <button
                       type="button"
                       role="menuitem"
-                      @click=${() => this.openInSpriteEditor(item)}
-                    >
-                      Open in Sprite Editor
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
                       @click=${() => this.addToSceneAsSprite(item)}
                     >
                       Add to Scene as Sprite2D
@@ -571,11 +555,6 @@ export class AssetsContent extends ComponentBase {
       return;
     }
     void this.assetsPreviewService.syncFromAssetSelection(item.spriteFolderPath, 'directory');
-  }
-
-  private openInSpriteEditor(item: AssetPreviewItem): void {
-    this.closeContextMenu();
-    void this.editorTabService.focusOrOpenSpriteEditor(toProjectResourcePath(item.path));
   }
 
   /** Explicit "create a node from this image" — the old double-click behavior, now on the menu. */
@@ -1143,7 +1122,7 @@ export class AssetsContent extends ComponentBase {
   }
 
   private onMoveDragOver(event: DragEvent, targetPath: string): void {
-    if (appState.collaboration.isReadOnly || !hasAssetDragData(event.dataTransfer)) {
+    if (isReadOnlyTab() || !hasAssetDragData(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -1173,7 +1152,7 @@ export class AssetsContent extends ComponentBase {
    */
   private onMoveDrop(event: DragEvent, targetPath: string, targetLabel: string): void {
     this.dropTargetPath = null;
-    if (appState.collaboration.isReadOnly || !hasAssetDragData(event.dataTransfer)) {
+    if (isReadOnlyTab() || !hasAssetDragData(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -1192,7 +1171,7 @@ export class AssetsContent extends ComponentBase {
   }
 
   private onGenerationDragOver(event: DragEvent): void {
-    if (!hasGenerationDragData(event.dataTransfer) && !hasLibraryItemDragData(event.dataTransfer)) {
+    if (!hasGenerationDragData(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -1211,22 +1190,7 @@ export class AssetsContent extends ComponentBase {
   }
 
   private async onGenerationDrop(event: DragEvent): Promise<void> {
-    // A Library card imports its files into the project (no scene node); a generation entry
-    // saves into the current folder. Both refresh the preview via the write signal.
-    if (hasLibraryItemDragData(event.dataTransfer)) {
-      event.preventDefault();
-      this.isGenerationDropActive = false;
-      const drag = getLibraryItemDragData(event.dataTransfer);
-      if (!drag) {
-        return;
-      }
-      try {
-        await this.libraryInsertService.copyBundleIntoProject(drag.itemId);
-      } catch (error) {
-        console.error('[AssetsContent] Failed to import library item:', error);
-      }
-      return;
-    }
+    // A generation entry saves into the current folder; the write signal refreshes the preview.
     if (!hasGenerationDragData(event.dataTransfer)) {
       return;
     }

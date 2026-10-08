@@ -22,7 +22,6 @@ const contextForNewProject = (): { context: OperationContext; rootNodes: NodeBas
     version: '1.0.0',
     isDirty: false,
     lastSavedAt: null,
-    fileHandle: null,
     lastModifiedTime: null,
   };
 

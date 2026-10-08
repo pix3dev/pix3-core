@@ -6,7 +6,6 @@ import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { LoadAnimationCommand } from '@/features/scene/LoadAnimationCommand';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
 import { SaveAnimationCommand } from '@/features/scene/SaveAnimationCommand';
-import { SaveSceneCommand } from '@/features/scene/SaveSceneCommand';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
 import { deriveAnimationDocumentId } from '@/features/scene/animation-asset-utils';
 import { deriveSceneIdFromResourcePath } from '@/core/scene-id';
@@ -16,12 +15,19 @@ import { AnimationEditorService } from '@/services/animation/AnimationEditorServ
 import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { SceneManager } from '@pix3/runtime';
 import { subscribe } from 'valtio/vanilla';
-import { CodeDocumentService } from '@/services/scripting/CodeDocumentService';
-import { PreviewHostService } from '@/services/play/PreviewHostService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { SceneWriteService } from '@/services/project/SceneWriteService';
 
 export type DirtyCloseDecision = 'save' | 'dont-save' | 'cancel';
+
+/** Tab types a stored session may reopen — see `isPersistableTab`. */
+const PERSISTABLE_TAB_TYPES: ReadonlySet<string> = new Set<EditorTabType>([
+  'scene',
+  'prefab',
+  'script',
+  'texture',
+]);
 
 @injectable()
 export class EditorTabService {
@@ -46,24 +52,20 @@ export class EditorTabService {
   @inject(AnimationEditorService)
   private readonly animationEditorService!: AnimationEditorService;
 
-  @inject(CodeDocumentService)
-  private readonly codeDocumentService!: CodeDocumentService;
-
-  @inject(PreviewHostService)
-  private readonly previewHostService!: PreviewHostService;
-
   @inject(ProjectScriptLoaderService)
   private readonly projectScriptLoader!: ProjectScriptLoaderService;
 
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
 
+  @inject(SceneWriteService)
+  private readonly sceneWrite!: SceneWriteService;
+
   private disposeSceneSubscription?: () => void;
   private disposeAnimationSubscription?: () => void;
   private disposeLayoutSubscription?: () => void;
   private disposeTabsSubscription?: () => void;
   private disposeProjectSubscription?: () => void;
-  private disposeCodeDocumentsSubscription?: () => void;
   private handleBeforeUnload?: (e: BeforeUnloadEvent) => void;
   private readonly sceneLoadInFlight = new Map<string, Promise<void>>();
   private readonly animationLoadInFlight = new Map<string, Promise<void>>();
@@ -88,10 +90,6 @@ export class EditorTabService {
     });
 
     this.disposeAnimationSubscription = subscribe(appState.animations, () => {
-      this.syncResourceTabsFromDescriptors();
-    });
-
-    this.disposeCodeDocumentsSubscription = this.codeDocumentService.subscribeAll(() => {
       this.syncResourceTabsFromDescriptors();
     });
 
@@ -128,7 +126,7 @@ export class EditorTabService {
         let savedActiveTabId = appState.tabs.activeTabId;
         const activeTab = appState.tabs.tabs.find(t => t.id === savedActiveTabId);
 
-        // If the active tab is excluded (like game / sprite-editor tabs), use a persisted tab
+        // If the active tab is excluded (like the game tab), use a persisted tab
         if (activeTab && !this.isPersistableTab(activeTab)) {
           savedActiveTabId =
             this.previousActiveTabIdBeforeGame ??
@@ -181,8 +179,6 @@ export class EditorTabService {
     this.disposeTabsSubscription = undefined;
     this.disposeProjectSubscription?.();
     this.disposeProjectSubscription = undefined;
-    this.disposeCodeDocumentsSubscription?.();
-    this.disposeCodeDocumentsSubscription = undefined;
     if (this.handleBeforeUnload) {
       window.removeEventListener('beforeunload', this.handleBeforeUnload);
       this.handleBeforeUnload = undefined;
@@ -266,112 +262,6 @@ export class EditorTabService {
 
   async focusOrOpenScene(resourcePath: string): Promise<void> {
     await this.openResourceTab('scene', resourcePath);
-  }
-
-  async focusOrOpenAnimation(resourcePath: string): Promise<void> {
-    await this.openResourceTab('animation', resourcePath);
-  }
-
-  async focusOrOpenCode(resourcePath: string): Promise<void> {
-    await this.openResourceTab('code', resourcePath);
-  }
-
-  /**
-   * Open the Sprite Editor. With `imageResourcePath` it opens bound to that image (double-click an
-   * image asset, or the asset context menu); without it, opens an empty editor (main menu). The
-   * empty editor uses a synthetic resource id so repeated opens re-focus the single instance.
-   */
-  async focusOrOpenSpriteEditor(imageResourcePath?: string): Promise<void> {
-    this.initialize();
-
-    // One Sprite Editor, rebound — double-clicking a second image used to spawn a
-    // *second* editor beside the first (an empty "Sprite Editor" tab plus an
-    // "ex0059.png" tab). Reuse keeps the single canvas the whole feature is built
-    // around; §9.8.
-    const existing = appState.tabs.tabs.find(tab => tab.type === 'sprite-editor');
-    if (existing) {
-      const nextResourceId = imageResourcePath ?? existing.resourceId;
-      if (nextResourceId !== existing.resourceId) {
-        this.rebindSpriteEditorTab(existing.id, nextResourceId);
-      }
-      await this.focusTab(this.deriveTabId('sprite-editor', nextResourceId));
-      return;
-    }
-
-    if (imageResourcePath) {
-      await this.openResourceTab(
-        'sprite-editor',
-        imageResourcePath,
-        {},
-        true,
-        this.deriveTitle(imageResourcePath)
-      );
-      return;
-    }
-    await this.openResourceTab('sprite-editor', 'sprite-editor://new', {}, true, 'Sprite Editor');
-  }
-
-  /**
-   * Point the open Sprite Editor at another image. The tab id is derived
-   * (`${type}:${resourceId}`), so rebinding re-keys the tab everywhere at once —
-   * `appState.tabs`, the active-tab id and Golden Layout's own bookkeeping — rather
-   * than leaving an id that no longer describes its resource. Sprite-editor tabs are
-   * excluded from session persistence (`isPersistableTab`), so no stored session can
-   * be left pointing at the id we retire.
-   */
-  private rebindSpriteEditorTab(previousTabId: string, nextResourceId: string): void {
-    const index = appState.tabs.tabs.findIndex(tab => tab.id === previousTabId);
-    if (index < 0) {
-      return;
-    }
-
-    const previous = appState.tabs.tabs[index];
-    const nextTabId = this.deriveTabId('sprite-editor', nextResourceId);
-    const title =
-      nextResourceId === 'sprite-editor://new' ? 'Sprite Editor' : this.deriveTitle(nextResourceId);
-    const next: EditorTab = {
-      ...previous,
-      id: nextTabId,
-      resourceId: nextResourceId,
-      title,
-      contextState: {},
-    };
-
-    const nextTabs = [...appState.tabs.tabs];
-    nextTabs[index] = next;
-    appState.tabs.tabs = nextTabs;
-    if (appState.tabs.activeTabId === previousTabId) {
-      appState.tabs.activeTabId = nextTabId;
-    }
-
-    this.layoutManager.rebindEditorTab(previousTabId, nextTabId, title);
-  }
-
-  /**
-   * Reveal Model Lab. Like the Sprite Editor it is a single-instance editor tab with a synthetic
-   * resource id, so repeated opens re-focus the one instance instead of stacking tabs. It is not a
-   * project resource, so it is excluded from session persistence.
-   */
-  async focusOrOpenModelLab(): Promise<void> {
-    await this.openResourceTab('model-lab', 'model-lab://new', {}, true, 'Model Lab');
-  }
-
-  /**
-   * Reveal the UI Kit tab (UI Kit Forge, editor host). Single-instance with a synthetic resource
-   * id, like Model Lab: the theme it edits lives in `design/ui-theme.json`, not in the tab, so a
-   * second copy of the tab would only be a second view of the same document.
-   */
-  async focusOrOpenUiKitForge(): Promise<void> {
-    await this.openResourceTab('uikit-forge', 'uikit-forge://new', {}, true, 'UI Kit');
-  }
-
-  /**
-   * Reveal the in-editor agent chat. It is a docked panel to the right of the viewport (not an
-   * editor tab), so this focuses the existing panel or re-adds it if the user closed it.
-   */
-  async focusOrOpenAgentChat(): Promise<void> {
-    this.initialize();
-    this.layoutManager.revealAgentPanel();
   }
 
   remapSceneTabs(remapResourcePath: (resourcePath: string) => string | null): void {
@@ -571,17 +461,7 @@ export class EditorTabService {
   }
 
   getDirtyTabs(): EditorTab[] {
-    return appState.tabs.tabs.filter(tab => {
-      if (!tab.isDirty) {
-        return false;
-      }
-
-      if (appState.project.backend !== 'cloud') {
-        return true;
-      }
-
-      return tab.type === 'code';
-    });
+    return appState.tabs.tabs.filter(tab => tab.isDirty);
   }
 
   async saveDirtyTabs(): Promise<void> {
@@ -641,18 +521,13 @@ export class EditorTabService {
   }
 
   /**
-   * Session-persistable tabs are real project resources only — game, sprite-editor, model-lab,
-   * uikit-forge and template tabs are editor-local and must never be restored on the next launch.
+   * Session-persistable tabs are real project resources only. Game and template tabs are
+   * editor-local, and sessions stored by 1.x may name tab types 2.x no longer has (code,
+   * sprite-editor, model-lab, uikit-forge, asset-generator): none of those is restored.
    */
   private isPersistableTab(tab: { type: string; resourceId: string }): boolean {
     if (tab.resourceId.startsWith('templ://')) return false;
-    if (tab.type === 'game') return false;
-    if (tab.type === 'sprite-editor') return false;
-    if (tab.type === 'model-lab') return false;
-    if (tab.type === 'uikit-forge') return false;
-    // Legacy: pre-rename sessions persisted 'asset-generator' tabs; keep dropping them.
-    if (tab.type === 'asset-generator') return false;
-    return true;
+    return PERSISTABLE_TAB_TYPES.has(tab.type);
   }
 
   /**
@@ -740,9 +615,6 @@ export class EditorTabService {
         return;
       case 'animation':
         await this.activateAnimationTab(tab);
-        return;
-      case 'code':
-        await this.activateCodeTab(tab);
         return;
       default:
         return;
@@ -861,12 +733,6 @@ export class EditorTabService {
     this.syncResourceTabsFromDescriptors();
   }
 
-  private async activateCodeTab(tab: EditorTab): Promise<void> {
-    this.animationEditorService.setActiveAssetPath(null);
-    await this.codeDocumentService.ensureLoaded(tab.resourceId);
-    this.syncResourceTabsFromDescriptors();
-  }
-
   private captureActiveContextState(): void {
     const activeTabId = appState.tabs.activeTabId;
     if (!activeTabId) return;
@@ -899,23 +765,16 @@ export class EditorTabService {
   }
 
   private async saveTabResource(tab: EditorTab): Promise<void> {
-    if (appState.project.backend === 'cloud' && tab.type !== 'code') {
-      return;
-    }
-
     switch (tab.type) {
       case 'scene': {
+        // Ctrl+S, the dirty-close prompt and the sync barrier all write through one seam (plan D4).
         const sceneId = this.deriveSceneIdFromResource(tab.resourceId);
-        await this.commandDispatcher.execute(new SaveSceneCommand({ sceneId }));
+        await this.sceneWrite.saveScene(sceneId);
         return;
       }
       case 'animation': {
         const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
         await this.commandDispatcher.execute(new SaveAnimationCommand({ animationId }));
-        return;
-      }
-      case 'code': {
-        await this.codeDocumentService.save(tab.resourceId);
         return;
       }
       default:
@@ -958,12 +817,6 @@ export class EditorTabService {
           status: 'stopped',
         })
       );
-    }
-
-    // The Game tab hosts the remote preview session card; closing it ends the
-    // session (mirrors how closing the tab stops a local game).
-    if (tab.type === 'game' && this.previewHostService.isActive()) {
-      this.previewHostService.stop();
     }
 
     const wasActive = appState.tabs.activeTabId === tab.id;
@@ -1027,11 +880,9 @@ export class EditorTabService {
         return tab;
       }
 
-      const fileTitle = this.deriveTitle(descriptor.filePath);
-      const treatAsClean = appState.project.backend === 'cloud' && tab.type !== 'code';
       // Dirty state is surfaced by a dot on the tab (LayoutManager decorations), not a `*` prefix.
-      const title = fileTitle;
-      const isDirty = treatAsClean ? false : descriptor.isDirty;
+      const title = this.deriveTitle(descriptor.filePath);
+      const isDirty = descriptor.isDirty;
 
       if (tab.title !== title || tab.isDirty !== isDirty) {
         didChange = true;
@@ -1081,16 +932,6 @@ export class EditorTabService {
         const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
         return appState.animations.descriptors[animationId] ?? null;
       }
-      case 'code': {
-        const document = this.codeDocumentService.getDocument(tab.resourceId);
-        if (!document) {
-          return null;
-        }
-        return {
-          filePath: document.resourcePath,
-          isDirty: document.isDirty,
-        };
-      }
       default:
         return null;
     }
@@ -1127,11 +968,6 @@ export class EditorTabService {
       if (appState.animations.activeAnimationId === animationId) {
         appState.animations.activeAnimationId = null;
       }
-      return;
-    }
-
-    if (tab.type === 'code') {
-      this.codeDocumentService.close(tab.resourceId);
     }
   }
 

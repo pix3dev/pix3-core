@@ -1,0 +1,122 @@
+pix3-history-panel {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+pix3-history-panel pix3-panel {
+  height: 100%;
+}
+
+pix3-history-panel .history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+pix3-history-panel .history-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.5rem;
+  padding: 0;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  cursor: pointer;
+}
+
+pix3-history-panel .history-btn svg {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+pix3-history-panel .history-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+
+pix3-history-panel .history-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+pix3-history-panel .history-btn:focus-visible,
+pix3-history-panel .history-row:focus-visible {
+  outline: 2px solid rgba(var(--pix3-accent-rgb), 0.6);
+  outline-offset: 1px;
+}
+
+pix3-history-panel .history-count {
+  margin-left: auto;
+  color: var(--fg-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+pix3-history-panel .history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 0;
+}
+
+pix3-history-panel .history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+pix3-history-panel .history-row:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+pix3-history-panel .history-row.is-current {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg-0);
+}
+
+pix3-history-panel .history-row.is-undone {
+  color: var(--fg-3);
+}
+
+pix3-history-panel .history-row__icon svg {
+  display: block;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+pix3-history-panel .history-row__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+pix3-history-panel .history-row__time {
+  flex: 0 0 auto;
+  color: var(--fg-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+pix3-history-panel .history-empty {
+  margin: 0.6rem 0.5rem;
+  color: var(--fg-3);
+  font-size: 12px;
+}

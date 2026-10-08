@@ -108,7 +108,11 @@ export class ProjectStorageService {
     const entries: FileDescriptor[] = [];
     for (const entry of manifest.values()) {
       const relative =
-        dir === '.' ? entry.path : entry.path.startsWith(`${dir}/`) ? entry.path.slice(dir.length + 1) : null;
+        dir === '.'
+          ? entry.path
+          : entry.path.startsWith(`${dir}/`)
+            ? entry.path.slice(dir.length + 1)
+            : null;
       if (!relative || relative.includes('/')) continue;
       const projectPath = this.hostService.projectPath(entry.path);
       if (projectPath === null) continue;
@@ -169,7 +173,8 @@ export class ProjectStorageService {
     );
     for (const entry of entries) {
       const projectPath = this.hostService.projectPath(entry.path);
-      if (entry.kind !== 'file' || !entry.sha256 || !projectPath || projectPath.startsWith('.pix3')) continue;
+      if (entry.kind !== 'file' || !entry.sha256 || !projectPath || projectPath.startsWith('.pix3'))
+        continue;
       const paths = index.get(entry.sha256);
       if (paths) paths.push(projectPath);
       else index.set(entry.sha256, [projectPath]);
@@ -202,7 +207,9 @@ export class ProjectStorageService {
     options: { readonly unconditional?: boolean; readonly baseHash?: string }
   ): Promise<void> {
     const wirePath = this.wire(path);
-    const base = options.unconditional ? undefined : (options.baseHash ?? this.knownHashes.get(wirePath));
+    const base = options.unconditional
+      ? undefined
+      : (options.baseHash ?? this.knownHashes.get(wirePath));
     try {
       const result = await this.files.write(wirePath, data, base ? { ifMatch: base } : {});
       this.knownHashes.set(wirePath, result.sha256);

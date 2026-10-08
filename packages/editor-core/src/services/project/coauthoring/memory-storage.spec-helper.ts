@@ -2,14 +2,14 @@
  * In-memory stand-in for the parts of `ProjectStorageService` the co-authoring services use.
  * Spec helper only (never imported by editor code).
  */
-import type { FileDescriptor } from '@/services/project/FileSystemAPIService';
+import type { FileDescriptor } from '@/services/project/file-descriptor';
 import type { StorageBackendKind } from '@/services/project/ProjectStorageService';
 
 export class MemoryStorage {
   readonly files = new Map<string, string>();
   /** Raw bytes that override `files` for a path (e.g. a BOM the text view hides). */
   readonly bytes = new Map<string, Uint8Array>();
-  backend: StorageBackendKind = 'local';
+  backend: StorageBackendKind = 'host';
   /** Paths (prefixes) whose writes throw, e.g. a read-only `.pix3/`. */
   readonly failWrites = new Set<string>();
   readonly writes: Array<{ path: string; contents: string }> = [];
@@ -71,7 +71,7 @@ export class MemoryStorage {
   }
 
   getManifestContentHash(path: string): string | null | undefined {
-    if (this.backend !== 'workspace') return undefined;
+    if (this.manifestHashes.size === 0) return undefined;
     const key = this.key(path);
     if (!this.files.has(key)) return null;
     return this.manifestHashes.get(key);

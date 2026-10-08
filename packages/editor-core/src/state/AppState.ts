@@ -8,13 +8,7 @@ const DEFAULT_THEME: ThemeName = 'dark';
 export type SceneLoadState = 'idle' | 'loading' | 'ready' | 'error';
 export type AnimationLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
-export type EditorTabType =
-  | 'scene'
-  | 'prefab'
-  | 'script'
-  | 'texture'
-  | 'animation'
-  | 'game';
+export type EditorTabType = 'scene' | 'prefab' | 'script' | 'texture' | 'animation' | 'game';
 
 export interface CameraState {
   position: { x: number; y: number; z: number };
@@ -133,10 +127,6 @@ export interface AnimationsState {
 }
 
 export type ProjectStatus = 'idle' | 'selecting' | 'opening' | 'ready' | 'error';
-/**
- * Where the open project's files live. `workspace` is a folder served by `pix3 serve` over HTTP +
- * WebSocket (no File System Access); see `src/services/project/workspace/`.
- */
 /** Where the project lives: always the plugin's file API in 2.x (plan §F, D3). */
 export type ProjectBackend = 'host';
 
