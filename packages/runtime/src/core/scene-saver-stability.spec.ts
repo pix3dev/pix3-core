@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { installCanvasOnlyDocument } from '../node';
-import { createSceneHarness, templateCorpus } from '../node/scene-corpus';
+import { createSceneHarness, extraCorpus, templateCorpus } from '../node/scene-corpus';
 import { getNodePropertySchema } from '../fw/property-schema-utils';
 import type { NodeBase } from '../nodes/NodeBase';
 import { readImageHeaderSize } from './image-header-size';
@@ -27,7 +27,8 @@ afterAll(() => {
   vi.restoreAllMocks();
 });
 
-const corpus = templateCorpus();
+// `PIX3_EXTRA_CORPUS=<project dir>` adds another project's scenes (`npm run test:corpus`).
+const corpus = [...templateCorpus(), ...extraCorpus()];
 
 const changedLines = (a: string, b: string): number => {
   const x = a.split('\n');

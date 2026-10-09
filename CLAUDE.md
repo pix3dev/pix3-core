@@ -61,6 +61,7 @@ npm run lint           # eslint over runtime, cli, vite-plugin, editor-core
 npm run type-check     # tsc per package
 npm run build -w packages/editor-core   # prebuilt editor → dist/ (+ check-dist)
 npm run version:sync   # stamp the root version into every package (lockstep, plan §A.3)
+npm run test:corpus    # write-model corpus specs + ../DeepCore scenes (local only, not CI; another dir as arg)
 ```
 
 Single test: `npx vitest run packages/runtime/src/core/SceneLoader.spec.ts` or `npx vitest run -t "creates a box"`.
