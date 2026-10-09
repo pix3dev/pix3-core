@@ -485,3 +485,35 @@ describe('AnimatedSprite2D.play', () => {
     expect(sprite.currentClip).toBe('attack');
   });
 });
+
+describe('AnimatedSprite2D keeps the authored clip in the file (write-model, S12 §4.2)', () => {
+  const save = (sprite: AnimatedSprite2D): string =>
+    new SceneSaver().serializeScene({
+      version: '1.0.0',
+      metadata: {},
+      rootNodes: [sprite],
+      nodeMap: new Map([[sprite.nodeId, sprite]]),
+    });
+
+  it('no clip named: the first one plays, the file still names none', async () => {
+    const { sprite } = await hydrateMultiClipSprite('');
+    expect(sprite.currentClip).toBe('idle'); // what plays
+    expect(save(sprite)).not.toContain('currentClip');
+    expect(sprite.properties.currentClip).toBeUndefined();
+  });
+
+  it('a clip the resource lacks: the first one plays, the file keeps the name', async () => {
+    const { sprite } = await hydrateMultiClipSprite('jump');
+    expect(sprite.currentClip).toBe('idle');
+    expect(save(sprite)).toContain('currentClip: jump');
+  });
+
+  it('choosing a clip (inspector or play) is an edit', async () => {
+    const { sprite } = await hydrateMultiClipSprite('');
+    sprite.currentClip = 'attack';
+    expect(save(sprite)).toContain('currentClip: attack');
+    const other = (await hydrateMultiClipSprite('')).sprite;
+    expect(other.play('attack')).toBe(true);
+    expect(save(other)).toContain('currentClip: attack');
+  });
+});

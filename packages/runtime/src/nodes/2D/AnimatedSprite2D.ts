@@ -12,7 +12,10 @@ import { BATCHABLE_2D_KEY } from '../../core/batch-2d';
 import { parseEventArgs } from '../../core/parse-event-args';
 import type { PropertySchema } from '../../fw/property-schema';
 import type { InstancePropertySchemaProvider } from '../../fw/property-schema-utils';
-import { installReactiveSchemaProperties } from '../../fw/reactive-schema-properties';
+import {
+  assignWithoutSchemaRefresh,
+  installReactiveSchemaProperties,
+} from '../../fw/reactive-schema-properties';
 import {
   ShaderEffectStack,
   type ShaderEffectEntry,
@@ -91,6 +94,13 @@ export class AnimatedSprite2D
   sizeMode: AnimatedSpriteSizeMode;
 
   private _currentFrame: number;
+  /**
+   * The clip the file names when {@link currentClip} is only the resource's fallback for it — `''`
+   * ("the first clip") or a name the resource does not have. `null` when `currentClip` is what was
+   * asked for. A save writes this back unchanged ({@link savedClipName}): the resource arriving
+   * (asynchronously, after the scene parsed) must not turn into an edit of the scene file.
+   */
+  private fallbackFor: string | null = null;
   private readonly frameSequencePlayer = new FrameSequencePlayer();
   private animationResource: AnimationResource | null = null;
   private activeClip: AnimationClip | null = null;
@@ -226,11 +236,17 @@ export class AnimatedSprite2D
     this.refreshTexturePresentation();
   }
 
+  /** The clip name a save writes: what was authored, not a fallback the resource resolved. */
+  get savedClipName(): string {
+    return this.fallbackFor ?? this.currentClip;
+  }
+
   setAnimationResource(resource: AnimationResource | null): void {
     this.animationResource = resource;
-    if (resource && this.currentClip && !resource.clips.some(c => c.name === this.currentClip)) {
+    const wanted = this.savedClipName;
+    if (resource && wanted && !resource.clips.some(c => c.name === wanted)) {
       console.warn(
-        `[AnimatedSprite2D] Unknown clip "${this.currentClip}" on node ${this.nodeId} ` +
+        `[AnimatedSprite2D] Unknown clip "${wanted}" on node ${this.nodeId} ` +
           `(available: ${resource.clips.map(c => c.name).join(', ') || 'none'}); using the first clip.`
       );
     }
@@ -502,6 +518,7 @@ export class AnimatedSprite2D
           getValue: (node: unknown) => (node as AnimatedSprite2D).currentClip,
           setValue: (node: unknown, value: unknown) => {
             const sprite = node as AnimatedSprite2D;
+            sprite.fallbackFor = null; // an explicit choice, not a fallback
             sprite.currentClip = String(value ?? '').trim();
             if (sprite.currentClip) {
               sprite.properties.currentClip = sprite.currentClip;
@@ -623,16 +640,20 @@ export class AnimatedSprite2D
 
   private syncActiveClip(resetFrame: boolean): void {
     const previousClipName = this.activeClip?.name ?? null;
-    this.activeClip = findAnimationClip(this.animationResource, this.currentClip);
+    const wanted = this.savedClipName;
+    this.activeClip = findAnimationClip(this.animationResource, wanted);
 
-    const resolvedClipName = this.activeClip?.name ?? this.currentClip;
+    // `currentClip` reports the clip that plays; a fallback for the authored name is remembered,
+    // and the authored name stays in `properties` and in the file.
+    const resolvedClipName = this.activeClip?.name ?? wanted;
+    this.fallbackFor = resolvedClipName === wanted ? null : wanted;
     if (resolvedClipName !== this.currentClip) {
-      this.currentClip = resolvedClipName;
-      if (resolvedClipName) {
-        this.properties.currentClip = resolvedClipName;
-      } else {
-        delete this.properties.currentClip;
-      }
+      assignWithoutSchemaRefresh(this, 'currentClip', resolvedClipName);
+    }
+    if (wanted) {
+      this.properties.currentClip = wanted;
+    } else {
+      delete this.properties.currentClip;
     }
 
     if (resetFrame && previousClipName !== this.activeClip?.name) {

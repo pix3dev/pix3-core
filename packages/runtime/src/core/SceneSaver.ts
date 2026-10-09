@@ -538,8 +538,8 @@ export class SceneSaver {
         delete props.animationResourcePath;
       }
 
-      if (node.currentClip) {
-        props.currentClip = node.currentClip;
+      if (node.savedClipName) {
+        props.currentClip = node.savedClipName;
       } else {
         delete props.currentClip;
       }
