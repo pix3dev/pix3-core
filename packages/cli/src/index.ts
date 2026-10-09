@@ -8,7 +8,7 @@ import { CLI_VERSION } from './version.ts';
 
 /**
  * `pix3` — entry point of `@pix3/cli`. Deliberately free of heavy imports: `new` must stay instant
- * under a cold `npx`, so `mcp` loads the MCP SDK lazily (`mcp.ts` is itself imported on demand).
+ * under a cold `npx`, so every other command is imported on demand.
  */
 
 interface ParsedArgs {
@@ -89,10 +89,12 @@ const runNew = async (args: ParsedArgs): Promise<number> => {
       'Next:\n' +
       (where === '.' ? '' : `  cd ${where}\n`) +
       '  npm install\n' +
-      '  npm run dev      # the game at /, the Pix3 editor at /__pix3/\n' +
-      '  npm run build    # dist/index.html\n\n' +
-      'Start your coding agent in the project folder: AGENTS.md / CLAUDE.md and .claude/skills/\n' +
-      'tell it how, `npm run check` (pix3 check) verifies its work.\n'
+      '  npm run dev          # the game at /, the Pix3 editor at /__pix3/\n' +
+      '  npm run build        # dist/index.html\n' +
+      '  npx pix3 editor      # the editor in Chrome for your coding agent (starts dev if needed)\n' +
+      '  npx pix3 agent-setup # once per project: connects Codex / Claude Code to that Chrome\n\n' +
+      'AGENTS.md / CLAUDE.md and .claude/skills/ tell the agent how, `npm run check` (pix3 check)\n' +
+      'verifies its work.\n'
   );
   return 0;
 };
@@ -126,79 +128,24 @@ const main = async (): Promise<number> => {
         projectDir: stringFlag(args, 'project'),
         update: args.flags.has('update'),
       });
-    case 'mcp': {
-      if (args.flags.has('workspace')) {
-        const { runMcpWorkspace } = await import('./mcp-workspace.ts');
-        await runMcpWorkspace({
+    case 'editor': // own argument parsing; finds or starts the dev server, opens Chrome
+      return (await import('./editor/command.ts')).runEditorCli(
+        process.argv.slice(process.argv.indexOf('editor') + 1),
+        {
           cwd: process.cwd(),
-          projectDir: stringFlag(args, 'project'),
-          agent: stringFlag(args, 'agent') ?? (process.env.PIX3_AGENT || undefined),
-        });
-        return -1; // keeps running; exits from its own shutdown path
-      }
-      const { runMcp } = await import('./mcp.ts');
-      await runMcp({
-        cwd: process.cwd(),
-        projectDir: stringFlag(args, 'project'),
-        agent: stringFlag(args, 'agent') ?? (process.env.PIX3_AGENT || undefined),
-      });
-      return -1; // keeps running; exits from its own shutdown path
-    }
-    case 'setup': {
-      const target = args.positionals[1] ?? null;
-      if (target !== null && target !== 'claude' && target !== 'codex') {
-        process.stderr.write(`pix3: setup takes claude or codex, not "${target}".\n`);
-        return 1;
-      }
-      const { findProjectRoot } = await import('./manifest.ts');
-      const { setupInstructions } = await import('./mcp-config.ts');
-      const projectArg = stringFlag(args, 'project');
-      const root = projectArg
-        ? resolve(process.cwd(), projectArg)
-        : (findProjectRoot(process.cwd()) ?? resolve(process.cwd()));
-      process.stdout.write(setupInstructions(target, root));
-      return 0;
-    }
-    case 'serve': {
-      const { runServe } = await import('./serve/run-serve.ts');
-      const port = args.flags.get('port');
-      if (port === true) {
-        process.stderr.write('pix3: --port needs a number.\n');
-        return 1;
-      }
-      return runServe({
-        cwd: process.cwd(),
-        projectDir: stringFlag(args, 'project'),
-        port,
-        newToken: args.flags.has('new-token'),
-      });
-    }
-    case 'read':
-    case 'ack': {
-      const file = args.positionals[1];
-      if (!file) {
-        process.stderr.write(`pix3: ${command} needs a file path.\n`);
-        return 1;
-      }
-      const { ackFile, readAndAck } = await import('./ack.ts');
-      const projectDir = stringFlag(args, 'project');
-      if (command === 'read') {
-        process.stdout.write(readAndAck({ cwd: process.cwd(), file, projectDir }).bytes);
-        return 0;
-      }
-      if (args.flags.get('sha256') === true) {
-        process.stderr.write('pix3: --sha256 needs a hash.\n');
-        return 1;
-      }
-      const record = ackFile({
-        cwd: process.cwd(),
-        file,
-        projectDir,
-        hash: stringFlag(args, 'sha256'),
-      });
-      process.stdout.write(`acked ${record.path} ${record.sha256}\n`);
-      return 0;
-    }
+          stdout: text => process.stdout.write(text),
+          stderr: text => process.stderr.write(text),
+        }
+      );
+    case 'agent-setup': // own argument parsing; writes the project's MCP config files
+      return (await import('./agent-setup/command.ts')).runAgentSetupCli(
+        process.argv.slice(process.argv.indexOf('agent-setup') + 1),
+        {
+          cwd: process.cwd(),
+          stdout: text => process.stdout.write(text),
+          stderr: text => process.stderr.write(text),
+        }
+      );
     case 'smoke': // own argument parsing; the game runs in a worker from the smoke bundle
       return (await import('./smoke/command.ts')).runSmokeCli(
         process.argv.slice(process.argv.indexOf('smoke') + 1),

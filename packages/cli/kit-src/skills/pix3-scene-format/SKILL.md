@@ -111,8 +111,9 @@ backgrounds and roots use `stretch` on both axes.
 
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
-label placed "top-right" once landed under the game's Shop button). With the live channel,
-confirm it with a `viewport_screenshot` while the game runs; without it, ask the human to look.
+label placed "top-right" once landed under the game's Shop button). With the editor open,
+confirm it with `pix3_screenshot` + `take_screenshot` while the game runs (`pix3-editor`);
+without it, ask the human to look.
 
 Flow (stack children in a row/column) is a separate block:
 `flow: { enabled: true, direction: vertical, gap: 16, paddingX: 0, paddingY: 0, align: start, autoSize: false }`.

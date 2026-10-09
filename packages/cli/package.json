@@ -1,7 +1,7 @@
 {
   "name": "@pix3/cli",
   "version": "2.0.0-alpha.0",
-  "description": "Pix3 command line: create a project from a recipe, and link your own coding agent (Claude Code, Codex, ...) to an open Pix3 editor window over a loopback MCP channel.",
+  "description": "Pix3 command line: create a project, check and smoke-test it, open the editor in Chrome for your coding agent (Claude Code, Codex, ...) and configure chrome-devtools-mcp for it.",
   "type": "module",
   "repository": {
     "type": "git",
@@ -44,11 +44,8 @@
     "esbuild": "^0.27.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^24.5.2",
-    "@types/ws": "^8.18.1",
     "typescript": "~5.8.3",
-    "ws": "^8.18.0",
     "yaml": "^2.6.0"
   }
 }

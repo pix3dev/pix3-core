@@ -7,7 +7,6 @@ import {
   createProjectId,
   renderManifest,
 } from './manifest.ts';
-import { mcpConfigStep } from './mcp-config.ts';
 import type { TemplateInfo } from './templates.ts';
 import { CLI_VERSION } from './version.ts';
 
@@ -16,8 +15,8 @@ import { CLI_VERSION } from './version.ts';
  * own files, with `{{PROJECT_NAME}}`, `{{PACKAGE_NAME}}` and `{{PIX3_VERSION}}` substituted, the
  * manifest (`pix3project.yaml`) and `.pix3/template.json`. Everything after the template goes
  * through {@link PostCreateStep}s: `pix3 new` passes the agent kit (`kit/install.ts`
- * `agentKitStep` — AGENTS.md, CLAUDE.md, skills, `.mcp.json`, `.gitignore`, script types); the
- * default here is only the pinned MCP config, so a bare `createProject` stays kit-free.
+ * `agentKitStep` — AGENTS.md, CLAUDE.md, skills, `.gitignore`, script types); a bare
+ * `createProject` has none and stays kit-free. The agent's MCP config is `pix3 agent-setup`.
  */
 
 /** The flat project layout (plan §B.5), created even where the template ships no file. */
@@ -59,17 +58,14 @@ export interface CreatedProject {
 }
 
 /**
- * Extension point for everything that lands in a project after the template: the agent kit
- * (plan §5 B), `.pix3/types/@pix3/runtime`, `tsconfig.json`, the pinned MCP config (§5 A). Each
- * step gets the finished project and reports the files it wrote.
+ * Extension point for everything that lands in a project after the template: the agent kit,
+ * `.pix3/types/@pix3/runtime`, `tsconfig.json`. Each step gets the finished project and reports
+ * the files it wrote.
  */
 export type PostCreateStep = (project: CreatedProject) => string[];
 
-/**
- * The project-scoped MCP config (`.mcp.json`, pinned CLI version — plan §5 A). `pix3 new` replaces
- * this with `agentKitStep`, which writes the same `.mcp.json` as part of the kit.
- */
-export const DEFAULT_POST_CREATE_STEPS: readonly PostCreateStep[] = [mcpConfigStep()];
+/** Nothing by default: `pix3 new` passes `agentKitStep`. */
+export const DEFAULT_POST_CREATE_STEPS: readonly PostCreateStep[] = [];
 
 export interface CreateProjectOptions {
   readonly template: TemplateInfo;

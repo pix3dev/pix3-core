@@ -33,7 +33,8 @@ The layout is **whatever this project has** — do not assume folders. Three rul
   `pix3 check` scan). `export class X extends Script` → `type: user:X`.
 
 `pix3project.yaml` is the manifest (do not edit unless asked); `.pix3/` is editor + CLI
-bookkeeping (recovery journal, merge log, script types) — never edit it.
+bookkeeping (`dev.json` of the running dev server, the version journal, script types) — read
+`dev.json`, never edit anything there.
 
 Example — the layout `npm create pix3` sets up (`pix3 new`); other projects differ:
 
@@ -53,22 +54,21 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    smallest form that plays, before asking anything. Choose small things yourself (a shade, a
    speed, a count) and say so in one line. At most ONE question per turn, and only about a
    fork that changes structure ("win by score or by time?"). Never open with a question.
-2. **Re-read a scene before you edit it.** The human may have changed it in the editor a
-   minute ago. Edit the lines you mean to change (search/replace), never regenerate a whole
-   scene from memory. After writing, if `pix3 check` lists **merge-log** entries where the
-   editor KEPT the human's value instead of yours, re-read the file with `pix3 read <file>`
-   (that is your read confirmation); if your value is still intended, write it again — or ask
-   the human. Without that re-read the editor keeps restoring the human's value on every
-   write you make, even if you write the same number.
+2. **Sync, then re-read a scene before you edit it.** The human may have moved things in the
+   editor a minute ago, and their unsaved edits reach the disk on a successful `pix3_sync`
+   (`.claude/skills/pix3-editor/SKILL.md`). Edit the lines you mean to change
+   (search/replace), never regenerate a whole scene from memory. After writing, `pix3_sync`
+   again with `expect` = the sha256 of every file you wrote: `expect_mismatch` means someone
+   else wrote the file after you — re-read it and redo your edit on top of what is there.
 3. **Leave layout, colours and fine-tuning to the human.** If asked "a bit more to the left",
    do it, then offer: "you can drag it in the editor — it saves on its own".
 4. **Run `pix3 check` after every batch of edits** and fix every error before you say "done".
    It checks YAML, node types, properties, `res://` paths, prefabs, components, and
-   type-checks your scripts (tsc). With the live channel connected (MCP, below), then run the
-   game with `game_run` (or `play_restart`), **passing `expect`** — the sha256 of every file you
-   wrote, as `pix3 check --json` prints them under `files`. An answer with
-   `disk_differs_from_agent`, or a non-empty `changedDuringRun`, is not green.
-   **No editor connected?** `pix3 check`, then `pix3 smoke <the scene you changed>` — the
+   type-checks your scripts (tsc). With the editor open in Chrome (the bridge, below), then
+   `pix3_sync` **with `expect`** — the sha256 of every file you wrote, as `pix3 check --json`
+   prints them under `files` — and run the game: `pix3_play` restart, `pix3_game_run`,
+   `pix3_errors`, a screenshot. A sync that is not `ok` is not green.
+   **No editor open?** `pix3 check`, then `pix3 smoke <the scene you changed>` — the
    game is `pix3 smoke scenes/main.pix3scene`; the menu never presses PLAY headless, so a
    smoke of the menu says nothing about the game. It runs that scene in Node for 2 s
    (`--frames N` for more) and exits 1 on any script throw, `console.error` or unhandled
@@ -76,12 +76,12 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    each: the scenes your uncommitted changes reach (git), else every top-level scene, game
    first. Green means nothing threw; it does not mean it plays (nothing was tapped or drawn)
    — so then tell the human what to press and what they should see.
-5. **Art: placeholder → SVG → `generate_asset`, never emoji.** Placeholder = `ColorRect2D`, or
+5. **Art: placeholder → SVG → a generated image, never emoji.** Placeholder = `ColorRect2D`, or
    a near-white PNG in `sprites/` tinted with a `core:tint` effect. Better art = an SVG you
    write into `sprites/` — it works on a `Sprite2D` when the root has `xmlns` plus px
-   `width`/`height`; `pix3 validate` checks it (`E_SVG_*`); template in `pix3-nodes` — or
-   `generate_asset` through the live channel. A label/text that is only emoji is
-   refused — emoji are not art. List every placeholder you leave.
+   `width`/`height`; `pix3 validate` checks it (`E_SVG_*`); template in `pix3-nodes` — or an
+   image the human generates. A label/text that is only emoji is refused — emoji are not
+   art. List every placeholder you leave.
 
 ## YAML essentials (`.pix3scene`) — details in `pix3-scene-format`
 
@@ -171,11 +171,11 @@ add a second one.
   (or on any node the game positions itself) is overwritten every frame and never shows — call
   the game's own shake (grep `shake`) instead. The same holds for its own sound/tween helpers.
 
-## The CLI and the live channel
+## The CLI and the editor bridge
 
 - `pix3 check [--json]` — after every batch (rule 4). `--json` prints `files` (`{ file, sha256 }`,
-  sha256 of the raw bytes), `diagnostics`, `typecheck`, `mergeLog`, `kit`.
-- `pix3 read <file>` — print a file and confirm to the editor you read exactly these bytes.
+  sha256 of the raw bytes), `diagnostics`, `typecheck`, `kit`. It flushes the open editor's
+  unsaved edits first (`--no-sync` skips that).
 - `pix3 validate [paths…]` — scenes only, no type-check.
 - `pix3 smoke [scene] [--frames N] [--json]` — run a scene headless (no browser) and report
   script throws with frame and stack, `console.error`, missing `res://` files; exit 1 on errors.
@@ -183,20 +183,25 @@ add a second one.
   reach, else every top-level scene (`--all` forces that).
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
-- **Live channel (optional).** When the human runs `pix3 serve` in this folder and connects the
-  editor to it (File → Connect to Workspace…), the MCP server in `.mcp.json`
-  (`pix3 mcp --workspace`) gives you 14 tools: running and observing the game, screenshots,
-  asset/sfx generation. There is no scene-editing tool — you still edit files. Details and the
-  answer fields: `.claude/skills/pix3-verify/SKILL.md` ("Live channel").
+- `pix3 editor` — find (or start) the project's dev server and open the editor in a Chrome
+  with remote debugging on port 9333; `pix3 agent-setup [claude|codex] [--repair]` — write the
+  project's MCP config (`.mcp.json`, `.codex/config.toml`) for `chrome-devtools-mcp`, once.
+- **The editor bridge.** With the editor tab open, the `pix3-browser` MCP server (Chrome
+  DevTools) reaches it: `list_pages` → `select_page` → `list_3p_developer_tools` → the
+  `pix3_*` tools — sync the editor with the disk, play, step the game with predicates, read the
+  scene and the errors, prepare a screenshot. There is no scene-editing tool — you still edit
+  files. No `pix3-browser` server → `npx pix3 agent-setup`, then a new thread. The loop, the
+  not-ok answers and the inline fallback: `.claude/skills/pix3-editor/SKILL.md`.
 
 ## Skills (read the one you need, when you need it)
 
 - `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays
 - `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every node in `reference.md` beside it
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
-- `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `read`, merge-log, the live channel (`game_run` + `expect`)
+- `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback
+- `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `smoke`, the diagnostic codes, how to report what was verified
 
 ## Finish every turn with
 
-What changed (files), what `pix3 check` said, whether you ran the game (and what `game_run`
+What changed (files), what `pix3 check` said, whether you ran the game (and what `pix3_game_run`
 answered) or what the human should press and see, placeholders left, and 2–3 concrete next steps.

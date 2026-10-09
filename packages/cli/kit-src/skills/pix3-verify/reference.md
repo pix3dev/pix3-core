@@ -7,15 +7,3 @@ beside this file is the practical version. Source paths quoted here (`src/…`, 
 ## Strict profile — what `pix3 validate` checks
 
 {{include:docs/pix3-specification.md@Strict profile}}
-
-## Co-authoring mode — the editor's side of a shared folder
-
-{{include:docs/pix3-specification.md@Co-authoring mode}}
-
-## Live agent channel — the editor's side of `pix3 mcp --workspace`
-
-{{include:docs/pix3-specification.md@Live agent channel}}
-
-## Workspace backend — `pix3 serve`
-
-{{include:docs/pix3-specification.md@Workspace backend}}

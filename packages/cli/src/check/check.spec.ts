@@ -74,7 +74,7 @@ const newRecipe = (id = 'recipe-tapper-2d'): string => {
   createProject({
     template,
     dir,
-    postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes(), { devMcp: false })],
+    postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes())],
   });
   return dir;
 };

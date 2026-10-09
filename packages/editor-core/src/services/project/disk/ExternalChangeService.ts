@@ -166,6 +166,11 @@ export class ExternalChangeService {
     return this.stale;
   }
 
+  /** Project paths detected and not delivered yet (settling, or held for play). */
+  getPendingPaths(): string[] {
+    return [...this.entries.keys()];
+  }
+
   /** Project paths whose settled content does not parse (a notice was logged). */
   getUnreadablePaths(): readonly string[] {
     return this.unreadable;
