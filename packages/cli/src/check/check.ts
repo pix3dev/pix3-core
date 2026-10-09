@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 
+import { describeUnsynced, syncEditor } from '../editor-sync.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import {
   CHECK_TSCONFIG,
@@ -22,7 +23,7 @@ import {
 } from './typescript.ts';
 
 /**
- * `pix3 check [--json] [--no-hydrate] [--offline] [--project <dir>]` (plan §5 A): everything
+ * `pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]` (plan §5 A): everything
  * `pix3 validate` checks (both levels), plus a TypeScript type-check of the project's scripts, the
  * newest `.pix3/merge-log.jsonl` entries (the editor kept a human's value over the agent's), and
  * whether the agent kit and the project's `@pix3/runtime` match this CLI.
@@ -34,7 +35,7 @@ import {
  * all reached lazily.
  */
 
-export const CHECK_USAGE = `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--project <dir>]
+export const CHECK_USAGE = `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
 
   Everything \`pix3 validate\` checks, plus a TypeScript type-check of the project's scripts
   (tsc --noEmit), the newest .pix3/merge-log.jsonl entries and a version check.
@@ -43,6 +44,7 @@ export const CHECK_USAGE = `Usage: pix3 check [--json] [--no-hydrate] [--offline
                  mergeLog, kit)
   --no-hydrate   validate level 1 only (user: component properties not checked)
   --offline      never install TypeScript (fails with the command to run instead)
+  --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `;
 
@@ -57,6 +59,11 @@ export const CHECK_CODES = {
   E_TYPECHECK_UNAVAILABLE: {
     severity: 'error',
     summary: 'TypeScript could not be found or installed, so the scripts were not type-checked',
+  },
+  E_EDITOR_UNSYNCED: {
+    severity: 'error',
+    summary:
+      'a running Pix3 editor did not flush its unsaved scenes in time, so the disk may be older than what the designer sees (--no-sync reads it anyway)',
   },
   W_RUNTIME_VERSION_MISMATCH: {
     severity: 'warning',
@@ -141,6 +148,7 @@ interface CheckArgs {
   readonly json: boolean;
   readonly hydrate: boolean;
   readonly offline: boolean;
+  readonly sync: boolean;
   readonly project?: string;
   readonly help: boolean;
 }
@@ -149,6 +157,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
   let json = false;
   let hydrate = true;
   let offline = false;
+  let sync = true;
   let project: string | undefined;
   let help = false;
   for (let i = 0; i < argv.length; i++) {
@@ -156,6 +165,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     if (arg === '--json') json = true;
     else if (arg === '--no-hydrate') hydrate = false;
     else if (arg === '--offline') offline = true;
+    else if (arg === '--no-sync') sync = false;
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
@@ -163,7 +173,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else return { error: `unknown argument ${arg}` };
   }
-  return { json, hydrate, offline, project, help };
+  return { json, hydrate, offline, sync, project, help };
 };
 
 const defaultValidate: ValidateFn = async options => {
@@ -402,18 +412,32 @@ export const checkProject = async (
   options: {
     readonly hydrate: boolean;
     readonly offline: boolean;
+    /** Flush a running editor first (plan §B.6); `false` = `--no-sync`. Default true. */
+    readonly sync?: boolean;
     readonly validate?: ValidateFn;
     readonly typescript?: CheckIo['typescript'];
     readonly log?: (line: string) => void;
   }
 ): Promise<CheckReport> => {
   const started = Date.now();
+  // Files are the truth only once the editor has written them: a dev server with an editor tab
+  // (`.pix3/dev.json`) is asked to flush before anything here reads the disk.
+  const synced = await syncEditor(projectRoot, { noSync: options.sync === false });
+  const diagnostics: CheckDiagnostic[] = [];
+  if (synced.status === 'unsynced') {
+    diagnostics.push({
+      code: 'E_EDITOR_UNSYNCED',
+      severity: 'error',
+      file: PROJECT_MANIFEST_FILE,
+      message: describeUnsynced(synced),
+    });
+  }
   const validate = options.validate ?? defaultValidate;
   const validated = await validate({ projectRoot, hydrate: options.hydrate });
   const validateMs = Date.now() - started;
 
-  const diagnostics: CheckDiagnostic[] = [];
   const notes: string[] = [...validated.notes];
+  if (synced.status === 'flushed') notes.push(`editor at ${synced.url} flushed its unsaved scenes`);
 
   // --- the type-check layout ------------------------------------------------------------------
   const ownTsconfig = hasOwnTsconfig(projectRoot);
@@ -582,6 +606,7 @@ export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<nu
   const report = await checkProject(projectRoot, {
     hydrate: args.hydrate,
     offline: args.offline,
+    sync: args.sync,
     validate: io.validate,
     typescript: io.typescript,
     log: line => io.stderr(`${line}\n`),

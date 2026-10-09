@@ -10,7 +10,7 @@ pix3 setup [claude|codex]                     print how to register the MCP serv
 pix3 serve [--project <dir>] [--port <n>] [--new-token]
                                               serve a project folder to a Pix3 editor
 pix3 validate [paths…] [--json]               strict scene check
-pix3 check [--json] [--no-hydrate] [--offline] [--project <dir>]
+pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
                                               validate + tsc over the scripts + merge-log + versions
 pix3 smoke [scene] [--changed|--all] [--frames N] [--timeout S] [--json] [--project <dir>]
                                               run the game headless in Node, report what threw
@@ -37,12 +37,16 @@ and removes the ack (one-shot); see `docs/pix3-specification.md` → "Co-authori
 
 `pix3 check` = `pix3 validate` (both levels) + a TypeScript type-check of the project's scripts +
 the newest `.pix3/merge-log.jsonl` entries + a version check. Exit 0 = no errors (warnings
-allowed), 1 = at least one error, 2 = could not run. Diagnostics are one list, validate's plus:
+allowed), 1 = at least one error, 2 = could not run. Files are the truth only once the editor has
+written them: when `.pix3/dev.json` names a live dev server, `check` first asks it to flush the
+editor's unsaved scenes (`POST /__pix3/api/flush`, up to 15 s; `--no-sync` skips it, a dead
+server is ignored). Diagnostics are one list, validate's plus:
 
 | Code | Severity | When |
 | --- | --- | --- |
 | `E_TYPE` | error | a tsc diagnostic (`message` starts with `TS<code>:`; `file`, `line`) |
 | `E_TYPECHECK_UNAVAILABLE` | error | TypeScript could not be found or installed (`fix` = the command to run) |
+| `E_EDITOR_UNSYNCED` | error | `.pix3/dev.json` points at a live dev server whose editor did not flush its unsaved scenes within 15 s (`--no-sync` reads the disk as it is) |
 | `W_RUNTIME_VERSION_MISMATCH` | warning | own `tsconfig.json`, and `node_modules/@pix3/runtime` is not this CLI's version |
 | `W_RUNTIME_NOT_INSTALLED` | warning | own `tsconfig.json`, and no `node_modules/@pix3/runtime` |
 | `W_KIT_OUTDATED` | warning | `metadata.agentKit.version` is not this CLI's version (`pix3 kit --update`) |
@@ -196,7 +200,8 @@ empty, PLAY is never pressed, and a game whose `onStart` throws used to smoke gr
 Exit 0 = no errors (warnings allowed), 1 = errors, 2 = could not run (with several scenes, the
 worst run decides): `E_SMOKE_NO_PROJECT`,
 `E_SMOKE_NO_SCENE`, `E_SMOKE_BUNDLE`, `E_SMOKE_UNSUPPORTED` (no esbuild), `E_SMOKE_TIMEOUT`,
-`E_SMOKE_CRASH`. The human report prints the `game` snapshot whole — on one line when it is short, pretty-printed
+`E_SMOKE_CRASH`, `E_EDITOR_UNSYNCED` (a live editor named by `.pix3/dev.json` did not flush its
+unsaved scenes first; `--no-sync` reads the disk as it is). The human report prints the `game` snapshot whole — on one line when it is short, pretty-printed
 and indented otherwise, cut only past 4 000 characters (`--json` always carries it whole).
 `--json` prints `{ ok, scene, frames, framesRequested, firstFrameOk, errors:
 [{ code, frame, script?, nodeId?, nodeName?, phase?, message, stack?, domAccess? }], warnings,

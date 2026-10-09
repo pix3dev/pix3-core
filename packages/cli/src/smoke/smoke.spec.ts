@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -477,6 +478,37 @@ describe('pix3 smoke', () => {
       expect(set.ok).toBe(true);
     });
   });
+
+  it('E_EDITOR_UNSYNCED when a live editor cannot flush; --no-sync reads the disk', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(''),
+    });
+    const server = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url?.endsWith('/__pix3/api/hello')) res.end('{"ok":true}');
+      else res.end('{"ok":false,"reason":"timeout","editor":true}');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    write(root, {
+      '.pix3/dev.json': JSON.stringify({ url: `http://127.0.0.1:${port}/`, port, pid: 0 }),
+    });
+    try {
+      let out = '';
+      const io = { cwd: root, stdout: (text: string) => void (out += text), stderr: () => {} };
+      expect(await runSmokeCli(['scenes/main.pix3scene', '--json', '--frames', '2'], io)).toBe(2);
+      expect(JSON.parse(out)).toMatchObject({ ok: false, code: 'E_EDITOR_UNSYNCED' });
+      expect((JSON.parse(out) as { reason: string }).reason).toContain('timeout');
+      out = '';
+      expect(
+        await runSmokeCli(['scenes/main.pix3scene', '--json', '--frames', '2', '--no-sync'], io)
+      ).toBe(0);
+      expect(JSON.parse(out)).toMatchObject({ ok: true, frames: 2 });
+    } finally {
+      server.close();
+    }
+  }, 60_000);
 
   it('CLI: --json output, exit codes, usage errors', async () => {
     const root = project({
