@@ -76,7 +76,7 @@ describe('EditorTabService', () => {
     return id;
   };
 
-  it('opens a scene tab, mirrors its dirty state, and saves through SceneWriteService', async () => {
+  it('opens a scene tab, mirrors its dirty state, and saves through FlushService', async () => {
     const { service, sceneWrite } = createService();
 
     await service.openResourceTab('scene', SCENE);

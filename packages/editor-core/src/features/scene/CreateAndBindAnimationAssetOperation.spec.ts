@@ -46,6 +46,7 @@ const createOperationContext = (sprite: AnimatedSprite2D) => {
     }),
     writeTextFile: vi.fn(async (path: string, contents: string) => {
       files.set(path, contents);
+      return '';
     }),
     deleteEntry: vi.fn(async (path: string) => {
       const normalizedPath = path

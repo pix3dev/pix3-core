@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resetAppState } from '@/state';
 import { readDiskVersion } from './disk-version';
-import { SceneDiskStateService } from './SceneDiskStateService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { MemoryStorage } from './memory-storage.spec-helper';
 
 const BOM = new Uint8Array([0xef, 0xbb, 0xbf]);
@@ -31,8 +31,13 @@ describe('co-authoring hashes raw bytes', () => {
     expect(version.hash).not.toBe(nodeSha(new TextEncoder().encode(version.text))); // …not the hash
     expect(await readDiskVersion(storage, 'scenes/missing.pix3scene')).toBeNull();
 
-    const diskState = new SceneDiskStateService();
-    await diskState.recordRead('res://scenes/bom.pix3scene', version.bytes, version.text);
-    expect(diskState.isKnownHash('scenes/bom.pix3scene', nodeSha(bytes))).toBe(true);
+    const baselines = new SceneBaselineService();
+    baselines.set('res://scenes/bom.pix3scene', {
+      sha: version.hash,
+      text: SceneBaselineService.decode(version.bytes),
+      norm: { version: '1.0.0', root: [] },
+    });
+    expect(baselines.isKnownHash('scenes/bom.pix3scene', nodeSha(bytes))).toBe(true);
+    expect(baselines.get('scenes/bom.pix3scene')!.text.startsWith('\uFEFF')).toBe(true);
   });
 });

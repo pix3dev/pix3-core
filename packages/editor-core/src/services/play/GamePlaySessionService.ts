@@ -29,6 +29,7 @@ import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { SetPlayPausedOperation } from '@/features/scripts/SetPlayPausedOperation';
 import { isEditorActive, onEditorKeepAliveChange } from '@/services/core/page-activity';
 import { BackgroundTicker } from '@/services/core/background-ticker';
+import { FlushService } from '@/services/project/FlushService';
 import { PeekService } from '@/services/viewport/PeekService';
 
 type GameHostKind = 'tab' | 'popout';
@@ -75,6 +76,9 @@ export class GamePlaySessionService {
 
   @inject(PeekService)
   private readonly peekService!: PeekService;
+
+  @inject(FlushService)
+  private readonly flush!: FlushService;
 
   private initialized = false;
   private disposeUiSubscription?: () => void;
@@ -522,6 +526,9 @@ export class GamePlaySessionService {
     // Each launch/restart begins with a clean slate — clear any banner from a
     // previous run so a fresh attempt isn't shadowed by a stale error.
     this.runtimeErrorBridge.clearPlayModeError();
+    // Plan §C.1 (в): the disk holds what is about to play, so an agent reading the files during
+    // play sees the scene that runs. Nothing to wait for: a play click is not inside a gesture.
+    await this.flush.flushDirty(0).catch(() => undefined);
 
     const quality =
       appState.project.manifest?.quality ?? createDefaultQualitySettings(DEFAULT_TARGET_PLATFORM);

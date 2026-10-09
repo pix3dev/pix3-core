@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appState, resetAppState } from '@/state';
-import { sha256 } from '@/services/project/external-merge/hash';
 import { ExternalChangeService, UNREADABLE_NOTICE_MS } from './ExternalChangeService';
-import { SceneDiskStateService } from './SceneDiskStateService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { MemoryStorage, wire } from './memory-storage.spec-helper';
 
+const EMPTY_NORM = { version: '1.0.0', root: [] };
 const SCENE = (name: string) => `version: 1.0.0\nroot:\n  - id: n\n    name: ${name}\n`;
 
 function createService() {
   const storage = new MemoryStorage();
-  const diskState = new SceneDiskStateService();
+  const diskState = new SceneBaselineService();
   const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
   const service = wire(new ExternalChangeService(), {
     storage,
@@ -87,7 +87,7 @@ describe('ExternalChangeService — stabilisation window', () => {
     const h = createService();
     const text = SCENE('mine');
     h.storage.files.set('scenes/a.pix3scene', text);
-    h.diskState.recordWrite('scenes/a.pix3scene', await sha256(text), 3);
+    await h.diskState.setFromText('scenes/a.pix3scene', text, EMPTY_NORM);
     h.service.report('scenes/a.pix3scene');
     await h.service.tick();
     await h.service.tick();
@@ -126,7 +126,7 @@ describe('ExternalChangeService — stabilisation window', () => {
     const path = 'scenes/a.pix3scene';
     const good = SCENE('loaded');
     h.storage.files.set(path, good);
-    await h.diskState.recordRead(path, good, good); // (1) the editor loaded hash H
+    await h.diskState.setFromText(path, good, EMPTY_NORM); // (1) the editor loaded hash H
     const diskChanges = vi.fn();
     h.diskState.subscribe(diskChanges);
 
@@ -161,7 +161,7 @@ describe('ExternalChangeService — stabilisation window', () => {
     const path = 'scenes/a.pix3scene';
     const good = SCENE('loaded');
     h.storage.files.set(path, good);
-    await h.diskState.recordRead(path, good, good);
+    await h.diskState.setFromText(path, good, EMPTY_NORM);
     h.storage.files.set(path, 'root: [\n  - id: broken');
     h.service.report(path);
     await vi.waitFor(() => expect(h.diskState.isPendingExternal(path)).toBe(true));

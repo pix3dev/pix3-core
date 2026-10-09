@@ -3,7 +3,7 @@ import { inject, injectable } from '@/fw/di';
 import { appState } from '@/state';
 import { LoggingService } from '@/services/core/LoggingService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import type { HostFsFrame } from '@/host/EditorHost';
 import { HostService } from '@/host/HostService';
 import {
@@ -57,7 +57,7 @@ interface PendingEntry {
  *    consecutive snapshots (size + sha256) match. Every path reported while any of them is still
  *    moving belongs to the same batch, and a batch is delivered together
  *    (`onExternalBatch(paths)`), so "script + prefab + scene" loads as one.
- * 2. **Own writes** are recognised by hash (`SceneDiskStateService`: the version the editor last
+ * 2. **Own writes** are recognised by hash (`SceneBaselineService`: the version the editor last
  *    read or wrote) and dropped without reaching the consumer.
  * 3. **Last good graph.** A scene/prefab version that does not parse is not delivered: the path
  *    stays pending (autosave holds it), retried with backoff; after {@link UNREADABLE_NOTICE_MS}
@@ -69,15 +69,15 @@ interface PendingEntry {
  * 4. **Play mode.** Detected but not delivered while playing ({@link isStale}); the batch goes
  *    out when play stops.
  *
- * While a path is pending, `SceneDiskStateService.isPendingExternal(path)` is true.
+ * While a path is pending, `SceneBaselineService.isPendingExternal(path)` is true.
  */
 @injectable()
 export class ExternalChangeService {
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
 
-  @inject(SceneDiskStateService)
-  private readonly diskState!: SceneDiskStateService;
+  @inject(SceneBaselineService)
+  private readonly diskState!: SceneBaselineService;
 
   @inject(LoggingService)
   private readonly logger!: LoggingService;

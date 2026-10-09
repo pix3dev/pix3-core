@@ -9,7 +9,8 @@ import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeSer
 import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
 import { ProjectService } from '@/services/project/ProjectService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { SceneWriteService } from '@/services/project/SceneWriteService';
+import { FlushService } from '@/services/project/FlushService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
 
@@ -76,7 +77,7 @@ export async function mountEditorWith(
   const writer = service(WriterService);
   await writer.claimAtLoad();
 
-  const sceneWrite = service(SceneWriteService);
+  const sceneWrite = service(FlushService);
   sceneWrite.start();
   const syncApply = service(SyncApplyService);
   host.sync.setHandlers({
@@ -98,6 +99,9 @@ export async function mountEditorWith(
       sceneWrite.dispose();
       writer.dispose();
       service(ExternalReloadService).dispose();
+      // Per-file memory of this mount (pending external versions, baselines) goes with it.
+      externalChanges.reset();
+      service(SceneBaselineService).reset();
       el.replaceChildren();
     },
   };

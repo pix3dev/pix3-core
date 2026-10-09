@@ -17,7 +17,7 @@ import { SceneManager } from '@pix3/runtime';
 import { subscribe } from 'valtio/vanilla';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { SceneWriteService } from '@/services/project/SceneWriteService';
+import { FlushService } from '@/services/project/FlushService';
 
 export type DirtyCloseDecision = 'save' | 'dont-save' | 'cancel';
 
@@ -58,8 +58,8 @@ export class EditorTabService {
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
 
-  @inject(SceneWriteService)
-  private readonly sceneWrite!: SceneWriteService;
+  @inject(FlushService)
+  private readonly sceneWrite!: FlushService;
 
   private disposeSceneSubscription?: () => void;
   private disposeAnimationSubscription?: () => void;

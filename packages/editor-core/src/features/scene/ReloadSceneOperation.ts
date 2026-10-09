@@ -3,7 +3,8 @@ import { SceneManager } from '@pix3/runtime';
 import { SceneValidationError } from '@pix3/runtime';
 import { ref } from 'valtio/vanilla';
 import { optionalService } from '@/services/project/coauthoring/optional-service';
-import { SceneDiskStateService } from '@/services/project/coauthoring/SceneDiskStateService';
+import { SceneBaselineService, type SceneBaseline } from '@/services/project/SceneBaselineService';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import {
@@ -20,20 +21,15 @@ export interface ReloadSceneOperationParams {
   /** File path to reload from. */
   filePath: string;
   /**
-   * The scene text to build the graph from — the external version `A` (already read by the merge)
-   * or the merge result `M`. Omitted: the file is read now.
+   * The scene text to build the graph from — a merge result (plan §C.3 step 3). Omitted: the file
+   * is read now and becomes the baseline.
    */
   sceneText?: string;
   /**
-   * Byte hash of the version ON DISK this reload corresponds to (`A`'s hash, also when the graph
-   * is built from `M`). Omitted: the hash of the bytes read now (or of `sceneText`).
+   * The baseline to record instead of the text read now: with a merge, the graph is built from
+   * the merged text M while the baseline is the external version E on disk (§C.3 step 3).
    */
-  diskHash?: string;
-  /**
-   * Whether the loaded text becomes `E`, the version the editor accepted (default true). False
-   * for a merge result `M` that still has to be written back: `E` becomes `M` once it is on disk.
-   */
-  acceptAsEditorVersion?: boolean;
+  baseline?: SceneBaseline;
   /** Mark the scene dirty after the reload (a merge result not on disk yet). */
   markDirty?: boolean;
 }
@@ -70,14 +66,16 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
     );
 
     try {
-      const diskState = optionalService(container, SceneDiskStateService);
+      const baselines = optionalService(container, SceneBaselineService);
       let diskBytes: Uint8Array | null = null;
+      let diskHash: string | null = null;
       let sceneText = this.params.sceneText;
       if (sceneText === undefined) {
-        // Raw bytes when the project storage is there (the recorded hash must be the disk's).
+        // Raw bytes when the project storage is there (the baseline hash must be the disk's).
         const storage = optionalService(container, ProjectStorageService);
         const version = storage ? await readDiskVersion(storage, filePath).catch(() => null) : null;
         diskBytes = version?.bytes ?? null;
+        diskHash = version?.hash ?? null;
         sceneText = version?.text ?? (await resourceManager.readText(filePath));
       }
 
@@ -96,6 +94,7 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
         await new Promise(resolve => window.setTimeout(resolve, 50));
         sceneText = await resourceManager.readText(filePath);
         diskBytes = null;
+        diskHash = null;
       }
 
       if (!sceneText || sceneText.trim().length === 0) {
@@ -114,19 +113,22 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
         throw new Error(`Scene descriptor not found: ${sceneId}`);
       }
 
+      // The baseline is normalised from the fresh graph before anything touches it (W1).
+      const norm = normOfGraph(graph);
+
       // Update scene manager with new graph
       sceneManager.setActiveSceneGraph(sceneId, graph);
-      if (diskState) {
-        const accept = this.params.acceptAsEditorVersion !== false;
-        if (this.params.diskHash) {
-          diskState.recordReadHash(filePath, this.params.diskHash);
-          if (accept) diskState.acceptVersion(filePath, sceneText, this.params.diskHash);
+      if (baselines) {
+        if (this.params.baseline) {
+          baselines.set(filePath, this.params.baseline);
+        } else if (diskBytes && diskHash) {
+          baselines.set(filePath, {
+            sha: diskHash,
+            text: SceneBaselineService.decode(diskBytes),
+            norm,
+          });
         } else {
-          await diskState.recordRead(
-            filePath,
-            diskBytes ?? sceneText,
-            accept ? sceneText : undefined
-          );
+          await baselines.setFromText(filePath, sceneText, norm);
         }
       }
 

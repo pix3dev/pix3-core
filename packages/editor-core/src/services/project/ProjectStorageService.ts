@@ -189,12 +189,13 @@ export class ProjectStorageService {
    * passes the version it accepted into its graph. `options.unconditional`: no base at all, only
    * for files the editor owns outright.
    */
+  /** Resolves to the sha256 of the bytes written (the plugin's hash of what is on disk now). */
   async writeTextFile(
     path: string,
     contents: string,
     options: { readonly unconditional?: boolean; readonly baseHash?: string } = {}
-  ): Promise<void> {
-    await this.write(path, contents, options);
+  ): Promise<string> {
+    return this.write(path, contents, options);
   }
 
   async writeBinaryFile(path: string, data: ArrayBuffer): Promise<void> {
@@ -205,18 +206,21 @@ export class ProjectStorageService {
     path: string,
     data: Uint8Array | string,
     options: { readonly unconditional?: boolean; readonly baseHash?: string }
-  ): Promise<void> {
+  ): Promise<string> {
     const wirePath = this.wire(path);
     const base = options.unconditional
       ? undefined
       : (options.baseHash ?? this.knownHashes.get(wirePath));
+    let sha: string;
     try {
       const result = await this.files.write(wirePath, data, base ? { ifMatch: base } : {});
-      this.knownHashes.set(wirePath, result.sha256);
+      sha = result.sha256;
+      this.knownHashes.set(wirePath, sha);
     } catch (error) {
       throw this.translate(wirePath, error);
     }
     this.signalDirectories([this.parentOf(HostService.normalize(path))]);
+    return sha;
   }
 
   async deleteEntry(path: string): Promise<void> {

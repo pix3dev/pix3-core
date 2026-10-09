@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ServiceContainer } from '@/fw/di';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { SceneWriteService } from '@/services/project/SceneWriteService';
+import { FlushService } from '@/services/project/FlushService';
 import { appState, resetAppState } from '@/state';
 
 import { HostService } from './HostService';
@@ -43,7 +43,7 @@ describe('mountEditor', () => {
       ScriptRegistry,
       ProjectStorageService,
       ProjectScriptLoaderService,
-      SceneWriteService,
+      FlushService,
     ]) {
       expect(container.hasService(container.getOrCreateToken(service)), service.name).toBe(true);
     }

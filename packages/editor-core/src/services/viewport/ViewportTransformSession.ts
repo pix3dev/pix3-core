@@ -146,7 +146,7 @@ export class ViewportTransformSession {
 
   /**
    * Mirror {@link isGestureActive} into `appState.ui.gestureInProgress` (session UI state, written
-   * directly — AGENTS.md "Gateway scope"). `SceneWriteService` waits for it before a flush or an
+   * directly — AGENTS.md "Gateway scope"). `FlushService` waits for it before a flush or an
    * idle save, so a drag is never written half-way (plan §C.1).
    */
   private syncGestureFlag(): void {
