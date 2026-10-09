@@ -4270,6 +4270,26 @@ export class ViewportRendererService {
     this.sync2DServiceFrameThickness();
   }
 
+  /**
+   * Where `node`'s origin is on the page (CSS px, the space `Input.dispatchMouseEvent` and a
+   * click use): the 2D camera for a 2D node, the 3D camera otherwise. Null when the viewport has
+   * no size or the point is behind / outside the camera's depth range. For the agent bridge.
+   */
+  projectNodeToClient(node: NodeBase): { x: number; y: number } | null {
+    const canvas = this.getCanvasElement();
+    const camera = node instanceof Node2D ? this.orthographicCamera : this.camera;
+    if (!canvas || !camera) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    camera.updateMatrixWorld();
+    const ndc = node.getWorldPosition(new THREE.Vector3()).project(camera);
+    if (ndc.z < -1 || ndc.z > 1) return null;
+    return {
+      x: rect.left + ((ndc.x + 1) / 2) * rect.width,
+      y: rect.top + ((1 - ndc.y) / 2) * rect.height,
+    };
+  }
+
   private projectWorldToOverlay(world: THREE.Vector3): { x: number; y: number } | null {
     if (!this.orthographicCamera || this.viewportSize.width <= 0 || this.viewportSize.height <= 0) {
       return null;
@@ -4622,9 +4642,9 @@ export class ViewportRendererService {
     await this.transformSession.complete2DTransform();
   }
 
-  /** Esc during a 2D drag: restore the start state, record nothing. */
-  cancel2DTransform(): boolean {
-    return this.transformSession.cancel2DTransform();
+  /** Esc during a drag (2D handles or the 3D gizmo): restore the start state, record nothing. */
+  cancelActiveGesture(): boolean {
+    return this.transformSession.cancel2DTransform() || this.transformSession.cancel3DTransform();
   }
 
   /**

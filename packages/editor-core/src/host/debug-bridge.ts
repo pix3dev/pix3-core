@@ -15,6 +15,7 @@ import { StartSceneGameCommand } from '@/features/scripts/StartSceneGameCommand'
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { FlushService } from '@/services/project/FlushService';
+import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
@@ -48,6 +49,8 @@ export interface Pix3DebugBridge {
    * §C.1 `pending = diff(baseline, graph)`). Empty object = everything is on disk.
    */
   pending(): Record<string, string[]>;
+  /** A node's origin on the page in CSS px (to click or drag it), or null when not in view. */
+  screen(nodeId: string): { x: number; y: number } | null;
   find(text: string): NodeSummary[];
   selection(): { nodeIds: string[]; primaryNodeId: string | null };
   errors(): CapturedError[];
@@ -118,6 +121,8 @@ export function createDebugBridge(): Pix3DebugBridge {
           'expect_mismatch re-read; on stale follow `playing`.',
         'scene(maxDepth=3) / node(id) / find(text) / selection()':
           'Read the active scene; node(id).saved is the node as the scene file gets it.',
+        'screen(id)':
+          'A node’s origin on the page (CSS px) to click or drag it; null when not in view.',
         'pending()':
           'Unsaved edits per scene path (the keys the next write carries); {} = all on disk.',
         'play.status() / start(scenePath?) / stop() / restart() / pause()':
@@ -177,6 +182,12 @@ export function createDebugBridge(): Pix3DebugBridge {
       // does not show sizes a texture set or values only the node's fields hold.
       const saved = indexNodes(normOfGraph(graph)).get(nodeId)?.def ?? null;
       return { ...dto, saved };
+    },
+
+    screen(nodeId) {
+      const node = activeGraph()?.nodeMap.get(nodeId);
+      if (!(node instanceof NodeBase)) return null;
+      return service(ViewportRendererService).projectNodeToClient(node);
     },
 
     pending() {

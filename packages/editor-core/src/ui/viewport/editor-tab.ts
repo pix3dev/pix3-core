@@ -1444,14 +1444,14 @@ export class EditorTabComponent extends ComponentBase {
   }
 
   /**
-   * Esc while a 2D drag is in progress cancels it (the nodes go back, nothing is recorded). On
-   * `window` in the capture phase: during a drag the focus may sit anywhere, and the scope
-   * pop-out below must not also run for that Esc.
+   * Esc while a drag is in progress (2D handles or the 3D gizmo) cancels it: the nodes go back,
+   * nothing is recorded. On `window` in the capture phase: during a drag the focus may sit
+   * anywhere, and the scope pop-out below must not also run for that Esc.
    */
   private handleGestureEscape = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.isActiveTab) return;
-    if (!this.viewportRenderer.has2DTransform?.()) return;
-    if (this.viewportRenderer.cancel2DTransform?.()) {
+    if (!appState.ui.gestureInProgress && !this.viewportRenderer.has2DTransform?.()) return;
+    if (this.viewportRenderer.cancelActiveGesture?.()) {
       this.gestureCancelled = true;
       event.preventDefault();
       event.stopPropagation();

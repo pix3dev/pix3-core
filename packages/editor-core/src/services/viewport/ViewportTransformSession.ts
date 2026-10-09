@@ -88,6 +88,9 @@ export class ViewportTransformSession {
   activeTargetNodeId: string | null = null;
   activeTargetDragNodeId: string | null = null;
 
+  /** Set while {@link cancel3DTransform} ends the gizmo drag, so its `mouseUp` commits nothing. */
+  private cancelling3D = false;
+
   constructor(private readonly deps: ViewportTransformSessionDeps) {}
 
   setTransformMode(mode: TransformMode): void {
@@ -368,6 +371,41 @@ export class ViewportTransformSession {
     return true;
   }
 
+  /**
+   * Esc during a 3D gizmo drag: the dragged node (or a camera/light target) goes back to its
+   * start state and the drag ends without an operation — the 3D half of {@link cancel2DTransform}.
+   */
+  cancel3DTransform(): boolean {
+    const controls = this.deps.getTransformControls();
+    if (!controls?.dragging) return false;
+    const sceneGraph = this.deps.getActiveSceneGraph();
+    for (const [nodeId, start] of this.transformStartStates) {
+      const node = sceneGraph?.nodeMap.get(nodeId);
+      if (!(node instanceof Node3D)) continue;
+      node.position.copy(start.position);
+      node.rotation.copy(start.rotation);
+      node.scale.copy(start.scale);
+      this.deps.updateNodeTransform(node);
+    }
+    const object = controls.object;
+    const targetNode = object ? this.deps.getTargetNodeForObject(object) : null;
+    const startTarget = targetNode ? this.targetTransformStartStates.get(targetNode.nodeId) : null;
+    if (targetNode && startTarget) targetNode.setTargetPosition(startTarget);
+    this.cancelling3D = true;
+    try {
+      controls.pointerUp(null);
+    } finally {
+      this.cancelling3D = false;
+    }
+    this.transformStartStates.clear();
+    this.targetTransformStartStates.clear();
+    this.activeTargetDragNodeId = null;
+    this.deps.updateSelection();
+    this.deps.requestRender();
+    this.syncGestureFlag();
+    return true;
+  }
+
   captureTransformStartState(obj: THREE.Object3D): void {
     const targetNode = this.deps.getTargetNodeForObject(obj);
     if (targetNode) {
@@ -414,6 +452,8 @@ export class ViewportTransformSession {
   }
 
   private async handleTransformCompletedInner(): Promise<void> {
+    // Esc ended this drag: the nodes are back where they started, nothing to record.
+    if (this.cancelling3D) return;
     const transformedObject = this.deps.getTransformControls()?.object;
     if (!transformedObject) {
       this.transformStartStates.clear();

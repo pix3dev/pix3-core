@@ -409,7 +409,7 @@ describe('EditorTabComponent', () => {
     );
     services.viewportRenderer.has2DTransform.mockReturnValue(true);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(services.viewportRenderer.cancel2DTransform).toHaveBeenCalledTimes(1);
+    expect(services.viewportRenderer.cancelActiveGesture).toHaveBeenCalledTimes(1);
     services.viewportRenderer.has2DTransform.mockReturnValue(false);
 
     panel.dispatchEvent(
@@ -747,7 +747,7 @@ function stubPanelServices(panel: InstanceType<typeof EditorTabComponent>) {
     set2DMarqueePreviewNodeIds: vi.fn<(nodeIds: string[]) => boolean>(() => false),
     clear2DMarqueePreview: vi.fn<() => boolean>(() => false),
     has2DTransform: vi.fn(() => false),
-    cancel2DTransform: vi.fn(() => true),
+    cancelActiveGesture: vi.fn(() => true),
     complete2DTransform: vi.fn(async () => {}),
     handleAxisGizmoPointerDown: vi.fn(() => false),
     isAxisGizmoInteraction: vi.fn(() => false),
