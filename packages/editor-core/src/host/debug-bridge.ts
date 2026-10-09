@@ -1,4 +1,4 @@
-import { NodeBase, SceneManager } from '@pix3/runtime';
+import { NodeBase, SceneManager, type SceneNodeDefinition } from '@pix3/runtime';
 
 import {
   clearErrors,
@@ -16,6 +16,9 @@ import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
+import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
+import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
 import { appState } from '@/state';
 
 import type { HookReply } from './EditorHost';
@@ -39,7 +42,12 @@ export interface Pix3DebugBridge {
   help(): Record<string, string>;
   status(): Record<string, unknown>;
   scene(maxDepth?: number): (NodeDTO & { sceneVersion: string }) | null;
-  node(nodeId: string): NodeDTO | null;
+  node(nodeId: string): (NodeDTO & { saved: SceneNodeDefinition | null }) | null;
+  /**
+   * Edits of open scenes not on disk yet, per scene path: the keys a flush would write (plan
+   * §C.1 `pending = diff(baseline, graph)`). Empty object = everything is on disk.
+   */
+  pending(): Record<string, string[]>;
   find(text: string): NodeSummary[];
   selection(): { nodeIds: string[]; primaryNodeId: string | null };
   errors(): CapturedError[];
@@ -108,7 +116,10 @@ export function createDebugBridge(): Pix3DebugBridge {
           'Write the editor’s edits, rescan, and wait until the editor runs the files on disk. ' +
           'Not ok is not a barrier: on gesture_in_progress / stale_modules retry; on ' +
           'expect_mismatch re-read; on stale follow `playing`.',
-        'scene(maxDepth=3) / node(id) / find(text) / selection()': 'Read the active scene.',
+        'scene(maxDepth=3) / node(id) / find(text) / selection()':
+          'Read the active scene; node(id).saved is the node as the scene file gets it.',
+        'pending()':
+          'Unsaved edits per scene path (the keys the next write carries); {} = all on disk.',
         'play.status() / start(scenePath?) / stop() / restart() / pause()':
           'Play mode. The agent may stop or restart only a session it started.',
         'errors() / clearErrors()': 'Captured console / runtime errors.',
@@ -157,11 +168,34 @@ export function createDebugBridge(): Pix3DebugBridge {
     },
 
     node(nodeId) {
-      const node = activeGraph()?.nodeMap.get(nodeId);
-      if (!(node instanceof NodeBase)) return null;
+      const graph = activeGraph();
+      const node = graph?.nodeMap.get(nodeId);
+      if (!graph || !(node instanceof NodeBase)) return null;
       const dto = nodeToDTO(node, 0);
       dto.components = node.components.map((c, i) => componentToDTO(c, i));
-      return dto;
+      // What the scene file gets for this node — `properties` above is the loaded YAML bag, which
+      // does not show sizes a texture set or values only the node's fields hold.
+      const saved = indexNodes(normOfGraph(graph)).get(nodeId)?.def ?? null;
+      return { ...dto, saved };
+    },
+
+    pending() {
+      const out: Record<string, string[]> = {};
+      const manager = service(SceneManager);
+      const baselines = service(SceneBaselineService);
+      for (const descriptor of Object.values(appState.scenes.descriptors)) {
+        const graph = manager.getSceneGraph(descriptor.id);
+        const baseline = baselines.get(descriptor.filePath);
+        if (!graph || !baseline) continue;
+        const ops = diffScenes(baseline.norm, normOfGraph(graph));
+        if (ops.length === 0) continue;
+        out[toProjectPath(descriptor.filePath)] = ops.map(op =>
+          op.kind === 'set' || op.kind === 'delete'
+            ? leafKey(op.nodeId, op.path)
+            : `${op.kind}:${op.kind === 'addNode' ? op.def.id : op.nodeId}`
+        );
+      }
+      return out;
     },
 
     find(text) {

@@ -1,6 +1,7 @@
 import { inject, injectable, ServiceContainer } from '@/fw/di';
 import { hostFailureOf, type HostFsFrame, type HostManifestEntry } from '@/host/EditorHost';
 import { HostService } from '@/host/HostService';
+import { contentTypeOf } from '@/services/project/file-content-type';
 import { appState } from '@/state';
 
 import type { FileDescriptor } from './file-descriptor';
@@ -144,7 +145,7 @@ export class ProjectStorageService {
     const read = await this.files.read(this.wire(path));
     if (!read) throw new Error(`File not found: ${HostService.normalize(path)}`);
     this.knownHashes.set(this.wire(path), read.sha256);
-    return new Blob([read.bytes as BlobPart]);
+    return new Blob([read.bytes as BlobPart], { type: contentTypeOf(path) });
   }
 
   /** Whether a FILE exists at `path` (directories answer false). */

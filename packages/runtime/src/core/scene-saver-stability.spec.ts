@@ -110,7 +110,7 @@ describe('Node textures carry the size in the image header', () => {
 });
 
 describe('readImageHeaderSize', () => {
-  it('reads PNG, GIF, JPEG, WebP and SVG', () => {
+  it('reads PNG, GIF, JPEG, WebP and SVG (sized as the browser decodes it)', () => {
     expect(readImageHeaderSize(png(640, 480))).toEqual({ width: 640, height: 480 });
     expect(readImageHeaderSize(bytes('GIF89a', [0x40, 0x01, 0xf0, 0x00, 0, 0]))).toEqual({
       width: 320,
@@ -135,7 +135,10 @@ describe('readImageHeaderSize', () => {
       width: 40,
       height: 80,
     });
-    expect(readImageHeaderSize(svg('width="100%"'))).toBeNull();
+    // What Chrome's <img> decodes: no intrinsic size → the 300×150 default object size.
+    expect(readImageHeaderSize(svg('viewBox="0 0 80 40"'))).toEqual({ width: 300, height: 150 });
+    expect(readImageHeaderSize(svg('width="100%"'))).toEqual({ width: 300, height: 150 });
+    expect(readImageHeaderSize(svg('width="50"'))).toEqual({ width: 50, height: 150 });
     expect(readImageHeaderSize(bytes('not an image'))).toBeNull();
   });
 });

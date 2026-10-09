@@ -74,6 +74,12 @@ function sized(width: number, height: number): ImageHeaderSize | null {
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
+/**
+ * An SVG's size the way the browser's `<img>` decodes it (Chrome, measured by the write-model size
+ * cross-check): `width`/`height` in px or unitless are the size; a missing (or relative) one comes
+ * from the other through the `viewBox` ratio, else it is the CSS default object size — 300 wide,
+ * 150 high. So a `viewBox`-only SVG is 300×150, not its `viewBox` box.
+ */
 function readSvgSize(bytes: Uint8Array): ImageHeaderSize | null {
   const head = new TextDecoder('utf-8').decode(bytes.subarray(0, 4096));
   const open = /<svg\b[^>]*>/i.exec(head)?.[0];
@@ -86,14 +92,16 @@ function readSvgSize(bytes: Uint8Array): ImageHeaderSize | null {
   };
   const width = length(attr('width'));
   const height = length(attr('height'));
-  if (width !== null && height !== null) return sized(width, height);
   const box = attr('viewBox')
     ?.trim()
     .split(/[\s,]+/)
     .map(Number);
-  if (!box || box.length !== 4 || box.some(n => !Number.isFinite(n))) return null;
-  const [, , boxWidth, boxHeight] = box;
-  if (width !== null) return sized(width, (width * boxHeight) / boxWidth);
-  if (height !== null) return sized((height * boxWidth) / boxHeight, height);
-  return sized(boxWidth, boxHeight);
+  const ratio =
+    box && box.length === 4 && box.every(Number.isFinite) && box[2] > 0 && box[3] > 0
+      ? box[2] / box[3]
+      : null;
+  if (width !== null && height !== null) return sized(width, height);
+  if (width !== null) return sized(width, ratio ? width / ratio : 150);
+  if (height !== null) return sized(ratio ? height * ratio : 300, height);
+  return sized(300, 150);
 }

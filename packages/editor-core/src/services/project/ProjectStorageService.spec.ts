@@ -97,4 +97,16 @@ describe('ProjectStorageService over EditorHost', () => {
     expect(storage.getKnownContentHash('b/one.png')).toBe(hash);
     expect(storage.getKnownContentHash('a/one.png')).toBeNull();
   });
+
+  it('hands blobs to the browser with their MIME type (an SVG without one does not decode)', async () => {
+    const host = new FakeHost({
+      files: { 'sprites/a.svg': '<svg/>', 'sprites/b.png': 'png', 'x.bin': 'x' },
+    });
+    await host.whenReady();
+    HostService.install(host);
+    const storage = new ProjectStorageService();
+    expect((await storage.readBlob('res://sprites/a.svg')).type).toBe('image/svg+xml');
+    expect((await storage.readBlob('sprites/b.png')).type).toBe('image/png');
+    expect((await storage.readBlob('x.bin')).type).toBe('');
+  });
 });
