@@ -106,6 +106,13 @@ describe('SceneMergeService — §C.3', () => {
     expect(notices()).toEqual([]);
   });
 
+  it('a read-only tab follows the disk too (reloading is not an edit)', async () => {
+    await boot();
+    appState.project.host.writer = 'other';
+    await agentWrites(SCENE.replace('name: Other', 'name: Writer Tab'));
+    expect(node('other')?.name).toBe('Writer Tab');
+  });
+
   it('dirty: the designer edit and an agent rename of another key both live, no notice', async () => {
     const sceneId = await boot();
     await setProp('box', 'width', 240);

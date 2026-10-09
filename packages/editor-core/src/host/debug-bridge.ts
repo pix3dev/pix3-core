@@ -14,6 +14,8 @@ import { ServiceContainer } from '@/fw/di';
 import { StartSceneGameCommand } from '@/features/scripts/StartSceneGameCommand';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
+import { FlushService } from '@/services/project/FlushService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { appState } from '@/state';
 
 import type { HookReply } from './EditorHost';
@@ -100,7 +102,8 @@ export function createDebugBridge(): Pix3DebugBridge {
 
     help() {
       return {
-        'status()': 'Versions, project, active scene, script status, error count.',
+        'status()':
+          'Versions, project, active scene, script status, writer, connection, dirty scenes, flushing, gestureInProgress, pendingExternal, error count.',
         'sync({expect?, timeoutMs?})':
           'Write the editor’s edits, rescan, and wait until the editor runs the files on disk. ' +
           'Not ok is not a barrier: on gesture_in_progress / stale_modules retry; on ' +
@@ -122,6 +125,15 @@ export function createDebugBridge(): Pix3DebugBridge {
         scriptsStatus: appState.project.scriptsStatus,
         writer: appState.project.host.writer,
         connection: appState.project.host.connection,
+        // Scenes with edits not on disk yet (plan §C.1 "грязно"); a flush in flight still counts.
+        dirty: Object.values(appState.scenes.descriptors)
+          .filter(descriptor => descriptor.isDirty)
+          .map(descriptor => descriptor.filePath),
+        flushing: service(FlushService).isFlushing(),
+        // A viewport drag is mid-edit: nothing is written until it ends (plan §C.1).
+        gestureInProgress: appState.ui.gestureInProgress,
+        // Paths whose external version is seen but not applied yet (settling, unreadable, play).
+        pendingExternal: service(SceneBaselineService).getPendingExternalPaths(),
         errorCount: errors().length,
       };
     },

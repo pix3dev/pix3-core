@@ -90,6 +90,10 @@ const READ_ONLY_ALLOWED_OPERATIONS = new Set([
   'scripts.set-play-mode',
   'scripts.set-game-popout-window-open',
   'editor.update-settings',
+  // Following the disk is not an edit: a read-only tab must show what the writer tab (or an
+  // agent) wrote — the external-version path reloads its scenes and refreshes prefab instances.
+  'scene.reload',
+  'scene.refresh-prefab-instances',
 ]);
 
 const NO_SCENE_HISTORY_KEY = '__none__';
