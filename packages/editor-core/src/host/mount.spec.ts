@@ -52,7 +52,7 @@ describe('mountEditor', () => {
     expect(appState.project.scriptsStatus).toBe('ready');
     expect(typeof host.handlers.flush).toBe('function');
     expect(typeof host.handlers.applySync).toBe('function');
-    expect((window as { __PIX3_DEBUG__?: { version: number } }).__PIX3_DEBUG__?.version).toBe(1);
+    expect((window as { __PIX3_DEBUG__?: { version: number } }).__PIX3_DEBUG__?.version).toBe(2);
   });
 
   it('answers a sync during play as stale, naming the owner', async () => {
