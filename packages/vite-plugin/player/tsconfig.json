@@ -1,0 +1,27 @@
+{
+  // The player is browser code bundled by the project's Vite, not Node ESM like `src/`: it
+  // imports `@pix3/runtime` (TypeScript sources, bundler resolution) and the plugin's virtual
+  // modules. This config type-checks it against the runtime in this checkout;
+  // `tsconfig.build.json` emits `dist/player/` without the runtime in the program.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "useDefineForClassFields": true,
+    "noEmit": true,
+    "paths": {
+      "@pix3/runtime": ["../../runtime/src/index.ts"]
+    }
+  },
+  "include": ["."]
+}

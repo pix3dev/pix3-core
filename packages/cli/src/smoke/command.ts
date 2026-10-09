@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { parse as parseYaml } from 'yaml';
 
+import { describeUnsynced, syncEditor } from '../editor-sync.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
@@ -29,7 +30,7 @@ import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
  * wall-clock timeout. Exit codes: 0 = ran clean, 1 = at least one error, 2 = could not run.
  */
 
-export const SMOKE_USAGE = `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--timeout S] [--json] [--project <dir>]
+export const SMOKE_USAGE = `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--timeout S] [--json] [--no-sync] [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -48,6 +49,7 @@ export const SMOKE_USAGE = `Usage: pix3 smoke [scene] [--changed | --all] [--fra
   --frames N     frames to step (default 120 = 2 s of game time)
   --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
   --json         machine-readable report
+  --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 
   Exit: 0 = no errors, 1 = errors, 2 = could not run (no scene, bundle failure, unsupported, timeout).
@@ -66,6 +68,7 @@ interface SmokeArgs {
   readonly frames: number;
   readonly timeoutSec: number;
   readonly json: boolean;
+  readonly sync: boolean;
   readonly project?: string;
   readonly help: boolean;
 }
@@ -78,6 +81,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let frames = DEFAULT_FRAMES;
   let timeoutSec = DEFAULT_TIMEOUT_SEC;
   let json = false;
+  let sync = true;
   let changed = false;
   let all = false;
   let project: string | undefined;
@@ -91,6 +95,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     const arg = argv[i];
     const name = arg.split('=')[0];
     if (arg === '--json') json = true;
+    else if (arg === '--no-sync') sync = false;
     else if (arg === '--changed') changed = true;
     else if (arg === '--all') all = true;
     else if (arg === '--help' || arg === '-h') help = true;
@@ -115,7 +120,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     return {
       error: `${changed ? '--changed' : '--all'} picks the scenes; drop ${scene} or the flag`,
     };
-  return { scene, changed, all, frames, timeoutSec, json, project, help };
+  return { scene, changed, all, frames, timeoutSec, json, sync, project, help };
 };
 
 const failure = (code: SmokeFailureCode, reason: string, scene?: string): SmokeFailure => ({
@@ -499,12 +504,19 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const shownRoot = root ?? io.cwd;
   const common = { frames: args.frames, timeoutSec: args.timeoutSec, cwd: io.cwd };
+  // Files are the truth only once the editor has written them (plan §B.6): a dev server with an
+  // editor tab (`.pix3/dev.json`) flushes before the scene is read.
+  const synced = root
+    ? await syncEditor(root, { noSync: !args.sync })
+    : { status: 'skipped' as const };
   let outcome: SmokeOutcome | SmokeRunSet;
   if (!root) {
     outcome = failure(
       'E_SMOKE_NO_PROJECT',
       `no pix3project.yaml in ${io.cwd} or above — run inside a project or pass --project <dir>.`
     );
+  } else if (synced.status === 'unsynced') {
+    outcome = failure('E_EDITOR_UNSYNCED', describeUnsynced(synced), args.scene);
   } else if (args.scene !== undefined) {
     outcome = await runSmoke({ projectRoot: root, scene: args.scene, ...common });
   } else {

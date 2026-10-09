@@ -23,10 +23,5 @@
     "include": [
         "src",
         "package.json"
-    ],
-    "exclude": [
-        "src/main.ts",
-        "src/register-project-scripts.ts",
-        "src/generated"
     ]
 }

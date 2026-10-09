@@ -1,6 +1,21 @@
 # @pix3/vite-plugin
 
-`pix3({ resRoot = '.', editor = true, build = 'html' | 'zip' | false, compress = false, allowRemote = false })` — serves the Pix3 editor at `/__pix3/` on the project's Vite dev server, with the file API (`/__pix3/api/*`), the sync barrier, `virtual:pix3/*` modules, and (later) the playable build. Design: plan `pix3/.plans/pix3-core.md` §B.
+`pix3({ resRoot = '.', editor = true, build = 'html' | 'zip' | false, strip, entryScene, compress = false, allowRemote = false })` — serves the Pix3 editor at `/__pix3/` on the project's Vite dev server, with the file API (`/__pix3/api/*`), the sync barrier, `virtual:pix3/*` modules, the player and the playable build. Design: plan `pix3/.plans/pix3-core.md` §B; the record of the player/build port is `.plans/player-build.md`. `pix3()` returns a plugin array (`plugins: [pix3()]`).
+
+## Player
+
+`src/main.ts` of a project is `import { startGame } from '@pix3/vite-plugin/player'; startGame('#app');`. The player (`player/index.ts`, emitted to `dist/player/`) boots `@pix3/runtime` on the `virtual:pix3/*` modules the plugin generates: `scene-manifest` (from `pix3project.yaml`: entry scene, scene list, viewport, quality, fonts, locales), `embedded-assets` (`{}` in dev and zip, every asset as base64 in an html build), `project-scripts` (eager glob of `scripts/` and `src/scripts/`, registered as `user:<Export>`), `spine` / `postprocessing` / `network` (static imports in a build that uses them, no-ops otherwise). In dev `ResourceManager('/<resRoot>/')` fetches from the dev server; a build uses `./`. `window.__PIX3_PLAYER__ = { status, frames, errors, scene, runner }` is what a check reads.
+
+## Build (`vite build`)
+
+- `build: 'html'` (default): one self-contained `dist/index.html` — `vite-plugin-singlefile`, then DeepCore's classic-script rewrite (no `type="module"`, script at the end of `<body>`, no `import.meta`), so it runs from `file://` and inside a sandboxed iframe. `build: 'zip'`: the plain build with the assets beside `index.html` under their `res://` paths, archived to `dist/<projectName>.zip` (`fflate`). `build: false`: `vite build` is left alone (the player's modules still generate).
+- `buildStart` scans every text source outside `node_modules`/`dist`/`.pix3` (`src/build/scan.ts`): `mentionedNames`, the asset set (every scene and prefab, `res://` references, directories, Spine atlas pages, declared locale tables and their sprites, manifest fonts, a packed atlas), and whether Spine / `postprocessing` / the network are used.
+- Strip (`src/build/strippable-runtime-modules.ts`): runtime modules nothing mentions are replaced by throwing stubs in the `load` hook; `postprocessing` resolves to a stub in an html build with no `PostProcess` node. On by default, off when a project dependency depends on `@pix3/runtime` (its imports are not scanned), `strip: false` / `strip: true` override. The table is guarded by `strippable-runtime-modules.spec.ts` against the runtime's import graph.
+- Before reading the disk, a build asks the dev server named by `.pix3/dev.json` to flush the editor's unsaved scenes (`POST /__pix3/api/flush`, 15 s); a live editor that cannot flush fails the build with `E_EDITOR_UNSYNCED`; `PIX3_NO_SYNC=1` skips it (as `pix3 check --no-sync` does).
+- Vite 7 and 8: single-chunk output is `inlineDynamicImports` (rollup) or `codeSplitting: false` (rolldown), chosen by `this.meta.rolldownVersion`; stable hooks only.
+- The result is recorded in `.pix3/build.json` (format, path, bytes, sha256, entry scene, assets, stripped modules, warnings). Env for one run: `PIX3_BUILD_FORMAT`, `PIX3_ENTRY_SCENE`, `PIX3_BUILD_COMPRESS`.
+- `POST /__pix3/api/build {format?, compress?, entryScene?}` from the editor (Run > Build Playable): flush the writer tab, spawn `process.execPath node_modules/vite/bin/vite.js build` (never `vite.cmd`), stream its output as `pix3:build` frames (`flush | start | output | done | failed`), answer with the record. One build at a time (`409 build_in_progress`); `400 build_disabled` under `build: false`.
+- Not yet (P2): `compress`, `report.json`, scenes as documents, WebP, parsing a dependency's imports (N11), the gltf stub.
 
 Done (P1, dev side):
 
@@ -15,6 +30,6 @@ Done (P1, dev side):
 - `virtual:pix3/{editor-host,editor-scripts,bot-policies,spine-loader}`; `.pix3/dev.json`; version gate;
 - the page client is the editor's `EditorHost` (`src/client/`, conformance in `host-contract.spec.ts`); `/__pix3/editor.css` and `optimizeDeps.include` come from the installed `@pix3/editor-core/dist`.
 
-Not yet: player (`./player`, `virtual:runtime-*`, scene manifest), build, the image-generation key proxy.
+Not yet: the image-generation key proxy.
 
-Specs: `src/plugin.spec.ts`, `src/files/changeset.spec.ts`, `src/files/history.spec.ts` (real Vite on a free port, fake tab over the socket; crash/recovery cases drive `ProjectFiles` directly with its `faults` hook).
+Specs: `src/plugin.spec.ts`, `src/files/changeset.spec.ts`, `src/files/history.spec.ts` (real Vite on a free port, fake tab over the socket; crash/recovery cases drive `ProjectFiles` directly with its `faults` hook); `src/build/build.spec.ts` (a real `vite build` of the inline fixture in `src/test-support/build-fixture.ts`: html, zip, `build: false`, strip, options), `src/build/build-route.spec.ts` (the spawned child build), `src/build/scan.spec.ts`, `src/build/strippable-runtime-modules.spec.ts`.

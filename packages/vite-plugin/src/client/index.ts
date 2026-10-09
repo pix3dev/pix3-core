@@ -128,6 +128,27 @@ export interface HostHistory {
   restore(path: string, id: string, options?: { ifMatch?: string }): Promise<HostWriteResult>;
 }
 
+export interface HostBuildOptions {
+  readonly format: 'html' | 'zip';
+  readonly compress?: boolean;
+  readonly entryScene?: string;
+}
+
+export interface HostBuildResult {
+  readonly path: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+/** A `pix3:build` frame: the dev server's progress on a build this or another tab asked for. */
+export interface BuildFrame {
+  readonly type: 'pix3:build';
+  readonly phase: 'flush' | 'start' | 'output' | 'done' | 'failed';
+  readonly line?: string;
+  readonly error?: string;
+  readonly record?: HostBuildResult;
+}
+
 export interface HostClaim {
   readonly writerId: string;
   readonly seq: number;
@@ -193,6 +214,11 @@ export class EditorHostConnection {
   };
   /** The version journal `.pix3/history/` (plan §C.4). */
   readonly history: HostHistory;
+  /** Playable build (plan §B.6): `POST /__pix3/api/build`, progress as {@link BuildFrame}s. */
+  readonly build: {
+    run(options: HostBuildOptions): Promise<HostBuildResult>;
+    onProgress(listener: Listener<BuildFrame>): () => void;
+  };
 
   private roots: ScriptRoots;
   private handlers: HostSyncHandlers = {};
@@ -205,6 +231,7 @@ export class EditorHostConnection {
   private readonly connectionListeners = new Set<Listener<'open' | 'closed'>>();
   private readonly scriptListeners = new Set<Listener<ScriptRoots>>();
   private readonly writerListeners = new Set<Listener<string | null>>();
+  private readonly buildListeners = new Set<Listener<BuildFrame>>();
   private retryMs = 250;
   private closed = false;
 
@@ -237,6 +264,10 @@ export class EditorHostConnection {
       },
       claim: () => this.claim(),
       onChange: listener => subscribe(this.writerListeners, listener),
+    };
+    this.build = {
+      run: options => this.postJson<HostBuildResult>('build', options),
+      onProgress: listener => subscribe(this.buildListeners, listener),
     };
     this.history = {
       list: async path => {
@@ -456,6 +487,9 @@ export class EditorHostConnection {
         return;
       case 'pix3:scripts':
         this.emit(this.scriptListeners, await this.reimportRoots());
+        return;
+      case 'pix3:build':
+        this.emit(this.buildListeners, message as unknown as BuildFrame);
         return;
       case 'request':
         await this.onRequest(message);

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import {
   cpSync,
   existsSync,
@@ -422,6 +423,47 @@ describe('exit codes and coverage', () => {
     expect(code).toBe(2);
     expect(err).toContain('no pix3project.yaml');
   });
+
+  it('E_EDITOR_UNSYNCED when .pix3/dev.json points at a live editor that cannot flush', async () => {
+    const root = newRecipe();
+    const server = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url?.endsWith('/__pix3/api/hello')) res.end('{"ok":true}');
+      else if (req.url?.endsWith('/__pix3/api/flush')) {
+        res.end('{"ok":false,"reason":"gesture_in_progress","editor":true}');
+      } else {
+        res.statusCode = 404;
+        res.end('{}');
+      }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    mkdirSync(join(root, '.pix3'), { recursive: true });
+    writeFileSync(
+      join(root, '.pix3', 'dev.json'),
+      JSON.stringify({ url: `http://127.0.0.1:${port}/`, port, pid: 0 })
+    );
+    try {
+      const report = await check(root, false);
+      const unsynced = report.diagnostics.filter(d => d.code === 'E_EDITOR_UNSYNCED');
+      expect(unsynced).toHaveLength(1);
+      expect(unsynced[0].message).toContain('gesture_in_progress');
+      expect(unsynced[0].message).toContain('--no-sync');
+      expect(report.ok).toBe(false);
+      // --no-sync reads the disk as it is.
+      const skipped = note(
+        await checkProject(root, { hydrate: false, offline: false, validate, sync: false })
+      );
+      expect(skipped.diagnostics.filter(d => d.code === 'E_EDITOR_UNSYNCED')).toEqual([]);
+      // A dead server (stale dev.json) is not an error either.
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      const stale = await check(root, false);
+      expect(stale.diagnostics.filter(d => d.code === 'E_EDITOR_UNSYNCED')).toEqual([]);
+    } finally {
+      server.close();
+    }
+  }, 60_000);
 
   it('covers every check code', () => {
     expect([...Object.keys(CHECK_CODES)].filter(code => !covered.has(code))).toEqual([]);

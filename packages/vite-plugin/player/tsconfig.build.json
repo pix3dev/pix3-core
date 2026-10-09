@@ -1,0 +1,14 @@
+{
+  // Emits `dist/player/` from the player alone: `noCheck` + `isolatedDeclarations` make the emit a
+  // per-file transpile, so `@pix3/runtime` (a peer the project installs) stays out of the program
+  // and `rootDir` holds. `tsconfig.json` is where the player is type-checked.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noCheck": true,
+    "isolatedDeclarations": true,
+    "rootDir": ".",
+    "outDir": "../dist/player",
+    "paths": {}
+  }
+}

@@ -106,7 +106,8 @@ export type SmokeFailureCode =
   | 'E_SMOKE_BUNDLE'
   | 'E_SMOKE_UNSUPPORTED'
   | 'E_SMOKE_TIMEOUT'
-  | 'E_SMOKE_CRASH';
+  | 'E_SMOKE_CRASH'
+  | 'E_EDITOR_UNSYNCED';
 
 export interface SmokeFailure {
   readonly ok: false;
@@ -158,6 +159,7 @@ export const SMOKE_CODES: Readonly<
   E_SMOKE_UNSUPPORTED: 'failure',
   E_SMOKE_TIMEOUT: 'failure',
   E_SMOKE_CRASH: 'failure',
+  E_EDITOR_UNSYNCED: 'failure',
 };
 
 export const isSmokeFailure = (outcome: SmokeOutcome): outcome is SmokeFailure => 'code' in outcome;
