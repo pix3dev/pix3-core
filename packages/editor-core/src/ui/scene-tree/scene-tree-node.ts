@@ -105,7 +105,7 @@ export class SceneTreeNodeComponent extends ComponentBase {
   @property({ type: Object })
   collapsedNodeIds: Set<string> = new Set();
 
-  /** Nodes an external version just changed (`coauthoring.recentlyChangedNodeIds`, ~3 s). */
+  /** Nodes an external version just changed (`project.host.recentlyChanged`, ~3 s). */
   @property({ type: Object })
   recentlyChangedNodeIds: Set<string> = new Set();
 

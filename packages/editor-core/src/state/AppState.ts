@@ -139,6 +139,11 @@ export interface HostConnectionState {
   staleScenes: string[];
   /** Notices of the write model (merge results, an overwritten edit, a draft to restore). */
   notices: HostNotice[];
+  /**
+   * Nodes an external version just changed, per scene id — the scene tree highlights them for a
+   * few seconds after a reload or merge (plan §C.3); `SceneMergeService` clears the entry.
+   */
+  recentlyChanged: Record<string, string[]>;
 }
 
 /** One notice of `HostNoticeService` (rendered by `pix3-host-banner`); actions run there. */
@@ -155,6 +160,7 @@ export const createInitialHostConnectionState = (): HostConnectionState => ({
   writer: 'none',
   staleScenes: [],
   notices: [],
+  recentlyChanged: {},
 });
 
 export type AssetBrowserViewMode = 'folders' | 'by-type';

@@ -1,4 +1,4 @@
-import { sha256 } from '@/services/project/external-merge/hash';
+import { sha256 } from '@/core/hash';
 
 /** The storage calls needed to read a file's raw bytes (`ProjectStorageService` in the editor). */
 export interface ByteSource {

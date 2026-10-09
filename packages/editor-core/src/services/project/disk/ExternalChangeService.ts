@@ -10,9 +10,9 @@ import {
   isPix3InternalPath,
   isSceneFilePath,
   toProjectPath,
-} from '@/services/project/coauthoring/coauthoring-paths';
-import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
-import { checkDocShape, parseSceneText } from '@/services/project/external-merge/scene-doc';
+} from '@/services/project/disk/project-paths';
+import { readDiskVersion } from '@/services/project/disk/disk-version';
+import { sceneShapeProblem } from '@/services/project/disk/scene-shape';
 
 /** Two snapshots this far apart must match before a version counts as arrived (plan §4.1). */
 export const STABILITY_INTERVAL_MS = 300;
@@ -318,7 +318,7 @@ export class ExternalChangeService {
         this.drop(entry.path);
         continue;
       }
-      const parseFailure = isSceneFilePath(entry.path) ? parseProblem(snapshot.text) : null;
+      const parseFailure = isSceneFilePath(entry.path) ? sceneShapeProblem(snapshot.text) : null;
       if (parseFailure !== null) {
         entry.failingSince ??= now;
         entry.failure = `${PARSE_PREFIX}${parseFailure}`;
@@ -484,19 +484,4 @@ export class ExternalChangeService {
 
 function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
   return a.missing === b.missing && a.size === b.size && a.hash === b.hash;
-}
-
-/** Null when `text` is a structurally valid scene document, else a short reason. */
-function parseProblem(text: string): string | null {
-  if (text.trim().length === 0) {
-    return 'the file is empty';
-  }
-  let doc: unknown;
-  try {
-    doc = parseSceneText(text);
-  } catch (error) {
-    return error instanceof Error ? error.message.split('\n')[0] : 'YAML error';
-  }
-  const problems = checkDocShape(doc);
-  return problems.length > 0 ? problems[0].message : null;
 }

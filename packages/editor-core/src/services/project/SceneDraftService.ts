@@ -1,6 +1,6 @@
 import { inject, injectable } from '@/fw/di';
 import { HostNoticeService } from '@/host/HostNoticeService';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneJournalService } from '@/services/project/SceneJournalService';

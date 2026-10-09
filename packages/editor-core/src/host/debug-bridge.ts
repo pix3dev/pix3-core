@@ -19,7 +19,7 @@ import { ViewportRendererService } from '@/services/viewport/ViewportRenderServi
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { appState } from '@/state';
 
 import type { HookReply } from './EditorHost';

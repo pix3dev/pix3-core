@@ -31,11 +31,9 @@ export interface OperationInvokeResult {
 }
 
 /**
- * Who asked for an operation — read by the co-authoring recorder
- * (`src/services/project/coauthoring/ProtectedSetService.ts`): only `user` operations that reach
- * history are recorded as human edits into the protected set `P`. `external` = applying a version
- * that came from disk (reload / merge); `system` = editor machinery that is neither (restoring a
- * snapshot, bookkeeping). Omitted = `user`.
+ * Who asked for an operation (reported with `operation:completed`): `external` = applying a
+ * version that came from disk (reload / merge); `system` = editor machinery that is neither
+ * (restoring a snapshot, bookkeeping). Omitted = `user`.
  */
 export type OperationOrigin = 'user' | 'external' | 'system';
 

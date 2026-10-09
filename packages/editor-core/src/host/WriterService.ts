@@ -1,6 +1,6 @@
 import { inject, injectable } from '@/fw/di';
 import { LoggingService } from '@/services/core/LoggingService';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneMergeService } from '@/services/project/SceneMergeService';
 import { appState } from '@/state';

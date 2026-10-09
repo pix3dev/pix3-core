@@ -10,7 +10,7 @@ import { mountEditorWith, type EditorHandle } from '@/host/mount';
 import { FakeHost } from '@/host/testing/fake-host';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
-import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
+import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneManager } from '@pix3/runtime';
@@ -104,6 +104,10 @@ describe('SceneMergeService — §C.3', () => {
     expect(node('other')?.name).toBe('Agent');
     expect(appState.scenes.descriptors[appState.scenes.activeSceneId!]!.isDirty).toBe(false);
     expect(notices()).toEqual([]);
+    // The changed node lights up in the scene tree for a moment (§C.3).
+    expect(appState.project.host.recentlyChanged[appState.scenes.activeSceneId!]).toEqual([
+      'other',
+    ]);
   });
 
   it('a read-only tab follows the disk too (reloading is not an edit)', async () => {

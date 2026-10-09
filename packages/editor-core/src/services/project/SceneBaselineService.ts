@@ -1,7 +1,7 @@
 import type { SavedSceneDocument } from '@pix3/runtime';
 import { injectable } from '@/fw/di';
 import { sha256 } from '@/core/hash';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
  * The last confirmed disk version of a scene (plan §C.2 "Baseline"): updated on load, reload and a

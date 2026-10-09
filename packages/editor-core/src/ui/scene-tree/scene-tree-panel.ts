@@ -85,12 +85,23 @@ export class SceneTreePanel extends ComponentBase {
   @state()
   private collapsedNodeIds: Set<string> = new Set();
 
-  /**
-   * Short highlight of the nodes an external version changed. Nothing feeds it in the port phase
-   * (1.x's co-authoring did); the external-merge work of plan §C.3 does again.
-   */
+  /** Short highlight of the nodes an external version changed (`project.host.recentlyChanged`). */
   @state()
   private recentlyChangedNodeIds: Set<string> = new Set();
+
+  private disposeHostSubscription?: () => void;
+
+  private syncRecentlyChanged(): void {
+    const sceneId = appState.scenes.activeSceneId;
+    const ids = (sceneId && appState.project.host.recentlyChanged[sceneId]) || [];
+    if (
+      ids.length === this.recentlyChangedNodeIds.size &&
+      ids.every(id => this.recentlyChangedNodeIds.has(id))
+    ) {
+      return;
+    }
+    this.recentlyChangedNodeIds = new Set(ids);
+  }
 
   /**
    * Branch roots the Peek mask is currently hiding — the chips' state, mirrored into the tree.
@@ -175,6 +186,10 @@ export class SceneTreePanel extends ComponentBase {
     this.disposeSelectionSubscription = subscribe(appState.selection, () => {
       this.syncSelectionState();
     });
+    this.disposeHostSubscription = subscribe(appState.project.host, () =>
+      this.syncRecentlyChanged()
+    );
+    this.syncRecentlyChanged();
 
     // Track focus for context-aware shortcuts
     this.addEventListener('focusin', () => {
@@ -192,6 +207,8 @@ export class SceneTreePanel extends ComponentBase {
     this.disposeSelectionSubscription = undefined;
     this.disposePeekSubscription?.();
     this.disposePeekSubscription = undefined;
+    this.disposeHostSubscription?.();
+    this.disposeHostSubscription = undefined;
     document.removeEventListener('click', this.onWindowClick, { capture: true });
     window.removeEventListener('keydown', this.onWindowEscape);
     this.portal.close();

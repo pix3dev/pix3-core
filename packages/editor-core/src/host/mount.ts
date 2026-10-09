@@ -6,7 +6,7 @@ import { registerRuntimeServices } from '@/core/register-runtime-services';
 import { ServiceContainer } from '@/fw/di';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
-import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
+import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { ProjectService } from '@/services/project/ProjectService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { FlushService } from '@/services/project/FlushService';

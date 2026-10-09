@@ -2,8 +2,8 @@ import { inject, injectable } from '@/fw/di';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { SceneMergeService } from '@/services/project/SceneMergeService';
-import { ExternalChangeService } from '@/services/project/coauthoring/ExternalChangeService';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { ProjectService } from '@/services/project/ProjectService';
 import { appState } from '@/state';
 

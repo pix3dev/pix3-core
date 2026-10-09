@@ -3,7 +3,7 @@ import { HostService } from '@/host/HostService';
 import { appState, type AssetBrowserViewMode } from '@/state';
 import type { FileDescriptor } from '@/services/project/file-descriptor';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { sha256 } from '@/services/project/external-merge/hash';
+import { sha256 } from '@/core/hash';
 import { parse, stringify } from 'yaml';
 import {
   createDefaultProjectManifest,

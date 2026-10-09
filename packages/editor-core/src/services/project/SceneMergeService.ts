@@ -14,8 +14,8 @@ import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { HostNoticeService } from '@/host/HostNoticeService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
-import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
-import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { readDiskVersion } from '@/services/project/disk/disk-version';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { FlushService } from '@/services/project/FlushService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { SceneBaselineService, type SceneBaseline } from '@/services/project/SceneBaselineService';
@@ -102,6 +102,7 @@ export class SceneMergeService {
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending = B && graph && descriptor.isDirty ? diffScenes(B.norm, normOfGraph(graph)) : [];
+    if (B) this.highlightChanges(descriptor.id, B.norm, E.norm);
     let outcome: ExternalApplyOutcome;
     if (!B || !graph || pending.length === 0) {
       await this.install(descriptor, E, version.text, eGraph, false);
@@ -111,6 +112,34 @@ export class SceneMergeService {
     }
     if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, lastFlush!.after);
     return outcome;
+  }
+
+  /** How long the scene tree highlights the nodes an external version changed. */
+  static readonly HIGHLIGHT_MS = 3_000;
+  private readonly highlightTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** The nodes E changed against B (added, moved, any key) light up in the tree for a moment. */
+  private highlightChanges(sceneId: string, B: SavedSceneDocument, E: SavedSceneDocument): void {
+    const ids = new Set<string>();
+    for (const op of diffScenes(B, E)) {
+      if (op.kind === 'addNode') ids.add(op.def.id);
+      else if (op.kind === 'moveNode') ids.add(op.nodeId);
+      else if ((op.kind === 'set' || op.kind === 'delete') && op.nodeId) ids.add(op.nodeId);
+    }
+    if (ids.size === 0) return;
+    appState.project.host.recentlyChanged = {
+      ...appState.project.host.recentlyChanged,
+      [sceneId]: [...ids],
+    };
+    clearTimeout(this.highlightTimers.get(sceneId));
+    this.highlightTimers.set(
+      sceneId,
+      setTimeout(() => {
+        this.highlightTimers.delete(sceneId);
+        const { [sceneId]: _gone, ...rest } = appState.project.host.recentlyChanged;
+        appState.project.host.recentlyChanged = rest;
+      }, SceneMergeService.HIGHLIGHT_MS)
+    );
   }
 
   /**

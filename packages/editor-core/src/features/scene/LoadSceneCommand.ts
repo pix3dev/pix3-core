@@ -6,9 +6,9 @@ import { SceneValidationError } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import type { SceneGraph } from '@pix3/runtime';
 import { ref } from 'valtio/vanilla';
-import { optionalService } from '@/services/project/coauthoring/optional-service';
+import { optionalService } from '@/services/project/disk/optional-service';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
-import { readDiskVersion, type DiskVersion } from '@/services/project/coauthoring/disk-version';
+import { readDiskVersion, type DiskVersion } from '@/services/project/disk/disk-version';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import {
   CommandBase,
