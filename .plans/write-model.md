@@ -20,9 +20,11 @@ Those stay authoritative; where this file disagrees it says so (AGENTS.md rule 1
 | W8 | Plugin: `.pix3/tx/` changeset (`POST /__pix3/api/changeset`), `.pix3/history/` journal (`GET /__pix3/api/history`, `POST /__pix3/api/history/restore`), recovery at start, claim and every write under the existing `serial` mutex. Single-file `PUT` stays for non-scene writes. | §C.4; port plan D6 / §8.10. |
 | W9 | Notices ("тост" of §C.1/§C.3) are `appState.project.host.notices` owned by `HostNoticeService`, rendered under the state banner of `pix3-host-banner`, each also written to the log. | No toast surface existed; the banner is where "this tab cannot save" already lives. |
 | W10 | `EditorHost` gains optional `history` (journal) and `files.writeChangeset`; `HostFileFailure.path`. A host without them degrades: no journal (merges still work, "kept in History" is not promised), per-file writes. | The contract is the seam (port plan D1). |
-| W11 | Esc during a 2D drag cancels it (nodes back, no operation). Not implemented for the 3D gizmo drag (`TransformControls` has no cancel). | Gate row "Esc во время drag" assumed an affordance the editor did not have (rule 13). |
+| W11 | Esc during a drag cancels it (nodes back, no operation): 2D handle drags and the 3D gizmo (`cancel3DTransform` ends the `TransformControls` drag with its `mouseUp` ignored). | Gate row "Esc во время drag" assumed an affordance the editor did not have (rule 13). |
 | W12 | A read-only tab follows the writer tab: `ExternalChangeService` skips only frames whose `writerId` is this tab's (it skipped every `author: 'editor'` frame), and `scene.reload` / `scene.refresh-prefab-instances` are allowed in read-only mode. | Found by the browser gate: tab B kept a stale scene. |
-| W13 | `__PIX3_DEBUG__.status()` reports `dirty`, `flushing`, `gestureInProgress`, `pendingExternal`. | The agent's view of §C.1's "dirty" indicator and of why a sync answers `gesture_in_progress`. |
+| W14 | A scene file that is exactly what `JSON.stringify` prints (minified or indented) is patched as data and re-printed with its own layout (`scene-json-writer.ts`); anything else takes the YAML splice path. | DeepCore has JSON scenes (valid YAML); the splice writer produced invalid YAML on them and every flush fell back to a block-YAML rewrite. |
+| W15 | An SVG's header size is what Chrome's `<img>` decodes: a missing/relative width or height comes from the `viewBox` ratio, else 300×150. | Measured in the browser (`size-crosscheck.mjs`, 13/13); a `viewBox`-only SVG is 300×150 there, not its box. |
+| W13 | `__PIX3_DEBUG__.status()` reports `dirty`, `flushing`, `gestureInProgress`, `pendingExternal`; `node(id).saved` is the node as the file gets it, `pending()` the unsaved keys per scene, `screen(id)` a node's origin on the page (to click or drag it). | The agent's view of §C.1's "dirty" indicator and of why a sync answers `gesture_in_progress`. |
 
 ## 1. Milestones
 
@@ -78,11 +80,12 @@ Those stay authoritative; where this file disagrees it says so (AGENTS.md rule 1
 
 Harness lessons (rule 12) — three "failures" were the harness, one "pass" was too: a fixed press point slid off the node after the first drag (later drags moved nothing, so "positions equal" passed trivially and hid W12); alternating ±12 px drags put the node back on its baseline every second gesture (a flush then rightly writes nothing); the gesture window started at the press, not at the 5 px threshold.
 
+- 2026-10-09 (after push `220d6bc`): DeepCore corpus (`PIX3_EXTRA_CORPUS=../DeepCore`, 6 scenes + 6 JSON copies) 216/216 with the templates after W14; header-vs-decoded size cross-check in Chrome 13/13 — and found that **no SVG sprite loaded in the 2.x editor** (type-less blobs from `ProjectStorageService.readBlob`; fixed); W11 for the 3D gizmo, checked in Chrome (`esc3d.mjs`, with a no-Esc control); §C.3 "changed nodes highlighted for 3 s" wired (it was a dead affordance in the tree); `services/project/coauthoring/` → `disk/`, `external-merge/` removed; the plugin no longer lets a closing `ProjectFiles` write behind the next server's back (in-process restart). Browser scripts committed in `../pix3-core-spikes` (`71079b3`).
+
 ### Debt / open
 
-- Esc cancel for the 3D gizmo drag (W11).
-- `external-merge/scene-doc.ts` survives only for `ExternalChangeService`'s parse check; `services/project/coauthoring/` is a 1.x name for what is now the write model's external path — rename/move when touching it next.
 - Layout-derived values (flow positions, stretch sizes, instance child overrides under a flow root) still flush as authored (§C.2 accepts it until after MVP); they also show up as `pending` keys in a merge.
 - Clobber detection catches only the last flush (§C.3, known regression vs 1.x).
-- The corpus spec covers the 30 template scenes; DeepCore's 4 files (S12) are not in the repo — rerun S12's harness against the new writer before the DeepCore migration (§A.4).
-- Cross-check: Node `norm` (header size) == editor `normOf(graph)` (decoded size) for an un-sized sprite, PNG/JPEG/WebP/SVG.
+- DeepCore is checked only locally (`PIX3_EXTRA_CORPUS`); rerun it after any writer change and before the migration (§A.4).
+- The size cross-check covers `Sprite2D`; `AnimatedSprite2D`, `Sprite3D` and auto-sized UI (S12 §4.2 asks for them too) are not checked.
+- The N9 "file changed on disk since" flake (seen twice before the harness fixes) is unexplained; the in-process restart race fixed in the plugin is one candidate.
