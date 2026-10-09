@@ -311,7 +311,7 @@ export class ExternalChangeService {
     const failing: PendingEntry[] = [];
     for (const entry of Array.from(this.entries.values())) {
       const snapshot = entry.last!;
-      if (snapshot.missing || this.diskState.isKnownHash(entry.path, snapshot.hash)) {
+      if (snapshot.missing || this.diskState.acceptOwnHash(entry.path, snapshot.hash)) {
         // An own write — or a broken version put back to exactly the bytes the editor holds: the
         // graph already matches, so no reload; the pending/unreadable state of the broken version
         // goes (`setUnreadable` below), and the autosave hold with it.

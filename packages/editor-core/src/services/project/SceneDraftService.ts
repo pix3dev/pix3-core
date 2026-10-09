@@ -15,6 +15,11 @@ export interface DraftRecord {
   readonly projectId: string;
   readonly path: string;
   readonly baselineSha: string;
+  /**
+   * Shas of flushes of this scene that got no answer before the checkpoint: the disk may hold one
+   * of them instead of `baselineSha`, and the draft (made on top of them) applies to any.
+   */
+  readonly unconfirmedShas?: readonly string[];
   readonly text: string;
   /** `nodeDataChangeSignal` of the snapshot. */
   readonly revision: number;
@@ -94,8 +99,9 @@ export class MemoryDraftStore implements DraftStore {
  *   `visibilitychange` → hidden. The guarantee is only the last checkpoint whose transaction
  *   completed; a transaction in flight may be cut by the browser shutting down.
  * - **On open** a draft is offered only if the disk still holds the version it was made from
- *   (`sha` of the disk = the draft's baseline sha); "Restore" applies it and writes it. Otherwise
- *   it goes to the journal as `rejected-draft` with a notice.
+ *   (`sha` of the disk = the draft's baseline sha, or the sha of a flush that was sent but never
+ *   answered — the dev server stopped after writing it); "Restore" applies it and writes it.
+ *   Otherwise it goes to the journal as `rejected-draft` with a notice.
  * - A scene flushed clean drops its draft.
  */
 @injectable()
@@ -196,6 +202,9 @@ export class SceneDraftService {
             projectId,
             path: snap.path,
             baselineSha: snap.baseline.sha,
+            unconfirmedShas: this.baselines
+              .unconfirmedFlushes(snap.path)
+              .map(entry => entry.next.sha),
             text: snap.text,
             revision: snap.revision,
             at: Date.now(),
@@ -241,7 +250,7 @@ export class SceneDraftService {
       return;
     }
     const when = new Date(draft.at).toLocaleTimeString();
-    if (draft.baselineSha !== baseline.sha) {
+    if (!draftApplies(draft, baseline.sha)) {
       // The disk moved on since the draft was made: offering it would write over someone's change.
       await this.journal.recordRejectedDraft(
         path,
@@ -272,7 +281,7 @@ export class SceneDraftService {
   private async restore(sceneId: string, path: string, draft: DraftRecord): Promise<void> {
     const descriptor = appState.scenes.descriptors[sceneId];
     const baseline = this.baselines.get(path);
-    if (!descriptor || !baseline || baseline.sha !== draft.baselineSha) {
+    if (!descriptor || !baseline || !draftApplies(draft, baseline.sha)) {
       this.notices.show({
         key: `draft:${path}`,
         tone: 'warn',
@@ -286,3 +295,7 @@ export class SceneDraftService {
 }
 
 const draftKey = (projectId: string, path: string): string => `${projectId}\u0000${path}`;
+
+/** The disk holds the version the draft was made from (or the unanswered flush on top of it). */
+const draftApplies = (draft: DraftRecord, diskSha: string): boolean =>
+  draft.baselineSha === diskSha || (draft.unconfirmedShas ?? []).includes(diskSha);

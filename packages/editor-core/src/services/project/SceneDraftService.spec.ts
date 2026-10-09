@@ -109,6 +109,32 @@ describe('SceneDraftService', () => {
     expect(store.records.size).toBe(0);
   });
 
+  it('N9 flake: a save whose answer was lost when the server stopped — the draft still applies', async () => {
+    const host = await newHost();
+    const sceneId = await session(host);
+    const write = host.files.write.bind(host.files);
+    vi.spyOn(host.files, 'write').mockImplementationOnce(async (path, data, options) => {
+      await write(path, data, options); // on disk…
+      throw new TypeError('Failed to fetch'); // …but the server died before answering
+    });
+    await setWidth(240);
+    expect(await service(FlushService).saveScene(sceneId)).toBe('failed');
+    expect(host.text(PATH)).toContain('width: 240');
+    await setWidth(300); // the server is down: this one lives only in the draft…
+    vi.spyOn(host.files, 'write').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    expect(await service(FlushService).saveScene(sceneId)).toBe('failed'); // …and the retry fails
+    await service(SceneDraftService).checkpointAll();
+    await closeTab();
+
+    await session(host);
+    await vi.waitFor(() => expect(appState.project.host.notices).toHaveLength(1));
+    const notice = appState.project.host.notices[0];
+    expect(notice.actions.map(a => a.label)).toEqual(['Restore', 'Discard']);
+    expect(host.journal.filter(e => e.author === 'rejected-draft')).toEqual([]);
+    await service(HostNoticeService).runAction(notice.actions[0].id);
+    expect(host.text(PATH)).toBe(SCENE.replace('width: 100', 'width: 300'));
+  });
+
   it('a flush that cleans the scene drops its draft', async () => {
     const host = await newHost();
     const sceneId = await session(host);

@@ -215,6 +215,45 @@ describe('FlushService — a flush is one patch from the baseline', () => {
     expect(descriptor().isDirty).toBe(true);
   });
 
+  it('an answer lost after the bytes landed (dev server stopped) is this write, not an agent’s', async () => {
+    const { flush, sceneId } = await boot();
+    const write = host.files.write.bind(host.files);
+    // The plugin renames the file into place, then the connection dies before the answer.
+    const lost = vi
+      .spyOn(host.files, 'write')
+      .mockImplementationOnce(async (path, data, options) => {
+        await write(path, data, options);
+        throw new TypeError('Failed to fetch');
+      });
+    await setWidth(240);
+    expect(await flush.saveScene(sceneId)).toBe('failed');
+    expect(disk()).toContain('width: 240');
+    lost.mockRestore();
+
+    await setWidth(300);
+    const baselines = service(SceneBaselineService);
+    expect(await flush.saveScene(sceneId)).toBe('saved');
+    // The 412 named exactly the unanswered write's bytes: adopted, and the rest written on top —
+    // no merge, no "changed on disk" for the editor's own version.
+    expect(disk()).toBe(SCENE.replace('width: 100', 'width: 300'));
+    expect(baselines.isPendingExternal(PATH)).toBe(false);
+    expect(baselines.get(PATH)!.text).toBe(disk());
+    expect(descriptor().isDirty).toBe(false);
+  });
+
+  it('an unanswered write that did NOT land changes nothing: a real external version still merges', async () => {
+    const { flush, sceneId } = await boot();
+    vi.spyOn(host.files, 'write').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await setWidth(240);
+    expect(await flush.saveScene(sceneId)).toBe('failed');
+    expect(disk()).toBe(SCENE);
+    const agent = SCENE.replace('name: Other', 'name: Agent');
+    await host.externalWrite(PATH, agent);
+    service(SceneBaselineService).clearPendingExternal(PATH);
+    expect(await flush.saveScene(sceneId)).toBe('external-change');
+    expect(disk()).toBe(agent);
+  });
+
   it('a read-only tab does not write', async () => {
     const { flush, sceneId } = await boot();
     await setWidth(240);

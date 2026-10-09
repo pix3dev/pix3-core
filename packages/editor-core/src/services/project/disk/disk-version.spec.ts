@@ -37,7 +37,7 @@ describe('co-authoring hashes raw bytes', () => {
       text: SceneBaselineService.decode(version.bytes),
       norm: { version: '1.0.0', root: [] },
     });
-    expect(baselines.isKnownHash('scenes/bom.pix3scene', nodeSha(bytes))).toBe(true);
+    expect(baselines.acceptOwnHash('scenes/bom.pix3scene', nodeSha(bytes))).toBe(true);
     expect(baselines.get('scenes/bom.pix3scene')!.text.startsWith('\uFEFF')).toBe(true);
   });
 });

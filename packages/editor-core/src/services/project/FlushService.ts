@@ -199,6 +199,10 @@ export class FlushService {
         snaps.map(({ snap }) => ({ path: snap.path, text: snap.text, baseHash: snap.baseline.sha }))
       );
     } catch (error) {
+      if (!(error instanceof SceneWriteConflictError)) {
+        // No answer is not "not written": the changeset may have landed (all or nothing).
+        for (const { snap } of snaps) await this.recordUnconfirmed(snap);
+      }
       if (error instanceof SceneWriteConflictError) {
         const path = toProjectPath(error.path);
         this.baselines.markPendingExternal(path);
@@ -311,6 +315,10 @@ export class FlushService {
       });
     } catch (error) {
       if (error instanceof SceneWriteConflictError) {
+        // The disk holds an earlier flush of ours whose answer was lost: adopt it, write the rest.
+        if (error.currentHash && this.baselines.acceptOwnHash(path, error.currentHash)) {
+          if (this.baselines.get(path) !== snap.baseline) return this.flushUnserialised(sceneId);
+        }
         // Someone else wrote the file since the baseline: the merge path takes it from here.
         this.baselines.markPendingExternal(path);
         this.externalChanges.report(path);
@@ -336,6 +344,7 @@ export class FlushService {
       this.logger.warn(
         `${path}: not written (${error instanceof Error ? error.message : String(error)}).`
       );
+      await this.recordUnconfirmed(snap);
       return 'failed';
     }
 
@@ -353,6 +362,20 @@ export class FlushService {
       `Flushed ${path} (${snap.ops.length} change${snap.ops.length === 1 ? '' : 's'}).`
     );
     return 'saved';
+  }
+
+  /**
+   * A write that failed without a refusal (no answer: the dev server stopped, the connection
+   * dropped) may still have landed — the plugin renames the file into place before it answers.
+   * Its sha is remembered: a disk showing exactly those bytes is this write, not someone else's
+   * (`SceneBaselineService.acceptOwnHash`), and a draft made meanwhile still applies to it.
+   */
+  private async recordUnconfirmed(snap: FlushSnapshot): Promise<void> {
+    this.baselines.recordUnconfirmedFlush(snap.path, snap.baseline, {
+      sha: await sha256(snap.text),
+      text: snap.text,
+      norm: snap.norm,
+    });
   }
 
   private waitForGestureEnd(timeoutMs: number): Promise<boolean> {
