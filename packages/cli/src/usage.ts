@@ -10,13 +10,13 @@ Usage:
   pix3 new                         List recipes and templates
   pix3 new <recipe> [dir]          Create a project (dir defaults to the recipe id)
         [--name <project name>]
-  pix3 mcp --workspace             MCP server for your agent (stdio), relayed through the
-        [--project <dir>]          running \`pix3 serve\` to the connected Pix3 editor
-  pix3 mcp [--project <dir>]       (phase-0 prototype) MCP server + FSA loopback link
-        [--agent <name>]
-  pix3 setup [claude|codex]        Print how to register the MCP server with your agent
-  pix3 serve [--project <dir>]     Serve this project folder to a Pix3 editor over one
-        [--port <n>] [--new-token] loopback port (e.g. through VS Code Remote SSH)
+  pix3 editor [--project <dir>]    Find (or start, detached) the project's Vite dev server
+        [--stop] [--chrome-only]   from .pix3/dev.json and open the editor in Chrome with
+        [--no-chrome] [--port <n>] remote debugging on 9333 (next free port when taken)
+        [--cdp-port <n>] [--headless]
+  pix3 agent-setup [claude|codex]  Write the project's MCP config for chrome-devtools-mcp
+        [--repair] [--cdp-port <n>] (.mcp.json, .codex/config.toml); --repair fixes an
+        [--project <dir>]          entry that drifted (version, port)
   pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
         [--no-hydrate]             hydration with the real loader (exit 1 on errors)
   pix3 check [--json]              validate + TypeScript check of the scripts + merge-log +
@@ -30,10 +30,7 @@ Usage:
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
         [--props] [--project <dir>]
   pix3 kit [--update]              Install (or update) the agent kit: AGENTS.md, CLAUDE.md,
-        [--project <dir>]          .claude/skills/pix3-*, .mcp.json, script types
-  pix3 read <path>                 Print a project file and confirm to the editor that you
-                                   read exactly these bytes (.pix3/ack.json)
-  pix3 ack <path> --sha256 <hash>  Confirm you read the version with this byte hash
+        [--project <dir>]          .claude/skills/pix3-*, script types
   pix3 sfx <preset|"text">         Synthesize a sound effect offline into a WAV (coin, jump,
         [--out <file.wav>]         hit, explosion, powerup, click; or "big explosion")
         [--seed <n>] [--json]

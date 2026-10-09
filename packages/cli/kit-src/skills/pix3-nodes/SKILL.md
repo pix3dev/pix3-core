@@ -204,7 +204,5 @@ screen blooms — **raise** `bloomThreshold` (0.85–0.95) so only the accents g
 
 ## Known gaps
 
-- On a **cloud** project (opened from the Pix3 server, not a folder or `pix3 serve`) an `.svg`
-  sprite renders on first load and then goes blank: the local cache hands SVGs back as
-  `text/plain`, which no browser decodes as an image. Folder and `pix3 serve` projects are fine;
-  on cloud, use a PNG.
+- An `.svg` sprite must be served as `image/svg+xml`: a host that hands it back as `text/plain`
+  draws nothing. The Vite dev server and the single-file build are fine.

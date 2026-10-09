@@ -35,13 +35,7 @@ import {
   readProjectKitManifest,
   withAltAgentsHeader,
 } from './kit/install.ts';
-import {
-  kitMcpErrorCodes,
-  kitMcpTools,
-  kitSrcDir,
-  repoRootOfCheckout,
-  type KitSource,
-} from './kit/kit-source.ts';
+import { kitSrcDir, repoRootOfCheckout, type KitSource } from './kit/kit-source.ts';
 import { createProject } from './new-project.ts';
 import { listTemplates } from './templates.ts';
 import { ensureRuntimeTypes } from './types/runtime-types.ts';
@@ -51,7 +45,11 @@ import { DIAGNOSTIC_CODES } from './validate/diagnostics.ts';
 import { schemaForType } from './validate/level1.ts';
 import { validateProject } from './validate/validate.ts';
 import { CLI_VERSION } from './version.ts';
-import { WORKSPACE_TOOL_NAMES } from './workspace-agent/tools.ts';
+import {
+  BRIDGE_REASONS,
+  BRIDGE_TOOLS,
+  BRIDGE_TOOL_NAMES,
+} from '../../editor-core/src/host/bridge-tools.ts';
 
 /**
  * The agent kit: generated from sources, and held to the code it describes (plan §5 B — "spec-тест
@@ -61,8 +59,10 @@ import { WORKSPACE_TOOL_NAMES } from './workspace-agent/tools.ts';
  * `core:` table read from the runtime's registry exactly as `scripts/build-kit.mjs` does:
  * - every directive resolved;
  * - every `pix3 <command> [--flag]` the kit shows exists in the CLI's USAGE (with that flag);
- * - every tool name in the live-channel section is one of the 14, and all 14 are there;
- * - no editor-only tool (`kit/retired-editor-tools.ts`) is named in AGENTS.md / the verify and scripts skills;
+ * - the editor skill's tool table is the bridge's tool table (`editor-core/src/host/bridge-tools.ts`):
+ *   the same names in the same order, only params the schemas have, every `pix3_*` token in the
+ *   kit a real tool, every sync/bridge reason one the code produces;
+ * - no retired 1.x in-editor tool (`kit/retired-editor-tools.ts`) is named as if the bridge had it;
  * - `pix3 check --json` `files` entries are documented with the CLI's key (`{ file, sha256 }`);
  * - every diagnostic code named is one `pix3 validate` / `pix3 check` emits;
  * - every node type named in the nodes skill is a type the loader knows;
@@ -87,8 +87,6 @@ const buildKit = (outDir: string, kitSrc = kitSrcDir()): KitSource => {
     outDir,
     version: CLI_VERSION,
     coreComponents,
-    mcpTools: kitMcpTools(),
-    mcpErrorCodes: kitMcpErrorCodes(),
   });
   return { dir: outDir, filesDir: join(outDir, 'files'), manifest };
 };
@@ -156,6 +154,7 @@ describe('kit drift', () => {
         '.claude/skills/pix3-scripts/SKILL.md',
         '.claude/skills/pix3-scripts/reference.md',
         '.claude/skills/pix3-verify/SKILL.md',
+        '.claude/skills/pix3-editor/SKILL.md',
       ])
     );
     expect(text('CLAUDE.md')).toBe('@AGENTS.md\n');
@@ -173,7 +172,6 @@ describe('kit drift', () => {
         'docs/node-types-reference.md',
         'docs/nodes-and-systems.md',
         'packages/cli/kit-includes/engine-api-map.md',
-        'packages/cli/README.md',
       ])
     );
   });
@@ -223,41 +221,111 @@ describe('kit drift', () => {
     expect(problems).toEqual([]);
   });
 
-  it('the live-channel section names exactly the 14 tools and the documented error codes', () => {
-    const section = h2Section(text('.claude/skills/pix3-verify/SKILL.md'), '3. Live channel');
-    const snake = new Set(
-      backticked(section).flatMap(span => span.match(/^[a-z]+(?:_[a-z0-9]+)+$/) ?? [])
-    );
-    // Named in the included CLI contract, not tools: the editor-internal calls the barrier makes,
-    // and errors the editor itself returns (passed through as written).
-    const notTools = new Set(['sync_barrier', 'sync_release', 'unknown_tool', 'agent_disabled']);
-    const allowed = new Set([...WORKSPACE_TOOL_NAMES, ...kitMcpErrorCodes(), ...notTools]);
-    expect([...snake].filter(token => !allowed.has(token))).toEqual([]);
-    expect(WORKSPACE_TOOL_NAMES.filter(tool => !snake.has(tool))).toEqual([]);
-    expect(kitMcpErrorCodes().filter(code => !snake.has(code))).toEqual([]);
-    expect(WORKSPACE_TOOL_NAMES).toHaveLength(14);
+  const EDITOR_SKILL = '.claude/skills/pix3-editor/SKILL.md';
+
+  /** `reason: '…'` literals of the sync barrier, the flush and the sync apply — what a sync answers. */
+  const syncReasons = (): Set<string> => {
+    const repo = repoRootOfCheckout();
+    const out = new Set<string>();
+    for (const file of [
+      'packages/vite-plugin/src/sync/barrier.ts',
+      'packages/editor-core/src/services/project/FlushService.ts',
+      'packages/editor-core/src/host/SyncApplyService.ts',
+    ]) {
+      const source = readFileSync(join(repo, file), 'utf8');
+      for (const match of source.matchAll(/reason: '([a-z_]+)'/g)) out.add(match[1]);
+    }
+    return out;
+  };
+
+  it("the editor skill's tool table is the bridge's, and every pix3_* token is a real tool", () => {
+    const section = h2Section(text(EDITOR_SKILL), '2. The tools');
+    const rows = section
+      .split('\n')
+      .filter(line => line.startsWith('| `pix3_'))
+      .map(line =>
+        line
+          .split(/(?<!\\)\|/)
+          .slice(1, -1)
+          .map(cell => cell.trim())
+      );
+    expect(rows.map(cells => cells[0].replace(/`/g, ''))).toEqual([...BRIDGE_TOOL_NAMES]);
+    const problems: string[] = [];
+    for (const [name, params] of rows) {
+      const tool = BRIDGE_TOOLS.find(t => `\`${t.name}\`` === name);
+      if (!tool) continue;
+      const schema = tool.inputSchema.properties ?? {};
+      // Backticked words of the params cell that look like a parameter (`name` or `name?`); the
+      // value lists (`start\|stop…`, `{path: sha256}`) are not parameters.
+      const named = [...params.matchAll(/`([a-zA-Z]+)(\?)?`/g)].map(m => ({
+        name: m[1],
+        optional: m[2] === '?',
+      }));
+      for (const param of named) {
+        if (!(param.name in schema)) problems.push(`${tool.name}: no param ${param.name}`);
+        const required = tool.inputSchema.required?.includes(param.name) ?? false;
+        if (required === param.optional)
+          problems.push(`${tool.name}: ${param.name} is ${required ? 'required' : 'optional'}`);
+      }
+      for (const required of tool.inputSchema.required ?? []) {
+        if (!named.some(p => p.name === required))
+          problems.push(`${tool.name}: required ${required} not listed`);
+      }
+    }
+    expect(problems).toEqual([]);
+
+    const tools = new Set(BRIDGE_TOOL_NAMES);
+    const unknown: string[] = [];
+    for (const [file, content] of texts) {
+      for (const match of content.matchAll(/\bpix3_[a-z_]+\b/g)) {
+        if (!tools.has(match[0])) unknown.push(`${file}: ${match[0]}`);
+      }
+    }
+    expect(unknown).toEqual([]);
+    // Every tool is explained in the editor skill, and AGENTS.md sends the agent there.
+    for (const name of BRIDGE_TOOL_NAMES) expect(text(EDITOR_SKILL)).toContain(`\`${name}\``);
+    expect(text('AGENTS.md')).toContain('pix3-editor/SKILL.md');
   });
 
-  it('names no editor-only tool as if the live channel had it', () => {
-    // The retired in-editor agent had ~100 tools (frozen in `kit/retired-editor-tools.ts`); the
-    // workspace channel exposes 14. A kit that tells an external agent to call `game_trace` /
-    // `game_controls` / `node_inspect` sends it after a tool it does not have. (The scene-format
-    // skill's recipe table and the included spec name in-editor tools on purpose: they translate
-    // them into file edits.)
+  it('names only sync and bridge reasons the code produces', () => {
+    const known = new Set<string>([...BRIDGE_REASONS, ...syncReasons()]);
+    expect(known.has('stale')).toBe(true);
+    expect(known.has('expect_mismatch')).toBe(true);
+    const section = h2Section(text(EDITOR_SKILL), '4. A not-ok sync');
+    const named = section
+      .split('\n')
+      .filter(line => line.startsWith('| `') && !line.startsWith('| `reason`'))
+      .flatMap(line => [...line.split('|')[1].matchAll(/`([a-z_]+)`/g)].map(m => m[1]));
+    expect(named.length).toBeGreaterThan(4);
+    expect(named.filter(reason => !known.has(reason))).toEqual([]);
+    // `reason: "…"` anywhere in the kit's prose.
+    const problems: string[] = [];
+    for (const [file, content] of texts) {
+      for (const match of content.matchAll(/reason: "([a-z_]+)"/g)) {
+        if (!known.has(match[1])) problems.push(`${file}: ${match[1]}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('names no retired 1.x tool as if the bridge had it', () => {
+    // The 1.x in-editor agent had ~100 tools (frozen in `kit/retired-editor-tools.ts`); the
+    // bridge has seven `pix3_*` tools. A kit that tells an agent to call `game_run` /
+    // `read_errors` / `set_property` sends it after a tool it does not have. (The scene-format
+    // skill's recipe table names in-editor tools on purpose: it translates them into file edits
+    // and bridge calls.)
     const editorTools = new Set(RETIRED_EDITOR_TOOL_NAMES);
-    expect(editorTools.size).toBeGreaterThan(WORKSPACE_TOOL_NAMES.length);
+    expect(editorTools.size).toBeGreaterThan(BRIDGE_TOOL_NAMES.length);
     const files = [
       'AGENTS.md',
       '.claude/skills/pix3-verify/SKILL.md',
       '.claude/skills/pix3-scripts/SKILL.md',
+      EDITOR_SKILL,
     ];
     const problems: string[] = [];
     for (const file of files) {
       for (const match of text(file).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\b/g)) {
-        const name = match[1];
-        if (editorTools.has(name) && !WORKSPACE_TOOL_NAMES.includes(name)) {
-          problems.push(`${file}: ${name}`);
-        }
+        if (editorTools.has(match[1])) problems.push(`${file}: ${match[1]}`);
       }
     }
     expect(problems).toEqual([]);
@@ -454,7 +522,7 @@ const freshRecipe = (withKit: boolean): string => {
   createProject({
     template,
     dir,
-    postCreateSteps: withKit ? [agentKitStep(kit, ensureRuntimeTypes(), { devMcp: false })] : [],
+    postCreateSteps: withKit ? [agentKitStep(kit, ensureRuntimeTypes())] : [],
   });
   return dir;
 };
@@ -471,18 +539,15 @@ describe('pix3 kit', () => {
     expect(existsSync(join(root, '.pix3/types/@pix3/runtime/index.d.ts'))).toBe(true);
     expect(existsSync(join(root, '.pix3/types/@types/three/index.d.ts'))).toBe(true);
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toMatch(/^\.pix3\/$/m);
-    expect(JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'))).toEqual({
-      mcpServers: {
-        pix3: { command: 'npx', args: ['-y', `@pix3/cli@${CLI_VERSION}`, 'mcp', '--workspace'] },
-      },
-    });
+    // The agent's MCP config is `pix3 agent-setup`, not the kit.
+    expect(existsSync(join(root, '.mcp.json'))).toBe(false);
     const manifest = parse(readFileSync(join(root, 'pix3project.yaml'), 'utf8')) as {
       metadata: { agentKit: { version: string; files: string[] }; templateId: string };
     };
     expect(manifest.metadata.templateId).toBe('recipe-tapper-2d');
     expect(manifest.metadata.agentKit.version).toBe(CLI_VERSION);
     expect(manifest.metadata.agentKit.files).toEqual(
-      expect.arrayContaining(['AGENTS.md', 'CLAUDE.md', '.mcp.json', 'tsconfig.json'])
+      expect.arrayContaining(['AGENTS.md', 'CLAUDE.md', 'tsconfig.json'])
     );
     const owned = readProjectKitManifest(root);
     expect(owned?.files['AGENTS.md']).toBe(sha256(join(root, 'AGENTS.md')));
@@ -493,7 +558,7 @@ describe('pix3 kit', () => {
     writeFileSync(join(root, 'AGENTS.md'), '# Our rules\n');
     writeFileSync(join(root, 'CLAUDE.md'), '# Claude notes\n');
     writeFileSync(join(root, '.gitignore'), 'node_modules/\n');
-    const report = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes(), devMcp: false });
+    const report = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes() });
     expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe('# Our rules\n');
     expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe('# Claude notes\n');
     const alt = readFileSync(join(root, AGENTS_ALT_FILE), 'utf8');
@@ -510,20 +575,20 @@ describe('pix3 kit', () => {
     expect(report.instructions.join('\n')).toContain(PRECEDENCE_SENTENCE);
 
     // Repeated on every run until the project's AGENTS.md links ours, then quiet.
-    const again = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes(), devMcp: false });
+    const again = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes() });
     expect(again.instructions.join('\n')).toContain(PRECEDENCE_SENTENCE);
     expect(again.files.find(f => f.path === AGENTS_ALT_FILE)?.action).toBe('unchanged');
     writeFileSync(
       join(root, 'AGENTS.md'),
       '# Our rules\n\nSee AGENTS.pix3.md for the Pix3 engine rules.\n'
     );
-    const linked = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes(), devMcp: false });
+    const linked = installKit(root, kit, { runtimeTypes: ensureRuntimeTypes() });
     expect(linked.instructions.join('\n')).not.toContain(PRECEDENCE_SENTENCE);
     writeFileSync(join(root, 'AGENTS.md'), '# Our rules\n');
 
     // Without a CLAUDE.md of its own, ours imports both.
     rmSync(join(root, 'CLAUDE.md'));
-    installKit(root, kit, { runtimeTypes: ensureRuntimeTypes(), devMcp: false });
+    installKit(root, kit, { runtimeTypes: ensureRuntimeTypes() });
     expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe('@AGENTS.md\n@AGENTS.pix3.md\n');
   });
 
@@ -542,15 +607,11 @@ describe('pix3 kit', () => {
     for (const file of walk(src)) writeFileSync(file, `${readFileSync(file, 'utf8')}\nNEW LINE\n`);
     const newer = buildKit(join(scratch, `kit-${counter}`), src);
 
-    const plain = installKit(root, newer, { runtimeTypes: ensureRuntimeTypes(), devMcp: false });
+    const plain = installKit(root, newer, { runtimeTypes: ensureRuntimeTypes() });
     expect(plain.files.find(f => f.path === 'AGENTS.md')?.action).toBe('outdated');
     expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe(text('AGENTS.md'));
 
-    const update = installKit(root, newer, {
-      update: true,
-      runtimeTypes: ensureRuntimeTypes(),
-      devMcp: false,
-    });
+    const update = installKit(root, newer, { update: true, runtimeTypes: ensureRuntimeTypes() });
     const action = (path: string) => update.files.find(f => f.path === path)?.action;
     expect(action('AGENTS.md')).toBe('updated');
     expect(action('.claude/skills/pix3-verify/SKILL.md')).toBe('updated');
@@ -607,7 +668,7 @@ describe('pix3 kit', () => {
       const tsconfigBefore = sha256(join(copy, 'tsconfig.json'));
       // `update`: the checkout's kit may be from an older CLI; without it the recorded version stays
       // the old one (by design) and the version assertion below would depend on DeepCore's state.
-      const report = installKit(copy, kit, { devMcp: false, update: true });
+      const report = installKit(copy, kit, { update: true });
       expect(report.types).toBe('own-tsconfig');
       expect(sha256(join(copy, 'AGENTS.md'))).toBe(agentsBefore);
       expect(sha256(join(copy, 'tsconfig.json'))).toBe(tsconfigBefore);

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { CHROME_DEVTOOLS_MCP_VERSION } from './agent-setup/config.ts';
 import {
   expandRuntimeTypes,
   packRuntimeTypes,
@@ -67,10 +68,19 @@ describe('single-file bin', () => {
     expect(result.stdout.trim()).toBe(version);
   });
 
-  it('pins the MCP launch it writes to that version', () => {
-    const result = run('setup', 'claude');
+  it('agent-setup writes the pinned chrome-devtools-mcp launch', () => {
+    const project = join(pkg, 'proj');
+    mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, 'pix3project.yaml'), 'version: 1.0.0\n');
+    const result = run('agent-setup', 'claude', '--project', project);
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain(`@pix3/cli@${readJson(join(pkg, 'package.json')).version}`);
+    expect(result.stdout).toContain(`chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}`);
+    const config = JSON.parse(readFileSync(join(project, '.mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, { args: string[] }>;
+    };
+    expect(config.mcpServers['pix3-browser'].args).toContain(
+      '--categoryExperimentalThirdParty=true'
+    );
   });
 
   it('needs no runtime dependencies', () => {
@@ -85,7 +95,7 @@ describe('single-file bin', () => {
         .filter(entry => entry.external === true && !entry.path.startsWith('node:'))
         .map(entry => entry.path)
     );
-    const allowed = new Set(['esbuild', 'typescript', 'bufferutil', 'utf-8-validate']);
+    const allowed = new Set(['esbuild', 'typescript']);
     for (const spec of bare) {
       if (allowed.has(spec) || builtinModules.includes(spec.split('/')[0])) continue;
       throw new Error(`the bin still imports "${spec}" at run time`);

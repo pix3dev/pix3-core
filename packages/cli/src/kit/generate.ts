@@ -15,8 +15,7 @@ import { dirname, join, relative, sep } from 'node:path';
  *   included heading `n` levels down, or up when negative);
  * - `{{include:<repo path>@<text>}}` — the one paragraph or list item whose text (after `- ` and
  *   `**`) starts with `<text>`;
- * - `{{generated:<name>}}` — a block computed from code (`core-components`, `mcp-tools`,
- *   `mcp-error-codes`);
+ * - `{{generated:<name>}}` — a block computed from code (`core-components`);
  * - `{{version}}` — the CLI version; `{{# … }}` — a template comment, removed with its line.
  *
  * Relative Markdown links in included text become plain text (their targets are repo files the
@@ -200,10 +199,6 @@ const renderGenerated = (name: string, options: GenerateKitOptions, where: strin
   switch (name.trim()) {
     case 'core-components':
       return renderCoreComponents(options.coreComponents);
-    case 'mcp-tools':
-      return options.mcpTools.map(tool => `- \`${tool.name}\` — ${tool.summary}`).join('\n');
-    case 'mcp-error-codes':
-      return options.mcpErrorCodes.map(code => `\`${code}\``).join(', ');
     default:
       throw new KitTemplateError(`${where}: unknown generated block "${name}"`);
   }

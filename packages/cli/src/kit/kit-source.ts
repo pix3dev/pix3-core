@@ -5,7 +5,6 @@ import { join, relative, sep } from 'node:path';
 import { cliPackageRoot } from '../package-root.ts';
 import { repoRuntimePackage, runtimeSourceStamp } from '../types/runtime-types.ts';
 import { CLI_VERSION } from '../version.ts';
-import { BARRIER_ERROR_CODES, buildToolList } from '../workspace-agent/tools.ts';
 import {
   KIT_FILES_DIR,
   KIT_FORMAT,
@@ -17,8 +16,8 @@ import {
 /**
  * Where `pix3 kit` reads the generated kit from: `<package>/kit/` — built at `prepack` by
  * `scripts/build-kit.mjs` for the published package; in a repo checkout regenerated automatically
- * whenever its inputs (the templates in `kit-src/`, every file they include, the generator, the
- * MCP tool list and the runtime sources the `core:` table is read from) changed since the last
+ * whenever its inputs (the templates in `kit-src/`, every file they include, the generator and
+ * the runtime sources the `core:` table is read from) changed since the last
  * build. The generator itself (and the runtime bundle it needs) is imported only then.
  */
 
@@ -52,15 +51,6 @@ const walk = (root: string, dir = root): string[] => {
   return out.sort();
 };
 
-/** The MCP tools as the kit lists them: name + the first sentence of the fallback description. */
-export const kitMcpTools = (): { name: string; summary: string }[] =>
-  buildToolList(null).map(tool => ({
-    name: tool.name,
-    summary: tool.description.split(/(?<=\.)\s/)[0] ?? tool.description,
-  }));
-
-export const kitMcpErrorCodes = (): string[] => [...BARRIER_ERROR_CODES];
-
 /** Staleness stamp of everything the generated kit depends on. */
 export const kitInputsStamp = (): string => {
   const hash = createHash('sha256');
@@ -86,7 +76,6 @@ export const kitInputsStamp = (): string => {
   for (const file of ['generate.ts', 'kit-format.ts', 'core-components.ts', 'kit-source.ts']) {
     hash.update(readFileSync(join(here, file)));
   }
-  hash.update(readFileSync(join(here, '..', 'workspace-agent', 'tools.ts')));
   const runtime = repoRuntimePackage();
   if (runtime) hash.update(runtimeSourceStamp(runtime));
   return hash.digest('hex');
@@ -118,8 +107,6 @@ export const buildKitFromCheckout = async (
     outDir: options.outDir ?? kitDir(),
     version: CLI_VERSION,
     coreComponents,
-    mcpTools: kitMcpTools(),
-    mcpErrorCodes: kitMcpErrorCodes(),
     inputsStamp: options.stamp ?? kitInputsStamp(),
   });
 };

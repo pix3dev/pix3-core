@@ -1,5 +1,5 @@
 // Bundles the `pix3` bin into ONE file, `dist/index.js`, with every runtime dependency inlined
-// (`yaml`, `@modelcontextprotocol/sdk` and its tree — zod, ajv, … —, `ws`), so the published
+// (`yaml`), so the published
 // package has zero `dependencies` and a cold `npx -y @pix3/cli@X.Y.Z` fetches one tarball and
 // installs nothing (plan §11.1; measured in `.plans/measurements/external-agent-phase0-cold-start.md`).
 //
@@ -7,7 +7,6 @@
 // - Node built-ins;
 // - `esbuild` and `typescript` — optional, resolved at run time from the installed package
 //   (`import.meta.resolve` from the bin: `validate/entry.ts`, `smoke/entry.ts`, `check/typescript.ts`);
-// - `bufferutil` / `utf-8-validate` — `ws`'s optional native accelerators, `require`d in a try/catch;
 // - the checkout-only modules (`validate/bundle.ts`, `smoke/bundle.ts`, the kit generator): they
 //   bundle `@pix3/runtime` from source and only run from a repo checkout, where the bin is never
 //   used. They are replaced by a stub that throws if ever reached.
@@ -15,7 +14,7 @@
 // and `templates/` stay files next to the bin, found through `src/package-root.ts`.
 //
 // Lazy commands stay lazy: esbuild turns each `await import('./x.ts')` into a deferred module
-// init, so `pix3 new` never evaluates the MCP SDK.
+// init, so `pix3 new` evaluates nothing it does not need.
 import { rmSync, statSync, writeFileSync } from 'node:fs';
 import { stdout } from 'node:process';
 import { dirname, join, resolve } from 'node:path';
@@ -68,8 +67,8 @@ const result = await esbuild.build({
   // Resolve package `exports` the way Node does for an ESM import.
   conditions: ['node', 'import'],
   mainFields: ['module', 'main'],
-  external: ['esbuild', 'typescript', 'bufferutil', 'utf-8-validate'],
-  // CommonJS dependencies (ws, ajv, …) `require` Node built-ins and the optional natives above.
+  external: ['esbuild', 'typescript'],
+  // CommonJS dependencies `require` Node built-ins.
   banner: {
     js: "import { createRequire as __pix3CreateRequire } from 'node:module'; const require = __pix3CreateRequire(import.meta.url);",
   },

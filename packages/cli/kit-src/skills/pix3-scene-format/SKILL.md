@@ -111,8 +111,9 @@ backgrounds and roots use `stretch` on both axes.
 
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
-label placed "top-right" once landed under the game's Shop button). With the live channel,
-confirm it with a `viewport_screenshot` while the game runs; without it, ask the human to look.
+label placed "top-right" once landed under the game's Shop button). With the editor open,
+confirm it with `pix3_screenshot` + `take_screenshot` while the game runs (`pix3-editor`);
+without it, ask the human to look.
 
 Flow (stack children in a row/column) is a separate block:
 `flow: { enabled: true, direction: vertical, gap: 16, paddingX: 0, paddingY: 0, align: start, autoSize: false }`.
@@ -227,7 +228,7 @@ Never put a full-screen dimmer/panel inline in `main.pix3scene`.
 | `set_component_property` | edit the component's `config` |
 | `create_node` / `add_component` | add the node / component entry to the YAML |
 | `fs_write` (+ `overwrite: true`) | write the file |
-| `play_start`, `game_input`, `game_observe`, `game_run` | the same tools over the live channel when it is connected (`pix3-verify`); otherwise `pix3 check`, then `pix3 smoke <the scene you changed>`, then ask the human to press Play and tell them what to look for |
+| `play_start`, `game_input`, `game_observe`, `game_run` | with the editor open: `pix3_play`, `pix3_game_run`, `pix3_scene` through the bridge (`pix3-editor`); there is no input tool — tap through chrome-devtools-mcp's `click_at {x, y}` at the coordinates `pix3_scene` gives as `screen`; otherwise `pix3 check`, then `pix3 smoke <the scene you changed>`, then ask the human to press Play and tell them what to look for |
 
 Values out of a tunable's `min`/`max` load as written (`pix3 validate` warns); the script's
 schema `setValue` may clamp them.

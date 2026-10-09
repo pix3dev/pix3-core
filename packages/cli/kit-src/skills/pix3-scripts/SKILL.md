@@ -201,8 +201,8 @@ before children's.
   Sound without the editor: `pix3 sfx coin` writes `audio/coin.wav` (presets `coin`, `jump`,
   `hit`, `explosion`, `powerup`, `click`, or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;
   `--seed <n>` for a variation) — offline, no key; `.wav` plays everywhere `.ogg`/`.mp3` do.
-  Sound cannot be proven audible from the live channel: the browser only starts Web Audio after
-  a real user gesture, and `game_input`'s synthetic taps/keys are not one. Report a sound as
+  Sound cannot be proven audible from the bridge: the browser only starts Web Audio after
+  a real user gesture, and a synthetic click from chrome-devtools-mcp is not one. Report a sound as
   "code path verified, audibility not" and ask the human to listen.
 - Overlap queries without physics response: `scene.collision2d.overlapPoint(x, y, group?)`,
   `overlapCircle(x, y, r, group?)`, `overlapRect(cx, cy, w, h, group?)`, `raycast(…)` over
@@ -267,7 +267,7 @@ before children's.
 - Assigning `position` / `rotation` / `scale` throws. Mutate them.
 - A component that throws in `onStart` / `onUpdate` is **auto-disabled** and the game keeps
   running — the thing just freezes. Guard lookups (`if (!node) { console.warn(...); return; }`).
-  With the live channel, `read_errors` after a run shows it; without, tell the human to look
+  With the editor open, `pix3_errors` after a run shows it; without, tell the human to look
   at the editor's console.
 - `as any` on `this.node` hides exactly the error above, and from `pix3 check`. Use
   `instanceof` narrowing.

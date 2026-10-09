@@ -114,7 +114,7 @@ what this map does not name, and say in one line what you were missing.
 - Game intents: `scene.commands.register(name, handler, { description })`,
   `dispatch(name, args)`, `list()`, `log` — how tests and the menu drive the game without
   clicking.
-- Debug surface for `game_observe` / `game_run`: `import { registerGameDebug } from
+- Debug surface for `pix3_game_run`'s `gameState` predicates: `import { registerGameDebug } from
   '@pix3/runtime'`; in `onStart`: `this.disposeDebug = registerGameDebug({ name, version: 1,
   snapshot: () => ({ …JSON-safe state… }), inspect: (query, args) => …, action: (name, args)
   => … })`, call the returned disposer in `onDetach`. Global and last-wins — only the running
@@ -155,7 +155,7 @@ what this map does not name, and say in one line what you were missing.
 
 - Assigning `position` / `rotation` / `scale` throws — mutate them.
 - A component that throws in `onStart` / `onUpdate` is auto-disabled and the game keeps
-  running — `read_errors` after `play_start` is the only way to see it.
+  running — `pix3_errors` after `pix3_play` is the only way to see it.
 - `this.node as any` disables exactly the check that would have caught the above.
 - Hitstop every frame while an overlap lasts freezes the contact forever — edge-trigger it.
 - A hidden `UIControl2D` takes no input; `tick` still runs on hidden nodes.

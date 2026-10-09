@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { parseDocument } from 'yaml';
 
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
-import { MCP_CONFIG_FILE, mcpLaunch, renderMcpConfig } from '../mcp-config.ts';
 import type { CreatedProject, PostCreateStep } from '../new-project.ts';
 import {
   hasOwnTsconfig,
@@ -25,7 +24,6 @@ import type { KitSource } from './kit-source.ts';
  *   except that a project which already has an `AGENTS.md` of its own keeps it and gets
  *   `AGENTS.pix3.md` instead (and a `CLAUDE.md` of its own is never touched: the report says which
  *   line to add);
- * - `.mcp.json` with the pinned `pix3 mcp --workspace` entry (other servers kept);
  * - `.pix3/` in `.gitignore` (existing content kept);
  * - without a `tsconfig.json` of the project's own: `.pix3/types/`, `.pix3/tsconfig.check.json`
  *   and a root `tsconfig.json` that extends it (see `types/project-types.ts`);
@@ -70,8 +68,6 @@ export interface InstallKitOptions {
   readonly update?: boolean;
   /** Shipped runtime types (`ensureRuntimeTypes()`); required unless the project has a tsconfig. */
   readonly runtimeTypes?: { readonly dir: string; readonly manifest: RuntimeTypesManifest };
-  /** `.mcp.json` launch in dev form (repo sources) or pinned; default: detect. */
-  readonly devMcp?: boolean;
 }
 
 const sha256 = (bytes: string | Uint8Array): string =>
@@ -260,29 +256,6 @@ export const installKit = (
     place(file, contents);
   }
 
-  // .mcp.json — merged: other servers stay; our entry is (re)pinned on install and --update.
-  const mcpPath = join(projectRoot, MCP_CONFIG_FILE);
-  const mcpBefore = readText(mcpPath);
-  const mcpNext = renderMcpConfig(mcpLaunch({ dev: options.devMcp }), mcpBefore ?? undefined);
-  const hasPix3Entry = (() => {
-    try {
-      const parsed = mcpBefore
-        ? (JSON.parse(mcpBefore) as { mcpServers?: { pix3?: unknown } })
-        : null;
-      return Boolean(parsed?.mcpServers?.pix3);
-    } catch {
-      return false;
-    }
-  })();
-  if (mcpBefore === mcpNext) {
-    outcomes.push({ path: MCP_CONFIG_FILE, action: 'unchanged' });
-  } else if (!hasPix3Entry || options.update) {
-    writeAtomic(mcpPath, mcpNext);
-    outcomes.push({ path: MCP_CONFIG_FILE, action: mcpBefore === null ? 'written' : 'updated' });
-  } else {
-    outcomes.push({ path: MCP_CONFIG_FILE, action: 'outdated' });
-  }
-
   if (ensureGitignore(projectRoot)) outcomes.push({ path: GITIGNORE, action: 'updated' });
 
   // Script types.
@@ -336,10 +309,10 @@ export const agentKitStep =
   (
     source: KitSource,
     runtimeTypes: { readonly dir: string; readonly manifest: RuntimeTypesManifest },
-    options: { readonly devMcp?: boolean } = {}
+    options: Record<string, never> = {}
   ): PostCreateStep =>
   (project: CreatedProject) => {
-    const report = installKit(project.dir, source, { runtimeTypes, devMcp: options.devMcp });
+    const report = installKit(project.dir, source, { runtimeTypes, ...options });
     return report.files
       .filter(o => o.action === 'written' || o.action === 'updated')
       .map(o => o.path);

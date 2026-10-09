@@ -26,8 +26,6 @@ export interface GenerateKitOptions {
   readonly outDir: string;
   readonly version: string;
   readonly coreComponents: readonly CoreComponentInfo[];
-  readonly mcpTools: readonly { readonly name: string; readonly summary: string }[];
-  readonly mcpErrorCodes: readonly string[];
   /** Written into kit.json; the caller's staleness stamp. */
   readonly inputsStamp?: string;
 }
