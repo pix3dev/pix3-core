@@ -64,10 +64,6 @@ export default [
       '**/dist/**',
       '**/node_modules/**',
       'packages/create-pix3/templates/*/files/**',
-      // Player templates outside the runtime's tsconfig; they move into the plugin (plan §A.1).
-      'packages/runtime/src/main.ts',
-      'packages/runtime/src/register-project-scripts.ts',
-      'packages/runtime/src/generated/**',
     ],
   },
   js.configs.recommended,
@@ -76,6 +72,8 @@ export default [
     // `@pix3/cli` is Node, with its own tsconfig (`.ts` import extensions).
     ['packages/cli/src/**/*.ts', './packages/cli/tsconfig.json'],
     ['packages/vite-plugin/src/**/*.ts', './packages/vite-plugin/tsconfig.json'],
+    // The player is browser code with its own tsconfig (bundler resolution, `@pix3/runtime`).
+    ['packages/vite-plugin/player/**/*.ts', './packages/vite-plugin/player/tsconfig.json'],
     ['packages/editor-core/src/**/*.ts', './packages/editor-core/tsconfig.json'],
   ].map(([files, project]) => ({
     files: [files],
