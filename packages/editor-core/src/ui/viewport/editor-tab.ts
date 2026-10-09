@@ -179,6 +179,8 @@ export class EditorTabComponent extends ComponentBase {
   private marqueeSelectionStart?: { x: number; y: number };
   private marqueeSelectionNodeIds: string[] = [];
   private isDragging = false;
+  /** Esc cancelled the 2D drag in progress; the coming pointerup only ends it. */
+  private gestureCancelled = false;
   private touchGestureInProgress = false;
   private singleTouchPanPointerId: number | null = null;
   /** Space-bar "grab tool": while space is held, a left-drag pans the 2D camera
@@ -299,6 +301,7 @@ export class EditorTabComponent extends ComponentBase {
     this.addEventListener('pointercancel', this.handleCanvasPointerCancel);
     this.addEventListener('keydown', this.handleCanvasKeyDown);
     this.addEventListener('keyup', this.handleCanvasKeyUp);
+    window.addEventListener('keydown', this.handleGestureEscape, true);
 
     // Re-observe canvas host if it exists (handles reconnection/reparenting by Golden Layout)
     if (this.canvasHost) {
@@ -335,6 +338,7 @@ export class EditorTabComponent extends ComponentBase {
     this.removeEventListener('pointerup', this.handleCanvasPointerUp);
     this.removeEventListener('pointercancel', this.handleCanvasPointerCancel);
     this.removeEventListener('keydown', this.handleCanvasKeyDown);
+    window.removeEventListener('keydown', this.handleGestureEscape, true);
     this.removeEventListener('keyup', this.handleCanvasKeyUp);
     this.navigation2D.clearTouchState();
     this.singleTouchPanPointerId = null;
@@ -1081,6 +1085,8 @@ export class EditorTabComponent extends ComponentBase {
 
   private handleCanvasPointerMove = (event: PointerEvent): void => {
     if (!this.isActiveTab) return;
+    // After Esc the rest of that press is inert until the button is released.
+    if (this.gestureCancelled) return;
 
     const canvas = this.viewportRenderer.getCanvasElement();
     const rect = canvas?.getBoundingClientRect() ?? this.getBoundingClientRect();
@@ -1301,6 +1307,13 @@ export class EditorTabComponent extends ComponentBase {
       return;
     }
 
+    if (this.gestureCancelled) {
+      // Esc already put the nodes back; the release ends the gesture, it is not a click.
+      this.gestureCancelled = false;
+      this.clearPointerInteraction();
+      return;
+    }
+
     const has2DTransform = this.viewportRenderer.has2DTransform?.();
     if (has2DTransform) {
       void this.viewportRenderer.complete2DTransform?.();
@@ -1429,6 +1442,21 @@ export class EditorTabComponent extends ComponentBase {
       await this.commandDispatcher.execute(selectObjectInScope(null, null));
     }
   }
+
+  /**
+   * Esc while a 2D drag is in progress cancels it (the nodes go back, nothing is recorded). On
+   * `window` in the capture phase: during a drag the focus may sit anywhere, and the scope
+   * pop-out below must not also run for that Esc.
+   */
+  private handleGestureEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || !this.isActiveTab) return;
+    if (!this.viewportRenderer.has2DTransform?.()) return;
+    if (this.viewportRenderer.cancel2DTransform?.()) {
+      this.gestureCancelled = true;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   private handleCanvasKeyDown = (event: KeyboardEvent): void => {
     if (!this.isActiveTab) return;

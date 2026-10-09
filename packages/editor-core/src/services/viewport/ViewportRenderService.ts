@@ -4622,6 +4622,11 @@ export class ViewportRendererService {
     await this.transformSession.complete2DTransform();
   }
 
+  /** Esc during a 2D drag: restore the start state, record nothing. */
+  cancel2DTransform(): boolean {
+    return this.transformSession.cancel2DTransform();
+  }
+
   /**
    * Move all currently-selected 2D nodes by (dx, dy) in world units. Backs the
    * arrow-key nudge commands. The whole move is a single, undoable history entry

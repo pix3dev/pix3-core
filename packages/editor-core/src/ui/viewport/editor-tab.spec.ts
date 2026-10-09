@@ -390,6 +390,37 @@ describe('EditorTabComponent', () => {
     expect(services.viewportRenderer.start2DTransform).toHaveBeenCalledWith(120, 90, 'move');
   });
 
+  it('Esc during a 2D drag cancels it; the release completes nothing', async () => {
+    appState.tabs.activeTabId = 'tab-1';
+    appState.ui.navigationMode = '2d';
+
+    const panel = new EditorTabComponent();
+    panel.tabId = 'tab-1';
+    const services = stubPanelServices(panel);
+    services.viewportRenderer.get2DHandleAt.mockReturnValue('move');
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    panel.dispatchEvent(
+      createPointerEvent('pointerdown', { clientX: 120, clientY: 90, buttons: 1 })
+    );
+    panel.dispatchEvent(
+      createPointerEvent('pointermove', { clientX: 140, clientY: 90, buttons: 1 })
+    );
+    services.viewportRenderer.has2DTransform.mockReturnValue(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(services.viewportRenderer.cancel2DTransform).toHaveBeenCalledTimes(1);
+    services.viewportRenderer.has2DTransform.mockReturnValue(false);
+
+    panel.dispatchEvent(
+      createPointerEvent('pointermove', { clientX: 160, clientY: 90, buttons: 1 })
+    );
+    panel.dispatchEvent(createPointerEvent('pointerup', { clientX: 160, clientY: 90, buttons: 0 }));
+    expect(services.viewportRenderer.start2DTransform).toHaveBeenCalledTimes(1);
+    expect(services.viewportRenderer.complete2DTransform).not.toHaveBeenCalled();
+    panel.remove();
+  });
+
   it('single click selects the top-level container in 2d (Figma scope)', async () => {
     appState.tabs.activeTabId = 'tab-1';
     appState.scenes.activeSceneId = 'scene-1';
@@ -716,6 +747,8 @@ function stubPanelServices(panel: InstanceType<typeof EditorTabComponent>) {
     set2DMarqueePreviewNodeIds: vi.fn<(nodeIds: string[]) => boolean>(() => false),
     clear2DMarqueePreview: vi.fn<() => boolean>(() => false),
     has2DTransform: vi.fn(() => false),
+    cancel2DTransform: vi.fn(() => true),
+    complete2DTransform: vi.fn(async () => {}),
     handleAxisGizmoPointerDown: vi.fn(() => false),
     isAxisGizmoInteraction: vi.fn(() => false),
   };

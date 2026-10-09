@@ -330,6 +330,44 @@ export class ViewportTransformSession {
     this.deps.requestRender();
   }
 
+  /**
+   * Esc during a 2D drag: every node (and every proportionally resized descendant) goes back to
+   * its state at the start of the gesture and no operation is recorded — nothing changed, so
+   * nothing is dirty and nothing is written (plan §G.2 gate "Esc во время drag").
+   */
+  cancel2DTransform(): boolean {
+    const transform = this.active2DTransform;
+    if (!transform) return false;
+    const sceneGraph = this.deps.getActiveSceneGraph();
+    if (sceneGraph) {
+      for (const [nodeId, start] of transform.startStates) {
+        const node = sceneGraph.nodeMap.get(nodeId);
+        if (!(node instanceof Node2D)) continue;
+        node.position.set(start.position.x, start.position.y, node.position.z);
+        node.rotation.set(0, 0, start.rotation);
+        node.scale.set(start.scale.x, start.scale.y, 1);
+        restoreSize(node, start.width, start.height);
+        this.deps.updateNodeTransform(node);
+      }
+      for (const [childId, base] of transform.childStartStates ?? []) {
+        const child = sceneGraph.nodeMap.get(childId);
+        if (!(child instanceof Node2D)) continue;
+        child.position.set(base.position.x, base.position.y, child.position.z);
+        if (base.kind === 'size') restoreSize(child, base.width, base.height);
+        else child.scale.set(base.scale.x, base.scale.y, 1);
+        this.deps.updateNodeTransform(child);
+      }
+      if ((transform.childStartStates?.size ?? 0) > 0) this.deps.syncAll2DVisuals();
+    }
+    this.deps.getTransformTool2d().clearActiveHandle(this.deps.getSelection2DOverlay());
+    this.active2DTransform = undefined;
+    this.deps.end2DInteraction();
+    this.deps.update2DSelectionOverlayForNodes([...transform.nodeIds]);
+    this.deps.requestRender();
+    this.syncGestureFlag();
+    return true;
+  }
+
   captureTransformStartState(obj: THREE.Object3D): void {
     const targetNode = this.deps.getTargetNodeForObject(obj);
     if (targetNode) {
@@ -486,4 +524,10 @@ export class ViewportTransformSession {
       this.activeTargetDragNodeId = null;
     }
   }
+}
+
+function restoreSize(node: Node2D, width: number | undefined, height: number | undefined): void {
+  const dims = node as Node2D & { width?: number; height?: number };
+  if (typeof dims.width === 'number' && typeof width === 'number') dims.width = width;
+  if (typeof dims.height === 'number' && typeof height === 'number') dims.height = height;
 }
