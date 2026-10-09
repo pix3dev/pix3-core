@@ -59,6 +59,9 @@ import { StopGameCommand } from '@/features/scripts/StopGameCommand';
 import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
 import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
 import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
+import { BuildGameCommand } from '@/features/scripts/BuildGameCommand';
+import { HostNoticeService } from '@/host/HostNoticeService';
+import { HostService } from '@/host/HostService';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
 import { OpenLocalizationPanelCommand } from '@/features/localization/OpenLocalizationPanelCommand';
@@ -143,6 +146,12 @@ export class Pix3EditorShell extends ComponentBase {
 
   @inject(GamePlaySessionService)
   private readonly gamePlaySessionService!: GamePlaySessionService;
+
+  @inject(HostService)
+  private readonly hostService!: HostService;
+
+  @inject(HostNoticeService)
+  private readonly hostNoticeService!: HostNoticeService;
 
   @inject(LocalizationEditorService)
   private readonly localizationEditorService!: LocalizationEditorService;
@@ -301,6 +310,7 @@ export class Pix3EditorShell extends ComponentBase {
       new RestartGameCommand(this.gamePlaySessionService),
       new PauseGameCommand(this.gamePlaySessionService),
       new OpenGamePopoutWindowCommand(this.gamePlaySessionService),
+      new BuildGameCommand(this.hostService, this.hostNoticeService),
       new OpenEditorSettingsCommand(),
       new FocusAnimationTimelineCommand(),
       new OpenLocalizationPanelCommand(),
