@@ -2,6 +2,8 @@ import { subscribe } from 'valtio/vanilla';
 import { ComponentBase, customElement, html, inject, state } from '@/fw';
 import { appState } from '@/state';
 import { IconService, IconSize } from '@/services/editor/IconService';
+import { HostNoticeService } from '@/host/HostNoticeService';
+import type { HostNotice } from '@/state';
 import './pix3-host-banner.ts.css';
 
 /** DOM event `WriterService` listens for on `window`: this tab asks for the writer claim back. */
@@ -25,7 +27,11 @@ export class Pix3HostBanner extends ComponentBase {
   @inject(IconService)
   private readonly icons!: IconService;
 
+  @inject(HostNoticeService)
+  private readonly noticeService!: HostNoticeService;
+
   @state() private kind: BannerKind = null;
+  @state() private notices: HostNotice[] = [];
   @state() private takeOverPending = false;
 
   private disposeProjectSubscription?: () => void;
@@ -55,9 +61,70 @@ export class Pix3HostBanner extends ComponentBase {
     if (this.kind !== 'read-only') {
       this.takeOverPending = false;
     }
+    const notices = appState.project.host.notices;
+    if (
+      notices.length !== this.notices.length ||
+      notices.some((n, i) => n.id !== this.notices[i]?.id)
+    ) {
+      this.notices = notices.map(n => ({ ...n, actions: n.actions.map(a => ({ ...a })) }));
+    }
   }
 
   protected render() {
+    return html`${this.renderState()}${this.renderNotices()}`;
+  }
+
+  /**
+   * Notices of the write model (`HostNoticeService`), stacked under the state banner: what a merge
+   * dropped, an edit an agent overwrote, a draft to restore. Each has its actions and a dismiss.
+   */
+  private renderNotices() {
+    if (this.notices.length === 0) return null;
+    return html`<div class="host-notices" role="log" aria-live="polite">
+      ${this.notices.map(
+        notice =>
+          html`<div
+            class="host-banner host-banner--notice ${notice.tone === 'warn'
+              ? 'host-banner--warn'
+              : ''}"
+            data-notice-id=${notice.id}
+          >
+            <span class="host-banner__icon" aria-hidden="true"
+              >${this.icons.getIcon(
+                notice.tone === 'warn' ? 'alert-triangle' : 'info',
+                IconSize.SMALL
+              )}</span
+            >
+            <span class="host-banner__text"
+              >${notice.message}${notice.detail
+                ? html`<span class="host-banner__detail">${notice.detail}</span>`
+                : null}</span
+            >
+            ${notice.actions.map(
+              action =>
+                html`<button
+                  type="button"
+                  class="host-banner__action"
+                  @click=${() => void this.noticeService.runAction(action.id)}
+                >
+                  ${action.label}
+                </button>`
+            )}
+            <button
+              type="button"
+              class="host-banner__dismiss"
+              title="Dismiss"
+              aria-label="Dismiss"
+              @click=${() => this.noticeService.dismiss(notice.id)}
+            >
+              ${this.icons.getIcon('x', IconSize.SMALL)}
+            </button>
+          </div>`
+      )}
+    </div>`;
+  }
+
+  private renderState() {
     if (this.kind === 'disconnected') {
       return html`
         <div class="host-banner host-banner--error" role="status">

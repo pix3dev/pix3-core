@@ -39,6 +39,7 @@ export type {
   EditorCameraProjection,
   EditorTab,
   HostConnectionState,
+  HostNotice,
   EditorTabType,
   NavigationMode,
   OperationState,

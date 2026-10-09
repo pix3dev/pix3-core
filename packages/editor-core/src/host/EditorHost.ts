@@ -16,6 +16,8 @@ export interface EditorHost {
   readonly writer: HostWriter;
   /** Playable build from the editor (plan §B.6); absent until the plugin ships it. */
   readonly build?: HostBuild;
+  /** Version journal `.pix3/history/` (plan §C.4); absent on a host without one. */
+  readonly history?: HostHistory;
 }
 
 export interface HostVersions {
@@ -222,3 +224,42 @@ export const hostFailureOf = (error: unknown): HostFileFailure | null => {
     ? (failure as HostFileFailure)
     : null;
 };
+
+/** Who produced a journaled version (plan §C.4 "Журнал"). */
+export type HostHistoryAuthor = 'editor' | 'external' | 'restore' | 'rejected-draft';
+
+export interface HostHistoryEntry {
+  /** Opaque id (`<stamp>-<hash8>`), unique per path. */
+  readonly id: string;
+  readonly path: string;
+  readonly author: HostHistoryAuthor;
+  /** ms since epoch. */
+  readonly at: number;
+  readonly sha256: string;
+  readonly size: number;
+  readonly note?: string;
+}
+
+/**
+ * The plugin journals every version a write or the watcher produced; the editor adds what never
+ * reaches the disk — an editor state a merge rejected (`rejected-draft`, §C.3 step 1), a draft a
+ * changed disk made stale (§C.1). History → "Restore version" writes an entry back through the
+ * plugin (author `restore`), and the editor follows the disk like after any external change.
+ */
+export interface HostHistory {
+  /** Newest first. */
+  list(path: string): Promise<HostHistoryEntry[]>;
+  read(path: string, id: string): Promise<string | null>;
+  record(
+    path: string,
+    text: string,
+    author: 'rejected-draft',
+    note?: string
+  ): Promise<HostHistoryEntry>;
+  /** Write version `id` of `path` back to disk; `ifMatch` as for `files.write`. */
+  restore(
+    path: string,
+    id: string,
+    options?: { readonly ifMatch?: string }
+  ): Promise<HostWriteResult>;
+}

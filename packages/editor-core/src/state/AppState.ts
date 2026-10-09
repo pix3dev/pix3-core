@@ -135,14 +135,26 @@ export interface HostConnectionState {
   connection: 'open' | 'closed';
   /** Whether this tab may write: it holds the writer claim, another tab does, or nobody claimed. */
   writer: 'self' | 'other' | 'none';
-  /** Open scenes changed on disk while dirty here (merge is plan §C.3, later). */
+  /** Open scenes whose file vanished from disk while open here (kept in memory, not written). */
   staleScenes: string[];
+  /** Notices of the write model (merge results, an overwritten edit, a draft to restore). */
+  notices: HostNotice[];
+}
+
+/** One notice of `HostNoticeService` (rendered by `pix3-host-banner`); actions run there. */
+export interface HostNotice {
+  id: string;
+  tone: 'info' | 'warn';
+  message: string;
+  detail?: string;
+  actions: { id: string; label: string }[];
 }
 
 export const createInitialHostConnectionState = (): HostConnectionState => ({
   connection: 'closed',
   writer: 'none',
   staleScenes: [],
+  notices: [],
 });
 
 export type AssetBrowserViewMode = 'folders' | 'by-type';

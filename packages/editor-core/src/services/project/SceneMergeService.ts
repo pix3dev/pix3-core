@@ -1,0 +1,285 @@
+import { SceneManager, type SavedSceneDocument, type SceneGraph } from '@pix3/runtime';
+import { inject, injectable } from '@/fw/di';
+import { ReloadSceneCommand } from '@/features/scene/ReloadSceneCommand';
+import {
+  describeLeaf,
+  diffScenes,
+  indexNodes,
+  leafKey,
+  type LeafOp,
+  type SceneOp,
+} from '@/core/scene-patch/scene-diff';
+import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
+import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
+import { HostNoticeService } from '@/host/HostNoticeService';
+import { CommandDispatcher } from '@/services/core/CommandDispatcher';
+import { readDiskVersion } from '@/services/project/coauthoring/disk-version';
+import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { FlushService } from '@/services/project/FlushService';
+import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { SceneBaselineService, type SceneBaseline } from '@/services/project/SceneBaselineService';
+import { SceneJournalService } from '@/services/project/SceneJournalService';
+import { appState, type SceneDescriptor } from '@/state';
+
+/**
+ * - `unchanged`: the disk holds the baseline (an own write, or a version put back);
+ * - `reloaded`: a clean scene took the external version as is;
+ * - `merged`: a dirty scene took it with the editor's accepted keys on top (dirty: they flush next);
+ * - `missing`: the file is gone — the scene stays in memory, listed in `staleScenes`.
+ */
+export type ExternalApplyOutcome = 'unchanged' | 'reloaded' | 'merged' | 'missing';
+
+/** How many dropped keys a notice names before "and N more". */
+const NOTICE_KEYS = 4;
+
+/**
+ * An external version E of an open scene (plan §C.3): a settled batch from `ExternalChangeService`
+ * lands here, through `ExternalReloadService`.
+ *
+ * - **Clean scene** — `ReloadSceneCommand` (graph replaced, selection by id kept, history cleared).
+ * - **Dirty scene** — base B, external E, `pending = diff(B.norm, norm(graph))`:
+ *   1. the editor state is journaled as `rejected-draft` (nothing is lost);
+ *   2. each pending key is accepted if E left it as in B, dropped if E changed it too, if its node
+ *      is gone in E, or if it is structural (N5);
+ *   3. `merged = patch(E.text, accepted)` builds the graph, `baseline := E`, the accepted keys are
+ *      the new `pending` and flush normally;
+ *   4. history is cleared (its closures point at the old nodes);
+ *   5. a notice names the dropped keys.
+ * - **"Затирание по устаревшему чтению"** — if E puts the keys of the last flush back to their
+ *   pre-flush values, a notice offers to restore them ("Restore my edit").
+ */
+@injectable()
+export class SceneMergeService {
+  @inject(SceneManager)
+  private readonly sceneManager!: SceneManager;
+
+  @inject(SceneBaselineService)
+  private readonly baselines!: SceneBaselineService;
+
+  @inject(ProjectStorageService)
+  private readonly storage!: ProjectStorageService;
+
+  @inject(CommandDispatcher)
+  private readonly dispatcher!: CommandDispatcher;
+
+  @inject(FlushService)
+  private readonly flush!: FlushService;
+
+  @inject(SceneJournalService)
+  private readonly journal!: SceneJournalService;
+
+  @inject(HostNoticeService)
+  private readonly notices!: HostNoticeService;
+
+  /** Apply whatever is on disk now at the scene's path. */
+  async applyExternal(descriptor: SceneDescriptor): Promise<ExternalApplyOutcome> {
+    const path = toProjectPath(descriptor.filePath);
+    const version = await readDiskVersion(this.storage, descriptor.filePath);
+    if (!version) {
+      if (!appState.project.host.staleScenes.includes(path)) {
+        appState.project.host.staleScenes = [...appState.project.host.staleScenes, path];
+      }
+      this.notices.show({
+        key: `missing:${path}`,
+        tone: 'warn',
+        message: `${path} was deleted on disk.`,
+        detail: 'The open scene stays in memory and is not written.',
+      });
+      return 'missing';
+    }
+    appState.project.host.staleScenes = appState.project.host.staleScenes.filter(p => p !== path);
+    const B = this.baselines.get(path);
+    if (B && B.sha === version.hash) return 'unchanged';
+
+    const eText = SceneBaselineService.decode(version.bytes);
+    const eGraph = await this.sceneManager.parseScene(version.text, {
+      filePath: descriptor.filePath,
+    });
+    const E: SceneBaseline = { sha: version.hash, text: eText, norm: normOfGraph(eGraph) };
+    const lastFlush = this.baselines.lastFlush(path);
+    const clobbered = lastFlush ? findClobberedKeys(lastFlush.before, lastFlush.after, E.norm) : [];
+
+    const graph = this.sceneManager.getSceneGraph(descriptor.id);
+    const pending = B && graph && descriptor.isDirty ? diffScenes(B.norm, normOfGraph(graph)) : [];
+    let outcome: ExternalApplyOutcome;
+    if (!B || !graph || pending.length === 0) {
+      await this.install(descriptor, E, version.text, eGraph, false);
+      outcome = 'reloaded';
+    } else {
+      outcome = await this.merge(descriptor, path, B, E, version.text, eGraph, graph);
+    }
+    if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, lastFlush!.after);
+    return outcome;
+  }
+
+  /**
+   * A prefab changed on disk: the override base of every instance in this scene moved, so the
+   * baseline norm is re-derived from the baseline text against the new prefab (§C.2 "Если внешне
+   * изменился префаб…"). Without it the next flush would write the base change as overrides.
+   */
+  async rebaseOnPrefabChange(descriptor: SceneDescriptor): Promise<void> {
+    const path = toProjectPath(descriptor.filePath);
+    const B = this.baselines.get(path);
+    if (!B) return;
+    const graph = await this.sceneManager.parseScene(B.text, { filePath: descriptor.filePath });
+    try {
+      this.baselines.set(path, { ...B, norm: normOfGraph(graph) });
+    } finally {
+      disposeGraph(graph);
+    }
+  }
+
+  private async merge(
+    descriptor: SceneDescriptor,
+    path: string,
+    B: SceneBaseline,
+    E: SceneBaseline,
+    eText: string,
+    eGraph: SceneGraph,
+    graph: SceneGraph
+  ): Promise<ExternalApplyOutcome> {
+    const G = normOfGraph(graph);
+    const editorText = this.flush.snapshot(descriptor.id)?.text ?? null;
+    if (editorText !== null) {
+      await this.journal.recordRejectedDraft(
+        path,
+        editorText,
+        'editor state replaced by a merge with an external version'
+      );
+    }
+    const plan = planMerge(B.norm, E.norm, G);
+    let accepted = plan.accepted;
+    let mergedText = eText;
+    if (accepted.length > 0) {
+      try {
+        mergedText = applySceneOps(E.text, accepted);
+      } catch (error) {
+        if (!(error instanceof ScenePatchError)) throw error;
+        accepted = [];
+      }
+    }
+    const dropped: DroppedKey[] =
+      accepted.length === plan.accepted.length
+        ? [...plan.dropped]
+        : [
+            ...plan.dropped,
+            ...plan.accepted.map(op => ({
+              op,
+              key: op.nodeId ?? '@doc',
+              nodeId: op.nodeId,
+              reason: 'same-key' as const,
+            })),
+          ];
+    if (accepted.length === 0) {
+      await this.install(descriptor, E, eText, eGraph, false);
+    } else {
+      const merged = await this.sceneManager.parseScene(mergedText, {
+        filePath: descriptor.filePath,
+      });
+      disposeGraph(eGraph);
+      await this.install(descriptor, E, mergedText, merged, true);
+    }
+    if (dropped.length > 0) {
+      const names = dropped.map(d => this.describe(d, G));
+      this.notices.show({
+        key: `merge:${path}`,
+        tone: 'warn',
+        message: `${path} changed on disk while you were editing it: ${dropped.length} of your change${dropped.length === 1 ? ' was' : 's were'} dropped.`,
+        detail:
+          `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''}. ` +
+          (this.journal.available ? 'Your version is in History.' : ''),
+      });
+    }
+    return 'merged';
+  }
+
+  /** Build the graph from `text` (or install `graph`), with `baseline` as the disk version. */
+  private async install(
+    descriptor: SceneDescriptor,
+    baseline: SceneBaseline,
+    text: string,
+    graph: SceneGraph,
+    markDirty: boolean
+  ): Promise<void> {
+    await this.dispatcher.execute(
+      new ReloadSceneCommand({
+        sceneId: descriptor.id,
+        filePath: descriptor.filePath,
+        sceneText: text,
+        graph,
+        baseline,
+        markDirty,
+      })
+    );
+  }
+
+  /** "The agent overwrote your edit X [Restore my edit]" — re-applies the last flush's keys. */
+  private offerRestore(
+    descriptor: SceneDescriptor,
+    path: string,
+    clobbered: readonly LeafOp[],
+    after: SavedSceneDocument
+  ): void {
+    const names = clobbered.map(op =>
+      this.describe({ op, key: '', nodeId: op.nodeId, reason: 'same-key' }, after)
+    );
+    this.notices.show({
+      key: `clobber:${path}`,
+      tone: 'warn',
+      message: `An agent overwrote your edit in ${path}.`,
+      detail: `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''} — it wrote a file it read before your last save.`,
+      actions: [
+        { label: 'Restore my edit', run: () => this.restoreKeys(descriptor, path, clobbered) },
+      ],
+    });
+  }
+
+  private async restoreKeys(
+    descriptor: SceneDescriptor,
+    path: string,
+    ops: readonly LeafOp[]
+  ): Promise<void> {
+    const B = this.baselines.get(path);
+    if (!B) return;
+    const graphNow = this.sceneManager.getSceneGraph(descriptor.id);
+    const editorOps =
+      graphNow && descriptor.isDirty ? diffScenes(B.norm, normOfGraph(graphNow)) : [];
+    // Pending edits of the editor ride along (structure included); the restored keys win.
+    const keyed = new Map<string, SceneOp>();
+    for (const [index, op] of [...editorOps, ...ops].entries()) {
+      keyed.set(
+        op.kind === 'set' || op.kind === 'delete' ? leafKey(op.nodeId, op.path) : `#${index}`,
+        op
+      );
+    }
+    const text = applySceneOps(B.text, [...keyed.values()]);
+    const graph = await this.sceneManager.parseScene(text, { filePath: descriptor.filePath });
+    await this.install(descriptor, B, text, graph, true);
+    await this.flush.flushScene(descriptor.id);
+  }
+
+  private describe(dropped: DroppedKey, doc: SavedSceneDocument): string {
+    const name = dropped.nodeId
+      ? (indexNodes(doc).get(dropped.nodeId)?.def.name ?? dropped.nodeId)
+      : null;
+    if (dropped.reason === 'structural') {
+      const kind =
+        dropped.op.kind === 'addNode'
+          ? 'added'
+          : dropped.op.kind === 'removeNode'
+            ? 'deleted'
+            : 'moved';
+      return `${name ?? dropped.nodeId} (${kind})`;
+    }
+    const op = dropped.op;
+    const label =
+      op.kind === 'set' || op.kind === 'delete' ? describeLeaf(name, op.path) : dropped.key;
+    return dropped.reason === 'node-gone' ? `${label} (node deleted on disk)` : label;
+  }
+}
+
+/** A graph parsed only to be read (normalised, or replaced by a merged one). */
+function disposeGraph(graph: SceneGraph): void {
+  for (const root of graph.rootNodes) root.dispose();
+}

@@ -7,6 +7,8 @@ import type {
   HostFiles,
   HostFsEvent,
   HostFsFrame,
+  HostHistory,
+  HostHistoryEntry,
   HostInfo,
   HostManifestEntry,
   HostScripts,
@@ -71,6 +73,9 @@ export class FakeHost implements EditorHost {
   readonly scripts: HostScripts;
   readonly sync: HostSync;
   readonly writer: HostWriter;
+  readonly history: HostHistory;
+  /** Journal entries with their text, newest last (only what `history.record` was given). */
+  readonly journal: Array<HostHistoryEntry & { text: string }> = [];
 
   readonly store = new Map<string, { bytes: Uint8Array; sha256: string; mtime: number }>();
   readonly dirs = new Set<string>();
@@ -214,6 +219,7 @@ export class FakeHost implements EditorHost {
           : { ok: true };
       },
     };
+    this.history = this.historyApi();
     this.writer = {
       get id() {
         return host.writerId;
@@ -231,6 +237,39 @@ export class FakeHost implements EditorHost {
         this.writerListeners.add(listener),
         () => this.writerListeners.delete(listener)
       ),
+    };
+  }
+
+  private historyApi(): HostHistory {
+    return {
+      list: async path => this.journal.filter(e => e.path === path).reverse(),
+      read: async (path, id) =>
+        this.journal.find(e => e.path === path && e.id === id)?.text ?? null,
+      record: async (path, text, author, note) => {
+        const sha = await sha256(encode(text));
+        const entry = {
+          id: `${Date.now()}-${sha.slice(0, 8)}-${this.journal.length}`,
+          path,
+          author,
+          at: Date.now(),
+          sha256: sha,
+          size: text.length,
+          ...(note ? { note } : {}),
+          text,
+        };
+        this.journal.push(entry);
+        return entry;
+      },
+      restore: async (path, id, options = {}) => {
+        const entry = this.journal.find(e => e.path === path && e.id === id);
+        if (!entry) throw new FakeHostError('not_found', 404, `${id} not found.`);
+        const current = this.store.get(path)?.sha256 ?? null;
+        if (options.ifMatch !== undefined && options.ifMatch !== current)
+          throw new FakeHostError('base_mismatch', 412, `${path} changed.`, current);
+        await this.externalWrite(path, entry.text);
+        const stored = this.store.get(path)!;
+        return { path, sha256: stored.sha256, size: stored.bytes.length, seq: this.seq };
+      },
     };
   }
 

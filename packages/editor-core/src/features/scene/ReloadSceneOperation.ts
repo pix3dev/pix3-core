@@ -1,5 +1,5 @@
 import { ResourceManager } from '@/services/assets/ResourceManager';
-import { SceneManager } from '@pix3/runtime';
+import { SceneManager, type SceneGraph } from '@pix3/runtime';
 import { SceneValidationError } from '@pix3/runtime';
 import { ref } from 'valtio/vanilla';
 import { optionalService } from '@/services/project/coauthoring/optional-service';
@@ -30,6 +30,8 @@ export interface ReloadSceneOperationParams {
    * the merged text M while the baseline is the external version E on disk (§C.3 step 3).
    */
   baseline?: SceneBaseline;
+  /** A graph already parsed from `sceneText` (the merge parses E once to normalise it). */
+  graph?: SceneGraph;
   /** Mark the scene dirty after the reload (a merge result not on disk yet). */
   markDirty?: boolean;
 }
@@ -105,7 +107,7 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
         return { didMutate: false };
       }
 
-      const graph = await sceneManager.parseScene(sceneText, { filePath });
+      const graph = this.params.graph ?? (await sceneManager.parseScene(sceneText, { filePath }));
 
       // Get current scene descriptor
       const descriptor = state.scenes.descriptors[sceneId];

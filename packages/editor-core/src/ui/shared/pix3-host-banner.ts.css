@@ -71,3 +71,39 @@ pix3-host-banner .host-banner__action:disabled {
   opacity: 0.6;
   cursor: default;
 }
+
+/* Notices stack in the same column, under the state banner. */
+pix3-host-banner .host-notices {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 100px);
+  left: 50%;
+  z-index: var(--pix3-z-floating);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+pix3-host-banner .host-notices .host-banner {
+  position: static;
+  transform: none;
+}
+
+pix3-host-banner .host-banner--warn {
+  border-color: var(--warning, var(--accent));
+}
+
+pix3-host-banner .host-banner__dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+pix3-host-banner .host-banner__dismiss:hover {
+  color: var(--fg-0);
+}
