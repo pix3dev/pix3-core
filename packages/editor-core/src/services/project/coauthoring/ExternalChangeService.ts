@@ -142,12 +142,16 @@ export class ExternalChangeService {
   }
 
   /**
-   * A `pix3:fs` frame from the dev server: every file another writer changed is reported. The
-   * editor's own writes (`author: 'editor'`) are skipped here; their hashes are known anyway.
+   * A `pix3:fs` frame from the dev server: every file another writer changed is reported. This
+   * tab's own writes are skipped here; their hashes are the baselines anyway.
    */
   reportFrame(frame: HostFsFrame): void {
+    // `author: 'editor'` means "written through the plugin's API", by whichever tab was the
+    // writer; only this tab's own writes are skipped — a read-only tab must follow the writer's.
+    const ownTab = this.hostService.info.tabId;
+    const own = frame.writerId === undefined || frame.writerId === ownTab;
     for (const event of frame.events) {
-      if (event.kind !== 'file' || event.author === 'editor') continue;
+      if (event.kind !== 'file' || (event.author === 'editor' && own)) continue;
       for (const wirePath of event.op === 'rename' && event.from
         ? [event.from, event.path]
         : [event.path]) {

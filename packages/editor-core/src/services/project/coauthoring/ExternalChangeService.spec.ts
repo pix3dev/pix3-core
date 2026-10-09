@@ -15,7 +15,7 @@ function createService() {
     storage,
     diskState,
     logger,
-    hostService: { projectPath: (path: string) => path },
+    hostService: { projectPath: (path: string) => path, info: { tabId: 'me' } },
   });
   let now = 1_000_000;
   // Timers never fire on their own: the spec drives every step with `tick()`.
@@ -215,5 +215,28 @@ describe('ExternalChangeService — stabilisation window', () => {
     h.service.report('.pix3/recovery/x.pix3scene');
     expect(h.service.isPending('.pix3/recovery/x.pix3scene')).toBe(false);
     expect(h.diskState.getPendingExternalPaths()).toEqual([]);
+  });
+});
+
+describe('ExternalChangeService — frames', () => {
+  const frame = (author: 'editor' | 'external', writerId?: string) => ({
+    seq: 1,
+    revision: '0',
+    ...(writerId ? { writerId } : {}),
+    events: [{ op: 'modify' as const, path: 'scenes/a.pix3scene', kind: 'file' as const, author }],
+  });
+
+  it("skips this tab's own writes but follows another writer tab's (a read-only tab)", () => {
+    const h = createService();
+    h.service.reportFrame(frame('editor', 'me'));
+    expect(h.service.isPending('scenes/a.pix3scene')).toBe(false);
+    h.service.reportFrame(frame('editor', 'other-tab'));
+    expect(h.service.isPending('scenes/a.pix3scene')).toBe(true);
+  });
+
+  it('reports external changes whoever the writer is', () => {
+    const h = createService();
+    h.service.reportFrame(frame('external'));
+    expect(h.service.isPending('scenes/a.pix3scene')).toBe(true);
   });
 });

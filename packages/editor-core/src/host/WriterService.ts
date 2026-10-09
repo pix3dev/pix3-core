@@ -1,5 +1,8 @@
 import { inject, injectable } from '@/fw/di';
 import { LoggingService } from '@/services/core/LoggingService';
+import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
+import { SceneMergeService } from '@/services/project/SceneMergeService';
 import { appState } from '@/state';
 
 import { HostService } from './HostService';
@@ -23,6 +26,12 @@ export class WriterService {
 
   @inject(LoggingService)
   private readonly logger!: LoggingService;
+
+  @inject(SceneBaselineService)
+  private readonly baselines!: SceneBaselineService;
+
+  @inject(SceneMergeService)
+  private readonly merges!: SceneMergeService;
 
   private releaseLock: (() => void) | null = null;
   private disposers: Array<() => void> = [];
@@ -105,15 +114,36 @@ export class WriterService {
     });
   }
 
+  /**
+   * Plan §C.3 hand-over, step 2–4: read-only until the claim answers (the server finishes any
+   * write the previous writer had in flight first, under its mutex); then every open scene whose
+   * disk hash is not its baseline takes the disk version (reload, or merge if edited here), and
+   * only then does this tab write.
+   */
   private async becomeWriter(): Promise<void> {
     try {
-      await this.hostService.host.writer.claim();
+      const claim = await this.hostService.host.writer.claim();
+      await this.reconcile(claim.hashes);
       appState.project.host.writer = 'self';
     } catch (error) {
       appState.project.host.writer = 'other';
       this.logger.error(
         `Could not claim writing: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+  }
+
+  private async reconcile(hashes: Readonly<Record<string, string>>): Promise<void> {
+    for (const descriptor of Object.values(appState.scenes.descriptors)) {
+      if (!descriptor.filePath.startsWith('res://')) continue;
+      const path = toProjectPath(descriptor.filePath);
+      const baseline = this.baselines.get(path);
+      if (!baseline || hashes[this.hostService.wirePath(path)] === baseline.sha) continue;
+      try {
+        await this.merges.applyExternal(descriptor);
+      } catch (error) {
+        console.error('[WriterService] could not take the disk version of', path, error);
+      }
     }
   }
 }

@@ -11,6 +11,8 @@ import { ExternalChangeService } from '@/services/project/coauthoring/ExternalCh
 import { toProjectPath } from '@/services/project/coauthoring/coauthoring-paths';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { SceneBaselineService, type SceneBaseline } from '@/services/project/SceneBaselineService';
+import { SceneJournalService } from '@/services/project/SceneJournalService';
+import { HostNoticeService } from '@/host/HostNoticeService';
 import { ReadOnlyTabError, SceneWriteConflictError } from '@/services/project/write-errors';
 import { appState } from '@/state';
 
@@ -79,6 +81,12 @@ export class FlushService {
 
   @inject(LoggingService)
   private readonly logger!: LoggingService;
+
+  @inject(SceneJournalService)
+  private readonly journal!: SceneJournalService;
+
+  @inject(HostNoticeService)
+  private readonly notices!: HostNoticeService;
 
   static readonly IDLE_MS = 1_500;
   static readonly MAX_DIRTY_MS = 10_000;
@@ -245,7 +253,20 @@ export class FlushService {
         return 'external-change';
       }
       if (error instanceof ReadOnlyTabError) {
+        // §C.3 hand-over step 3: another tab claimed the writer after this snapshot. Its content
+        // is kept in the journal, never written over the new writer's disk.
         appState.project.host.writer = 'other';
+        await this.journal.recordRejectedDraft(
+          path,
+          snap.text,
+          'a write refused because another tab took over'
+        );
+        this.notices.show({
+          key: `superseded:${path}`,
+          tone: 'warn',
+          message: `Another tab took over writing; your last edits to ${path} were not saved here.`,
+          detail: this.journal.available ? 'They are kept in History.' : undefined,
+        });
         return 'read-only';
       }
       this.logger.warn(

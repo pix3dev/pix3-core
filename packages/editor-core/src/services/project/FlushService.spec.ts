@@ -60,6 +60,19 @@ const setWidth = (value: number, nodeId = 'box') =>
   );
 
 const disk = (): string => host.text(PATH)!;
+
+/** Fake timers cover setTimeout only: the host's WebCrypto hashing needs real time to finish. */
+const realSleep = (ms: number) =>
+  new Promise<void>(resolve => {
+    const id = setInterval(() => {
+      clearInterval(id);
+      resolve();
+    }, ms);
+  });
+const advance = async (ms: number) => {
+  await vi.advanceTimersByTimeAsync(ms);
+  await realSleep(15);
+};
 const descriptor = () => appState.scenes.descriptors[appState.scenes.activeSceneId!]!;
 
 beforeEach(() => {
@@ -180,13 +193,12 @@ describe('FlushService — when the disk is written (§C.1 table)', () => {
 
     appState.ui.gestureInProgress = true;
     await setWidth(240);
-    await vi.advanceTimersByTimeAsync(12_000);
+    await advance(12_000);
     expect(disk()).toBe(SCENE); // not during the drag, not even past the upper bound
 
     appState.ui.gestureInProgress = false;
-    await vi.advanceTimersByTimeAsync(300);
-    await vi.runOnlyPendingTimersAsync();
-    expect(disk()).toContain('width: 240');
+    await advance(300);
+    await vi.waitFor(() => expect(disk()).toContain('width: 240'));
   });
 
   it('upper bound: continuous edits are written within 10 s of the first one', async () => {
@@ -194,7 +206,7 @@ describe('FlushService — when the disk is written (§C.1 table)', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     for (let i = 0; i < 15; i++) {
       await setWidth(200 + i);
-      await vi.advanceTimersByTimeAsync(1_000); // never 1.5 s idle
+      await advance(1_000); // never 1.5 s idle
       if (i === 8) expect(disk()).toBe(SCENE);
       if (disk() !== SCENE) {
         expect(i).toBeGreaterThanOrEqual(9);
