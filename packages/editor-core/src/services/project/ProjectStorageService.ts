@@ -34,6 +34,13 @@ export class ProjectStorageService {
     return 'host';
   }
 
+  /** Forget the cached listing and hashes (the host they came from is gone: unmount). */
+  reset(): void {
+    this.manifest = null;
+    this.manifestLoad = null;
+    this.knownHashes.clear();
+  }
+
   private get files() {
     return this.hostService.host.files;
   }
@@ -196,6 +203,39 @@ export class ProjectStorageService {
     options: { readonly unconditional?: boolean; readonly baseHash?: string } = {}
   ): Promise<string> {
     return this.write(path, contents, options);
+  }
+
+  /** Whether the host writes several files as one transaction (plan §C.4). */
+  supportsChangesets(): boolean {
+    return typeof this.files.writeChangeset === 'function';
+  }
+
+  /**
+   * Several text files as one transaction; resolves to their sha256 in entry order. A refused
+   * `baseHash` rejects with `SceneWriteConflictError` for that file and nothing is written.
+   */
+  async writeTextChangeset(
+    entries: readonly { readonly path: string; readonly text: string; readonly baseHash: string }[]
+  ): Promise<string[]> {
+    const writeChangeset = this.files.writeChangeset;
+    if (!writeChangeset) throw new Error('This host does not write changesets.');
+    const wire = entries.map(entry => ({ ...entry, wirePath: this.wire(entry.path) }));
+    let result;
+    try {
+      result = await writeChangeset.call(
+        this.files,
+        wire.map(entry => ({ path: entry.wirePath, data: entry.text, ifMatch: entry.baseHash }))
+      );
+    } catch (error) {
+      // The error names the project path of the file that failed (the caller's key).
+      const failed = wire.find(entry => entry.wirePath === hostFailureOf(error)?.path);
+      throw this.translate(HostService.normalize(failed?.path ?? ''), error);
+    }
+    result.files.forEach((file, index) => this.knownHashes.set(wire[index].wirePath, file.sha256));
+    this.signalDirectories([
+      ...new Set(wire.map(entry => this.parentOf(HostService.normalize(entry.path)))),
+    ]);
+    return result.files.map(file => file.sha256);
   }
 
   async writeBinaryFile(path: string, data: ArrayBuffer): Promise<void> {

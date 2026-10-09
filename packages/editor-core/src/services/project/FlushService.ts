@@ -150,6 +150,10 @@ export class FlushService {
     const saved: string[] = [];
     const conflicts: string[] = [];
     const failed: string[] = [];
+    // Several dirty scenes (a prefab and a scene with its instances) go as one changeset.
+    const together = await this.flushTogether(this.dirtySceneIds());
+    saved.push(...together.saved);
+    conflicts.push(...together.conflicts);
     // A flush already in flight is awaited too: its write is part of "the disk is current".
     const ids = new Set([...this.dirtySceneIds(), ...this.chains.keys()]);
     for (const sceneId of ids) {
@@ -162,6 +166,66 @@ export class FlushService {
     if (conflicts.length > 0) return { ok: false, reason: 'external_change', saved, conflicts };
     if (failed.length > 0) return { ok: false, reason: 'write_failed', saved, failed };
     return { ok: true, saved };
+  }
+
+  /**
+   * Plan §C.2 "Префаб + сцена — один changeset": when two or more scenes have something to
+   * write and the host has transactions, they are written as one (§C.4: all or nothing, one
+   * `pix3:fs` frame). A refused `If-Match` writes nothing; that path goes to the merge and the
+   * others are left dirty for the per-scene flush that follows.
+   */
+  private async flushTogether(
+    sceneIds: readonly string[]
+  ): Promise<{ saved: string[]; conflicts: string[] }> {
+    const none = { saved: [], conflicts: [] };
+    if (sceneIds.length < 2 || !this.storage.supportsChangesets()) return none;
+    if (appState.project.host.writer === 'other') return none;
+    // Wait out per-scene flushes in flight: a changeset must not race one of its own scenes.
+    await Promise.all(
+      sceneIds.map(id => this.chains.get(id)?.catch(() => undefined) ?? Promise.resolve())
+    );
+    const snaps: Array<{ sceneId: string; snap: FlushSnapshot }> = [];
+    for (const sceneId of sceneIds) {
+      const descriptor = appState.scenes.descriptors[sceneId];
+      if (!descriptor || this.baselines.isPendingExternal(toProjectPath(descriptor.filePath)))
+        continue;
+      const snap = this.snapshot(sceneId);
+      if (snap && snap.ops.length > 0) snaps.push({ sceneId, snap });
+    }
+    if (snaps.length < 2) return none;
+    let shas: string[];
+    try {
+      shas = await this.storage.writeTextChangeset(
+        snaps.map(({ snap }) => ({ path: snap.path, text: snap.text, baseHash: snap.baseline.sha }))
+      );
+    } catch (error) {
+      if (error instanceof SceneWriteConflictError) {
+        const path = toProjectPath(error.path);
+        this.baselines.markPendingExternal(path);
+        this.externalChanges.report(path);
+        return { saved: [], conflicts: [path] };
+      }
+      // Anything else: the per-scene flushes that follow report it.
+      return none;
+    }
+    const saved: string[] = [];
+    snaps.forEach(({ sceneId, snap }, index) => {
+      this.baselines.recordFlush(snap.path, snap.baseline, {
+        sha: shas[index],
+        text: snap.text,
+        norm: snap.norm,
+      });
+      const descriptor = appState.scenes.descriptors[sceneId];
+      if (descriptor && appState.scenes.nodeDataChangeSignal === snap.revision) {
+        descriptor.isDirty = false;
+      }
+      if (descriptor) descriptor.lastSavedAt = Date.now();
+      saved.push(snap.path);
+    });
+    for (const { sceneId } of snaps) {
+      for (const listener of [...this.listeners]) listener(sceneId, 'saved');
+    }
+    return { saved, conflicts: [] };
   }
 
   /** The text a flush of `sceneId` would write now, or null when nothing is pending (the draft). */

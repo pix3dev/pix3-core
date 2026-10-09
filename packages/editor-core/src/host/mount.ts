@@ -106,6 +106,7 @@ export async function mountEditorWith(
       // Per-file memory of this mount (pending external versions, baselines) goes with it.
       externalChanges.reset();
       service(SceneBaselineService).reset();
+      service(ProjectStorageService).reset();
       el.replaceChildren();
     },
   };

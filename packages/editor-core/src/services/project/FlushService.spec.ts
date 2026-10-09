@@ -12,6 +12,7 @@ import { OperationService } from '@/services/core/OperationService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { appState, resetAppState } from '@/state';
+import { SceneManager } from '@pix3/runtime';
 
 /**
  * `FlushService` against a real editor boot (`mountEditorWith` + `FakeHost`) and real operations:
@@ -43,10 +44,16 @@ const service = <T>(ctor: new (...args: never[]) => T): T => {
 let handle: EditorHandle | null = null;
 let host: FakeHost;
 
-async function boot(): Promise<{ flush: FlushService; sceneId: string }> {
+async function boot(
+  extra: Record<string, string> = {}
+): Promise<{ flush: FlushService; sceneId: string }> {
   resetAppState();
   host = new FakeHost({
-    files: { 'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n', [PATH]: SCENE },
+    files: {
+      'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n',
+      [PATH]: SCENE,
+      ...extra,
+    },
   });
   await host.whenReady();
   handle = await mountEditorWith(document.createElement('div'), host, { shell: false });
@@ -223,5 +230,36 @@ describe('FlushService — when the disk is written (§C.1 table)', () => {
     appState.ui.gestureInProgress = true;
     expect(await flush.flushDirty(10)).toEqual({ ok: false, reason: 'gesture_in_progress' });
     expect(disk()).toBe(SCENE);
+  });
+});
+
+describe('FlushService — several dirty scenes are one changeset (§C.2, §C.4)', () => {
+  it('writes both files in one transaction and one frame', async () => {
+    const OTHER = 'scenes/other.pix3scene';
+    const { flush, sceneId: mainId } = await boot({
+      [OTHER]: SCENE.replace('name: Box', 'name: Other Box'),
+    });
+    await service(CommandDispatcher).execute(
+      new LoadSceneCommand({ filePath: `res://${OTHER}`, sceneId: 'other-scene' })
+    );
+    await setWidth(111); // active: the other scene
+    appState.scenes.activeSceneId = mainId;
+    service(SceneManager).setActiveScene(mainId);
+    await setWidth(222);
+    const frames = host.frames.length;
+
+    expect(flush.dirtySceneIds().sort()).toEqual([mainId, 'other-scene'].sort());
+    expect(await flush.flushDirty(0)).toMatchObject({ ok: true });
+    expect(host.changesets).toBe(1);
+    expect(host.frames.length).toBe(frames + 1);
+    expect(
+      host.frames
+        .at(-1)!
+        .events.map(e => e.path)
+        .sort()
+    ).toEqual([OTHER, PATH].sort());
+    expect(host.text(OTHER)).toContain('width: 111');
+    expect(disk()).toContain('width: 222');
+    expect(flush.dirtySceneIds()).toEqual([]);
   });
 });

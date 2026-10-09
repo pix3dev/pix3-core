@@ -5,6 +5,11 @@ import type { HistoryEntry, HistorySnapshot } from '@/core/HistoryManager';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import { IconService, IconSize } from '@/services/editor/IconService';
+import { DialogService } from '@/services/editor/DialogService';
+import { SceneJournalService } from '@/services/project/SceneJournalService';
+import { SceneMergeService } from '@/services/project/SceneMergeService';
+import { SceneBaselineService } from '@/services/project/SceneBaselineService';
+import type { HostHistoryEntry } from '@/host/EditorHost';
 import { appState } from '@/state';
 
 import '../shared/pix3-panel';
@@ -32,12 +37,23 @@ interface HistoryRow {
   readonly distance: number;
 }
 
+const AUTHOR_LABEL: Record<HostHistoryEntry['author'], string> = {
+  editor: 'Saved here',
+  external: 'Changed on disk',
+  restore: 'Restored',
+  'rejected-draft': 'Not saved (kept)',
+};
+
 /**
  * History panel: the active scene's undo/redo stack as a list (oldest at the top). Clicking a row
  * steps the stack to just after that edit — every step goes through the `edit.undo` / `edit.redo`
  * commands, so it is exactly what pressing Ctrl+Z / Ctrl+Shift+Z that many times would do.
  *
- * History is per scene (`OperationService`), so the list follows the active scene tab.
+ * Below it, **Versions on disk**: the dev server's journal of this scene file (plan §C.4) — every
+ * save, every external change, every editor state a merge or a hand-over did not keep. "Restore…"
+ * writes one back (`SceneMergeService.restoreVersion`); undo cannot reach across a reload, this can.
+ *
+ * History is per scene (`OperationService`), so both lists follow the active scene tab.
  */
 @customElement('pix3-history-panel')
 export class HistoryPanel extends ComponentBase {
@@ -49,6 +65,23 @@ export class HistoryPanel extends ComponentBase {
 
   @inject(IconService)
   private readonly icons!: IconService;
+
+  @inject(SceneJournalService)
+  private readonly journal!: SceneJournalService;
+
+  @inject(SceneMergeService)
+  private readonly merges!: SceneMergeService;
+
+  @inject(DialogService)
+  private readonly dialogs!: DialogService;
+
+  @inject(SceneBaselineService)
+  private readonly baselines!: SceneBaselineService;
+
+  @state()
+  private versions: HostHistoryEntry[] = [];
+
+  private versionsKey = '';
 
   @state()
   private snapshot: HistorySnapshot = EMPTY_SNAPSHOT;
@@ -81,6 +114,84 @@ export class HistoryPanel extends ComponentBase {
 
   private refresh(): void {
     this.snapshot = this.operations.history.snapshot();
+    void this.refreshVersions();
+  }
+
+  private activeDescriptor() {
+    const id = appState.scenes.activeSceneId;
+    return id ? (appState.scenes.descriptors[id] ?? null) : null;
+  }
+
+  /** Re-list when the scene or its disk version changed (a save, a reload, a merge). */
+  private async refreshVersions(): Promise<void> {
+    const descriptor = this.activeDescriptor();
+    const key = descriptor
+      ? `${descriptor.filePath}@${descriptor.lastSavedAt ?? ''}@${appState.scenes.lastLoadedAt ?? ''}`
+      : '';
+    if (key === this.versionsKey) return;
+    this.versionsKey = key;
+    if (!descriptor || !this.journal.available) {
+      this.versions = [];
+      return;
+    }
+    try {
+      this.versions = await this.journal.list(descriptor.filePath);
+    } catch {
+      this.versions = [];
+    }
+  }
+
+  private async restore(entry: HostHistoryEntry): Promise<void> {
+    const descriptor = this.activeDescriptor();
+    if (!descriptor) return;
+    const confirmed = await this.dialogs.showConfirmation({
+      title: 'Restore version',
+      message: `Write the version of ${entry.path} from ${timeFormat.format(new Date(entry.at))} back to disk? The current version stays in this list.`,
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed) return;
+    await this.merges.restoreVersion(descriptor, entry.id);
+    this.versionsKey = '';
+    void this.refreshVersions();
+  }
+
+  private renderVersions() {
+    if (!this.journal.available) return null;
+    const descriptor = this.activeDescriptor();
+    const currentSha = descriptor ? this.baselines.get(descriptor.filePath)?.sha : undefined;
+    return html`
+      <h3 class="history-section">Versions on disk</h3>
+      ${this.versions.length === 0
+        ? html`<p class="history-empty">No versions journaled yet.</p>`
+        : html`<ol class="history-list history-versions" aria-label="Versions on disk">
+            ${this.versions.map(
+              entry =>
+                html`<li class="history-version" data-version-id=${entry.id}>
+                  <span class="history-row__icon"
+                    >${this.icons.getIcon(
+                      entry.author === 'rejected-draft' ? 'archive' : 'hard-drive',
+                      IconSize.SMALL
+                    )}</span
+                  >
+                  <span class="history-row__label" title=${entry.note ?? ''}
+                    >${AUTHOR_LABEL[entry.author]}${entry.sha256 === currentSha
+                      ? ' (on disk)'
+                      : ''}</span
+                  >
+                  <span class="history-row__time">${timeFormat.format(new Date(entry.at))}</span>
+                  <button
+                    type="button"
+                    class="history-btn history-version__restore"
+                    title="Restore this version…"
+                    aria-label="Restore this version…"
+                    @click=${() => void this.restore(entry)}
+                  >
+                    ${this.icons.getIcon('rotate-ccw', IconSize.SMALL)}
+                  </button>
+                </li>`
+            )}
+          </ol>`}
+    `;
   }
 
   private get rows(): HistoryRow[] {
@@ -130,7 +241,7 @@ export class HistoryPanel extends ComponentBase {
     const { canUndo, canRedo, undoEntries } = this.snapshot;
     return html`
       <pix3-panel
-        panel-description="Undo history of the active scene."
+        panel-description="Undo history and saved versions of the active scene."
         actions-label="History controls"
       >
         <div slot="toolbar" class="history-toolbar">
@@ -196,6 +307,7 @@ export class HistoryPanel extends ComponentBase {
         ${rows.length === 0
           ? html`<p class="history-empty">No edits yet in this scene.</p>`
           : html``}
+        ${this.renderVersions()}
       </pix3-panel>
     `;
   }

@@ -39,7 +39,12 @@ export class SceneJournalService {
     return (await this.history?.read(this.hostService.wirePath(path), id)) ?? null;
   }
 
-  /** Write a journaled version back to disk; the editor then follows the disk (§C.3). */
+  /**
+   * Write a journaled version back to disk (History → "Restore version"). The plugin journals it
+   * as `restore` and reports it like any external change, so the open scene follows the disk
+   * through the usual path (§C.3) — and the version it replaced stays in the journal.
+   * `ifMatch` is the scene's baseline: a disk that moved meanwhile refuses the restore.
+   */
   async restore(path: string, id: string, ifMatch?: string): Promise<void> {
     const history = this.history;
     if (!history) throw new Error('This dev server keeps no version journal.');

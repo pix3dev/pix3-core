@@ -81,6 +81,8 @@ export class FakeHost implements EditorHost {
   readonly dirs = new Set<string>();
   readonly frames: HostFsFrame[] = [];
   handlers: HostSyncHandlers = {};
+  /** How many changesets were written (each is one frame). */
+  changesets = 0;
   private seq = 0;
   private roots: ScriptRoots;
   private writerId: string | null = null;
@@ -142,6 +144,43 @@ export class FakeHost implements EditorHost {
           { op: existed ? 'modify' : 'create', path, kind: 'file', sha256: sha, author: 'editor' },
         ]);
         return { path, sha256: sha, size: bytes.length, seq };
+      },
+      async writeChangeset(entries) {
+        await host.ready;
+        for (const entry of entries) {
+          const current = host.store.get(entry.path)?.sha256 ?? null;
+          const refused =
+            (entry.createOnly && current !== null) ||
+            (entry.ifMatch !== undefined && entry.ifMatch !== current);
+          if (refused) {
+            const error = new FakeHostError(
+              'base_mismatch',
+              412,
+              `${entry.path} changed.`,
+              current
+            );
+            Object.assign(error.failure, { path: entry.path });
+            throw error;
+          }
+        }
+        const events: HostFsEvent[] = [];
+        const files: HostWriteResult[] = [];
+        for (const entry of entries) {
+          const existed = host.store.has(entry.path);
+          const bytes = encode(entry.data);
+          const sha = await host.put(entry.path, bytes);
+          events.push({
+            op: existed ? 'modify' : 'create',
+            path: entry.path,
+            kind: 'file',
+            sha256: sha,
+            author: 'editor',
+          });
+          files.push({ path: entry.path, sha256: sha, size: bytes.length, seq: 0 });
+        }
+        const seq = host.emit(events);
+        host.changesets += 1;
+        return { seq, files: files.map(file => ({ ...file, seq })) };
       },
       async mkdir(path) {
         host.addDirs(`${path}/x`);

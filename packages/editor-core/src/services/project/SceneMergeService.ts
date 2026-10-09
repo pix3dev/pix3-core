@@ -258,6 +258,29 @@ export class SceneMergeService {
   }
 
   /**
+   * History → "Restore version": unsaved edits are flushed first (so the version being replaced
+   * is in the journal too), then the plugin writes the journaled version with
+   * `If-Match = baseline`. The scene follows the disk like after any external change.
+   */
+  async restoreVersion(descriptor: SceneDescriptor, versionId: string): Promise<boolean> {
+    const path = toProjectPath(descriptor.filePath);
+    if (descriptor.isDirty) await this.flush.flushScene(descriptor.id);
+    const baseline = this.baselines.get(path);
+    try {
+      await this.journal.restore(path, versionId, baseline?.sha);
+      return true;
+    } catch (error) {
+      this.notices.show({
+        key: `restore:${path}`,
+        tone: 'warn',
+        message: `Could not restore that version of ${path}.`,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
    * Make `text` the scene's graph on top of the current baseline: the difference is pending and
    * flushes next (a restored draft, restored keys). History is cleared like on any reload.
    */
