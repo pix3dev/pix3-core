@@ -3,7 +3,7 @@ import { subscribe } from 'valtio/vanilla';
 import { inject, injectable } from '@/fw/di';
 import type { HookReply } from '@/host/EditorHost';
 import { diffScenes, type SceneOp } from '@/core/scene-patch/scene-diff';
-import { normOfGraph, serializeGraph } from '@/core/scene-patch/scene-norm';
+import { editorNormOfGraph, serializeGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { sha256 } from '@/core/hash';
 import { LoggingService } from '@/services/core/LoggingService';
@@ -237,7 +237,7 @@ export class FlushService {
     const baseline = this.baselines.get(path);
     if (!baseline) return null;
     const revision = appState.scenes.nodeDataChangeSignal;
-    const norm = normOfGraph(graph);
+    const norm = editorNormOfGraph(graph, baseline.norm);
     const ops = diffScenes(baseline.norm, norm);
     if (ops.length === 0) {
       return { path, baseline, revision, norm, ops, text: baseline.text, fallback: false };

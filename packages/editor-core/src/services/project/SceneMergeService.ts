@@ -10,7 +10,7 @@ import {
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
 import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
-import { normOfGraph } from '@/core/scene-patch/scene-norm';
+import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { HostNoticeService } from '@/host/HostNoticeService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
@@ -101,7 +101,8 @@ export class SceneMergeService {
     const clobbered = lastFlush ? findClobberedKeys(lastFlush.before, lastFlush.after, E.norm) : [];
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
-    const pending = B && graph && descriptor.isDirty ? diffScenes(B.norm, normOfGraph(graph)) : [];
+    const pending =
+      B && graph && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graph, B.norm)) : [];
     if (B) this.highlightChanges(descriptor.id, B.norm, E.norm);
     let outcome: ExternalApplyOutcome;
     if (!B || !graph || pending.length === 0) {
@@ -168,7 +169,7 @@ export class SceneMergeService {
     eGraph: SceneGraph,
     graph: SceneGraph
   ): Promise<ExternalApplyOutcome> {
-    const G = normOfGraph(graph);
+    const G = editorNormOfGraph(graph, B.norm);
     const editorText = this.flush.snapshot(descriptor.id)?.text ?? null;
     if (editorText !== null) {
       await this.journal.recordRejectedDraft(
@@ -273,7 +274,7 @@ export class SceneMergeService {
     if (!B) return;
     const graphNow = this.sceneManager.getSceneGraph(descriptor.id);
     const editorOps =
-      graphNow && descriptor.isDirty ? diffScenes(B.norm, normOfGraph(graphNow)) : [];
+      graphNow && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graphNow, B.norm)) : [];
     // Pending edits of the editor ride along (structure included); the restored keys win.
     const keyed = new Map<string, SceneOp>();
     for (const [index, op] of [...editorOps, ...ops].entries()) {
@@ -336,6 +337,7 @@ export class SceneMergeService {
     const op = dropped.op;
     const label =
       op.kind === 'set' || op.kind === 'delete' ? describeLeaf(name, op.path) : dropped.key;
+    if (dropped.reason === 'laid-out') return `${label} (follows a dropped resize)`;
     return dropped.reason === 'node-gone' ? `${label} (node deleted on disk)` : label;
   }
 }

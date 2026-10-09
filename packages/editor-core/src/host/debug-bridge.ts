@@ -18,7 +18,7 @@ import { FlushService } from '@/services/project/FlushService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
-import { normOfGraph } from '@/core/scene-patch/scene-norm';
+import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 import { appState } from '@/state';
 
@@ -180,7 +180,11 @@ export function createDebugBridge(): Pix3DebugBridge {
       dto.components = node.components.map((c, i) => componentToDTO(c, i));
       // What the scene file gets for this node — `properties` above is the loaded YAML bag, which
       // does not show sizes a texture set or values only the node's fields hold.
-      const saved = indexNodes(normOfGraph(graph)).get(nodeId)?.def ?? null;
+      const descriptorPath =
+        appState.scenes.descriptors[appState.scenes.activeSceneId ?? '']?.filePath;
+      const baseline = descriptorPath ? service(SceneBaselineService).get(descriptorPath) : null;
+      const norm = baseline ? editorNormOfGraph(graph, baseline.norm) : normOfGraph(graph);
+      const saved = indexNodes(norm).get(nodeId)?.def ?? null;
       return { ...dto, saved };
     },
 
@@ -198,7 +202,7 @@ export function createDebugBridge(): Pix3DebugBridge {
         const graph = manager.getSceneGraph(descriptor.id);
         const baseline = baselines.get(descriptor.filePath);
         if (!graph || !baseline) continue;
-        const ops = diffScenes(baseline.norm, normOfGraph(graph));
+        const ops = diffScenes(baseline.norm, editorNormOfGraph(graph, baseline.norm));
         if (ops.length === 0) continue;
         out[toProjectPath(descriptor.filePath)] = ops.map(op =>
           op.kind === 'set' || op.kind === 'delete'
