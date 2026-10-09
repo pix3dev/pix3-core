@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# Pix3 editor + CLI bookkeeping (dev server, version journal, build record)
+.pix3/

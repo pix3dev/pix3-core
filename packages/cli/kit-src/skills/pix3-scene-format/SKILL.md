@@ -1,6 +1,6 @@
 ---
 name: pix3-scene-format
-description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split, plus how to translate design/recipe.md tool names into file edits. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
+description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -26,7 +26,7 @@ The engine's own statement of the format (principles, skinned UI controls, Spine
 ```yaml
 version: 1.0.0                 # the only format version; copy it
 metadata:                      # optional, free-form
-  author: Pix3 Recipe
+  author: Pix3
   description: Tapper gameplay — falling objects
 root:                          # list of root nodes; at least one
   - id: game-root
@@ -64,7 +64,7 @@ root:                          # list of root nodes; at least one
 Rules:
 
 - **`id`**: short, readable, kebab-case, unique (`combo-label`, `spawner-bonus`). Two nodes
-  with the same id fail the load. Never rename an id the recipe lists as stable — scripts
+  with the same id fail the load. Never rename an id other scripts use — scripts
   find nodes by id; rename `name` instead.
 - **`type`**: must be a real node type. An unknown or misspelled type does **not** fail the
   load — the node becomes an inert placeholder that draws and does nothing.
@@ -83,8 +83,8 @@ transform:
   rotation: 0           # DEGREES in YAML; positive = counter-clockwise (Y is up)
 ```
 
-2D space: origin at the centre of the screen/parent, **X right, Y up**. The recipes use a
-1080 x 1920 portrait design (top edge y = 960, bottom y = -960); other projects read
+2D space: origin at the centre of the screen/parent, **X right, Y up**. A portrait game uses e.g. a
+1080 x 1920 design (top edge y = 960, bottom y = -960); other projects read
 `viewportBaseSize` / `projectType` in `pix3project.yaml` — a `3d` project may have loose
 top-level 2D nodes (a HUD) and no 2D root at all, so position new HUD relative to the HUD
 nodes that are already there. Scripts see the rotation in
@@ -126,7 +126,7 @@ are ignored — `pix3 validate` says so); on an **instance** node they are the o
 - **Colour**: a quoted hex string, `color: "#141a2e"`. Always quote — an unquoted `#` starts
   a YAML comment and the value becomes empty.
 - **Asset path**: `res://` + path from the project root (the folder with `pix3project.yaml`),
-  whatever the layout: `res://sprites/ph-target.png` in a recipe, `res://src/assets/textures/x.png`
+  whatever the layout: `res://sprites/ph-target.png` in a new project, `res://src/assets/textures/x.png`
   in a project that keeps assets under `src/`. Follow the folders the project already has; a
   new project from `pix3 new` uses one folder per type at the root (`sprites/`, `audio/`,
   `fonts/`, `models/`, `spine/`, `scripts/`, `scenes/`).
@@ -143,7 +143,7 @@ effects:
     params: { color: "#7ee787", amount: 1 }
 ```
 
-`core:tint` multiplies a near-white placeholder PNG to the colour — this is how recipe
+`core:tint` multiplies a near-white placeholder PNG to the colour — this is how
 placeholders get their palette. Also `core:adjust`, `core:grayscale`, `core:flash`,
 `core:uv-scroll`, `core:dissolve`. Other 2D nodes do not read `effects` (a `ColorRect2D` takes
 its colour from `color`). On a `GeometryMesh` the stack lives at `material.effects`.
@@ -199,7 +199,7 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
   them by id (`retry-button` inside `scenes/ui/result.pix3scene` is found as `retry-button`).
 - A prefab carries fixed defaults only (e.g. its `core:Hitbox2D` group). Tunables live on
   plain nodes in the host scene.
-- Where prefabs live: `scenes/prefabs/` (the recipes) or a top-level `prefabs/` — the export
+- Where prefabs live: `scenes/prefabs/` or a top-level `prefabs/` — the export
   treats both (and `scenes/ui/`) as prefabs, never as a boot scene.
 - Spawned at runtime with `await this.scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent })`.
 
@@ -214,23 +214,6 @@ scene with `properties: { visible: false }`. Two different flags, both needed:
   applies at start. A script reveals the overlay by setting `node.visible = true`.
 
 Never put a full-screen dimmer/panel inline in `main.pix3scene`.
-
-## Recipe tool names → file edits
-
-`design/recipe.md` was written for the in-editor agent. Without its tools:
-
-| recipe.md says | you do |
-| --- | --- |
-| tunable with `component: "user:X"` | edit `config.<property>` of the component with `type: user:X` on the node with that `id` |
-| tunable without `component` | edit `properties.<property>` on the node with that `id` (in the `transform` / `layout` / `flow` block where it belongs) |
-| `set_property` | edit `properties` in the YAML |
-| `set_component_property` | edit the component's `config` |
-| `create_node` / `add_component` | add the node / component entry to the YAML |
-| `fs_write` (+ `overwrite: true`) | write the file |
-| `play_start`, `game_input`, `game_observe`, `game_run` | the same tools over the live channel when it is connected (`pix3-verify`); otherwise `pix3 check`, then `pix3 smoke <the scene you changed>`, then ask the human to press Play and tell them what to look for |
-
-Values out of a tunable's `min`/`max` load as written (`pix3 validate` warns); the script's
-schema `setValue` may clamp them.
 
 ## Known gaps
 

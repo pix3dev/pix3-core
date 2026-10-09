@@ -1,8 +1,9 @@
-// The write-model corpus specs over another project's scenes as well as the templates
-// (`.plans/write-model.md`): saver fixed point + `ScenePatchWriter`/merge on every scene. Local only,
-// not CI — the default project is the sibling checkout `../DeepCore` (plan §A.4); pass another
-// directory as the first argument or in `PIX3_EXTRA_CORPUS`. Fails when the project is missing, so
-// a run never passes on the templates alone by accident.
+// The write-model corpus specs (`.plans/write-model.md`: saver fixed point + `ScenePatchWriter`/
+// merge on every scene) over another project's scenes as well as the scene corpus (the starters +
+// `packages/runtime/fixtures/scene-corpus/`). Local only, not CI — the default project is the
+// sibling checkout `../DeepCore` (plan §A.4); pass another directory as the first argument or in
+// `PIX3_EXTRA_CORPUS`. Fails when the project is missing, so a run never passes on the built-in
+// corpus alone by accident.
 //
 //   npm run test:corpus                 # ../DeepCore
 //   npm run test:corpus -- ../OtherGame
@@ -17,7 +18,7 @@ if (!existsSync(join(project, 'pix3project.yaml'))) {
   console.error(`test:corpus: no Pix3 project at ${project} (pix3project.yaml missing)`);
   process.exit(1);
 }
-console.log(`test:corpus: templates + ${project}`);
+console.log(`test:corpus: starters + fixture corpus + ${project}`);
 const result = spawnSync(
   'npx',
   [

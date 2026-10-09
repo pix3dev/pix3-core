@@ -118,8 +118,7 @@ what this map does not name, and say in one line what you were missing.
   '@pix3/runtime'`; in `onStart`: `this.disposeDebug = registerGameDebug({ name, version: 1,
   snapshot: () => ({ …JSON-safe state… }), inspect: (query, args) => …, action: (name, args)
   => … })`, call the returned disposer in `onDetach`. Global and last-wins — only the running
-  scene's flow/rules script registers one; recipes already do (extend theirs, do not add a
-  second).
+  scene's flow/rules script registers one (extend an existing one, do not add a second).
 - Cutscenes: `scene.cutscene.playCinematic(id, {…})`; camera blends via `core:CameraBrain`
   + `VirtualCamera3D`.
 - Multiplayer: `scene.network`, `scene.netNodes`, `core:NetworkedNode`,

@@ -2,10 +2,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createProject } from '../new-project.ts';
 import { listTemplates } from '../templates.ts';
+
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+const CORPUS_ROOT = fileURLToPath(
+  new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
+);
 import { runTreeCli } from './command.ts';
 import type { TreeNode } from './tree.ts';
 
@@ -37,7 +43,7 @@ const flatten = (nodes: readonly TreeNode[]): TreeNode[] =>
 describe('pix3 tree on the tapper recipe', () => {
   const dir = join(scratch, 'tapper');
   beforeAll(() => {
-    const template = listTemplates().find(t => t.id === 'recipe-tapper-2d');
+    const template = listTemplates(CORPUS_ROOT).find(t => t.id === 'recipe-tapper-2d');
     if (!template) throw new Error('recipe-tapper-2d template missing');
     createProject({ template, dir, projectName: 'Tapper' });
   });

@@ -166,16 +166,19 @@ describe('routine format', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The templates ARE the format (the anti-drift test)
+// The 1.x templates' routines load (the anti-drift test, now over the fixture corpus)
 // ---------------------------------------------------------------------------
 
-/** `packages/create-pix3/templates`, from this file — independent of the cwd vitest runs in. */
-const TEMPLATES_DIR = resolve(__dirname, '../../../../create-pix3/templates');
+/**
+ * `packages/runtime/fixtures/scene-corpus`, from this file — independent of the cwd vitest runs
+ * in. The starters `npm create pix3` ships carry no routines; the recipes that did are kept there
+ * as test input (`.plans/templates.md`).
+ */
+const TEMPLATES_DIR = resolve(__dirname, '../../../../runtime/fixtures/scene-corpus');
 
-describe('the routines shipped in the templates load through this loader', () => {
+describe('the routines of the fixture corpus load through this loader', () => {
   const examples = [
     'minigame-2d/files/design/tests/routines/mute-music.json',
-    'playable-2d/files/design/tests/routines/intro-to-cta.json',
     'playable-3d/files/design/tests/routines/intro-to-cta.json',
     'recipe-tapper-2d/files/design/tests/routines/terminal-retry.json',
   ];

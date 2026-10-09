@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as runtime from '@pix3/runtime';
 import {
   getSceneNodeDiskFormat,
@@ -44,6 +45,9 @@ import {
 } from './kit/kit-source.ts';
 import { createProject } from './new-project.ts';
 import { listTemplates } from './templates.ts';
+
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+const CORPUS_ROOT = fileURLToPath(new URL('../../runtime/fixtures/scene-corpus', import.meta.url));
 import { ensureRuntimeTypes } from './types/runtime-types.ts';
 import { SMOKE_CODES } from './smoke/report.ts';
 import { USAGE } from './usage.ts';
@@ -448,7 +452,7 @@ const sha256 = (path: string): string =>
 
 let counter = 0;
 const freshRecipe = (withKit: boolean): string => {
-  const template = listTemplates().find(t => t.id === 'recipe-tapper-2d');
+  const template = listTemplates(CORPUS_ROOT).find(t => t.id === 'recipe-tapper-2d');
   if (!template) throw new Error('recipe-tapper-2d missing');
   const dir = join(scratch, `p${++counter}`);
   createProject({
@@ -486,6 +490,29 @@ describe('pix3 kit', () => {
     );
     const owned = readProjectKitManifest(root);
     expect(owned?.files['AGENTS.md']).toBe(sha256(join(root, 'AGENTS.md')));
+  });
+
+  it('a starter (npm create pix3) keeps its own tsconfig.json and gets no .pix3/types', () => {
+    for (const id of ['2d', '3d']) {
+      const template = listTemplates().find(t => t.id === id);
+      if (!template) throw new Error(`${id} missing`);
+      const root = join(scratch, `starter-${id}-${++counter}`);
+      createProject({
+        template,
+        dir: root,
+        postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes(), { devMcp: false })],
+      });
+      for (const file of kit.manifest.files) {
+        if (file === 'tsconfig.json') continue;
+        expect(readFileSync(join(root, file), 'utf8')).toBe(text(file));
+      }
+      const tsconfig = readFileSync(join(root, 'tsconfig.json'), 'utf8');
+      expect(tsconfig).toContain('"moduleResolution": "bundler"');
+      expect(tsconfig).not.toContain('.pix3/tsconfig.check.json');
+      expect(existsSync(join(root, '.pix3/types'))).toBe(false);
+      // The template's .gitignore already covers .pix3/: not appended twice.
+      expect(readFileSync(join(root, '.gitignore'), 'utf8').match(/^\.pix3\/$/gm)).toHaveLength(1);
+    }
   });
 
   it("keeps a project's own AGENTS.md and CLAUDE.md, and says what to link", () => {

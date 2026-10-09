@@ -1,0 +1,27 @@
+{
+  "name": "{{PACKAGE_NAME}}",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "pix3 check",
+    "smoke": "pix3 smoke"
+  },
+  "dependencies": {
+    "@pix3/runtime": "{{PIX3_VERSION}}",
+    "lit": "^3.3.1",
+    "postprocessing": "^6.39.2",
+    "three": "~0.183.2"
+  },
+  "devDependencies": {
+    "@pix3/cli": "{{PIX3_VERSION}}",
+    "@pix3/editor-core": "{{PIX3_VERSION}}",
+    "@pix3/vite-plugin": "{{PIX3_VERSION}}",
+    "@types/three": "^0.183.1",
+    "typescript": "~5.8.3",
+    "vite": "^8.3.3"
+  }
+}

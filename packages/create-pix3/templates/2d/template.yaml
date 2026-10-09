@@ -1,0 +1,11 @@
+id: 2d
+title: Empty 2D
+description: An empty 2D project — one scene with a stretched 2D root and a background, nothing that plays.
+# Shared project files (package.json, vite.config.ts, index.html, src/main.ts, tsconfig.json …)
+# come from templates/base; this layer adds the 2D scene.
+extends: base
+projectType: 2d
+targetPlatform: universal
+viewport: { width: 1920, height: 1080 }
+entryScene: scenes/main.pix3scene
+order: 10

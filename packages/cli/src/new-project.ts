@@ -12,19 +12,42 @@ import type { TemplateInfo } from './templates.ts';
 import { CLI_VERSION } from './version.ts';
 
 /**
- * `pix3 new <recipe> [dir]` — the file-level equivalent of the editor's
- * `ProjectService.applyTemplateFiles`: same base directories, same `{{PROJECT_NAME}}`
- * substitution, same manifest, same `.pix3/template.json`. Everything after the template goes
+ * `pix3 new <2d|3d> [dir]` (and `npm create pix3`, which runs it): the template's layers, then its
+ * own files, with `{{PROJECT_NAME}}`, `{{PACKAGE_NAME}}` and `{{PIX3_VERSION}}` substituted, the
+ * manifest (`pix3project.yaml`) and `.pix3/template.json`. Everything after the template goes
  * through {@link PostCreateStep}s: `pix3 new` passes the agent kit (`kit/install.ts`
  * `agentKitStep` — AGENTS.md, CLAUDE.md, skills, `.mcp.json`, `.gitignore`, script types); the
  * default here is only the pinned MCP config, so a bare `createProject` stays kit-free.
  */
 
-/** The editor's flat base layout plus its companion folders (`design`, `references`). */
-const BASE_DIRECTORIES = ['design', 'scenes', 'sprites', 'scripts', 'audio', 'references'];
+/** The flat project layout (plan §B.5), created even where the template ships no file. */
+const BASE_DIRECTORIES = ['design', 'scenes', 'sprites', 'scripts', 'audio'];
 
-/** Extensions the editor imports as text (and runs `{{PROJECT_NAME}}` over). */
-const TEXT_EXTENSIONS = new Set(['.pix3scene', '.ts', '.md', '.yaml', '.yml', '.json', '.txt']);
+/** Extensions copied as text, with the placeholders substituted. */
+const TEXT_EXTENSIONS = new Set([
+  '.pix3scene',
+  '.ts',
+  '.md',
+  '.yaml',
+  '.yml',
+  '.json',
+  '.txt',
+  '.html',
+]);
+
+/**
+ * Files a template ships under another name: npm drops `.gitignore` from every published tarball
+ * (and the templates travel in two), so the template carries `gitignore`.
+ */
+const RENAMED_FILES: Readonly<Record<string, string>> = { gitignore: '.gitignore' };
+
+/** An npm package name from a project name: `My Game!` → `my-game`. */
+export const packageNameOf = (projectName: string): string =>
+  projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9._~-]+/g, '-')
+    .replace(/^[-._~]+|[-._~]+$/g, '')
+    .slice(0, 214) || 'pix3-game';
 
 export interface CreatedProject {
   readonly dir: string;
@@ -93,13 +116,26 @@ export const createProject = (options: CreateProjectOptions): CreatedProject => 
     renderManifest(buildManifestPayload(template, { projectName, projectId }))
   );
 
-  for (const relativePath of walkFiles(template.filesDir)) {
-    const source = join(template.filesDir, relativePath);
-    if (TEXT_EXTENSIONS.has(extname(relativePath).toLowerCase())) {
-      writeFile(
-        relativePath,
-        readFileSync(source, 'utf8').replaceAll('{{PROJECT_NAME}}', projectName)
-      );
+  const substitute = (text: string): string =>
+    text
+      .replaceAll('{{PROJECT_NAME}}', projectName)
+      .replaceAll('{{PACKAGE_NAME}}', packageNameOf(projectName))
+      .replaceAll('{{PIX3_VERSION}}', CLI_VERSION);
+  // Layers first, the template's own files on top (a later file of the same path replaces one).
+  const sources = new Map<string, string>();
+  for (const filesDir of [...template.layerDirs, template.filesDir]) {
+    for (const relativePath of walkFiles(filesDir)) {
+      const name = relativePath.split('/').pop() ?? relativePath;
+      const target =
+        name in RENAMED_FILES
+          ? relativePath.slice(0, relativePath.length - name.length) + RENAMED_FILES[name]
+          : relativePath;
+      sources.set(target, join(filesDir, relativePath));
+    }
+  }
+  for (const [relativePath, source] of [...sources].sort(([a], [b]) => a.localeCompare(b))) {
+    if (TEXT_EXTENSIONS.has(extname(source).toLowerCase())) {
+      writeFile(relativePath, substitute(readFileSync(source, 'utf8')));
     } else {
       writeFile(relativePath, readFileSync(source));
     }

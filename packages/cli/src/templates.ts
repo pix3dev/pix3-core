@@ -9,14 +9,16 @@ import { cliPackageRoot } from './package-root.ts';
  *
  * One source of truth (plan §5 A, risk #7 — "copy at build time"): the templates live in
  * `packages/create-pix3/templates/`, and this package reads the same folders.
- *  - Published package: `prepack` copies each template's `template.yaml` + `files/` into
+ *  - Published package: `prepack` copies each template folder's `template.yaml` + `files/` into
  *    `<package>/templates/` (gitignored), which is what ships in the tarball.
  *  - Repo checkout (`node packages/cli/src/index.ts`): the templates are read from
- *    `<repo>/packages/create-pix3/templates/` directly, so editing a recipe needs no rebuild,
+ *    `<repo>/packages/create-pix3/templates/` directly, so editing one needs no rebuild,
  *    and a leftover `templates/` copy in the checkout can never shadow the source.
  *
- * The metadata parsing mirrors `ProjectTemplateService.buildTemplates` in the editor (same
- * defaults, same `hidden`, same `entryScene` → `defaultExportScenePath` handling).
+ * Templates compose (`.plans/templates.md`): a template's `template.yaml` may name a layer it
+ * `extends` — a sibling folder with only `files/` (`base`: package.json, vite.config.ts,
+ * index.html, src/main.ts, tsconfig.json …). The project gets the layer's files first, then the
+ * template's own on top. A folder without `template.yaml` is a layer, never listed.
  */
 
 type ProjectType = '2d' | '3d';
@@ -37,13 +39,16 @@ export interface TemplateInfo {
   readonly viewport: { readonly width: number; readonly height: number };
   readonly order: number;
   readonly hidden: boolean;
-  /** Ships `design/recipe.md` — part of the Flow recipe catalog (see `recipes.spec.ts`). */
-  readonly isRecipe: boolean;
   /** Project-relative, no `res://`. */
   readonly entryScenePath?: string;
   readonly directories: readonly string[];
   /** Absolute path of the template's `files/` tree. */
   readonly filesDir: string;
+  /**
+   * Absolute `files/` trees copied before this template's own, in order (`extends: <layer>` in
+   * `template.yaml`; empty when it extends nothing).
+   */
+  readonly layerDirs: readonly string[];
 }
 
 const packageRootDir = (): string => cliPackageRoot();
@@ -109,6 +114,12 @@ const readTemplate = (root: string, id: string): TemplateInfo | null => {
   const viewport = asRecord(meta.viewport);
   const entrySceneRaw = typeof meta.entryScene === 'string' ? meta.entryScene.trim() : '';
   const entryScenePath = entrySceneRaw ? entrySceneRaw.replace(/^res:\/\//i, '') : undefined;
+  const extendsRaw = typeof meta.extends === 'string' ? meta.extends.trim() : '';
+  const layerDir = extendsRaw ? join(root, extendsRaw, 'files') : null;
+  if (layerDir && !existsSync(layerDir)) {
+    process.stderr.write(`pix3: ${metaPath} extends "${extendsRaw}", which has no files/\n`);
+    return null;
+  }
 
   return {
     id,
@@ -126,12 +137,12 @@ const readTemplate = (root: string, id: string): TemplateInfo | null => {
     },
     order: asPositiveInt(meta.order, 1000),
     hidden: meta.hidden === true,
-    isRecipe: existsSync(join(filesDir, 'design', 'recipe.md')),
     ...(entryScenePath ? { entryScenePath } : {}),
     directories: Array.isArray(meta.directories)
       ? meta.directories.filter((d): d is string => typeof d === 'string' && d.length > 0)
       : [],
     filesDir,
+    layerDirs: layerDir ? [layerDir] : [],
   };
 };
 
@@ -144,28 +155,21 @@ export const listTemplates = (root: string = resolveTemplatesRoot()): TemplateIn
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
 
 /**
- * Resolve what the user typed: an exact id (`recipe-tapper-2d`, hidden templates included — like
- * the editor, `hidden` keeps a template out of lists, not out of reach), else the short recipe
- * name the site uses (`tapper` → the one visible `recipe-tapper-*`). Ambiguity is an error, never
- * a guess.
+ * Resolve what the user typed: a template id (`2d`, `3d`; hidden templates included — `hidden`
+ * keeps a template out of lists, not out of reach), case-insensitive.
  */
 export const resolveTemplate = (
   query: string,
   templates: readonly TemplateInfo[]
 ): { template: TemplateInfo } | { error: string } => {
-  const exact = templates.find(t => t.id === query);
+  const wanted = query.trim().toLowerCase();
+  const exact = templates.find(t => t.id.toLowerCase() === wanted);
   if (exact) return { template: exact };
-  const visible = templates.filter(t => !t.hidden);
-  const prefixed = visible.filter(
-    t => t.id === `recipe-${query}` || t.id.startsWith(`recipe-${query}-`)
-  );
-  if (prefixed.length === 1) return { template: prefixed[0] };
-  if (prefixed.length > 1) {
-    return { error: `"${query}" is ambiguous: ${prefixed.map(t => t.id).join(', ')}.` };
-  }
-  return {
-    error: `Unknown recipe or template "${query}". Run \`pix3 new\` to list them.`,
-  };
+  const known = templates
+    .filter(t => !t.hidden)
+    .map(t => t.id)
+    .join(', ');
+  return { error: `Unknown template "${query}" (${known}).` };
 };
 
 /** First sentence of a template description — the "one line" of the list. */

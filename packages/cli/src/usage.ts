@@ -7,8 +7,8 @@ import { CLI_VERSION } from './version.ts';
 export const USAGE = `pix3 ${CLI_VERSION}
 
 Usage:
-  pix3 new                         List recipes and templates
-  pix3 new <recipe> [dir]          Create a project (dir defaults to the recipe id)
+  pix3 new                         List the starters (2d, 3d)
+  pix3 new <2d|3d> [dir]           Create an empty project (dir defaults to pix3-<2d|3d>)
         [--name <project name>]
   pix3 mcp --workspace             MCP server for your agent (stdio), relayed through the
         [--project <dir>]          running \`pix3 serve\` to the connected Pix3 editor

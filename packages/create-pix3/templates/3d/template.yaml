@@ -1,0 +1,11 @@
+id: 3d
+title: Empty 3D
+description: An empty 3D project — one scene with a camera and lights, nothing that plays.
+# Shared project files (package.json, vite.config.ts, index.html, src/main.ts, tsconfig.json …)
+# come from templates/base; this layer adds the 3D scene.
+extends: base
+projectType: 3d
+targetPlatform: universal
+viewport: { width: 1920, height: 1080 }
+entryScene: scenes/main.pix3scene
+order: 20

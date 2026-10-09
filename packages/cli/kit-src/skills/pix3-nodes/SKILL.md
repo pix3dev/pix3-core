@@ -1,6 +1,6 @@
 ---
 name: pix3-nodes
-description: Compact property reference for the Pix3 2D node types used by the recipes — Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess — plus the Node2D base properties, anchor layout and paint order; the full per-node reference (every 2D and 3D node) is reference.md beside it. Use when adding a node to a .pix3scene, choosing which node type to use, or checking a property name/type before writing it.
+description: Compact property reference for the Pix3 2D node types games use most — Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess — plus the Node2D base properties, anchor layout and paint order; the full per-node reference (every 2D and 3D node) is reference.md beside it. Use when adding a node to a .pix3scene, choosing which node type to use, or checking a property name/type before writing it.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -50,7 +50,7 @@ Shader `effects` exist only on `Sprite2D`, `AnimatedSprite2D` and `Button2D`.
 ## Group2D
 
 Sized container; draws nothing. Use it as the scene root (sized to `viewportBaseSize` from
-`pix3project.yaml` — `width: 1080, height: 1920` in the recipes — `layout` stretch/stretch) and for any panel whose children anchor or flow against it.
+`pix3project.yaml` — e.g. `width: 1080, height: 1920` for a portrait game — `layout` stretch/stretch) and for any panel whose children anchor or flow against it.
 
 | Key | Type | Default |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ The only untextured 2D fill. Build the game from these first, swap to sprites la
 | `aspectRatioLocked` | bool | false | Keep the texture's aspect while resizing |
 | `effects` | list | — | `[{ type: core:tint, params: { color: "#hex", amount: 1 } }]` — how a near-white placeholder gets its colour |
 
-There is no tint property: colour a sprite with a `core:tint` effect. Recipe placeholders are
+There is no tint property: colour a sprite with a `core:tint` effect. Placeholders are
 near-white `sprites/ph-*.png` + `effects: [{ type: core:tint, params: { color, amount: 1 } }]`.
 
 ### An SVG you write as a sprite
@@ -140,7 +140,7 @@ Scripts: `label.setText('SCORE 5')`.
 | `effects` | list | — | Shader effects on the skin |
 
 Signals: `pressed` (finger/button went down inside it), `released`, `click` (down **and** up
-inside it — a completed tap; sliding off cancels it), `pointerdown`, `pointerup`. The recipes
+inside it — a completed tap; sliding off cancels it), `pointerdown`, `pointerup`. Game buttons
 wire `pressed` for an instant response; use `click` where an accidental touch must be
 cancellable (menus, purchases). `button.connect('click', this, handler)`.
 
@@ -152,7 +152,7 @@ cancellable (menus, purchases). `button.connect('click', this, handler)`.
 | `minValue` / `maxValue` / `value` | number | 0 / 100 / 100 | Fill = value within the range (clamped) |
 | `barColor` | colour | "#ff4444" | Fill colour |
 | `backBackgroundColor` | colour | "#333333" | Trough colour |
-| `showBorder` / `borderColor` / `borderWidth` | bool / colour / px | true / "#000000" / 2 | The recipes set `showBorder: false` |
+| `showBorder` / `borderColor` / `borderWidth` | bool / colour / px | true / "#000000" / 2 | Game skins set `showBorder: false` |
 | `textureTrough` / `textureFill` | texture | — | Skin sprites |
 | `sliceBorderLeft/Right/Top/Bottom` | number | 0 | Nine-slice insets of the skins |
 

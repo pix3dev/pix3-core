@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createProject } from '../new-project.ts';
@@ -17,6 +18,10 @@ import { validateProject } from './validate.ts';
  * printed, so a new one is visible in the test output rather than silently accepted.
  */
 
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+const CORPUS_ROOT = fileURLToPath(
+  new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
+);
 const scratch = mkdtempSync(join(tmpdir(), 'pix3-validate-golden-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -36,10 +41,14 @@ const errorLines = (diagnostics: readonly Diagnostic[]): string[] =>
     .map(d => `${d.file}${d.line ? `:${d.line}` : ''} ${d.code} ${d.message}`);
 
 describe('pix3 validate golden: shipped templates have no errors', () => {
-  const templates = listTemplates();
+  // The starters `npm create pix3` ships, and the 1.x recipes kept as fixture projects (the
+  // coverage these goldens had before create-pix3 went down to blank starters).
+  const starters = listTemplates();
+  const templates = [...starters, ...listTemplates(CORPUS_ROOT)];
 
-  it('finds the templates', () => {
-    expect(templates.length).toBeGreaterThan(8);
+  it('finds the starters and the fixture corpus', () => {
+    expect(starters.map(t => t.id)).toEqual(['2d', '3d']);
+    expect(templates.length - starters.length).toBeGreaterThanOrEqual(5);
   });
 
   for (const template of templates) {

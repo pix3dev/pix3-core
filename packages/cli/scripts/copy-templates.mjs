@@ -1,7 +1,7 @@
 // Copies create-pix3's project templates into `<package>/templates/` for the published tarball
 // (plan §5 A, risk #7: templates stay in `packages/create-pix3/templates/`, one source; the package
-// gets a build-time copy). Only what `pix3 new` reads is copied — `template.yaml` and `files/` —
-// never the wizard's `cover.png` or the specs that sit beside them. The output is gitignored.
+// gets a build-time copy). Only what `pix3 new` reads is copied — `template.yaml` (absent in a
+// layer such as `base/`, which templates `extends`) and `files/`. The output is gitignored.
 import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,10 @@ let count = 0;
 for (const entry of readdirSync(source, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const from = join(source, entry.name);
-  if (!existsSync(join(from, 'template.yaml')) || !existsSync(join(from, 'files'))) continue;
-  cpSync(join(from, 'template.yaml'), join(target, entry.name, 'template.yaml'));
+  if (!existsSync(join(from, 'files'))) continue;
+  if (existsSync(join(from, 'template.yaml'))) {
+    cpSync(join(from, 'template.yaml'), join(target, entry.name, 'template.yaml'));
+  }
   cpSync(join(from, 'files'), join(target, entry.name, 'files'), { recursive: true });
   count += 1;
 }

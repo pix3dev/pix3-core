@@ -7,16 +7,13 @@ This folder is a **Pix3 game**: a 2D/3D browser game. You edit it by writing fil
 has the same folder open in the Pix3 editor, moves things with the mouse and presses Play;
 the editor saves their edits to the same files. The files are the whole contract.
 
-If it started from a **recipe** (`design/recipe.md` exists), it is a game that already plays.
-Change it; do not rebuild it.
+A project made by `npm create pix3` starts **empty**: one entry scene (`scenes/main.pix3scene`,
+a 2D root and background, or a 3D camera and lights) and no scripts. The game is yours to build.
 
 ## Read first
 
-1. `design/recipe.md` (if present) — the map: stable node ids, tunables with ranges, extension
-   points, what must not be touched. It speaks in the in-editor agent's tool names; translate
-   them with the table in `.claude/skills/pix3-scene-format/SKILL.md` ("Recipe tool names").
-2. `README.md` — file layout of this project.
-3. The one scene or script you are about to change. Nothing else. Do not survey the repo.
+1. `README.md` — file layout of this project.
+2. The one scene or script you are about to change. Nothing else. Do not survey the repo.
    To find it, and to find your way inside it, use `pix3 tree` (every scene and prefab with
    node counts, types and components) and `pix3 tree <scene>` (one line per node: id, type,
    position, size, layout, components, prefab instances; `--types Label2D,Button2D`,
@@ -38,7 +35,7 @@ The layout is **whatever this project has** — do not assume folders. Three rul
 `pix3project.yaml` is the manifest (do not edit unless asked); `.pix3/` is editor + CLI
 bookkeeping (recovery journal, merge log, script types) — never edit it.
 
-Example — the layout a **recipe** project (`pix3 new`) ships; other projects differ:
+Example — the layout `npm create pix3` sets up (`pix3 new`); other projects differ:
 
 | Path | What |
 | --- | --- |
@@ -47,7 +44,8 @@ Example — the layout a **recipe** project (`pix3 new`) ships; other projects d
 | `scenes/prefabs/*.pix3scene` | Prefabs: a scene file with exactly ONE root node (a top-level `prefabs/` works too) |
 | `scripts/*.ts` | Script components |
 | `sprites/`, `audio/`, `fonts/`, `models/` … | Assets, referenced as `res://sprites/x.png` |
-| `design/` | Recipe contract, GDD, tests. `design/tests/` is written by the editor's harness |
+| `design/` | Design notes, GDD, references |
+| `src/main.ts`, `index.html`, `vite.config.ts` | The Vite entry: `startGame('#app')` boots the entry scene; `pix3()` serves the editor at `/__pix3/` |
 
 ## The five rules
 
@@ -119,7 +117,7 @@ root:
 - **Quote every colour**: `color: "#141a2e"`. Unquoted, `#` starts a YAML comment.
 - Textures: `texture: { type: 'texture', url: 'res://sprites/ph-target.png' }`.
 - `visible: false` on an overlay instance hides it **in the editor only**; play mode reads
-  `initiallyVisible` on the overlay file's root. Keep both as the recipe has them.
+  `initiallyVisible` on the overlay file's root. Set both.
 - The loader is forgiving — unknown types, unknown keys and wrong value types load silently
   as nothing. That is why rule 4 exists.
 
@@ -141,20 +139,19 @@ export class Combo extends Script {
 }
 ```
 
-- One mechanic = one new script of 70–140 lines. Extend a recipe's scripts only where
-  `design/recipe.md` names an extension point; do not restructure them.
-- Talk between scripts the way the project already does. Recipes use signals on nodes:
-  `node.emit('touch-scored', 1)` / `node.connect('touch-scored', this, fn)` — never rename the
-  recipe's signals or node ids. An existing game may use its own event bus or store instead
-  (next section).
+- One mechanic = one new script of 70–140 lines.
+- Talk between scripts the way the project already does. In a new project use signals on nodes:
+  `node.emit('touch-scored', 1)` / `node.connect('touch-scored', this, fn)`; once named, never
+  rename a signal or a node id other scripts use. An existing game may use its own event bus or
+  store instead (next section).
 - Transforms are mutated, never assigned: `node.position.set(x, y, 0)`, `node.rotation.z = rad`.
 - Types come from `@pix3/runtime`: `pix3 check` type-checks against the bundled declarations in
   `.pix3/types/` (or against your own `node_modules` when the project has its own `tsconfig.json`).
 
-## Hosting an existing (non-recipe) game
+## Hosting an existing game
 
-A game that was not made from a recipe has its own architecture; plug into it, do not add a
-second one.
+A game that was not made from `npm create pix3` has its own architecture; plug into it, do not
+add a second one.
 
 - **Find its event bus / state store** before writing a script:
   `grep -rn "CustomEvent\|dispatchEvent\|addEventListener\|subscribe(\|EventTarget\|emit(" src scripts`.
@@ -194,7 +191,7 @@ second one.
 
 ## Skills (read the one you need, when you need it)
 
-- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays, recipe tool table
+- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays
 - `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every node in `reference.md` beside it
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
 - `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `read`, merge-log, the live channel (`game_run` + `expect`)

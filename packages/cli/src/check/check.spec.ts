@@ -21,6 +21,11 @@ import type { KitSource } from '../kit/kit-source.ts';
 import { agentKitStep } from '../kit/install.ts';
 import { createProject } from '../new-project.ts';
 import { listTemplates } from '../templates.ts';
+
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+const CORPUS_ROOT = fileURLToPath(
+  new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
+);
 import { ensureRuntimeTypes } from '../types/runtime-types.ts';
 import { validateProject } from '../validate/validate.ts';
 import { CLI_VERSION } from '../version.ts';
@@ -63,7 +68,7 @@ beforeAll(async () => {
 }, 120_000);
 
 const newRecipe = (id = 'recipe-tapper-2d'): string => {
-  const template = listTemplates().find(t => t.id === id);
+  const template = listTemplates(CORPUS_ROOT).find(t => t.id === id);
   if (!template) throw new Error(`${id} missing`);
   const dir = join(scratch, `p${++counter}`);
   createProject({

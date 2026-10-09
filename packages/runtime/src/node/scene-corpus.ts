@@ -10,20 +10,28 @@ import { ScriptRegistry } from '../core/ScriptRegistry';
 import { DiskResourceManager, NodeAssetLoader } from './disk-resources';
 
 /**
- * Spec support: the template scenes of `packages/create-pix3/templates/` as a corpus, and a Node
- * harness that loads, saves and normalises them the way the editor does (`.plans/write-model.md`).
+ * Spec support: a scene corpus — the starters' scenes (`packages/create-pix3/templates/`) plus the
+ * fixture projects in `packages/runtime/fixtures/scene-corpus/` (the 1.x recipe and playable
+ * templates, kept as test inputs when `create-pix3` went down to blank starters:
+ * `.plans/templates.md`) — and a Node harness that loads, saves and normalises them the way the editor does (`.plans/write-model.md`).
  * Not exported from `@pix3/runtime/node`'s index; specs import it by path
  * (`@pix3/runtime/node/scene-corpus`). Callers install the canvas shim
  * (`installCanvasOnlyDocument`) and silence the loader's console themselves.
  */
 
-export const TEMPLATES_ROOT = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../create-pix3/templates'
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** `packages/create-pix3/templates`: what `npm create pix3` ships. */
+export const TEMPLATES_ROOT = join(HERE, '../../../create-pix3/templates');
+
+/**
+ * `packages/runtime/fixtures/scene-corpus`: fixture projects in the template layout
+ * (`<id>/template.yaml` + `<id>/files/`), so `pix3 new`'s `createProject` can instantiate them too.
+ */
+export const CORPUS_ROOT = join(HERE, '../../fixtures/scene-corpus');
 
 export interface CorpusScene {
-  /** `<template>:<project-relative path>`, e.g. `recipe-tapper-2d:scenes/main.pix3scene`. */
+  /** `<project>:<project-relative path>`, e.g. `recipe-tapper-2d:scenes/main.pix3scene`. */
   readonly name: string;
   readonly projectDir: string;
   /** Project-relative path. */
@@ -43,12 +51,17 @@ const listScenes = (dir: string, out: string[] = []): string[] => {
   return out;
 };
 
-export function templateCorpus(): CorpusScene[] {
-  return readdirSync(TEMPLATES_ROOT)
-    .filter(entry => existsSync(join(TEMPLATES_ROOT, entry, 'files')))
+/** `<id>/files` project folders under `root`, sorted by id. */
+const projectsUnder = (root: string): { id: string; projectDir: string }[] =>
+  readdirSync(root)
+    .filter(entry => existsSync(join(root, entry, 'files')))
     .sort()
-    .flatMap(templateId => {
-      const projectDir = join(TEMPLATES_ROOT, templateId, 'files');
+    .map(id => ({ id, projectDir: join(root, id, 'files') }));
+
+/** The starters' scenes and the fixture corpus (ids do not collide: `2d`/`3d` vs the 1.x ids). */
+export function templateCorpus(): CorpusScene[] {
+  return [...projectsUnder(TEMPLATES_ROOT), ...projectsUnder(CORPUS_ROOT)].flatMap(
+    ({ id: templateId, projectDir }) => {
       return listScenes(projectDir)
         .sort()
         .map(full => {
@@ -60,7 +73,8 @@ export function templateCorpus(): CorpusScene[] {
             text: substitutePlaceholders(readFileSync(full, 'utf8')),
           };
         });
-    });
+    }
+  );
 }
 
 /**

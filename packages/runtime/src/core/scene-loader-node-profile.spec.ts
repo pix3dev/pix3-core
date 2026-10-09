@@ -29,9 +29,11 @@ import { ScriptRegistry } from './ScriptRegistry';
  *
  * This is the golden test for `pix3 validate` level 2 (`.plans/external-agent-authoring.md`, §5 A;
  * measurements in `.plans/measurements/external-agent-phase0-strict-profile.md`). Every scene and
- * prefab shipped under `packages/create-pix3/templates/` must hydrate through the real loader,
- * with the built-in `core:*` behaviours AND the template's own `user:*` scripts registered, and
- * come out with nothing parked, nothing inert, no missing `res://` texture and no loader warning.
+ * prefab shipped under `packages/create-pix3/templates/` (the starters), and every one of the
+ * fixture corpus `packages/runtime/fixtures/scene-corpus/` (the 1.x recipes, kept as test input),
+ * must hydrate through the real loader, with the built-in `core:*` behaviours AND the project's
+ * own `user:*` scripts registered, and come out with nothing parked, nothing inert, no missing
+ * `res://` texture and no loader warning.
  *
  * What Node needs, and nothing more (all of it in `@pix3/runtime/node`, which `pix3 validate` uses
  * too):
@@ -49,6 +51,7 @@ import { ScriptRegistry } from './ScriptRegistry';
 const TEMPLATES_ROOT = fileURLToPath(
   new URL('../../../../packages/create-pix3/templates/', import.meta.url)
 );
+const CORPUS_ROOT = fileURLToPath(new URL('../../fixtures/scene-corpus/', import.meta.url));
 
 /** Placeholders the project scaffolder substitutes on copy. */
 const substitutePlaceholders = (text: string): string =>
@@ -118,17 +121,19 @@ interface TemplateScene {
   relPath: string;
 }
 
-const TEMPLATE_SCENES: TemplateScene[] = readdirSync(TEMPLATES_ROOT)
-  .filter(entry => existsSync(join(TEMPLATES_ROOT, entry, 'files')))
-  .flatMap(templateId => {
-    const templateDir = join(TEMPLATES_ROOT, templateId);
-    const filesDir = join(templateDir, 'files');
-    return listSceneFiles(filesDir).map(path => ({
-      templateId,
-      templateDir,
-      relPath: relative(filesDir, path).replace(/\\/g, '/'),
-    }));
-  });
+const TEMPLATE_SCENES: TemplateScene[] = [TEMPLATES_ROOT, CORPUS_ROOT].flatMap(root =>
+  readdirSync(root)
+    .filter(entry => existsSync(join(root, entry, 'files')))
+    .flatMap(templateId => {
+      const templateDir = join(root, templateId);
+      const filesDir = join(templateDir, 'files');
+      return listSceneFiles(filesDir).map(path => ({
+        templateId,
+        templateDir,
+        relPath: relative(filesDir, path).replace(/\\/g, '/'),
+      }));
+    })
+);
 
 interface Harness {
   loader: SceneLoader;
@@ -200,8 +205,13 @@ describe('scene hydration without any DOM', () => {
 describe('pix3 validate level 2 golden: template scenes load clean in node', () => {
   installCanvasShim();
 
-  it('finds the template scenes', () => {
-    expect(TEMPLATE_SCENES.length).toBeGreaterThan(20);
+  it('finds the starter scenes and the corpus scenes', () => {
+    const starters = TEMPLATE_SCENES.filter(scene => scene.templateDir.startsWith(TEMPLATES_ROOT));
+    expect(starters.map(scene => `${scene.templateId}/${scene.relPath}`).sort()).toEqual([
+      '2d/scenes/main.pix3scene',
+      '3d/scenes/main.pix3scene',
+    ]);
+    expect(TEMPLATE_SCENES.length - starters.length).toBeGreaterThan(15);
   });
 
   const foundDefects: Record<string, string[]> = {};
@@ -277,7 +287,7 @@ describe('pix3 validate level 2 golden: template scenes load clean in node', () 
 describe('SceneLoader strictness, as measured (what validate must add on top)', () => {
   installCanvasShim();
 
-  const PREFAB_DIR = join(TEMPLATES_ROOT, 'recipe-tapper-2d', 'files');
+  const PREFAB_DIR = join(CORPUS_ROOT, 'recipe-tapper-2d', 'files');
 
   const load = async (yaml: string, projectDir = PREFAB_DIR) => {
     const harness = createHarness(projectDir);

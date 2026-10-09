@@ -2,15 +2,26 @@
   "name": "create-pix3",
   "version": "2.0.0-alpha.0",
   "private": true,
-  "description": "npm create pix3@latest — scaffold a Vite + TS game project with the Pix3 editor.",
+  "description": "npm create pix3@latest — scaffold an empty 2D or 3D Vite + TS game project with the Pix3 editor.",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pix3dev/pix3-core.git",
     "directory": "packages/create-pix3"
   },
+  "bin": {
+    "create-pix3": "index.js"
+  },
+  "files": [
+    "index.js",
+    "src/create.js",
+    "README.md"
+  ],
   "engines": {
-    "node": ">=20.19"
+    "node": ">=24.15.0 <25"
+  },
+  "dependencies": {
+    "@pix3/cli": "2.0.0-alpha.0"
   },
   "license": "Apache-2.0"
 }

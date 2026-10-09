@@ -160,11 +160,11 @@ before children's.
 - UI controls (`Button2D`, `Slider2D`, `Checkbox2D`, `Joystick2D`, …) emit `pressed` (touch
   went down inside), `released`, `click` (down and up inside — a completed tap),
   `pointerdown`, `pointerup`; `Checkbox2D` also `toggled`; `Label2D` emits
-  `typewriter-complete`. The recipes wire buttons to `pressed` (instant); `click` can be
+  `typewriter-complete`. Wire game buttons to `pressed` (instant); `click` can be
   cancelled by sliding off — use it for menus and anything costly.
-- Recipe scripts talk through signals on `game-root` (`touch-scored`, `touch-damaged`,
-  `score-changed`, `lives-changed`, `time-changed`, `game-won`, `game-lost`). Listen to
-  them; add new signal names for new mechanics; never rename existing ones.
+- Scripts talk through signals on a shared node such as `game-root` (`score-changed`,
+  `lives-changed`, `game-won`, `game-lost`, …). Listen to the ones that exist; add new signal
+  names for new mechanics; never rename existing ones.
 
 ## `this.scene`
 
@@ -206,13 +206,13 @@ before children's.
   "code path verified, audibility not" and ask the human to listen.
 - Overlap queries without physics response: `scene.collision2d.overlapPoint(x, y, group?)`,
   `overlapCircle(x, y, r, group?)`, `overlapRect(cx, cy, w, h, group?)`, `raycast(…)` over
-  nodes carrying `core:Hitbox2D` (the tapper/arena recipes use this).
+  nodes carrying `core:Hitbox2D` (tappers, collectors, dodgers).
 - 2D physics with response: `core:PhysicsBody2D` + `core:Collider2D` on the same node;
   `scene.physics2d.getBody(node)` → `setVelocity`, `applyImpulse`, `teleport`. Never
-  hand-write a 2D solver, never import rapier for 2D. (The bouncer recipe runs its own
-  swept solver in `BallBody.ts` — do not add engine physics to its ball.)
+  hand-write a 2D solver, never import rapier for 2D. (A game that already runs its own
+  solver keeps it — do not add engine physics on top of it.)
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`.
-  The recipes register theirs and publish state with `registerGameDebug` in `GameRules` —
+  Register one per game and publish state with `registerGameDebug` from one rules script —
   when you add a mechanic, add its field to that snapshot instead of registering a second one.
 
 ## `this.input`
@@ -223,10 +223,10 @@ before children's.
   `scene.getPointer2DWorldPosition()` for world), `input.isPointerOverUI(pointerId)`,
   `input.getButton(name)`, `input.getAxis(name)`.
 - Keys held: `input.getButton('Key_ArrowLeft')`, `getButton('Key_D')` — `Key_` + the
-  `KeyboardEvent.code` (this is what the recipes' controllers use). In `input.keyEvents`
+  `KeyboardEvent.code` (the form player controllers use). In `input.keyEvents`
   compare `event.code` (`'KeyW'`, `'ArrowUp'`, `'Space'`) — case-sensitive.
 
-## Hosting an existing game (not a recipe)
+## Hosting an existing game
 
 - **Use the game's own channel.** Before wiring a script, find how the game talks:
   `grep -rn "CustomEvent\|dispatchEvent\|addEventListener\|subscribe(\|EventTarget\|emit(" src scripts`.
@@ -274,8 +274,8 @@ before children's.
 - Hitstop every frame of an overlap freezes the game — edge-trigger it.
 - A hidden `UIControl2D` takes no input; `onUpdate` still runs on hidden nodes.
 - `getComponent('user:X')` is wrong — pass the class.
-- Ending a run belongs to the recipe's `GameRules`: call its `finish(won)`; do not show the
-  result overlay yourself (RETRY would stay disabled).
+- Ending a run belongs to the one script that owns the rules: call it; do not show the result
+  overlay from a second place.
 
 ## Known gaps
 

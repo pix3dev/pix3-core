@@ -1,0 +1,29 @@
+# Pix3 Scene File (YAML). The entry scene of an empty 2D project: a root that stretches over the
+# viewport (pix3project.yaml → viewportBaseSize) and a background. Add nodes under game-root.
+version: 1.0.0
+metadata:
+  description: Entry scene
+root:
+  - id: game-root
+    type: Group2D
+    name: Game Root
+    properties:
+      width: 1920
+      height: 1080
+      layout:
+        enabled: true
+        horizontalAlign: stretch
+        verticalAlign: stretch
+    children:
+      - id: background
+        type: ColorRect2D
+        name: Background
+        properties:
+          width: 1920
+          height: 1080
+          color: "#1a1a2e"
+          layout:
+            enabled: true
+            horizontalAlign: stretch
+            verticalAlign: stretch
+        children: []

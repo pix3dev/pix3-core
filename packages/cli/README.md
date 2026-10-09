@@ -3,7 +3,7 @@
 Command line for Pix3:
 
 ```text
-pix3 new [<recipe> [dir]] [--name <n>]        create a project from a recipe/template
+pix3 new [<2d|3d> [dir]] [--name <n>]         create an empty 2D or 3D project (npm create pix3)
 pix3 mcp --workspace [--project <dir>]        stdio MCP server for your agent, through `pix3 serve`
 pix3 mcp [--project <dir>] [--agent <name>]   phase-0 prototype: stdio MCP + FSA link server
 pix3 setup [claude|codex]                     print how to register the MCP server
@@ -22,6 +22,12 @@ pix3 ack <path> --sha256 <hash>               ack a version you read (hash of ra
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
                                               synthesize a sound effect to WAV, offline
 ```
+
+`pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
+(package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore)
+plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` / `{{PACKAGE_NAME}}` /
+`{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent kit. Nothing in it plays a
+game. Record: `.plans/templates.md`.
 
 `new`, `kit`, `mcp`, `serve`, `read`/`ack` load neither TypeScript nor the kit generator: the kit
 and the runtime types are prebuilt into the package (`kit/`, `dist/runtime-types.json`, at
@@ -82,8 +88,8 @@ SKIPPED (scripts do not compile — user: components unchecked)`. Fix the compil
 recorded) prints as a `note:` only while its hash is the file's *current* version; one about a
 version the disk no longer holds is history and is not printed (it stays in `mergeLog` of `--json`).
 
-**Which tsconfig.** A project with its **own** root `tsconfig.json` (a Vite project, or one the
-editor's *build from templates* turned into one) is checked with it, as is, against its own
+**Which tsconfig.** A project with its **own** root `tsconfig.json` (a Vite project — every
+`npm create pix3` starter — or one the editor's *build from templates* turned into one) is checked with it, as is, against its own
 `node_modules` (`mode: "project"`); nothing is written into it. Otherwise (`mode: "pix3-types"`)
 `check` uses `.pix3/tsconfig.check.json` against the bundled types in `.pix3/types/`, and first
 (re)writes both when they are missing or from another CLI build.
@@ -95,7 +101,7 @@ installed there once with `npm install --prefix ~/.pix3/typescript/5.8.3 typescr
 (printed before it runs). `--offline` never installs: it fails with `E_TYPECHECK_UNAVAILABLE` and
 the command. `PIX3_TYPESCRIPT=<package dir>` overrides the search. Loaded with a dynamic `import()`.
 
-Measured (recipe-tapper-2d, 5 scripts, packed CLI installed outside the repo, fresh `HOME`):
+Measured (the 1.x recipe-tapper-2d, 5 scripts, packed CLI installed outside the repo, fresh `HOME`):
 first `check` 2.1 s including the TypeScript install, then 1.45 s (validate ~0.2 s, tsc ~1.2 s).
 
 ### SVG sprites

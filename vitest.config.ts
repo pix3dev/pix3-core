@@ -15,7 +15,8 @@ export default defineConfig({
       'packages/runtime/src/**/*.spec.ts',
       // CLI specs are Node (`// @vitest-environment node` per file).
       'packages/cli/src/**/*.spec.ts',
-      'packages/create-pix3/templates/*.spec.ts',
+      // `npm create pix3` end to end (Node; spawns the scaffolder).
+      'packages/create-pix3/src/**/*.spec.ts',
       // Plugin specs are Node too; they start real Vite dev servers on port 0.
       'packages/vite-plugin/src/**/*.spec.ts',
       // The editor port (.plans/editor-core-port.md): specs join lane by lane.
@@ -33,7 +34,7 @@ export default defineConfig({
     dedupe: ['three'],
     alias: {
       '@pix3/runtime': resolve(import.meta.dirname, 'packages/runtime/src'),
-      // editor-core's own alias, for the few editor modules template specs load (`parseRoutine`).
+      // editor-core's own alias (its specs, and the runtime specs that reach editor modules).
       '@': resolve(import.meta.dirname, 'packages/editor-core/src'),
       'virtual:pix3/spine-loader': resolve(
         import.meta.dirname,
