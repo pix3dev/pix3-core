@@ -93,10 +93,11 @@ html`<button class="my-icon-btn" aria-label="Refresh">
 The main menu is generated from command metadata — there is no menu file to edit.
 
 - **Pick the section by what the command acts on**, not by what feels close:
-  `file` (the project as a file), `edit` (undo/dup/delete + Editor Settings),
-  `create` (new nodes), `node` (operations on the selection), `view` (what the
-  viewport shows), `run` (play/stop and preview), `project` (settings, build,
-  export, bake), `window` (open or focus a panel or editor). Anything that opens
+  `edit` (undo/dup/delete, Save + Editor Settings), `create` (new nodes), `node`
+  (operations on the selection), `view` (what the viewport shows), `run`
+  (play/pause/stop and preview), `window` (open or focus a panel or editor). There
+  is no `file` or `project` section: file and project changes belong to the coding
+  agent or the IDE, not to editor UI. Anything that opens
   a panel goes in `window` — the View/Tools split it replaced is why nobody
   could find Logs.
 - **`menuOrder` is banded**: hundreds digit = semantic group, tens = slot, units

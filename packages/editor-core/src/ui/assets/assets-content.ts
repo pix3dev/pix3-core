@@ -16,8 +16,6 @@ import {
   ASSET_PATH_MIME,
   ASSET_RESOURCE_LIST_MIME,
   ASSET_RESOURCE_MIME,
-  getDraggedAssetPaths,
-  hasAssetDragData,
   hasGenerationDragData,
   toProjectResourcePath,
 } from '@/ui/shared/asset-drag-drop';
@@ -26,7 +24,6 @@ import { DropdownPortal } from '@/ui/shared/dropdown-portal';
 import { appState } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import './assets-content.ts.css';
-import { isReadOnlyTab } from '@/services/editor/read-only';
 
 /** Content-pane layout mode. */
 type ContentView = 'grid' | 'list';
@@ -87,13 +84,6 @@ export class AssetsContent extends ComponentBase {
 
   @state()
   private isGenerationDropActive = false;
-
-  /**
-   * Folder path (or `.` for a breadcrumb pointing at the project root) currently hovered
-   * by an in-editor asset drag; dropping there moves the dragged items into it.
-   */
-  @state()
-  private dropTargetPath: string | null = null;
 
   /** Path of the audio asset currently previewing (null = none). */
   @state()
@@ -346,14 +336,9 @@ export class AssetsContent extends ComponentBase {
       <nav class="assets-breadcrumbs" aria-label="Folder path">
         <button
           type="button"
-          class="crumb ${isRootActive ? 'is-active' : ''} ${this.dropTargetPath === '.'
-            ? 'is-drop-target'
-            : ''}"
+          class="crumb ${isRootActive ? 'is-active' : ''}"
           ?disabled=${isRootActive}
           @click=${() => this.onBreadcrumbClick('.')}
-          @dragover=${(event: DragEvent) => this.onMoveDragOver(event, '.')}
-          @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, '.')}
-          @drop=${(event: DragEvent) => this.onMoveDrop(event, '.', rootLabel)}
         >
           ${rootLabel}
         </button>
@@ -366,14 +351,9 @@ export class AssetsContent extends ComponentBase {
             >
             <button
               type="button"
-              class="crumb ${isLast ? 'is-active' : ''} ${this.dropTargetPath === path
-                ? 'is-drop-target'
-                : ''}"
+              class="crumb ${isLast ? 'is-active' : ''}"
               ?disabled=${isLast}
               @click=${() => this.onBreadcrumbClick(path)}
-              @dragover=${(event: DragEvent) => this.onMoveDragOver(event, path)}
-              @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, path)}
-              @drop=${(event: DragEvent) => this.onMoveDrop(event, path, part)}
             >
               ${part}
             </button>
@@ -454,7 +434,7 @@ export class AssetsContent extends ComponentBase {
     // while open and restores it on close; if Lit ever rendered it as null the portal
     // would orphan the detached node at the bottom of the panel on close.
     const item = this.contextMenu?.item ?? null;
-    const isImage = !!item && item.kind === 'file' && item.previewType === 'image';
+    const isImage = !!item && this.canAddToScene(item);
     return html`
       <div
         class="assets-preview-context-menu"
@@ -473,7 +453,6 @@ export class AssetsContent extends ComponentBase {
                     >
                       Add to Scene as Sprite2D
                     </button>
-                    <div class="menu-separator" role="separator"></div>
                   `
                 : null}
               ${item.spriteFolderPath
@@ -485,61 +464,34 @@ export class AssetsContent extends ComponentBase {
                     >
                       Show Files
                     </button>
-                    <div class="menu-separator" role="separator"></div>
                   `
                 : null}
-              <button type="button" role="menuitem" @click=${() => this.requestRename(item)}>
-                Rename
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="is-danger"
-                @click=${() => this.requestDelete(item)}
-              >
-                Delete
-              </button>
             `
           : null}
       </div>
     `;
   }
 
+  /** The menu's rows: an image can become a Sprite2D, a sprite card can show its files. */
+  private canAddToScene(item: AssetPreviewItem): boolean {
+    return item.kind === 'file' && item.previewType === 'image';
+  }
+
   private onItemContextMenu(event: MouseEvent, item: AssetPreviewItem): void {
+    if (!this.canAddToScene(item) && !item.spriteFolderPath) {
+      // Nothing to offer: files are renamed, moved and deleted by the agent or the IDE.
+      this.closeContextMenu();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     // Right-clicking an item outside the current selection selects just it; right-clicking a
-    // member of a multi-selection keeps the selection intact (so Delete acts on all of them).
+    // member of a multi-selection keeps the selection intact.
     if (!this.selectedPaths.has(item.path)) {
       this.updateSelectionFromClick(event, item);
       this.syncSelectionToService(item.path);
     }
     this.contextMenu = { item, x: event.clientX, y: event.clientY };
-  }
-
-  /** Emits a rename request the panel (Phase 4) routes to the DialogService rename flow. */
-  private requestRename(item: AssetPreviewItem): void {
-    this.closeContextMenu();
-    this.dispatchEvent(
-      new CustomEvent('content-rename-request', {
-        detail: { path: item.path },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  /** Emits a delete request for the multi-selection (or the clicked item alone). */
-  private requestDelete(item: AssetPreviewItem): void {
-    this.closeContextMenu();
-    const paths = this.selectedPaths.has(item.path) ? Array.from(this.selectedPaths) : [item.path];
-    this.dispatchEvent(
-      new CustomEvent('content-delete-request', {
-        detail: { paths },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 
   private closeContextMenu(): void {
@@ -575,12 +527,9 @@ export class AssetsContent extends ComponentBase {
 
   private renderItem(item: AssetPreviewItem) {
     const isSelected = this.selectedPaths.has(item.path);
-    const isDropTarget = this.dropTargetPath === item.path && this.isDropTargetItem(item);
     return html`
       <button
-        class="assets-preview-item ${isSelected ? 'is-selected' : ''} ${isDropTarget
-          ? 'is-drop-target'
-          : ''}"
+        class="assets-preview-item ${isSelected ? 'is-selected' : ''}"
         title=${this.buildTooltip(item)}
         draggable="true"
         @click=${(event: MouseEvent) => this.onItemSelected(event, item)}
@@ -589,18 +538,6 @@ export class AssetsContent extends ComponentBase {
         }}
         @contextmenu=${(event: MouseEvent) => this.onItemContextMenu(event, item)}
         @dragstart=${(event: DragEvent) => this.onItemDragStart(event, item)}
-        @dragend=${() => this.onItemDragEnd()}
-        @dragover=${(event: DragEvent) => {
-          if (this.isDropTargetItem(item)) {
-            this.onMoveDragOver(event, item.path);
-          }
-        }}
-        @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, item.path)}
-        @drop=${(event: DragEvent) => {
-          if (this.isDropTargetItem(item)) {
-            this.onMoveDrop(event, item.path, item.name);
-          }
-        }}
       >
         <span class="thumb">
           ${item.previewType === 'text' && item.previewText
@@ -665,12 +602,9 @@ export class AssetsContent extends ComponentBase {
         : item.width !== null && item.height !== null
           ? `${item.width}×${item.height}`
           : '';
-    const isDropTarget = this.dropTargetPath === item.path && this.isDropTargetItem(item);
     return html`
       <button
-        class="assets-list-row ${isSelected ? 'is-selected' : ''} ${isPlaying
-          ? 'is-playing'
-          : ''} ${isDropTarget ? 'is-drop-target' : ''}"
+        class="assets-list-row ${isSelected ? 'is-selected' : ''} ${isPlaying ? 'is-playing' : ''}"
         title=${this.buildTooltip(item)}
         draggable="true"
         @click=${(event: MouseEvent) => this.onItemSelected(event, item)}
@@ -679,18 +613,6 @@ export class AssetsContent extends ComponentBase {
         }}
         @contextmenu=${(event: MouseEvent) => this.onItemContextMenu(event, item)}
         @dragstart=${(event: DragEvent) => this.onItemDragStart(event, item)}
-        @dragend=${() => this.onItemDragEnd()}
-        @dragover=${(event: DragEvent) => {
-          if (this.isDropTargetItem(item)) {
-            this.onMoveDragOver(event, item.path);
-          }
-        }}
-        @dragleave=${(event: DragEvent) => this.onMoveDragLeave(event, item.path)}
-        @drop=${(event: DragEvent) => {
-          if (this.isDropTargetItem(item)) {
-            this.onMoveDrop(event, item.path, item.name);
-          }
-        }}
       >
         ${isAudio ? this.renderAudioToggle(item, 'is-inline') : null}
         ${isAnimation ? this.renderAnimationToggle(item, 'is-inline') : null}
@@ -1051,8 +973,7 @@ export class AssetsContent extends ComponentBase {
       this.requestUpdate();
     }
 
-    // Drag the whole multi-selection (folders included, so they can be moved too), in the
-    // order shown in the pane.
+    // Drag the whole multi-selection, in the order shown in the pane.
     const selectedItems = this.snapshot.items.filter(candidate =>
       this.selectedPaths.has(candidate.path)
     );
@@ -1063,10 +984,8 @@ export class AssetsContent extends ComponentBase {
     const resourcePaths = itemsToDrag
       .filter(candidate => candidate.kind === 'file')
       .map(candidate => toProjectResourcePath(candidate.path));
-    // `copyMove`, not `copy`: the drop targets that move assets (folder cards here, the
-    // Asset Tree) request `dropEffect = 'move'`, which the browser rejects outright — no
-    // drop event at all — when the source only allows copying.
-    event.dataTransfer.effectAllowed = 'copyMove';
+    // Every drop target (viewport, scene tree, inspector slots) copies a reference; nothing moves.
+    event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('text/plain', plainPaths.join('\n'));
     event.dataTransfer.setData(ASSET_PATH_MIME, plainPaths[0] ?? item.path);
     event.dataTransfer.setData(ASSET_PATH_LIST_MIME, JSON.stringify(plainPaths));
@@ -1110,64 +1029,6 @@ export class AssetsContent extends ComponentBase {
     }
     // The browser snapshots the element synchronously, so it can go away right after.
     requestAnimationFrame(() => chip.remove());
-  }
-
-  private onItemDragEnd(): void {
-    this.dropTargetPath = null;
-  }
-
-  /** True when `item` can receive a move drop (folder cards only). */
-  private isDropTargetItem(item: AssetPreviewItem): boolean {
-    return item.kind === 'directory';
-  }
-
-  private onMoveDragOver(event: DragEvent, targetPath: string): void {
-    if (isReadOnlyTab() || !hasAssetDragData(event.dataTransfer)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
-    if (this.dropTargetPath !== targetPath) {
-      this.dropTargetPath = targetPath;
-    }
-  }
-
-  private onMoveDragLeave(event: DragEvent, targetPath: string): void {
-    if (this.dropTargetPath !== targetPath) {
-      return;
-    }
-    const related = event.relatedTarget as Node | null;
-    if (related && (event.currentTarget as HTMLElement).contains(related)) {
-      return;
-    }
-    this.dropTargetPath = null;
-  }
-
-  /**
-   * Drop on a folder card / breadcrumb: hand the dragged paths to the panel, which routes
-   * them through the Asset Tree's move flow (one confirmation, reference rewrite, refresh).
-   */
-  private onMoveDrop(event: DragEvent, targetPath: string, targetLabel: string): void {
-    this.dropTargetPath = null;
-    if (isReadOnlyTab() || !hasAssetDragData(event.dataTransfer)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const paths = getDraggedAssetPaths(event.dataTransfer).filter(path => path !== targetPath);
-    if (paths.length === 0) {
-      return;
-    }
-    this.dispatchEvent(
-      new CustomEvent('content-move-request', {
-        detail: { paths, targetPath, targetLabel },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 
   private onGenerationDragOver(event: DragEvent): void {

@@ -7,7 +7,6 @@ import type {
 import type { GameAspectRatio, Navigation2DSettings } from '@/state/AppState';
 
 export interface UpdateEditorSettingsParams {
-  warnOnUnsavedUnload?: boolean;
   pauseRenderingOnUnfocus?: boolean;
   keepEditorRunningForAgent?: boolean;
   navigation2D?: Partial<Navigation2DSettings>;
@@ -15,7 +14,6 @@ export interface UpdateEditorSettingsParams {
 }
 
 export interface EditorSettingsSnapshot {
-  warnOnUnsavedUnload: boolean;
   pauseRenderingOnUnfocus: boolean;
   keepEditorRunningForAgent: boolean;
   navigation2D: Navigation2DSettings;
@@ -37,9 +35,6 @@ export const loadEditorSettings = (): Partial<EditorSettingsSnapshot> | null => 
     const parsed = JSON.parse(raw) as Partial<EditorSettingsSnapshot> | null;
     if (parsed) {
       const result: Partial<EditorSettingsSnapshot> = {};
-      if (typeof parsed.warnOnUnsavedUnload === 'boolean') {
-        result.warnOnUnsavedUnload = parsed.warnOnUnsavedUnload;
-      }
       if (typeof parsed.pauseRenderingOnUnfocus === 'boolean') {
         result.pauseRenderingOnUnfocus = parsed.pauseRenderingOnUnfocus;
       }
@@ -90,9 +85,6 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
   async perform(context: OperationContext): Promise<OperationInvokeResult> {
     const { state, snapshot } = context;
 
-    const prevWarn = snapshot.ui.warnOnUnsavedUnload;
-    const nextWarn = this.params.warnOnUnsavedUnload ?? prevWarn;
-
     const prevPause = snapshot.ui.pauseRenderingOnUnfocus;
     const nextPause = this.params.pauseRenderingOnUnfocus ?? prevPause;
 
@@ -109,7 +101,6 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
     const nextGameAspectRatio = this.params.gameAspectRatio ?? prevGameAspectRatio;
 
     const hasChanges =
-      nextWarn !== prevWarn ||
       nextPause !== prevPause ||
       nextKeepAlive !== prevKeepAlive ||
       nextNav2D.panSensitivity !== prevNav2D.panSensitivity ||
@@ -120,52 +111,45 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
       return { didMutate: false };
     }
 
-    state.ui.warnOnUnsavedUnload = nextWarn;
     state.ui.pauseRenderingOnUnfocus = nextPause;
     state.ui.keepEditorRunningForAgent = nextKeepAlive;
     state.ui.navigation2D = nextNav2D;
     state.ui.gameAspectRatio = nextGameAspectRatio;
 
     const serialize = (
-      w: boolean,
       p: boolean,
       k: boolean,
       n: Navigation2DSettings,
       g: GameAspectRatio
     ): EditorSettingsSnapshot => ({
-      warnOnUnsavedUnload: w,
       pauseRenderingOnUnfocus: p,
       keepEditorRunningForAgent: k,
       navigation2D: n,
       gameAspectRatio: g,
     });
 
-    persistEditorSettings(
-      serialize(nextWarn, nextPause, nextKeepAlive, nextNav2D, nextGameAspectRatio)
-    );
+    persistEditorSettings(serialize(nextPause, nextKeepAlive, nextNav2D, nextGameAspectRatio));
 
     return {
       didMutate: true,
       commit: {
         label: 'Update Editor Settings',
         undo: async () => {
-          state.ui.warnOnUnsavedUnload = prevWarn;
           state.ui.pauseRenderingOnUnfocus = prevPause;
           state.ui.keepEditorRunningForAgent = prevKeepAlive;
           state.ui.navigation2D = prevNav2D;
           state.ui.gameAspectRatio = prevGameAspectRatio;
           persistEditorSettings(
-            serialize(prevWarn, prevPause, prevKeepAlive, prevNav2D, prevGameAspectRatio)
+            serialize(prevPause, prevKeepAlive, prevNav2D, prevGameAspectRatio)
           );
         },
         redo: async () => {
-          state.ui.warnOnUnsavedUnload = nextWarn;
           state.ui.pauseRenderingOnUnfocus = nextPause;
           state.ui.keepEditorRunningForAgent = nextKeepAlive;
           state.ui.navigation2D = nextNav2D;
           state.ui.gameAspectRatio = nextGameAspectRatio;
           persistEditorSettings(
-            serialize(nextWarn, nextPause, nextKeepAlive, nextNav2D, nextGameAspectRatio)
+            serialize(nextPause, nextKeepAlive, nextNav2D, nextGameAspectRatio)
           );
         },
       },

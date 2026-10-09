@@ -16,8 +16,6 @@ export interface EditorHost {
   readonly writer: HostWriter;
   /** Playable build from the editor (plan §B.6); absent until the plugin ships it. */
   readonly build?: HostBuild;
-  /** Open a project file in the user's code editor (Vite's `/__open-in-editor`). */
-  openInEditor?(path: string, line?: number): Promise<void>;
 }
 
 export interface HostVersions {

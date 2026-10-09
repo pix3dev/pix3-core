@@ -821,14 +821,6 @@ pix3-inspector-panel pix3-panel {
   padding: 0;
 }
 
-.component-item--openable .script-name {
-  cursor: pointer;
-}
-
-.component-item--openable:hover .script-name {
-  color: var(--accent);
-}
-
 .component-block {
   display: flex;
   flex-direction: column;

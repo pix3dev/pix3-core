@@ -1,5 +1,5 @@
 import { injectable, inject } from '@/fw/di';
-import { ProjectService } from '@/services/project/ProjectService';
+import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 
 export interface AssetImportFailure {
   /** Original file name that failed to import. */
@@ -16,16 +16,14 @@ export interface AssetImportResult {
 }
 
 /**
- * Copies user-provided files (from a file picker, OS drag-and-drop, or the
- * clipboard) into a project directory. Mirrors the direct-write approach used by
- * the asset tree's external-file-drop handling, with non-destructive collision
- * handling: when a name already exists it is auto-suffixed (e.g. `hero (1).png`)
- * so existing assets are never overwritten.
+ * Copies user-provided files (the Import… dialog, an OS drop on the asset tree) into a project
+ * directory, with non-destructive collision handling: when a name already exists it is
+ * auto-suffixed (e.g. `hero (1).png`) so existing assets are never overwritten.
  */
 @injectable()
 export class AssetImportService {
-  @inject(ProjectService)
-  private readonly projectService!: ProjectService;
+  @inject(ProjectStorageService)
+  private readonly storage!: ProjectStorageService;
 
   async importFiles(files: readonly File[], targetDirectory: string): Promise<AssetImportResult> {
     const importedPaths: string[] = [];
@@ -39,7 +37,7 @@ export class AssetImportService {
 
     if (directory !== '.') {
       try {
-        await this.projectService.createDirectory(directory);
+        await this.storage.createDirectory(directory);
       } catch {
         // Directory already exists — createDirectory is idempotent for existing paths.
       }
@@ -47,7 +45,7 @@ export class AssetImportService {
 
     const usedNames = new Set<string>();
     try {
-      const entries = await this.projectService.listDirectory(directory);
+      const entries = await this.storage.listDirectory(directory);
       for (const entry of entries) {
         usedNames.add(entry.name.toLowerCase());
       }
@@ -63,10 +61,10 @@ export class AssetImportService {
 
         if (isTextAsset(file)) {
           const content = await file.text();
-          await this.projectService.writeFile(fullPath, content);
+          await this.storage.writeTextFile(fullPath, content);
         } else {
           const buffer = await file.arrayBuffer();
-          await this.projectService.writeBinaryFile(fullPath, buffer);
+          await this.storage.writeBinaryFile(fullPath, buffer);
         }
 
         importedPaths.push(fullPath);

@@ -38,7 +38,6 @@ export interface EditorHost {
   readonly sync: HostSync;
   readonly writer: HostWriter;
   readonly build?: HostBuild;           // absent in P1
-  openInEditor?(path: string, line?: number): Promise<void>; // Vite's /__open-in-editor
 }
 
 export interface HostInfo {
@@ -109,7 +108,7 @@ Wire paths are POSIX, relative to the Vite root (`VP/files/paths.ts`); `res://` 
 
 ### 1.2 Plugin side (lane A)
 
-- `VP/client/index.ts`: `EditorHostConnection implements EditorHost` — `info` (from `welcome`), `files = new HostFilesClient(this)` (new `VP/client/host-files.ts`: `fetch` over `api()`; `write` sets `If-Match: "<sha>"`, `If-None-Match: *`, `X-Mutation-Id`; maps 404/412/409/403 to `HostFileFailure`), `events`, `scripts`, `sync` (`setHandlers` → existing `flush/applySync` hooks; `run` → `sync()`), `writer`, `openInEditor` (`fetch(`${base}__open-in-editor?file=…`)`).
+- `VP/client/index.ts`: `EditorHostConnection implements EditorHost` — `info` (from `welcome`), `files = new HostFilesClient(this)` (new `VP/client/host-files.ts`: `fetch` over `api()`; `write` sets `If-Match: "<sha>"`, `If-None-Match: *`, `X-Mutation-Id`; maps 404/412/409/403 to `HostFileFailure`), `events`, `scripts`, `sync` (`setHandlers` → existing `flush/applySync` hooks; `run` → `sync()`), `writer`. (`openInEditor` was here; removed 2026-10-09, see §9.)
 - Welcome adds `root`, `projectName` (`basename(root)`).
 - `editorPageHtml` adds `<link rel="stylesheet" href="${base}__pix3/editor.css">`; router serves `GET /__pix3/editor.css` from `<editorCoreDir>/dist/editor.css`.
 - `config()`: editor-core package dir into `server.fs.allow`; `dist/optimize-deps.json` spread into `optimizeDeps.include`.
@@ -141,7 +140,7 @@ Spec `EC/host/mount.spec.ts` (F.2 guard): after `mountEditor(div, new FakeHost(.
 
 ### 2.2 `ProjectService` (1887 → ~450)
 
-Keep: `loadProjectManifest`, `saveProjectManifest`, `getLoadedManifestHash`, `reloadProjectManifest`, asset-browser persisted state (keyed by `projectId`), `listDirectory/createDirectory/writeFile/writeBinaryFile/deleteEntry/moveItem` + the `*AfterMove` path-rewrite family, `openStartupScene`, `clearOpenDocumentState`, `STARTUP_SCENE_*`.
+Keep: `loadProjectManifest`, `saveProjectManifest`, `getLoadedManifestHash`, `reloadProjectManifest`, asset-browser persisted state (keyed by `projectId`), `listDirectory`, `openStartupScene` (the file-op wrappers, `moveItem` and the `*AfterMove` family were kept here and removed 2026-10-09, §9), `clearOpenDocumentState`, `STARTUP_SCENE_*`.
 New: `openHostProject()` — `loadManifestOnOpen()` (keeps the `metadata.projectId` backfill), `appState.project = { id: getProjectId(manifest) ?? hash(info.root), backend: 'host', projectName: info.projectName, status: 'ready', manifest, … }`, entry scene = `manifest.defaultExportScenePath ?? 'scenes/main.pix3scene'`.
 Drop: recents, IndexedDB handles, picker, browser/cloud/workspace opens, template creation, `reactivateCurrentProject`, `closeCurrentProject`, hybrid sync, collaboration refs.
 
@@ -186,7 +185,7 @@ Body = the `isScriptCtor` walk of `packages/runtime/src/register-project-scripts
 
 `GameBotHost` (279 → ~120): `ModuleBotStore(() => host.scripts.current().botPolicies.modules)`; keep `BotDeclarationWriter` + `pix3-test-bot-dts.ts`.
 
-Survivors in `services/scripting`: `ProjectScriptLoaderService`, `ScriptCreatorService`, `scene-nodes-dts.ts` (+spec), `ScriptRegistry.spec.ts`. Drop `script-diagnostics-format.ts` with `CheckScriptsCommand`.
+Survivors in `services/scripting`: `ProjectScriptLoaderService`, `scene-nodes-dts.ts` (`ScriptCreatorService` removed 2026-10-09, §9) (+spec), `ScriptRegistry.spec.ts`. Drop `script-diagnostics-format.ts` with `CheckScriptsCommand`.
 
 Play: `GamePlaySessionService` — remove `NetworkService` and `ProfilerSessionService`; keep popout; `playOwner='designer'` from UI start, `'agent'` from the bridge. Delete `StartOnlineGameCommand`.
 
@@ -227,13 +226,13 @@ Tests: root `vitest.config.ts` includes `packages/editor-core/src/**/*.spec.ts`,
 | image-gen | KEEP `GeminiImageProvider, OpenAIImageProvider, ImageGenTypes, AssetGenService, GenerationHistoryService, ImageEditTargetService, AiImageSettingsService (minus bg-removal), SaveGeneratedAssetDialogService, GeneratedAssetDropService, svg-render`; registry → two providers; DROP `SvgLlmImageProvider, SvgSpriteGenerator`. `image-ops.ts` → `EC/core/image-ops.ts`. OpenAI base → `${base}__pix3/api/proxy/openai/v1` (proxy is P2; until then "proxy unavailable"). Keys stay in `SecretStorageService` prefixed by projectId until the proxy (deviation from §B.1). |
 | settings dialog (2455 → ~700) | Keep General, Images, About; drop agent/assistants/souls/bridge/Strophe/bg-removal. |
 | status bar (985 → ~250) | Keep diagnostics, performance; drop sync/workspace/coauthoring/devBackend/agentLanes/bundleSize; add `renderHostStatus` (connection, writer, dirty count, version). |
-| `ui/pix3-editor-shell.ts` (2158 → ~800 REWRITE) | Toolbar + `.layout-host` + dialog hosts (confirm, behavior/effect picker, script creator, project settings, editor settings, auto-slice, asset import, save generated asset, node type picker) + `<pix3-status-bar>` + `<pix3-host-banner>`; commands minus dropped areas; shortcuts; `ensureStudioLayout`; no router/auth/welcome/flow/collab/mode-switch/workspace overlay/uikit/export/recovery-menu/merge-banner. |
+| `ui/pix3-editor-shell.ts` (2158 → ~800 REWRITE) | Toolbar + `.layout-host` + dialog hosts (confirm, behavior/effect picker, editor settings, auto-slice, asset import, save generated asset, node type picker) + `<pix3-status-bar>` + `<pix3-host-banner>`; commands minus dropped areas; shortcuts; `ensureStudioLayout`; no router/auth/welcome/flow/collab/mode-switch/workspace overlay/uikit/export/recovery-menu/merge-banner. |
 | `core/LayoutManager.ts` | Panels: sceneTree, viewport, inspector, assets, animationTimeline, logs, game, runtime, localization, generate + `history` (new `pix3-history-panel`: undo/redo list from `HistoryManager`; "Restore version" with §C.4). Drop profiler, code, background, spriteEditor, modelLab, uiKitForge, agentChat, library, animation. |
 | `ui/shared` drops | `pix3-mode-switch`, `pix3-project-sync-dialog`, `pix3-recovery-menu`, `pix3-playable-export-dialog`, `pix3-playable-export-progress-dialog`, `pix3-image-annotator`, `composer-attachments`, `annotation-doc`; `pix3-workspace-banner` → rewrite as `pix3-host-banner.ts` (read-only / disconnected / "Take over"); `pix3-lightbox.ts` drops `markdown-lite` + annotator. |
 | `game-tab.ts`, `logs-panel.ts`, `EditorTabService.ts` | Remove Preview/Online/AgentChat; "Fix with agent" → "Copy for agent"; remove `CodeDocumentService`/`PreviewHostService` (code tabs gone). |
-| `ui/assets`, `editor-tab.ts`, `inspector-panel.ts` | Remove `LibraryInsertService` and `library-inspector`; `openInSpriteEditor` removed; `AssetFileActivationService` script activation → `host.openInEditor`; `contour-trace.ts` restored from `../pix3` `5442a097:src/ui/sprite-editor/contour-trace.ts` into `EC/core/contour-trace.ts`. |
-| `services/project` | DROP `ProjectSyncService`(+spec), `agent-kit/**`; keep `TemplateService`, `template-data.ts`. |
-| `services/export` | DROP all (D14). `features/project/{Build,ExportPlayableHtml,ExportPlayableZip,StartRemotePreview,NewProject,CloseProject,ConnectWorkspace,InstallAgentKit,MoveProjectToFolder,OpenProjectSync}Command`, `peek-export-warning.ts` DROP; `OpenProjectInIdeCommand` → `host.openInEditor?.()`, hidden when absent. |
+| `ui/assets`, `editor-tab.ts`, `inspector-panel.ts` | Remove `LibraryInsertService` and `library-inspector`; `openInSpriteEditor` removed; `AssetFileActivationService` script activation → nothing (2026-10-09, §9); `contour-trace.ts` restored from `../pix3` `5442a097:src/ui/sprite-editor/contour-trace.ts` into `EC/core/contour-trace.ts`. |
+| `services/project` | DROP `ProjectSyncService`(+spec), `agent-kit/**`; `TemplateService`, `template-data.ts` removed 2026-10-09 with "create scene" (§9). |
+| `services/export` | DROP all (D14). `features/project/{Build,ExportPlayableHtml,ExportPlayableZip,StartRemotePreview,NewProject,CloseProject,ConnectWorkspace,InstallAgentKit,MoveProjectToFolder,OpenProjectSync}Command`, `peek-export-warning.ts` DROP; `OpenProjectInIdeCommand` removed 2026-10-09 (§9). |
 | `features/editor` | Keep `OpenEditorSettings, OpenGeneratePanel, SaveActiveResource, UpdateEditorSettingsOperation`; drop `OpenAgentChat, OpenModelLab, OpenProjectHome, OpenSpriteEditor*, OpenUiKitForge, SwitchWorkspaceMode`. |
 | `features/scene` | Drop `AcceptAgentVersionOperation`, `RestoreRecoveryVersionOperation` (+specs); `SaveAsScene*`/`SaveAsPrefabCommand` → `ProjectStorageService.fileExists`. |
 | `core` | DROP `engine-source.ts`(+spec), `carrom-sample.spec.ts`, `multiplayer-arena-sample.spec.ts`, `agent-reference-docs.spec.ts`. KEEP `agent-introspection.ts`. `register-runtime-services.ts` collab/cloud removed. `TextureAtlasService` → `sha256Hex` from `EC/core/hash.ts`. `services/core/RouterService.ts` DROP. `OperationService` drop `CollaborationService`/`Y.UndoManager` branches. |
@@ -287,7 +286,29 @@ Sync points: M0 before B/C; B reads `appState.project.host` (A); C injects `Host
 
 - 2026-10-08: snapshot F.1 explicit drops done (88 files). M0 done: `AppState` trimmed to the 2.x shape, `host/EditorHost.ts`, `HostService` (res ↔ wire paths), `host/testing/fake-host.ts`, `ProjectStorageService` over `host.files`, `SceneWriteService` (save, flushDirty, idle timer). Lanes B and C started.
 - 2026-10-09: M1 done — editor-core compiles (0 errors), is linted and type-checked by the root scripts, and its specs run with the rest (282 files / 3322 tests green). Lane A: `ProjectService` 1887 → ~890 with `openHostProject`, write path without coauthoring (server `If-Match`), Save As by project path (`window.prompt` placeholder — a proper path dialog is debt), frame-driven external changes (`ExternalReloadService`), `WriterService` (Web Locks + claim), `SyncApplyService`, bridge v1 (`host/debug-bridge.ts`), `mountEditor`. Lane B: shell 2158 → 772, settings 2455 → 725, status bar 985 → 333, host banner, history panel, image-gen via proxy. Lane C: script loader 944 → 180 (`registerRoots`/`queueRoots`), `ModuleBotStore`, `services/game-test`, `services/export` removed, `playOwner` via `SetPlayModeOperation`. Next: M2 (dist build, plugin implements `EditorHost`, mount in a real project).
-- Debt noted during M1: Save As path dialog; `OpenProjectInIdeCommand` → `host.openInEditor`; inspector guesses `scripts/<Export>.ts` for a script's source (loader could expose id → file); six specs still mock golden-layout (tslib is installed now, the mocks can go); `core/agent-introspection.clearScriptBuildErrors` unused.
+- Debt noted during M1: ~~Save As path dialog~~; ~~`OpenProjectInIdeCommand` → `host.openInEditor`~~; ~~inspector guesses `scripts/<Export>.ts` for a script's source~~ (all three closed 2026-10-09 by removal, §9); six specs still mock golden-layout (tslib is installed now, the mocks can go); `core/agent-introspection.clearScriptBuildErrors` unused.
 - 2026-10-09: M2 + M3 done, checked in headless Chrome 155 on a project with the tapper recipe's content, plugin and editor from their `dist/`. M2 8/8: mounts in ~0.75 s, entry scene open, viewport canvas renders, writer = self, no `/@vite/client`, no editor request into the project root, no errors. M3 18/18 through the real UI: inspector rename → idle save on disk in 1.5 s (`If-Match`, no 412); an agent's edit of the clean scene reloads it in 1.3 s and keeps the earlier rename; a script edit executes in the editor in ~0.1 s (stamp = sha on disk); bridge `sync` ok in 41 ms; agent play → `sync` answers `stale, playing:'agent'`; the agent stops its own play; a second tab is read-only with the banner, "Take over" moves the writer in ~0.1 s; no errors, the editor never reloads. Found on the way: Vite discovering `lit`/`yaml` at runtime re-optimized the pre-bundle and loaded a second `@pix3/runtime` (DI tokens stopped matching) — `optimize-deps.json` now lists every bare external; the menu logo came from the project's `public/` — bundled now; a blind read of a missing `pix3project.yaml` logged a 404 — the listing is asked first. `host/mount.spec.ts` is the F.2 boot guard. The browser scripts live outside the repo (scratchpad) until the P2 browser gate gives them a home.
 - Remaining after M3: plan §C write model (`FlushService`, `ScenePatchWriter`, IndexedDB draft, key-level merge of a dirty scene) replaces `SceneWriteService` internals and `ExternalReloadService`'s dirty branch; bridge 3p tools + `debug-running-game` skill; designer play from the toolbar sets `playOwner:'designer'` (lane C wiring, not exercised in the browser yet); the debt list above.
+- 2026-10-09: owner decision applied (§9) — the editor's "standalone app" UI is gone; 82 files, −6 450 / +339 lines (plus three binary template files).
 
+## 9. Owner decision 2026-10-09: the editor edits an already-open project
+
+The editor is an editor of a project that is already open. Files, folders, scripts and `pix3project.yaml` are changed by the coding agent or the IDE, never through editor UI; the asset listing follows the disk through `pix3:fs` frames (`ProjectStorageService.applyFrame`). Removed:
+
+| Area | Removed |
+|---|---|
+| Save As | `features/scene/SaveAsScene{Command,Operation}` (+spec), its shell registration. "Save as Prefab" stays (it writes `res://prefabs/<name>.pix3scene` with no dialog). |
+| Open in IDE | `features/project/OpenProjectInIdeCommand`, `services/editor/IdeLauncherService`; `EditorHost.openInEditor` (contract, plugin client `VP/client/index.ts`); the asset double-click route for `.ts/.json/.md/.yaml/.pix3anim/…` (now no action), the inspector's double-click on a `user:` component and the animation slot's Open button / double-click. |
+| Project Settings | `ui/shared/pix3-project-settings-dialog` (+css, spec), `ProjectSettingsService`, `OpenProjectSettingsCommand`, `UpdateProjectSettingsOperation` (+spec), `Add/Remove/Reorder/ToggleAutoloadEnabled{Command,Operation}` (+spec) — `features/project/` is gone. `AutoloadService` stays: play mode still instantiates the manifest's autoloads. `ProjectState.localAbsolutePath` removed (the root is `HostService.info.root`). |
+| Script creator | `ui/shared/pix3-script-creator` (+css), `ScriptCreatorService` (+spec), its shell host, the behavior picker's "Create New" button, the inspector's `script-creator-requested` flow. |
+| Assets panel | create scene / folder / autoload script, rename (inline click-and-wait and prompt), delete, move (tree and grid drags, breadcrumb drops, confirm dialogs), the tree's row context menu and the grid's Rename/Delete rows, the 1.x external-change poll (`buildRootSignature`, focus/visibility cooldown walk). The tree's OS-file drop goes through `AssetImportService` (the Import… dialog's path) instead of its own copy code; the root row keeps Import… and Group-by-type. `ProjectService.{moveItem, createDirectory, writeFile, writeBinaryFile, deleteEntry, listProjectRoot}`, the whole `*AfterMove` rewrite family and its helpers, `EditorTabService.remapSceneTabs`, `asset-categories.{RESOURCE_GRAPH_EXTENSIONS, isResourceGraphPath, splitGroupedDirectoryExpansionKey}`, `asset-drag-drop.getDraggedAssetPaths`, `TemplateService` + `template-data.ts` + `src/templates/{startup-scene.pix3scene, Duck.glb, pix3-logo.png}` (and the CLI golden spec's check of that scene). |
+| Generate panel | the Download button. |
+| Editor Settings | "Warn me about unsaved changes when leaving" and `ui.warnOnUnsavedUnload`; the `beforeunload` guard is always on while a tab is dirty, until the IndexedDB draft of plan §C.1 exists. |
+| Menus | no `file` or `project` section: Save (Mod+S, "write now", §C.1) is `edit` 300, Pause/Resume is `run` 220. The menu logo no longer "closes the project" (a dead `project.close` call); it is a plain mark. |
+
+Disagreements with `../pix3/.plans/pix3-core.md` (rule 13), decided by the owner:
+- §F.2 moves `SaveAsScene*` onto `host.files`; it is removed instead.
+- This file's §5 (and plan §A's `EditorHost` sketch, `openInEditor?`) routed `OpenProjectInIdeCommand` and script activation to `host.openInEditor`; both are removed together with the contract method.
+- §2.2 here kept `moveItem` and the `*AfterMove` path-rewrite family (and §5 kept `TemplateService`); removed. A moved file's `res://` references are the agent's job now (it moves the file and rewrites the scenes), not the editor's.
+
+Closes the M1 debt items "Save As path dialog", "`OpenProjectInIdeCommand` → `host.openInEditor`" and "inspector guesses `scripts/<Export>.ts`".

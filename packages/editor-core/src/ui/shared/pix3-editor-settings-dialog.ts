@@ -116,8 +116,6 @@ export class EditorSettingsDialog extends ComponentBase {
   private activeSubtab = '';
 
   @state()
-  private warnOnUnsavedUnload = true;
-
   @state()
   private pauseRenderingOnUnfocus = true;
 
@@ -155,7 +153,6 @@ export class EditorSettingsDialog extends ComponentBase {
     super.connectedCallback();
     this.activeSection = this.editorSettingsService.getInitialTab();
     this.activeSubtab = this.defaultSubtab(this.activeSection);
-    this.warnOnUnsavedUnload = appState.ui.warnOnUnsavedUnload;
     this.pauseRenderingOnUnfocus = appState.ui.pauseRenderingOnUnfocus;
     this.keepEditorRunningForAgent = appState.ui.keepEditorRunningForAgent;
     this.navigation2D = { ...appState.ui.navigation2D };
@@ -378,24 +375,6 @@ export class EditorSettingsDialog extends ComponentBase {
 
   private renderGeneralTab() {
     return html`
-      <div class="settings-field">
-        <div class="field-head">
-          <label class="toggle-row">
-            <input
-              type="checkbox"
-              .checked=${this.warnOnUnsavedUnload}
-              @change=${this.onWarnToggle}
-            />
-            <span>Warn me about unsaved changes when leaving the page</span>
-          </label>
-          ${this.renderInfo('warn-unsaved')}
-        </div>
-        ${this.renderNote(
-          'warn-unsaved',
-          'Disable this to skip the browser confirmation dialog on refresh or navigation.'
-        )}
-      </div>
-
       <div class="settings-field">
         <div class="field-head">
           <label class="toggle-row">
@@ -676,11 +655,6 @@ export class EditorSettingsDialog extends ComponentBase {
     }
   }
 
-  private onWarnToggle(e: Event): void {
-    const target = e.target as HTMLInputElement;
-    this.warnOnUnsavedUnload = target.checked;
-  }
-
   private onKeepAliveToggle(e: Event): void {
     const target = e.target as HTMLInputElement;
     this.keepEditorRunningForAgent = target.checked;
@@ -707,7 +681,6 @@ export class EditorSettingsDialog extends ComponentBase {
 
   private async onSave(): Promise<void> {
     const operation = new UpdateEditorSettingsOperation({
-      warnOnUnsavedUnload: this.warnOnUnsavedUnload,
       pauseRenderingOnUnfocus: this.pauseRenderingOnUnfocus,
       keepEditorRunningForAgent: this.keepEditorRunningForAgent,
       navigation2D: this.navigation2D,

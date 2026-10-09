@@ -22,10 +22,10 @@ export class PauseGameCommand extends CommandBase<void, void> {
     title: 'Pause / Resume Game',
     description: 'Freeze the running game, or let it continue',
     keywords: ['pause', 'resume', 'freeze', 'game', 'play'],
-    menuPath: 'project',
+    menuPath: 'run',
     keybinding: 'F7',
     addToMenu: true,
-    menuOrder: 104,
+    menuOrder: 220,
   };
 
   constructor(private readonly gamePlaySessionService: GamePlaySessionService) {

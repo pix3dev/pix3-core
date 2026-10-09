@@ -65,7 +65,7 @@ export class SaveSceneCommand extends CommandBase<void, void> {
     if (!descriptor.filePath?.startsWith('res://')) {
       return {
         canExecute: false,
-        reason: 'Scene must be saved within the project. Use Save As.',
+        reason: 'Only a scene inside the project (res://) can be saved',
         scope: 'scene',
         recoverable: true,
       };

@@ -1657,21 +1657,6 @@ export class AnimationResourceEditor extends ComponentBase {
     );
   }
 
-  private emitOpenRequest(): void {
-    const resourceUrl = this.resourceUrl.trim();
-    if (!resourceUrl) {
-      return;
-    }
-
-    this.dispatchEvent(
-      new CustomEvent('open-request', {
-        detail: { url: resourceUrl },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   protected render() {
     const hasResource = this.resourceUrl.trim().length > 0;
 
@@ -1681,7 +1666,6 @@ export class AnimationResourceEditor extends ComponentBase {
         @dragover=${(event: DragEvent) => this.onDragOver(event)}
         @dragleave=${() => this.onDragLeave()}
         @drop=${(event: DragEvent) => this.onDrop(event)}
-        @dblclick=${() => this.emitOpenRequest()}
       >
         <span class="drop-label">Drop .pix3anim asset from Assets here</span>
       </div>
@@ -1693,7 +1677,6 @@ export class AnimationResourceEditor extends ComponentBase {
           ?disabled=${this.disabled || this.isCreating}
           placeholder="res://path/to/animation.pix3anim"
           @change=${(e: Event) => this.emitChange((e.target as HTMLInputElement).value)}
-          @dblclick=${() => this.emitOpenRequest()}
         />
         ${!hasResource && this.showCreateButton
           ? html`
@@ -1713,13 +1696,6 @@ export class AnimationResourceEditor extends ComponentBase {
                 @click=${() => dispatchLocate(this, this.resourceUrl)}
               >
                 Locate
-              </button>
-              <button
-                type="button"
-                ?disabled=${this.isCreating || !hasResource}
-                @click=${() => this.emitOpenRequest()}
-              >
-                Open
               </button>
               <button
                 type="button"

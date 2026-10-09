@@ -23,8 +23,6 @@ const NON_OWNER_ALLOWED_COMMANDS = new Set([
   'scene.refresh-prefab-instances',
   'scene.select-object',
   'scene.open-prefab',
-  'project.open-settings',
-  'project.open-in-ide',
   'game.open-popout',
 ]);
 const NON_OWNER_ALLOWED_PREFIXES = ['viewport.', 'game.', 'editor.open-', 'editor.switch-'];

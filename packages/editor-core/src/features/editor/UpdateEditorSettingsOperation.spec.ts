@@ -80,7 +80,6 @@ describe('UpdateEditorSettingsOperation', () => {
     localStorage.setItem(
       EDITOR_SETTINGS_STORAGE_KEY,
       JSON.stringify({
-        warnOnUnsavedUnload: false,
         pauseRenderingOnUnfocus: true,
         navigation2D: {
           panSensitivity: 1,

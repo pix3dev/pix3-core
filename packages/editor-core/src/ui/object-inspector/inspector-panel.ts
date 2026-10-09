@@ -16,17 +16,14 @@ import { LocalizationEditorService } from '@/services/localization/LocalizationE
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { BehaviorPickerService } from '@/services/editor/BehaviorPickerService';
 import { EffectPickerService } from '@/services/editor/EffectPickerService';
-import { ScriptCreatorService } from '@/services/scripting/ScriptCreatorService';
 import { ScriptRegistry } from '@pix3/runtime';
 import { IconService } from '@/services/editor/IconService';
-import { DialogService } from '@/services/editor/DialogService';
 import { AnimationEditorService } from '@/services/animation/AnimationEditorService';
 import {
   AssetsPreviewService,
   type AssetPreviewItem,
 } from '@/services/assets/AssetsPreviewService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { IdeLauncherService } from '@/services/editor/IdeLauncherService';
 import { LightboxService } from '@/services/editor/LightboxService';
 import { HostService } from '@/host/HostService';
 import type {
@@ -41,7 +38,6 @@ import { boxPolygon, serializePolygonConfig } from '@pix3/runtime';
 import { readAlphaMask } from '@/core/image-ops';
 import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
-import { AddComponentCommand } from '@/features/scripts/AddComponentCommand';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';
 import { normalizeAnimationAssetPath } from '@/features/scene/animation-asset-utils';
 import { InspectorResourcePreview } from './inspector-resource-preview';
@@ -88,17 +84,11 @@ export class InspectorPanel extends ComponentBase {
   @inject(EffectPickerService)
   readonly effectPickerService!: EffectPickerService;
 
-  @inject(ScriptCreatorService)
-  private readonly scriptCreatorService!: ScriptCreatorService;
-
   @inject(ScriptRegistry)
   readonly scriptRegistry!: ScriptRegistry;
 
   @inject(IconService)
   readonly iconService!: IconService;
-
-  @inject(DialogService)
-  private readonly dialogService!: DialogService;
 
   @inject(ProjectStorageService)
   readonly projectStorage!: ProjectStorageService;
@@ -120,9 +110,6 @@ export class InspectorPanel extends ComponentBase {
 
   @inject(Polygon2DEditController)
   private readonly polygonEditor!: Polygon2DEditController;
-
-  @inject(IdeLauncherService)
-  readonly ideLauncher!: IdeLauncherService;
 
   @inject(LightboxService)
   private readonly lightbox!: LightboxService;
@@ -200,7 +187,6 @@ export class InspectorPanel extends ComponentBase {
   private disposeAssetPreviewSubscription?: () => void;
   private disposeAnimationEditorSubscription?: () => void;
   disposeAnimationControllerSubscription?: () => void;
-  private scriptCreatorRequestedHandler?: (e: Event) => void;
   activeAnimationController: AnimationInspectorController | null = null;
 
   /** `${clipName}#${frameIndex}` of the last rendered animation selection (scroll-into-view guard). */
@@ -271,15 +257,6 @@ export class InspectorPanel extends ComponentBase {
     // when the user clicks "Locate"; reveal the file in the Asset Browser and
     // Assets Preview.
     this.addEventListener('locate-resource', this.onLocateResource as EventListener);
-
-    // Listen for script creator requested event from editor shell
-    this.scriptCreatorRequestedHandler = (_e: Event) => {
-      void this.handleScriptCreatorRequested();
-    };
-    window.addEventListener(
-      'script-creator-requested',
-      this.scriptCreatorRequestedHandler as EventListener
-    );
     document.addEventListener('pointerdown', this.onDocumentPointerDown);
   }
 
@@ -345,92 +322,10 @@ export class InspectorPanel extends ComponentBase {
     this.disposeAnimationEditorSubscription = undefined;
     this.disposeAnimationControllerSubscription?.();
     this.disposeAnimationControllerSubscription = undefined;
-    if (this.scriptCreatorRequestedHandler) {
-      window.removeEventListener(
-        'script-creator-requested',
-        this.scriptCreatorRequestedHandler as EventListener
-      );
-      this.scriptCreatorRequestedHandler = undefined;
-    }
     this.removeEventListener('locate-resource', this.onLocateResource as EventListener);
     document.removeEventListener('pointerdown', this.onDocumentPointerDown);
 
     this.resourcePreview.dispose();
-  }
-
-  private toUrlSafeClassName(name: string): string {
-    let cleaned = name;
-
-    // Remove invalid characters (keep only alphanumeric and spaces)
-    cleaned = cleaned.replace(/[^a-zA-Z0-9_\s]/g, '');
-
-    // Convert to PascalCase:
-    // 1. Split by spaces and underscores
-    // 2. Capitalize first letter of each word
-    // 3. Join together
-    const words = cleaned.split(/[\s_]+/).filter(w => w.length > 0);
-    const pascalCase = words
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join('');
-
-    // If result is empty, use default
-    return pascalCase || 'New';
-  }
-
-  private async checkIfScriptFileExists(fileName: string): Promise<boolean> {
-    try {
-      const entries = await this.projectStorage.listDirectory('scripts');
-      return entries.some(e => e.kind === 'file' && e.name === fileName);
-    } catch {
-      // Directory might not exist yet
-      console.log('[InspectorPanel] scripts directory does not exist yet');
-      return false;
-    }
-  }
-
-  private async handleScriptCreatorRequested(): Promise<void> {
-    if (!this.primaryNode) return;
-
-    const defaultName = this.primaryNode.name || 'NewScript';
-    const urlSafeBaseName = this.toUrlSafeClassName(defaultName);
-    const fullClassName = `${urlSafeBaseName}`;
-    const fileName = `${fullClassName}.ts`;
-
-    // Check if file already exists
-    const fileExists = await this.checkIfScriptFileExists(fileName);
-    if (fileExists) {
-      await this.dialogService.showConfirmation({
-        title: 'Script Already Exists',
-        message: `A script file named "${fileName}" already exists in the scripts/ folder. Please choose a different name.`,
-        confirmLabel: 'OK',
-        cancelLabel: 'Cancel',
-        isDangerous: false,
-      });
-      return;
-    }
-
-    const scriptName = await this.scriptCreatorService.showCreator({
-      scriptName: urlSafeBaseName,
-    });
-
-    if (scriptName) {
-      // Wait a bit for compilation to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Find the newly created script in the registry
-      const scriptId = `user:${scriptName}`;
-
-      const componentType = this.scriptRegistry.getComponentType(scriptId);
-      if (componentType) {
-        const componentId = `${componentType.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        const command = new AddComponentCommand({
-          nodeId: this.primaryNode.nodeId,
-          componentType: componentType.id,
-          componentId,
-        });
-        void this.commandDispatcher.execute(command);
-      }
-    }
   }
 
   async handleCopyResourceUrl(url: string) {
@@ -741,16 +636,6 @@ export class InspectorPanel extends ComponentBase {
     const url = this.hostService.host.files.url(this.hostService.wirePath(trimmedResourcePath));
     const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
     this.lightbox.open([{ kind: 'image', title, url, path: trimmedResourcePath }]);
-  }
-
-  onOpenAnimationResource(resourcePath: string): void {
-    const trimmedResourcePath = resourcePath.trim();
-    if (!trimmedResourcePath) {
-      return;
-    }
-
-    // No in-browser animation editor in 2.x: the `.pix3anim` YAML opens in the IDE.
-    void this.ideLauncher.open(trimmedResourcePath);
   }
 
   canCreateAnimationResource(propertyName: string, value: string, readOnly: boolean): boolean {

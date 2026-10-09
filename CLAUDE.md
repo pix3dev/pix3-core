@@ -83,7 +83,7 @@ npm workspaces, versions lockstep from the root `package.json` (`2.0.0-alpha.N`;
 
 The mental model that spans many files:
 
-1. **Operations-first mutation gateway.** Every state change flows: UI → `CommandDispatcher.execute(CommandClass, args)` → Command (thin wrapper, checks `preconditions()`) → Operation (`perform()` returns undo/redo closures) → `OperationService` (pushes to `HistoryManager`). **Never mutate `appState` or node properties directly.** A feature = a `Command` + an `Operation` under `packages/editor-core/src/features/<area>/` (scene, scripts, properties, selection, alignment, project, editor, history, viewport).
+1. **Operations-first mutation gateway.** Every state change flows: UI → `CommandDispatcher.execute(CommandClass, args)` → Command (thin wrapper, checks `preconditions()`) → Operation (`perform()` returns undo/redo closures) → `OperationService` (pushes to `HistoryManager`). **Never mutate `appState` or node properties directly.** A feature = a `Command` + an `Operation` under `packages/editor-core/src/features/<area>/` (scene, scripts, properties, selection, alignment, editor, history, viewport).
 
 2. **State vs. scene graph are deliberately separate.**
    - `appState` (Valtio proxy, `packages/editor-core/src/state/AppState.ts`) holds **only** UI state, scene metadata (paths/names), selection (node **IDs**), and undo/redo bookkeeping. UI subscribes via `subscribe(appState.section, cb)` and disposes in `disconnectedCallback`.

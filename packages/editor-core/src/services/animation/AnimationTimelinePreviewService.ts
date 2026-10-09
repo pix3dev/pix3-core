@@ -44,7 +44,7 @@ import { ViewportRendererService } from '@/services/viewport/ViewportRenderServi
 import { OperationService, type OperationEvent } from '@/services/core/OperationService';
 import { UPDATE_ANIMATION_CLIPS_OPERATION_ID } from '@/features/animation-timeline/UpdateAnimationPlayerClipsOperation';
 
-const SAVE_OPERATION_IDS = new Set(['scene.save', 'scene.save-as', 'scene.save-as-prefab']);
+const SAVE_OPERATION_IDS = new Set(['scene.save', 'scene.save-as-prefab']);
 const ALLOWED_OPERATION_IDS = new Set([UPDATE_ANIMATION_CLIPS_OPERATION_ID, 'scene.select-object']);
 const REFLOW_2D_PROPERTIES = new Set([
   'layoutEnabled',

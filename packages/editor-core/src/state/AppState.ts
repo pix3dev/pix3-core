@@ -154,8 +154,6 @@ export interface ProjectState {
   /** Active project storage backend. */
   backend: ProjectBackend;
   projectName: string | null;
-  /** Absolute path on the local file system (e.g. /home/user/project). Used for VS Code integration. */
-  localAbsolutePath: string | null;
   status: ProjectStatus;
   errorMessage: string | null;
   /** Last opened scene file relative to the project root. */
@@ -314,8 +312,6 @@ export interface UIState {
   polygonEditing: { nodeId: string; componentId: string } | null;
   /** Toggle for per-node direction-axis gizmos in the running game preview */
   showDirectionAxes: boolean;
-  /** Warn before leaving the page with unsaved changes */
-  warnOnUnsavedUnload: boolean;
   /** Pause rendering when the window is unfocused for battery economy */
   pauseRenderingOnUnfocus: boolean;
   /**
@@ -383,7 +379,6 @@ export const createInitialAppState = (): AppState => ({
     id: null,
     backend: 'host',
     projectName: null,
-    localAbsolutePath: null,
     status: 'idle',
     errorMessage: null,
     lastOpenedScenePath: null,
@@ -469,7 +464,6 @@ export const createInitialAppState = (): AppState => ({
     showCollisionShapes: false,
     polygonEditing: null,
     showDirectionAxes: false,
-    warnOnUnsavedUnload: true,
     pauseRenderingOnUnfocus: true,
     keepEditorRunningForAgent: true,
     gameAspectRatio: 'free',

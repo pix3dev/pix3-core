@@ -53,7 +53,7 @@ Authoritative code rules for pix3-core (runtime, CLI, editor-core, Vite plugin, 
 - **Commands**: Thin wrappers around operations. Validate state in `preconditions()`.
 - **Dispatcher**: All actions **MUST** flow through `CommandDispatcher.execute(CommandClass, args)`.
 - **Menu System**: Commands opt-in via metadata: `menuPath`, `menuOrder`, `addToMenu`, `keybinding`. Register in `CommandRegistry`. Four rules the registry's spec enforces or the menu depends on:
-  - Sections are `file`, `edit`, `create`, `node`, `view`, `run`, `project`, `window` — anything that opens a panel or editor belongs to `window`.
+  - Sections are `edit`, `create`, `node`, `view`, `run`, `window` — anything that opens a panel or editor belongs to `window`. There is no `file` or `project` section: the editor edits an already-open project, and files, folders, scripts and `pix3project.yaml` are changed by the coding agent or the IDE, never through editor UI (Save, Mod+S, is in `edit`).
   - `menuOrder` is **mandatory and unique per `menuPath`**, and banded: hundreds = semantic group, tens = slot. Separators are drawn where the hundreds digit changes, so numbering *is* the grouping. `CommandRegistry.menu.spec.ts` fails and names offenders.
   - A two-state command declares `checked: snapshot => boolean` and is titled with the noun (`Grid`, never `Toggle Grid`); `CommandRegistry.isChecked(id)` feeds both the menu check and the toolbar's pressed state, so they cannot disagree.
   - `menuPath: 'node/align'` makes a flyout submenu; the row is not a command, so its label and slot live in `SUBMENU_ROWS`. A title ends in `…` only when the command asks something before acting.

@@ -90,27 +90,6 @@ const CATEGORY_BY_EXTENSION: ReadonlyMap<string, AssetCategoryId> = new Map(
   )
 );
 
-/**
- * Extensions of the resources whose TEXT lists further `res://` resources, so a dependency walk
- * must open and scan them rather than stop at the file: scenes/prefabs (`instance:`, textures,
- * `.pix3anim` paths) and `.pix3anim` flipbooks (every frame texture). The one table behind
- * publish-to-library, playable export and insert-time remap — a type registered here is walked by
- * all three, a type missing here is walked by none (which is how re-published characters lost
- * their frames). Scripts are not listed: they carry `res://` strings too, but are handled by the
- * import-graph walkers, not by this resource walk.
- */
-export const RESOURCE_GRAPH_EXTENSIONS: readonly string[] = [
-  'pix3scene',
-  'pix3prefab',
-  'prefab',
-  'pix3anim',
-];
-
-/** Whether a path names a resource whose contents must be walked for `res://` references. */
-export function isResourceGraphPath(path: string): boolean {
-  return RESOURCE_GRAPH_EXTENSIONS.includes(getAssetPathExtension(path));
-}
-
 /** Lower-cased extension of a file path without the dot; empty string when absent. */
 export function getAssetPathExtension(path: string): string {
   const name = path.split(/[\\/]/).pop() ?? '';
@@ -173,8 +152,7 @@ export function ensureAssetTypeFolder(pathOrName: string): string {
 /*
  * Expansion keys for the grouped view. Category rows use `cat:<id>`; directory rows
  * use `<id>::<path>` so the same real folder can expand independently under two
- * categories. The key format is shared with ProjectService, which remaps directory
- * keys when files are moved.
+ * categories.
  */
 
 const GROUPED_KEY_CATEGORY_PREFIX = 'cat:';
@@ -189,18 +167,4 @@ export function groupedDirectoryExpansionKey(
   normalizedPath: string
 ): string {
   return `${categoryId}${GROUPED_KEY_DIR_SEPARATOR}${normalizedPath}`;
-}
-
-export function splitGroupedDirectoryExpansionKey(
-  key: string
-): { categoryId: AssetCategoryId; path: string } | null {
-  const separatorIndex = key.indexOf(GROUPED_KEY_DIR_SEPARATOR);
-  if (separatorIndex <= 0) {
-    return null;
-  }
-  const categoryId = key.slice(0, separatorIndex) as AssetCategoryId;
-  if (!(categoryId in ASSET_CATEGORY_BY_ID)) {
-    return null;
-  }
-  return { categoryId, path: key.slice(separatorIndex + GROUPED_KEY_DIR_SEPARATOR.length) };
 }

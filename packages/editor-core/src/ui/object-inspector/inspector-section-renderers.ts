@@ -915,20 +915,9 @@ ${textPreview?.content || 'Empty file'}</pre
 
         <div class="scripts-list">
           ${components.map(component => {
-            // Only openable when the host can open files in the IDE; otherwise no hint, no handler.
-            const isUserScript =
-              component.type.startsWith('user:') && this.host.ideLauncher.available;
             return html`
               <div class="component-block ${component.enabled ? '' : 'component-block--disabled'}">
-                <div
-                  class="script-item component-item ${isUserScript
-                    ? 'component-item--openable'
-                    : ''}"
-                  title=${isUserScript ? 'Double-click to open the script in your IDE' : ''}
-                  @dblclick=${isUserScript
-                    ? () => this.onOpenComponentScript(component.type)
-                    : null}
-                >
+                <div class="script-item component-item">
                   <div class="script-icon">
                     ${this.host.iconService.getIcon(this.getComponentIconName(component.type), 16)}
                   </div>
@@ -1014,20 +1003,6 @@ ${textPreview?.content || 'Empty file'}</pre
       });
       void this.host.commandDispatcher.execute(command);
     }
-  }
-
-  /**
-   * Double-clicking a user script component opens its source file in the IDE (through the dev
-   * server, when the host offers it). Core (`core:`) components are engine built-ins with no
-   * project file, so they no-op.
-   */
-  onOpenComponentScript(componentType: string): void {
-    if (!componentType.startsWith('user:')) return;
-
-    const scriptName = componentType.slice('user:'.length).trim();
-    if (!scriptName) return;
-
-    void this.host.ideLauncher.open(`scripts/${scriptName}.ts`);
   }
 
   onRemoveComponent(componentId: string) {

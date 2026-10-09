@@ -4,18 +4,11 @@ import type { AssetActivation } from '@/services/assets/AssetFileActivationServi
 import type { FileDescriptor } from '@/services/project/file-descriptor';
 import { AssetsPreviewService } from '@/services/assets/AssetsPreviewService';
 import { ProjectService } from '@/services/project/ProjectService';
-import { TemplateService, DEFAULT_TEMPLATE_SCENE_ID } from '@/services/project/TemplateService';
-import { DialogService } from '@/services/editor/DialogService';
+import { AssetImportService } from '@/services/assets/AssetImportService';
 import { IconService } from '@/services/editor/IconService';
 import { GeneratedAssetDropService } from '@/services/image-gen/GeneratedAssetDropService';
 import { computeDirectoryStats } from '@/services/assets/asset-folder-stats';
-import { isDocumentActive } from '@/services/core/page-activity';
-import {
-  getDraggedAssetPaths,
-  hasAssetDragData,
-  hasGenerationDragData,
-} from '@/ui/shared/asset-drag-drop';
-import { DropdownPortal } from '@/ui/shared/dropdown-portal';
+import { hasGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import { appState, type AssetBrowserViewMode } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import { ASSET_CATEGORY_BY_ID, type AssetCategoryId } from '@/core/asset-categories';
@@ -33,10 +26,8 @@ import { isReadOnlyTab } from '@/services/editor/read-only';
 export class AssetTree extends ComponentBase {
   @inject(ProjectService)
   private readonly projectService!: ProjectService;
-  @inject(TemplateService)
-  private readonly templateService!: TemplateService;
-  @inject(DialogService)
-  private readonly dialogService!: DialogService;
+  @inject(AssetImportService)
+  private readonly assetImportService!: AssetImportService;
   @inject(IconService)
   private readonly iconService!: IconService;
   @inject(AssetsPreviewService)
@@ -106,63 +97,13 @@ export class AssetTree extends ComponentBase {
     return this.getParentPath(selected);
   }
 
-  @state()
-  private draggedPath: string | null = null;
-
+  /** Folder row (or `__TREE_ROOT__`) under an OS-file / generated-image drag. */
   @state()
   private dragOverPath: string | null = null;
 
-  @state()
-  private isExternalDrag: boolean = false;
-
-  /** Right-click context menu on a tree row (Rename / Delete). */
-  @state()
-  private contextMenu: { node: Node; x: number; y: number } | null = null;
-
-  private readonly contextMenuPortal = new DropdownPortal({ minWidth: '12rem' });
-  private readonly onGlobalPointerDownForMenu = (event: PointerEvent): void => {
-    // `Node` is aliased to AssetTreeNode in this module; use the DOM node type explicitly.
-    if (this.contextMenu && !this.contextMenuPortal.contains(event.target as globalThis.Node)) {
-      this.closeContextMenu();
-    }
-  };
-  private readonly onGlobalKeyDownForMenu = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape') {
-      this.closeContextMenu();
-    }
-  };
-
-  // Click-and-wait rename behavior
-  private _lastClickedPath: string | null = null;
-  private _renameTimer: number | null = null;
-  private readonly _renameDelay = 500; // milliseconds
-
   private disposeSubscription?: () => void;
 
-  private previousRootSignature: string | null = null;
   private treeRefreshQueue: Promise<void> = Promise.resolve();
-  private externalCheckPromise: Promise<void> | null = null;
-  private lastExternalCheckAt = 0;
-  private readonly externalCheckCooldownMs = 1000;
-
-  private onWindowFocus = async (): Promise<void> => {
-    await this.maybeCheckForExternalChanges();
-  };
-
-  private onVisibilityChange = async (): Promise<void> => {
-    await this.maybeCheckForExternalChanges();
-  };
-
-  private get isReadOnly(): boolean {
-    return isReadOnlyTab();
-  }
-
-  public async createFolder(): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    await this.startCreateFolder();
-  }
 
   /** Recursively enumerates every project entry (files and directories). */
   private async walkProjectEntries(): Promise<FileDescriptor[]> {
@@ -178,87 +119,6 @@ export class AssetTree extends ComponentBase {
     };
     await collect(this.rootPath || '.');
     return collected;
-  }
-
-  private async buildRootSignature(): Promise<string> {
-    try {
-      const entries = await this.walkProjectEntries();
-      return entries
-        .map(entry => `${entry.path}:${entry.kind}`)
-        .sort()
-        .join('|');
-    } catch {
-      return '';
-    }
-  }
-
-  private async checkForExternalChanges(): Promise<void> {
-    try {
-      const signature = await this.buildRootSignature();
-      if (this.previousRootSignature === null) {
-        this.previousRootSignature = signature;
-        return;
-      }
-
-      if (this.previousRootSignature !== signature) {
-        console.debug('[AssetTree] External changes detected, refreshing root');
-        this.previousRootSignature = signature;
-        await this.loadRoot();
-      }
-    } catch (err) {
-      console.error('[AssetTree] Failed to check external changes', err);
-    }
-  }
-
-  private async maybeCheckForExternalChanges(force = false): Promise<void> {
-    if (appState.project.status !== 'ready' || !isDocumentActive(document)) {
-      return;
-    }
-
-    const now = Date.now();
-    if (!force && now - this.lastExternalCheckAt < this.externalCheckCooldownMs) {
-      return;
-    }
-
-    if (this.externalCheckPromise) {
-      await this.externalCheckPromise;
-      return;
-    }
-
-    this.lastExternalCheckAt = now;
-    this.externalCheckPromise = this.checkForExternalChanges().finally(() => {
-      this.externalCheckPromise = null;
-    });
-    await this.externalCheckPromise;
-  }
-
-  public createScene(): void {
-    if (this.isReadOnly) {
-      return;
-    }
-    this.startCreateScene();
-  }
-
-  public async deleteSelected(): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    if (!this.selectedPath) {
-      console.warn('[AssetTree] No item selected for deletion');
-      return;
-    }
-    await this.deleteEntry(this.selectedPath);
-  }
-
-  public async renameSelected(): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    if (!this.selectedPath) {
-      console.warn('[AssetTree] No item selected for rename');
-      return;
-    }
-    await this.startRename(this.selectedPath);
   }
 
   /**
@@ -356,48 +216,6 @@ export class AssetTree extends ComponentBase {
     }
 
     this.saveState();
-    return true;
-  }
-
-  /**
-   * Reveal a file path in the tree and open it, mirroring a double-click activation
-   * (dispatches `asset-activate`, so it goes through the same handler as opening a file
-   * directly in the Asset Browser). Returns true when the path was found.
-   */
-  public async revealAndOpen(targetPath: string): Promise<boolean> {
-    const selected = await this.selectPath(targetPath);
-    if (!selected) {
-      return false;
-    }
-
-    const normalizedTreePath = this.normalizeTreePath(targetPath);
-    const normalizedTarget = this.normalizePath(normalizedTreePath);
-    const normalizedSelected = this.selectedPath ? this.normalizePath(this.selectedPath) : null;
-
-    // An exact selection match means a directory node was revealed (files are no
-    // longer tree rows). Preserve directory behavior: reveal without activating.
-    if (normalizedSelected === normalizedTarget || !normalizedTreePath) {
-      return true;
-    }
-
-    // File reveal: no tree node exists, so build the activation directly from the
-    // path and dispatch `asset-activate`, same as a file double-click did.
-    const name = normalizedTreePath.split('/').pop() ?? normalizedTreePath;
-    const activation: AssetActivation = {
-      name,
-      path: targetPath,
-      kind: 'file',
-      resourcePath: this.buildResourcePath(normalizedTreePath),
-      extension: this.getFileExtension(name),
-    };
-
-    this.dispatchEvent(
-      new CustomEvent<AssetActivation>('asset-activate', {
-        detail: activation,
-        bubbles: true,
-        composed: true,
-      })
-    );
     return true;
   }
 
@@ -656,43 +474,11 @@ export class AssetTree extends ComponentBase {
         }
       }
     });
-
-    // Initialize previous signature
-    this.previousRootSignature = await this.buildRootSignature();
-
-    // Listen for window focus and visibility changes to detect external file changes
-    window.addEventListener('focus', this.onWindowFocus);
-    document.addEventListener('visibilitychange', this.onVisibilityChange);
-
-    // Dismiss the row context menu on outside pointerdown / Escape.
-    window.addEventListener('pointerdown', this.onGlobalPointerDownForMenu, true);
-    window.addEventListener('keydown', this.onGlobalKeyDownForMenu);
-  }
-
-  /** Move the row context menu into a body-level portal so it isn't clipped by the tree scroller. */
-  protected updated(): void {
-    if (this.contextMenu && !this.contextMenuPortal.isOpen()) {
-      const menu = this.querySelector<HTMLElement>('.tree-context-menu');
-      if (menu) {
-        this.contextMenuPortal.openAt(this.contextMenu.x, this.contextMenu.y, menu);
-      }
-    } else if (!this.contextMenu && this.contextMenuPortal.isOpen()) {
-      this.contextMenuPortal.close();
-    }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.disposeSubscription?.();
-
-    this.clearRenameTimer();
-    this._lastClickedPath = null;
-
-    window.removeEventListener('focus', this.onWindowFocus);
-    document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    window.removeEventListener('pointerdown', this.onGlobalPointerDownForMenu, true);
-    window.removeEventListener('keydown', this.onGlobalKeyDownForMenu);
-    this.contextMenuPortal.close();
   }
 
   /**
@@ -876,42 +662,10 @@ export class AssetTree extends ComponentBase {
     else void this.expandNode(node);
   }
 
-  private clearRenameTimer(): void {
-    if (this._renameTimer) {
-      clearTimeout(this._renameTimer);
-      this._renameTimer = null;
-    }
-  }
-
-  private onSelect(node: Node, options?: { suppressRename?: boolean }): void {
-    const isSameNode = this._lastClickedPath === node.path;
-    const isAlreadySelected = this.selectedPath === node.path;
-
-    this.clearRenameTimer();
+  private onSelect(node: Node): void {
     this.selectedCategoryId = node.categoryId ?? null;
-
-    const isRenamable = node.nodeType !== 'category' && !this.isCompactedDirNode(node);
-    const shouldStartRename =
-      !options?.suppressRename && isSameNode && isAlreadySelected && isRenamable;
-
-    if (shouldStartRename) {
-      this._lastClickedPath = node.path;
-      this._renameTimer = window.setTimeout(() => {
-        this.clearRenameTimer();
-        this._lastClickedPath = null;
-        void this.startRename(node.path);
-      }, this._renameDelay);
-    } else if (isSameNode) {
-      this._lastClickedPath = null;
-      this.selectedPath = node.path;
-      this.notifyAssetSelected(node);
-    } else {
-      this.selectedPath = node.path;
-      this.notifyAssetSelected(node);
-
-      this._lastClickedPath = node.path;
-    }
-
+    this.selectedPath = node.path;
+    this.notifyAssetSelected(node);
     this.requestUpdate();
 
     // Save state after selection changes
@@ -921,8 +675,6 @@ export class AssetTree extends ComponentBase {
   private onNodeDoubleClick(event: MouseEvent, node: Node): void {
     event.preventDefault();
     event.stopPropagation();
-    this.clearRenameTimer();
-    this._lastClickedPath = null;
     if (node.kind === 'directory') {
       this.toggleNode(node);
       return;
@@ -933,7 +685,7 @@ export class AssetTree extends ComponentBase {
   private onNodeKeyDown(event: KeyboardEvent, node: Node): void {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      this.onSelect(node, { suppressRename: true });
+      this.onSelect(node);
       if (event.key === 'Enter') {
         this.activateAsset(node);
       }
@@ -966,11 +718,6 @@ export class AssetTree extends ComponentBase {
         composed: true,
       })
     );
-  }
-
-  /** Compacted grouped-view dirs (chain labels like `assets/ui`) can't be renamed in place. */
-  private isCompactedDirNode(node: Node): boolean {
-    return node.nodeType === 'dir' && node.name.includes('/');
   }
 
   private notifyAssetSelected(node: Node): void {
@@ -1123,13 +870,9 @@ export class AssetTree extends ComponentBase {
         @click=${() => this.onSelect(node)}
         @dblclick=${(e: MouseEvent) => this.onNodeDoubleClick(e, node)}
         @keydown=${(e: KeyboardEvent) => this.onNodeKeyDown(e, node)}
-        @dragstart=${(e: DragEvent) => this.onDragStart(e, node)}
-        @dragend=${(e: DragEvent) => this.onDragEnd(e)}
         @dragover=${(e: DragEvent) => this.onDragOver(e, node)}
         @dragleave=${(e: DragEvent) => this.onDragLeave(e, node)}
         @drop=${(e: DragEvent) => this.onDrop(e, node)}
-        @contextmenu=${(e: MouseEvent) => this.onNodeContextMenu(e, node)}
-        draggable=${isCategory ? 'false' : 'true'}
         tabindex="0"
       >
         ${isExpandable
@@ -1150,15 +893,7 @@ export class AssetTree extends ComponentBase {
           : node.kind === 'directory'
             ? this.folderIcon(!!node.expanded)
             : this.fileIcon()}
-        ${node.editing
-          ? html`<input
-              class="node-edit"
-              .value=${this._editingValue ?? node.name}
-              @input=${(e: Event) => (this._editingValue = (e.target as HTMLInputElement).value)}
-              @keydown=${(e: KeyboardEvent) => this.onEditKeyDown(e, node)}
-              @blur=${() => this.commitCreateFolder(node)}
-            />`
-          : html`<span class="node-name">${nameContent}</span>`}
+        <span class="node-name">${nameContent}</span>
         ${isCategory && node.fileCount !== undefined
           ? html`<span class="node-meta node-count">${node.fileCount}</span>`
           : metaLabel
@@ -1173,92 +908,26 @@ export class AssetTree extends ComponentBase {
     </div>`;
   }
 
-  private onDragStart(e: DragEvent, node: Node): void {
-    // Prevent dragging while editing; virtual category rows are not draggable
-    if (node.editing || node.nodeType === 'category') {
-      e.preventDefault();
+  /**
+   * Folder rows accept two drops, both copies into that folder: files from the OS (through
+   * {@link AssetImportService}, the same path as the Import… dialog) and a generated image from
+   * the Generate panel. Nothing is moved: files are reorganised by the agent or the IDE.
+   */
+  private onDragOver(event: DragEvent, node: Node): void {
+    if (node.nodeType === 'category' || node.kind !== 'directory' || !isAcceptedDrop(event)) {
       return;
     }
-
-    this.draggedPath = node.path;
-    this.isExternalDrag = false;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = node.kind === 'file' ? 'copyMove' : 'move';
-      e.dataTransfer.setData('text/plain', node.path);
-
-      if (node.kind === 'file') {
-        const normalizedPath = this.normalizeTreePath(node.path);
-        if (normalizedPath) {
-          const resourcePath = this.buildResourcePath(normalizedPath);
-          e.dataTransfer.setData('application/x-pix3-asset-path', node.path);
-          e.dataTransfer.setData('application/x-pix3-asset-resource', resourcePath);
-          e.dataTransfer.setData('text/uri-list', resourcePath);
-        }
-      }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
     }
-  }
-
-  private onDragEnd(_e: DragEvent): void {
-    this.draggedPath = null;
-    this.dragOverPath = null;
-  }
-
-  private onDragOver(_e: DragEvent, node: Node): void {
-    // Virtual category rows are never drop targets (any payload kind).
-    if (node.nodeType === 'category') {
-      return;
-    }
-
-    // Dragging an Sprite Editor history entry — accept on directories only.
-    if (hasGenerationDragData(_e.dataTransfer)) {
-      if (node.kind !== 'directory') {
-        return;
-      }
-      _e.preventDefault();
-      if (_e.dataTransfer) {
-        _e.dataTransfer.dropEffect = 'copy';
-      }
-      this.dragOverPath = node.path;
-      return;
-    }
-
-    // Check if this is an external drag (files from outside browser)
-    if (_e.dataTransfer?.items && _e.dataTransfer.items.length > 0) {
-      const hasFiles = Array.from(_e.dataTransfer.items).some(item => item.kind === 'file');
-      if (hasFiles) {
-        this.isExternalDrag = true;
-        // Only allow dropping on directories for external files
-        if (node.kind !== 'directory') {
-          return;
-        }
-        _e.preventDefault();
-        if (_e.dataTransfer) {
-          _e.dataTransfer.dropEffect = 'copy';
-        }
-        this.dragOverPath = node.path;
-        return;
-      }
-    }
-
-    // Handle internal drag (existing logic)
-    // Only allow dropping on directories
-    if (node.kind !== 'directory' || this.draggedPath === node.path) {
-      return;
-    }
-
-    _e.preventDefault();
-    if (_e.dataTransfer) {
-      _e.dataTransfer.dropEffect = 'move';
-    }
-
-    // Clear tree root highlight when hovering over a specific node
     this.dragOverPath = node.path;
   }
 
-  private onDragLeave(_e: DragEvent, node: Node): void {
-    // Only clear drag over if we're actually leaving this node
+  private onDragLeave(_event: DragEvent, node: Node): void {
     if (this.dragOverPath === node.path) {
-      // Use a small delay to allow tree root drag over to take precedence
+      // A small delay lets the next row's dragover take over without a flicker.
       setTimeout(() => {
         if (this.dragOverPath === node.path) {
           this.dragOverPath = null;
@@ -1267,61 +936,32 @@ export class AssetTree extends ComponentBase {
     }
   }
 
-  private onTreeDragOver(e: DragEvent): void {
+  private async onDrop(event: DragEvent, node: Node): Promise<void> {
+    if (node.nodeType === 'category' || node.kind !== 'directory' || !event.dataTransfer) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragOverPath = null;
+    await this.handleDrop(event.dataTransfer, node.path);
+  }
+
+  private onTreeDragOver(event: DragEvent): void {
     // In the grouped view the tree background is the category list, not the project root.
-    if (this.viewMode === 'by-type') {
+    if (this.viewMode === 'by-type' || !isAcceptedDrop(event)) {
       return;
     }
-
-    // Dragging an Sprite Editor history entry — drop into the project root.
-    if (hasGenerationDragData(e.dataTransfer)) {
-      e.preventDefault();
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'copy';
-      }
-      if (!this.dragOverPath || this.dragOverPath === '__TREE_ROOT__') {
-        this.dragOverPath = '__TREE_ROOT__';
-      }
-      return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
     }
-
-    // Check if this is an external drag (files from outside browser)
-    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
-      const hasFiles = Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
-      if (hasFiles) {
-        this.isExternalDrag = true;
-        e.preventDefault();
-        if (e.dataTransfer) {
-          e.dataTransfer.dropEffect = 'copy';
-        }
-        // Only set tree root drag over if we're not already over a specific node
-        if (!this.dragOverPath || this.dragOverPath === '__TREE_ROOT__') {
-          this.dragOverPath = '__TREE_ROOT__';
-        }
-        return;
-      }
-    }
-
-    // Handle internal drag: a tree-node drag (`draggedPath`) or an asset drag started in
-    // the content pane (the tree never sees its dragstart, so detect it by MIME type).
-    if (!this.draggedPath && !hasAssetDragData(e.dataTransfer)) {
-      return;
-    }
-
-    e.preventDefault();
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
-    }
-
-    // Only set tree root drag over if we're not already over a specific node
+    // Only highlight the root when no folder row has the drag.
     if (!this.dragOverPath || this.dragOverPath === '__TREE_ROOT__') {
       this.dragOverPath = '__TREE_ROOT__';
     }
   }
 
-  private onTreeDragLeave(_e: DragEvent): void {
-    // Clear drag over state if we're leaving the tree area
-    // Use a small delay to allow node drag over to take precedence
+  private onTreeDragLeave(_event: DragEvent): void {
     setTimeout(() => {
       if (this.dragOverPath === '__TREE_ROOT__') {
         this.dragOverPath = null;
@@ -1329,278 +969,40 @@ export class AssetTree extends ComponentBase {
     }, 10);
   }
 
-  private async onTreeDrop(e: DragEvent): Promise<void> {
-    // Grouped view: "move to project root" via background drop is disabled.
-    if (this.viewMode === 'by-type') {
+  private async onTreeDrop(event: DragEvent): Promise<void> {
+    if (this.viewMode === 'by-type' || !event.dataTransfer) {
       return;
     }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!e.dataTransfer) {
-      this.dragOverPath = null;
-      return;
-    }
-
-    // Reuse the shared root-drop handler (also called directly by the panel root row).
-    await this.handleRootDrop(e.dataTransfer);
+    event.preventDefault();
+    event.stopPropagation();
+    await this.handleRootDrop(event.dataTransfer);
   }
 
-  /**
-   * Handles a drop targeting the project root (`.`): a generated-asset drop, an
-   * external-file drop, or an internal move — the latter supports moving a whole
-   * grid multi-selection at once. Exposed so the unified Assets panel's root row
-   * can reuse the exact same logic instead of duplicating it.
-   */
+  /** A drop on the project root (the tree background or the panel's root row). */
   public async handleRootDrop(dataTransfer: DataTransfer): Promise<void> {
-    this.dragOverPath = null;
+    await this.handleDrop(dataTransfer, '.');
+  }
 
-    // Dropping a Sprite Editor history entry into the project root.
+  private async handleDrop(dataTransfer: DataTransfer, targetDirectory: string): Promise<void> {
+    this.dragOverPath = null;
+    if (isReadOnlyTab()) {
+      return;
+    }
     if (hasGenerationDragData(dataTransfer)) {
-      await this.generatedAssetDropService.handleDrop(dataTransfer, '.');
+      await this.generatedAssetDropService.handleDrop(dataTransfer, targetDirectory);
       return;
     }
-
-    // Check if this is an external file drop.
-    const hasExternalFiles =
-      !!dataTransfer.items && Array.from(dataTransfer.items).some(item => item.kind === 'file');
-    if (this.isExternalDrag || hasExternalFiles) {
-      if (dataTransfer.items) {
-        await this.handleExternalFileDrop(dataTransfer.items, '.');
-      }
-      this.isExternalDrag = false;
+    const files = Array.from(dataTransfer.files ?? []);
+    if (files.length === 0) {
       return;
     }
-
-    // Internal move → project root (supports multi-path grid drags).
-    await this.moveDroppedPaths(dataTransfer, '.', 'project root');
-  }
-
-  /**
-   * Moves the dragged source paths into `targetDirPath`. `dataTransfer` is read
-   * synchronously (the drag data store is only accessible inside the `drop` handler).
-   */
-  private async moveDroppedPaths(
-    dataTransfer: DataTransfer,
-    targetDirPath: string,
-    targetLabel: string
-  ): Promise<void> {
-    await this.movePathsInto(getDraggedAssetPaths(dataTransfer), targetDirPath, targetLabel);
-  }
-
-  /**
-   * Moves `paths` into `targetDirPath` behind a single confirmation dialog, skipping
-   * no-op moves (items already in the target). Public so the unified Assets panel can
-   * route content-pane folder drops here instead of duplicating the move + refresh logic.
-   */
-  public async movePathsInto(
-    paths: readonly string[],
-    targetDirPath: string,
-    targetLabel: string
-  ): Promise<void> {
-    const targetDir = targetDirPath || '.';
-    const sourcePaths = paths.filter(sourcePath => {
-      if (!sourcePath || sourcePath === targetDir) {
-        return false;
-      }
-      // Skip items that already live directly in the target directory.
-      return this.getParentPath(sourcePath) !== targetDir;
-    });
-
-    if (sourcePaths.length === 0) {
-      return;
+    const result = await this.assetImportService.importFiles(files, targetDirectory);
+    for (const failure of result.failures) {
+      console.error('[AssetTree] Failed to import dropped file', failure);
     }
-
-    const message =
-      sourcePaths.length === 1
-        ? `Move "${sourcePaths[0].split('/').pop() || sourcePaths[0]}" to "${targetLabel}"?`
-        : `Move ${sourcePaths.length} items to "${targetLabel}"?`;
-
-    try {
-      const confirmed = await this.dialogService.showConfirmation({
-        title: sourcePaths.length === 1 ? 'Move Item?' : 'Move Items?',
-        message,
-        confirmLabel: 'Move',
-        cancelLabel: 'Cancel',
-        isDangerous: false,
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
-      for (const sourcePath of sourcePaths) {
-        await this.performMove(sourcePath, targetDir);
-      }
-    } catch (error) {
-      console.error('[AssetTree] Error during move operation:', error);
-    }
-  }
-
-  private async onDrop(e: DragEvent, targetNode: Node): Promise<void> {
-    // Defensive: category rows never accept drops (dragover doesn't preventDefault).
-    if (targetNode.nodeType === 'category') {
-      return;
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    this.dragOverPath = null;
-
-    // Dropping an Sprite Editor history entry — save into the target directory.
-    if (hasGenerationDragData(e.dataTransfer)) {
-      const targetDirectory =
-        targetNode.kind === 'directory' ? targetNode.path : this.getParentPath(targetNode.path);
-      await this.generatedAssetDropService.handleDrop(e.dataTransfer, targetDirectory);
-      return;
-    }
-
-    // Check if this is an external file drop
-    if (this.isExternalDrag && e.dataTransfer?.items) {
-      await this.handleExternalFileDrop(e.dataTransfer.items, targetNode.path);
-      this.isExternalDrag = false;
-      return;
-    }
-
-    // Handle internal drag — supports multi-path grid drags via the list MIME.
-    if (targetNode.kind !== 'directory' || !e.dataTransfer) {
-      return;
-    }
-    await this.moveDroppedPaths(e.dataTransfer, targetNode.path, targetNode.name);
-  }
-
-  private async performMove(sourcePath: string, targetDirPath: string): Promise<void> {
-    try {
-      const sourceName = sourcePath.split('/').pop() || sourcePath;
-      const targetPath = this.joinPath(targetDirPath === '.' ? '' : targetDirPath, sourceName);
-
-      console.log('[AssetTree] Moving', { sourcePath, targetPath });
-
-      // Use ProjectService to move the file/folder
-      await this.projectService.moveItem(sourcePath, targetPath);
-
-      // Refresh both source parent and target directory
-      const sourceParent = this.getParentPath(sourcePath);
-      const targetParent = targetDirPath;
-
-      // Refresh source parent
-      if (sourceParent === '.' || sourceParent === '') {
-        await this.loadRoot();
-      } else {
-        await this.refreshDirectory(sourceParent);
-      }
-
-      // Refresh target if different from source
-      if (targetParent !== sourceParent) {
-        if (targetParent === '.' || targetParent === '') {
-          // Refresh root to show the moved item
-          await this.loadRoot();
-        } else {
-          await this.refreshDirectory(targetParent);
-        }
-      }
-
-      this.selectedPath = targetPath;
-      console.log('[AssetTree] Move completed successfully');
-    } catch (error) {
-      console.error('[AssetTree] Failed to move item:', error);
-    }
-  }
-
-  private async handleExternalFileDrop(
-    items: DataTransferItemList,
-    targetPath: string
-  ): Promise<void> {
-    try {
-      // Get files from dataTransfer (simplified approach)
-      const files: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) {
-            files.push(file);
-          }
-        }
-      }
-
-      if (files.length === 0) {
-        return;
-      }
-
-      // Show confirmation dialog for multiple files
-      const message =
-        files.length === 1
-          ? `Copy "${files[0].name}" to "${targetPath === '.' ? 'project root' : targetPath}"?`
-          : `Copy ${files.length} items to "${targetPath === '.' ? 'project root' : targetPath}"?`;
-
-      const confirmed = await this.dialogService.showConfirmation({
-        title: 'Copy Files?',
-        message,
-        confirmLabel: 'Copy',
-        cancelLabel: 'Cancel',
-        isDangerous: false,
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
-      // Process each file
-      for (const file of files) {
-        await this.copyExternalFile(file, targetPath);
-      }
-
-      // Refresh target directory
-      if (targetPath === '.' || targetPath === '') {
-        await this.loadRoot();
-      } else {
-        await this.refreshDirectory(targetPath);
-      }
-
-      console.log(
-        `[AssetTree] Successfully copied ${files.length} external files to ${targetPath}`
-      );
-    } catch (error) {
-      console.error('[AssetTree] Error handling external file drop:', error);
-    }
-  }
-
-  private async copyExternalFile(file: File, targetPath: string): Promise<void> {
-    try {
-      // Handle directory structure in file name
-      const fullPath = this.joinPath(targetPath === '.' ? '' : targetPath, file.name);
-      console.log(`[AssetTree] Copying file ${file.name} to ${fullPath}`);
-
-      // If file contains path separators, create directories
-      const pathParts = fullPath.split('/');
-      if (pathParts.length > 1) {
-        const dirPath = pathParts.slice(0, -1).join('/');
-        console.log(`[AssetTree] Creating directory structure: ${dirPath}`);
-        await this.projectService.createDirectory(dirPath);
-      }
-
-      // Read file content and write to project
-      if (
-        file.type.startsWith('text/') ||
-        file.name.endsWith('.json') ||
-        file.name.endsWith('.pix3scene')
-      ) {
-        // Text files
-        const content = await file.text();
-        await this.projectService.writeFile(fullPath, content);
-      } else {
-        // Binary files
-        const arrayBuffer = await file.arrayBuffer();
-        await this.projectService.writeBinaryFile(fullPath, arrayBuffer);
-      }
-
-      console.log(`[AssetTree] Copied external file: ${file.name} to ${fullPath}`);
-    } catch (error) {
-      console.error(`[AssetTree] Failed to copy external file ${file.name}:`, error);
-      throw error;
+    // The listing refreshes from the write signal; reveal what arrived.
+    if (result.importedPaths.length > 0) {
+      await this.selectPath(result.importedPaths[0]);
     }
   }
 
@@ -1641,409 +1043,13 @@ export class AssetTree extends ComponentBase {
           ? html`<p class="empty">No assets</p>`
           : this.tree.map(n => this.renderNode(n))}
       </div>
-      ${this.renderContextMenu()}
     </div>`;
-  }
-
-  // ── Row context menu (Rename / Delete) ───────────────────────────────────
-  private onNodeContextMenu(event: MouseEvent, node: Node): void {
-    // Virtual category rows and compacted grouped dirs can't be renamed/deleted.
-    if (node.nodeType === 'category' || this.isCompactedDirNode(node)) {
-      this.closeContextMenu();
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    this.onSelect(node, { suppressRename: true });
-    this.contextMenu = { node, x: event.clientX, y: event.clientY };
-  }
-
-  private closeContextMenu(): void {
-    if (this.contextMenu) {
-      this.contextMenu = null;
-    }
-  }
-
-  private onContextRename(node: Node): void {
-    this.closeContextMenu();
-    void this.startRename(node.path);
-  }
-
-  private async onContextDelete(node: Node): Promise<void> {
-    this.closeContextMenu();
-    if (this.isReadOnly || isCategoryPath(node.path)) {
-      return;
-    }
-    const confirmed = await this.dialogService.showConfirmation({
-      title: 'Delete Item?',
-      message: `Are you sure you want to delete ${node.name}?`,
-      confirmLabel: 'Delete',
-      cancelLabel: 'Cancel',
-      isDangerous: true,
-    });
-    if (confirmed) {
-      await this.deleteEntry(node.path);
-    }
-  }
-
-  private renderContextMenu(): ReturnType<typeof html> {
-    // Always rendered (gated by `hidden`) so DropdownPortal can move/restore the same
-    // node cleanly — matches the content pane's context menu.
-    const node = this.contextMenu?.node ?? null;
-    return html`<div
-      class="tree-context-menu"
-      role="menu"
-      ?hidden=${!this.contextMenu}
-      @click=${(e: Event) => e.stopPropagation()}
-    >
-      ${node
-        ? html`
-            <button type="button" role="menuitem" @click=${() => this.onContextRename(node)}>
-              Rename
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              class="is-danger"
-              @click=${() => void this.onContextDelete(node)}
-            >
-              Delete
-            </button>
-          `
-        : null}
-    </div>`;
-  }
-
-  private async startRename(path: string): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    if (isCategoryPath(path)) {
-      return;
-    }
-    const nodeEntry = this.findNodeByPath(path);
-    if (!nodeEntry || !nodeEntry.node) {
-      console.warn('[AssetTree] Node not found for rename:', path);
-      return;
-    }
-    if (nodeEntry.node.nodeType === 'category' || this.isCompactedDirNode(nodeEntry.node)) {
-      return;
-    }
-
-    this.clearRenameTimer();
-    this._lastClickedPath = null;
-
-    const node = nodeEntry.node;
-    node.editing = true;
-
-    // Cache the original file extension for rename operations
-    const originalName = node.name;
-    const lastDotIndex = originalName.lastIndexOf('.');
-    this._originalExtension = lastDotIndex > -1 ? originalName.substring(lastDotIndex) : '';
-    this._isNewScene = false; // This is a rename, not new scene creation
-
-    // For files, show name without extension for cleaner editing
-    this._editingValue = lastDotIndex > -1 ? originalName.substring(0, lastDotIndex) : originalName;
-    this.requestUpdate();
-
-    // focus input after render
-    await this.updateComplete;
-    const input = this.renderRoot.querySelector('.node-edit') as HTMLInputElement | null;
-    if (input) {
-      input.focus();
-      input.select();
-    }
-  }
-
-  private _editingValue: string | null = null;
-
-  // Cache original extension and operation type for rename operations
-  private _originalExtension: string = '';
-  private _isNewScene: boolean = true;
-
-  /**
-   * Resolves the real directory node that create flows should nest under.
-   * Virtual category rows (grouped view) fall back to the project root.
-   */
-  private resolveCreateParent(): { parentPath: string; parentNode: Node | null } {
-    const selected =
-      this.selectedPath && !isCategoryPath(this.selectedPath)
-        ? this.findNodeByPath(this.selectedPath)
-        : null;
-    const node =
-      selected?.node && selected.node.nodeType !== 'category' && selected.node.kind === 'directory'
-        ? selected.node
-        : null;
-    return node
-      ? { parentPath: node.path, parentNode: node }
-      : { parentPath: '.', parentNode: null };
-  }
-
-  private startCreateScene(): void {
-    if (this.isReadOnly) {
-      return;
-    }
-    // similar to startCreateFolder but for scene file
-    const { parentPath, parentNode } = this.resolveCreateParent();
-
-    const newName = 'New Scene';
-    const newPath = this.joinPath(parentPath, `${newName}.pix3scene`);
-    const newNode: Node = {
-      name: `${newName}.pix3scene`,
-      path: newPath,
-      kind: 'file',
-      sizeBytes: null,
-      children: [],
-      editing: true,
-    };
-
-    if (parentNode) {
-      parentNode.children = parentNode.children || [];
-      parentNode.children.unshift(newNode);
-      parentNode.expanded = true;
-    } else {
-      this.tree.unshift(newNode);
-    }
-
-    // For new scene creation, force .pix3scene extension
-    this._isNewScene = true;
-    this._originalExtension = '.pix3scene';
-    this._editingValue = newName; // Show without extension for editing
-    this.selectedPath = newPath;
-    this.requestUpdate();
-
-    void this.updateComplete.then(() => {
-      const input = this.renderRoot.querySelector('.node-edit') as HTMLInputElement | null;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    });
-  }
-
-  private async startCreateFolder(): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    // determine parent path; ensure parent is expanded and children loaded
-    const { parentPath, parentNode } = this.resolveCreateParent();
-    if (parentNode && parentNode.children === null) {
-      await this.expandNode(parentNode);
-    }
-
-    const newName = 'New Folder';
-    const newPath = this.joinPath(parentPath, newName);
-    const newNode: Node = {
-      name: newName,
-      path: newPath,
-      kind: 'directory',
-      sizeBytes: 0,
-      children: [],
-      editing: true,
-    };
-
-    if (parentNode) {
-      parentNode.children = parentNode.children || [];
-      parentNode.children.unshift(newNode);
-      parentNode.expanded = true;
-    } else {
-      // root
-      this.tree.unshift(newNode);
-    }
-
-    // For folder creation, no extension needed
-    this._isNewScene = false;
-    this._originalExtension = '';
-    this._editingValue = newName;
-    this.selectedPath = newPath;
-    this.requestUpdate();
-
-    // focus input after render
-    await this.updateComplete;
-    const input = this.renderRoot.querySelector('.node-edit') as HTMLInputElement | null;
-    if (input) {
-      input.focus();
-      input.select();
-    }
-  }
-
-  private onEditKeyDown(e: KeyboardEvent, node: Node) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      void this.cancelCreateFolder(node);
-    } else if (e.key === 'Enter') {
-      e.preventDefault(); // Prevent any default form submission or other behavior
-      e.stopPropagation();
-      void this.commitCreateFolder(node);
-    }
-  }
-
-  private async cancelCreateFolder(node: Node) {
-    // remove the temporary node
-    const removed = this.removeNodeByPath(node.path);
-    this._editingValue = null;
-    this._originalExtension = '';
-    this._isNewScene = true;
-    if (removed) {
-      this.requestUpdate();
-    }
-  }
-
-  private _committing = false;
-
-  private async commitCreateFolder(node: Node) {
-    // Prevent double execution
-    if (this._committing) {
-      return;
-    }
-    this._committing = true;
-
-    let isRename = false;
-
-    try {
-      const finalName = (this._editingValue ?? node.name).trim();
-
-      // Check if this is a rename (existing node) or create (new node)
-      // by checking if the file exists in the filesystem
-      const parentPath = this.getParentPath(node.path);
-      const entries = await this.listDirectory(parentPath === '.' ? '.' : parentPath);
-      const existingEntry = entries.find(e => e.path === node.path);
-      isRename = !!existingEntry;
-
-      // If this is a rename and the name is empty or unchanged, just cancel editing
-      if (isRename) {
-        const originalName = node.name;
-        const finalNameWithoutExt = finalName.includes('.')
-          ? finalName.substring(0, finalName.lastIndexOf('.'))
-          : finalName;
-        const originalNameWithoutExt = originalName.includes('.')
-          ? originalName.substring(0, originalName.lastIndexOf('.'))
-          : originalName;
-
-        if (!finalName || finalNameWithoutExt === originalNameWithoutExt) {
-          // Just cancel editing without deleting the existing folder
-          node.editing = false;
-          this._editingValue = null;
-          this._originalExtension = '';
-          this._isNewScene = true;
-          this.requestUpdate();
-          return;
-        }
-      } else {
-        // For new items, empty name means cancel creation
-        if (!finalName) {
-          await this.cancelCreateFolder(node);
-          return;
-        }
-      }
-
-      console.log('[AssetTree] commitCreateFolder', {
-        nodePath: node.path,
-        finalName,
-        isRename,
-        existingEntry: existingEntry?.name,
-        editingValue: this._editingValue,
-        nodeName: node.name,
-      });
-
-      const newPath = this.joinPath(parentPath === '.' ? '' : parentPath, finalName);
-
-      if (isRename) {
-        // Rename existing item
-        let finalFileName = finalName;
-
-        if (node.kind === 'file') {
-          // For rename operations, preserve the original extension unless user explicitly removed it
-          // and they want to change it to a scene file
-          if (this._originalExtension) {
-            // User had an extension, check if they want to keep it or change it
-            if (!finalName.includes('.')) {
-              // User didn't specify extension, restore the original one
-              finalFileName = finalName + this._originalExtension;
-            } else {
-              // User specified an extension, use what they provided
-              finalFileName = finalName;
-            }
-          } else {
-            // No original extension (unlikely for files, but handle it)
-            finalFileName = finalName;
-          }
-        }
-
-        const renamedPath = this.joinPath(parentPath === '.' ? '' : parentPath, finalFileName);
-        await this.projectService.moveItem(node.path, renamedPath);
-        node.path = renamedPath;
-        node.name = finalFileName;
-      } else {
-        // Create new item
-        if (node.kind === 'directory') {
-          await this.projectService.createDirectory(newPath);
-        } else if (node.kind === 'file') {
-          // For new files, force the appropriate extension
-          let filename = finalName;
-
-          if (this._isNewScene) {
-            // New scene creation - always force .pix3scene extension
-            if (!filename.endsWith('.pix3scene')) {
-              filename = `${filename}.pix3scene`;
-            }
-          } else if (this._originalExtension) {
-            // New file with original extension preserved
-            if (!filename.includes('.')) {
-              filename = filename + this._originalExtension;
-            }
-          }
-          // If no extension specified and no original extension, leave as-is
-
-          const filePath = this.joinPath(parentPath === '.' ? '' : parentPath, filename);
-
-          if (this._isNewScene) {
-            const template = this.templateService.getSceneTemplate(DEFAULT_TEMPLATE_SCENE_ID);
-            await this.projectService.writeFile(filePath, template);
-          }
-
-          node.path = filePath;
-          node.name = filename;
-        }
-      }
-
-      // refresh parent in UI
-      if (parentPath === '.' || parentPath === '') {
-        await this.loadRoot();
-      } else {
-        const parentNodeEntry = this.findNodeByPath(parentPath);
-        if (parentNodeEntry && parentNodeEntry.node) {
-          parentNodeEntry.node.children = null;
-          await this.expandNode(parentNodeEntry.node);
-        }
-      }
-
-      this.selectedPath = newPath.replace(/^\//, '');
-      node.editing = false;
-      this._editingValue = null;
-      this._originalExtension = '';
-      this._isNewScene = true;
-      this.requestUpdate();
-    } catch (err) {
-      console.error('Failed to create/rename item', err);
-      // remove temp node for create operations
-      if (!isRename) {
-        await this.cancelCreateFolder(node);
-      }
-    } finally {
-      this._committing = false;
-    }
   }
 
   private getParentPath(path: string): string {
     const parts = path.split('/').filter(p => p.length > 0);
     if (parts.length <= 1) return '.';
     return parts.slice(0, -1).join('/');
-  }
-
-  private joinPath(base: string, name: string): string {
-    if (!base || base === '.' || base === '') return name;
-    return `${base.replace(/\/+$/, '')}/${name}`;
   }
 
   private findNodeByPath(path: string): { node?: Node; parent?: Node | null } | null {
@@ -2060,64 +1066,18 @@ export class AssetTree extends ComponentBase {
     }
     return null;
   }
+}
 
-  private removeNodeByPath(path: string): boolean {
-    // try root
-    const idx = this.tree.findIndex(n => n.path === path);
-    if (idx >= 0) {
-      this.tree.splice(idx, 1);
-      this.tree = [...this.tree];
-      return true;
-    }
-    // recurse
-    const walk = (nodes: Node[]): boolean => {
-      for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        if (n.path === path) {
-          nodes.splice(i, 1);
-          return true;
-        }
-        if (n.children && n.children.length) {
-          if (walk(n.children)) return true;
-        }
-      }
-      return false;
-    };
-    const removed = walk(this.tree);
-    if (removed) this.tree = [...this.tree];
-    return removed;
+/** OS files or a generated image: the only drops a folder row accepts. */
+function isAcceptedDrop(event: DragEvent): boolean {
+  const transfer = event.dataTransfer;
+  if (!transfer) {
+    return false;
   }
-
-  private async deleteEntry(path: string): Promise<void> {
-    if (this.isReadOnly) {
-      return;
-    }
-    if (isCategoryPath(path)) {
-      console.warn('[AssetTree] Category rows cannot be deleted:', path);
-      return;
-    }
-    try {
-      console.log('[AssetTree] Deleting entry at path:', path);
-      await this.projectService.deleteEntry(path);
-
-      // Remove from tree UI
-      const found = this.removeNodeByPath(path);
-      if (!found) {
-        console.warn('[AssetTree] Entry not found in tree:', path);
-      }
-
-      // Clear selection
-      this.selectedPath = null;
-      this.requestUpdate();
-
-      console.log('[AssetTree] Entry deleted successfully:', path);
-    } catch (error) {
-      console.error('[AssetTree] Failed to delete entry:', error);
-      throw error;
-    }
+  if (hasGenerationDragData(transfer)) {
+    return true;
   }
-
-  // create-asset event no longer used here; menu directly starts creation flows
+  return Array.from(transfer.items ?? []).some(item => item.kind === 'file');
 }
 
 declare global {

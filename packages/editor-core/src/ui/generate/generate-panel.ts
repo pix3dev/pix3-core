@@ -37,7 +37,7 @@ const DEFAULT_EXACT_SIZE = 128;
 /**
  * A generated image with nowhere to go: no editor is bound (or the bound canvas
  * stands in for a frame it cannot write back to yet), so the panel keeps it and
- * offers the original Asset Generator endings — save into the project or download it.
+ * offers to save it into the project.
  */
 interface PendingResult {
   blob: Blob;
@@ -699,7 +699,6 @@ export class GeneratePanel extends ComponentBase {
           >
             Save to project
           </button>
-          <button class="gp-action-button" @click=${this.onDownload}>Download</button>
         </div>
         ${this.saveMessage ? html`<div class="gp-success">${this.saveMessage}</div>` : null}
         ${this.saveError ? html`<div class="gp-error">${this.saveError}</div>` : null}
@@ -1209,24 +1208,6 @@ export class GeneratePanel extends ComponentBase {
       this.saveError = `Save failed: ${describeError(error)}`;
       return null;
     }
-  }
-
-  private async onDownload(): Promise<void> {
-    const result = this.result;
-    if (!result) {
-      return;
-    }
-    const url = URL.createObjectURL(result.blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download =
-      ensureImageExt(normalizeRelativePath(this.saveName) || 'generated', result.mimeType)
-        .split('/')
-        .pop() ?? 'generated.png';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   }
 
   private async ensureParentDirectory(relativePath: string): Promise<void> {

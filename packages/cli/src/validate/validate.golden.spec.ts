@@ -1,8 +1,7 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createProject } from '../new-project.ts';
@@ -11,7 +10,7 @@ import type { Diagnostic } from './diagnostics.ts';
 import { validateProject } from './validate.ts';
 
 /**
- * Golden test against false errors (plan §5 A): every scene and prefab the editor ships must pass
+ * Golden test against false errors (plan §5 A): every scene and prefab a template ships must pass
  * `pix3 validate` — both levels — with zero errors. A template is validated the way a user meets
  * it: scaffolded by `pix3 new` (placeholders substituted, manifest written), then validated as a
  * whole project, so unused-asset and prefab checks see the real tree. Warnings are allowed and
@@ -20,10 +19,6 @@ import { validateProject } from './validate.ts';
 
 const scratch = mkdtempSync(join(tmpdir(), 'pix3-validate-golden-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
-
-const EDITOR_TEMPLATES_DIR = fileURLToPath(
-  new URL('../../../editor-core/src/templates/', import.meta.url)
-);
 
 const summarize = (label: string, diagnostics: readonly Diagnostic[]): void => {
   const warnings = diagnostics.filter(d => d.severity === 'warning');
@@ -58,21 +53,6 @@ describe('pix3 validate golden: shipped templates have no errors', () => {
       // Level 2 must actually have hydrated every scene, user scripts included.
       expect(report.level2).toMatchObject({ state: 'ran', filesSkipped: 0 });
       expect(report.notes).toEqual([]);
-    });
-  }
-
-  const editorScenes = readdirSync(EDITOR_TEMPLATES_DIR).filter(f => f.endsWith('.pix3scene'));
-
-  it('finds the editor-level template scenes (editor-core/src/templates/*.pix3scene)', () => {
-    expect(editorScenes).toContain('startup-scene.pix3scene');
-  });
-
-  for (const scene of editorScenes) {
-    it(`editor-core/src/templates/${scene} validates clean`, async () => {
-      const report = await validateProject({ projectRoot: EDITOR_TEMPLATES_DIR, files: [scene] });
-      summarize(scene, report.diagnostics);
-      expect(errorLines(report.diagnostics)).toEqual([]);
-      expect(report.level2).toMatchObject({ state: 'ran', filesHydrated: 1 });
     });
   }
 });

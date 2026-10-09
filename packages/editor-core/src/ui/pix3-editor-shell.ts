@@ -28,14 +28,6 @@ import {
   type EffectPickerInstance,
 } from '@/services/editor/EffectPickerService';
 import {
-  ScriptCreatorService,
-  type ScriptCreationInstance,
-} from '@/services/scripting/ScriptCreatorService';
-import {
-  ProjectSettingsService,
-  type ProjectSettingsDialogInstance,
-} from '@/services/project/ProjectSettingsService';
-import {
   EditorSettingsService,
   type EditorSettingsDialogInstance,
 } from '@/services/editor/EditorSettingsService';
@@ -53,7 +45,6 @@ import { PeekService } from '@/services/viewport/PeekService';
 import { SaveActiveResourceCommand } from '@/features/editor/SaveActiveResourceCommand';
 import { OpenEditorSettingsCommand } from '@/features/editor/OpenEditorSettingsCommand';
 import { OpenGeneratePanelCommand } from '@/features/editor/OpenGeneratePanelCommand';
-import { SaveAsSceneCommand } from '@/features/scene/SaveAsSceneCommand';
 import { DeleteObjectCommand } from '@/features/scene/DeleteObjectCommand';
 import { DuplicateNodesCommand } from '@/features/scene/DuplicateNodesCommand';
 import { GroupSelectedNodesCommand } from '@/features/scene/GroupSelectedNodesCommand';
@@ -68,8 +59,6 @@ import { StopGameCommand } from '@/features/scripts/StopGameCommand';
 import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
 import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
 import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
-import { OpenProjectSettingsCommand } from '@/features/project/OpenProjectSettingsCommand';
-import { OpenProjectInIdeCommand } from '@/features/project/OpenProjectInIdeCommand';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
 import { OpenLocalizationPanelCommand } from '@/features/localization/OpenLocalizationPanelCommand';
@@ -103,9 +92,7 @@ import './shared/pix3-main-menu';
 import './shared/pix3-confirm-dialog';
 import './shared/pix3-behavior-picker';
 import './shared/pix3-effect-picker';
-import './shared/pix3-script-creator';
 import './shared/pix3-host-banner';
-import './shared/pix3-project-settings-dialog';
 import './shared/pix3-editor-settings-dialog';
 import './shared/pix3-animation-auto-slice-dialog';
 import './shared/pix3-asset-import-dialog';
@@ -128,7 +115,7 @@ import './pix3-editor-shell.ts.css';
  * - `.layout-host`, where `LayoutManagerService` builds the Golden Layout studio, after which the
  *   last session's tabs are restored or the project's entry scene is opened,
  * - the status bar and the host banner (read-only / disconnected),
- * - every dialog host the services raise (confirm, pickers, script creator, settings, …),
+ * - every dialog host the services raise (confirm, pickers, settings, import, …),
  * - command registration and the global keyboard shortcuts.
  */
 @customElement('pix3-editor')
@@ -178,12 +165,6 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(SaveGeneratedAssetDialogService)
   private readonly saveGeneratedAssetDialogService!: SaveGeneratedAssetDialogService;
 
-  @inject(ScriptCreatorService)
-  private readonly scriptCreatorService!: ScriptCreatorService;
-
-  @inject(ProjectSettingsService)
-  private readonly projectSettingsService!: ProjectSettingsService;
-
   @inject(EditorSettingsService)
   private readonly editorSettingsService!: EditorSettingsService;
 
@@ -204,8 +185,6 @@ export class Pix3EditorShell extends ComponentBase {
   @state() private dialogs: DialogInstance[] = [];
   @state() private componentPickers: ComponentPickerInstance[] = [];
   @state() private effectPickers: EffectPickerInstance[] = [];
-  @state() private scriptCreators: ScriptCreationInstance[] = [];
-  @state() private activeProjectSettingsDialog: ProjectSettingsDialogInstance | null = null;
   @state() private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
   @state() private activeAnimationAutoSliceDialog: AnimationAutoSliceDialogInstance | null = null;
   @state() private activeAssetImportDialog: AssetImportDialogInstance | null = null;
@@ -230,9 +209,6 @@ export class Pix3EditorShell extends ComponentBase {
       this.dialogService.subscribe(dialogs => {
         this.dialogs = dialogs;
       }),
-      this.projectSettingsService.subscribe(dialog => {
-        this.activeProjectSettingsDialog = dialog;
-      }),
       this.editorSettingsService.subscribe(dialog => {
         this.activeEditorSettingsDialog = dialog;
       }),
@@ -253,9 +229,6 @@ export class Pix3EditorShell extends ComponentBase {
       }),
       this.effectPickerService.subscribe(pickers => {
         this.effectPickers = pickers;
-      }),
-      this.scriptCreatorService.subscribe(creators => {
-        this.scriptCreators = creators;
       }),
       subscribe(appState.ui, () => {
         this.isLayoutReady = appState.ui.isLayoutReady;
@@ -317,7 +290,6 @@ export class Pix3EditorShell extends ComponentBase {
       new UndoCommand(this.operationService),
       new RedoCommand(this.operationService),
       new SaveActiveResourceCommand(),
-      new SaveAsSceneCommand(),
       new DeleteObjectCommand(),
       new DuplicateNodesCommand(),
       new GroupSelectedNodesCommand(),
@@ -341,8 +313,6 @@ export class Pix3EditorShell extends ComponentBase {
       new ResetLayoutCommand(),
       // Node > Align / Node > Distribute: the viewport strip's actions, as menu rows.
       ...createAlign2DMenuCommands(),
-      new OpenProjectSettingsCommand(),
-      new OpenProjectInIdeCommand(),
       ...createTransformModeCommands(),
       new ToggleGridCommand(),
       new ToggleAxisGizmoCommand(),
@@ -437,7 +407,6 @@ export class Pix3EditorShell extends ComponentBase {
         <pix3-status-bar></pix3-status-bar>
         <pix3-host-banner></pix3-host-banner>
         ${this.renderDialogHost()} ${this.renderPickerHost()} ${this.renderEffectPickerHost()}
-        ${this.renderScriptCreatorHost()} ${this.renderProjectSettingsHost()}
         ${this.renderEditorSettingsHost()} ${this.renderAnimationAutoSliceHost()}
         ${this.renderAssetImportHost()} ${this.renderSaveGeneratedAssetHost()}
         ${this.renderNodeTypePickerHost()}
@@ -540,26 +509,12 @@ export class Pix3EditorShell extends ComponentBase {
           this.behaviorPickerService.select(e.detail.pickerId, e.detail.component)}
         @component-picker-cancelled=${(e: CustomEvent) =>
           this.behaviorPickerService.cancel(e.detail.pickerId)}
-        @component-picker-create-new=${(e: CustomEvent) => this.onComponentPickerCreateNew(e)}
       >
         ${this.componentPickers.map(
           picker => html`<pix3-behavior-picker .pickerId=${picker.id}></pix3-behavior-picker>`
         )}
       </div>
     `;
-  }
-
-  private onComponentPickerCreateNew(e: CustomEvent): void {
-    const { pickerId } = e.detail;
-    this.behaviorPickerService.cancel(pickerId);
-    // The inspector that opened the picker listens for this and opens the script creator.
-    this.dispatchEvent(
-      new CustomEvent('script-creator-requested', {
-        detail: { pickerId },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 
   private renderEffectPickerHost() {
@@ -582,35 +537,6 @@ export class Pix3EditorShell extends ComponentBase {
         )}
       </div>
     `;
-  }
-
-  private renderScriptCreatorHost() {
-    return html`
-      <div
-        class="script-creator-host"
-        @script-create-confirmed=${(e: CustomEvent) =>
-          void this.scriptCreatorService.confirm(e.detail.dialogId, e.detail.scriptName)}
-        @script-create-cancelled=${(e: CustomEvent) =>
-          this.scriptCreatorService.cancel(e.detail.dialogId)}
-      >
-        ${this.scriptCreators.map(
-          creator => html`
-            <pix3-script-creator
-              .dialogId=${creator.id}
-              .defaultName=${creator.params.defaultName || creator.params.scriptName}
-            ></pix3-script-creator>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private renderProjectSettingsHost() {
-    return this.activeProjectSettingsDialog
-      ? html`<div class="project-settings-host">
-          <pix3-project-settings-dialog></pix3-project-settings-dialog>
-        </div>`
-      : null;
   }
 
   private renderEditorSettingsHost() {

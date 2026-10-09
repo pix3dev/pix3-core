@@ -19,7 +19,6 @@ export type AssetTreeNode = {
   sizeBytes: number | null;
   children?: AssetTreeNode[] | null; // null = not loaded yet, [] = loaded and empty
   expanded?: boolean;
-  editing?: boolean;
   /**
    * Folder-mode directories only: whether the directory contains at least one
    * subdirectory. Drives whether the expand triangle is shown (folders with no

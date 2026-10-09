@@ -155,11 +155,8 @@ export class EditorTabService {
     this.handleBeforeUnload = (e: BeforeUnloadEvent) => {
       this.captureActiveContextState();
 
-      // Prompt the user if any editor tab has unsaved changes.
-      if (!appState.ui.warnOnUnsavedUnload) {
-        return;
-      }
-
+      // Always warn while a scene has unsaved changes: nothing else holds an unsaved edit yet
+      // (until the IndexedDB draft of plan §C.1 exists, closing the tab loses it).
       const hasDirty = appState.tabs.tabs.some(t => t.isDirty);
       if (hasDirty) {
         e.preventDefault();
@@ -262,65 +259,6 @@ export class EditorTabService {
 
   async focusOrOpenScene(resourcePath: string): Promise<void> {
     await this.openResourceTab('scene', resourcePath);
-  }
-
-  remapSceneTabs(remapResourcePath: (resourcePath: string) => string | null): void {
-    let didChange = false;
-    let nextActiveTabId = appState.tabs.activeTabId;
-    const tabsToRecreate: EditorTab[] = [];
-    const nextTabs: EditorTab[] = [];
-
-    for (const tab of appState.tabs.tabs) {
-      if (tab.type !== 'scene') {
-        nextTabs.push(tab);
-        continue;
-      }
-
-      const nextResourceId = remapResourcePath(tab.resourceId);
-      if (!nextResourceId || nextResourceId === tab.resourceId) {
-        nextTabs.push(tab);
-        continue;
-      }
-
-      didChange = true;
-      const nextTabId = this.deriveTabId(tab.type, nextResourceId);
-      const nextTitleBase = this.deriveTitle(nextResourceId);
-      const nextTab: EditorTab = {
-        ...tab,
-        id: nextTabId,
-        resourceId: nextResourceId,
-        // Dirty state is surfaced by a dot on the tab (LayoutManager decorations), not a `*` prefix.
-        title: nextTitleBase,
-      };
-
-      if (tab.id !== nextTabId) {
-        this.layoutManager.removeEditorTab(tab.id);
-        tabsToRecreate.push(nextTab);
-      } else {
-        this.layoutManager.updateEditorTabTitle(nextTab.id, nextTab.title);
-      }
-
-      if (nextActiveTabId === tab.id) {
-        nextActiveTabId = nextTab.id;
-      }
-
-      nextTabs.push(nextTab);
-    }
-
-    if (!didChange) {
-      return;
-    }
-
-    appState.tabs.tabs = nextTabs;
-    appState.tabs.activeTabId = nextActiveTabId;
-
-    for (const tab of tabsToRecreate) {
-      this.layoutManager.ensureEditorTab(tab, false);
-    }
-
-    if (nextActiveTabId) {
-      this.layoutManager.focusEditorTab(nextActiveTabId);
-    }
   }
 
   async restoreProjectSession(projectId: string): Promise<boolean> {

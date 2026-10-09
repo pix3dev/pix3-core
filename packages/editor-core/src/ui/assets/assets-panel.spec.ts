@@ -11,19 +11,14 @@ vi.mock('@/services', () => ({
   AssetFileActivationService: class AssetFileActivationService {},
   AssetsPreviewService: class AssetsPreviewService {},
   IconService: class IconService {},
-  CommandDispatcher: class CommandDispatcher {},
   IconSize: { SMALL: 14, MEDIUM: 16, LARGE: 18, XLARGE: 24 },
 }));
 vi.mock('@/services/assets/AssetImportDialogService', () => ({
   AssetImportDialogService: class AssetImportDialogService {},
 }));
-vi.mock('@/services/editor/DialogService', () => ({ DialogService: class DialogService {} }));
 vi.mock('@/services/project/ProjectService', () => ({ ProjectService: class ProjectService {} }));
 vi.mock('@/services/scripting/ProjectScriptLoaderService', () => ({
   ProjectScriptLoaderService: class ProjectScriptLoaderService {},
-}));
-vi.mock('@/features/project/AddAutoloadCommand', () => ({
-  AddAutoloadCommand: class AddAutoloadCommand {},
 }));
 
 // Replace the real child/shared components with no-op modules; we register minimal
@@ -31,7 +26,6 @@ vi.mock('@/features/project/AddAutoloadCommand', () => ({
 vi.mock('../shared/pix3-panel', () => ({}));
 vi.mock('../shared/pix3-toolbar', () => ({}));
 vi.mock('../shared/pix3-toolbar-button', () => ({}));
-vi.mock('../shared/pix3-dropdown-button', () => ({}));
 vi.mock('./asset-tree', () => ({}));
 vi.mock('./assets-content', () => ({}));
 
@@ -39,12 +33,7 @@ class StubAssetTree extends HTMLElement {
   clearSelection = vi.fn();
   selectPath = vi.fn(async () => true);
   setViewMode = vi.fn(async () => undefined);
-  createFolder = vi.fn(async () => undefined);
-  deleteSelected = vi.fn(async () => undefined);
-  renameSelected = vi.fn(async () => undefined);
   handleRootDrop = vi.fn(async () => undefined);
-  movePathsInto = vi.fn(async () => undefined);
-  revealAndOpen = vi.fn(async () => true);
   getTargetDirectory = vi.fn(() => '.');
 }
 
@@ -60,7 +49,6 @@ beforeAll(() => {
   customElements.define('pix3-panel', class extends StubPassthrough {});
   customElements.define('pix3-toolbar', class extends StubPassthrough {});
   customElements.define('pix3-toolbar-button', class extends StubPassthrough {});
-  customElements.define('pix3-dropdown-button', class extends StubPassthrough {});
 });
 
 await import('./assets-panel');
@@ -75,10 +63,8 @@ interface Stubs {
   projectService: {
     loadAssetBrowserState: ReturnType<typeof vi.fn>;
     saveAssetBrowserState: ReturnType<typeof vi.fn>;
-    deleteEntry: ReturnType<typeof vi.fn>;
-    moveItem: ReturnType<typeof vi.fn>;
   };
-  dialogService: { showConfirmation: ReturnType<typeof vi.fn> };
+  assetImportDialogService: { showDialog: ReturnType<typeof vi.fn> };
 }
 
 function stubServices(panel: AssetsPanelElement, selectedFolderPath: string | null = '.'): Stubs {
@@ -94,11 +80,11 @@ function stubServices(panel: AssetsPanelElement, selectedFolderPath: string | nu
   const projectService = {
     loadAssetBrowserState: vi.fn(() => null),
     saveAssetBrowserState: vi.fn(),
-    deleteEntry: vi.fn(async () => undefined),
-    moveItem: vi.fn(async () => undefined),
   };
 
-  const dialogService = { showConfirmation: vi.fn(async () => true) };
+  const assetImportDialogService = {
+    showDialog: vi.fn(async () => ({ importedPaths: ['textures/hero.png'] })),
+  };
 
   const iconService = { getIcon: vi.fn(() => 'icon') };
 
@@ -106,17 +92,14 @@ function stubServices(panel: AssetsPanelElement, selectedFolderPath: string | nu
   for (const [key, value] of Object.entries({
     assetsPreviewService,
     projectService,
-    dialogService,
     iconService,
     assetFileActivation: noop,
-    assetImportDialogService: noop,
-    commandDispatcher: noop,
-    scriptLoader: noop,
+    assetImportDialogService,
   })) {
     Object.defineProperty(panel, key, { value, configurable: true });
   }
 
-  return { assetsPreviewService, projectService, dialogService } satisfies Stubs;
+  return { assetsPreviewService, projectService, assetImportDialogService } satisfies Stubs;
 }
 
 function tree(panel: AssetsPanelElement): StubAssetTree {
@@ -173,51 +156,56 @@ describe('AssetsPanel (Phase 4)', () => {
     expect(tree(panel).setViewMode).toHaveBeenCalledWith('by-type');
   });
 
-  it('content-delete-request with 2 paths shows one confirmation and deletes each', async () => {
+  it('offers Import… as the only root-row action besides grouping', async () => {
     const panel = document.createElement('pix3-assets-panel') as AssetsPanelElement;
-    const stubs = stubServices(panel);
+    const stubs = stubServices(panel, 'textures');
     document.body.appendChild(panel);
     await panel.updateComplete;
 
-    panel.querySelector('pix3-assets-content')?.dispatchEvent(
-      new CustomEvent('content-delete-request', {
-        detail: { paths: ['assets/a.png', 'assets/b.png'] },
-        bubbles: true,
-        composed: true,
-      })
+    const labels = Array.from(panel.querySelectorAll('.root-actions button')).map(button =>
+      button.getAttribute('aria-label')
     );
-    // Allow the async confirmation + deletion chain to settle.
+    expect(labels).toEqual(['Import…', 'Group by type']);
+
+    panel
+      .querySelector<HTMLButtonElement>('.root-action-btn[aria-label="Import…"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(stubs.dialogService.showConfirmation).toHaveBeenCalledTimes(1);
-    expect(stubs.projectService.deleteEntry).toHaveBeenCalledTimes(2);
-    expect(stubs.projectService.deleteEntry).toHaveBeenNthCalledWith(1, 'assets/a.png');
-    expect(stubs.projectService.deleteEntry).toHaveBeenNthCalledWith(2, 'assets/b.png');
-    expect(stubs.assetsPreviewService.clearSelectedItem).toHaveBeenCalledTimes(1);
+    expect(stubs.assetImportDialogService.showDialog).toHaveBeenCalledWith({
+      targetDirectory: 'textures',
+    });
+    expect(tree(panel).selectPath).toHaveBeenCalledWith('textures/hero.png');
   });
 
-  it('routes content-move-request to the tree move flow', async () => {
+  it('takes OS files on the root row and ignores an in-editor asset drag', async () => {
     const panel = document.createElement('pix3-assets-panel') as AssetsPanelElement;
     stubServices(panel);
     document.body.appendChild(panel);
     await panel.updateComplete;
 
-    panel.querySelector('pix3-assets-content')?.dispatchEvent(
-      new CustomEvent('content-move-request', {
-        detail: {
-          paths: ['assets/a.png', 'assets/b.png'],
-          targetPath: 'assets/textures',
-          targetLabel: 'textures',
-        },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    const row = panel.querySelector<HTMLElement>('.tree-root-row');
+    const dragOver = (dataTransfer: unknown): Event => {
+      const event = new Event('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+      row?.dispatchEvent(event);
+      return event;
+    };
 
-    expect(tree(panel).movePathsInto).toHaveBeenCalledWith(
-      ['assets/a.png', 'assets/b.png'],
-      'assets/textures',
-      'textures'
-    );
+    const assetDrag = dragOver({
+      types: ['application/x-pix3-asset-path-list'],
+      items: [{ kind: 'string' }],
+      dropEffect: 'none',
+    });
+    expect(assetDrag.defaultPrevented).toBe(false);
+
+    const osFiles = { types: ['Files'], items: [{ kind: 'file' }], dropEffect: 'none' };
+    expect(dragOver(osFiles).defaultPrevented).toBe(true);
+    expect(osFiles.dropEffect).toBe('copy');
+
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', { value: osFiles });
+    row?.dispatchEvent(drop);
+    expect(tree(panel).handleRootDrop).toHaveBeenCalledWith(osFiles);
   });
 });

@@ -240,9 +240,9 @@ export class Pix3MainMenu extends ComponentBase {
     }
 
     const logoWidth =
-      bar.querySelector<HTMLElement>('.menu-logo-button')?.getBoundingClientRect().width ?? 0;
+      bar.querySelector<HTMLElement>('.menu-logo-mark')?.getBoundingClientRect().width ?? 0;
     const logoMargin = Number.parseFloat(
-      getComputedStyle(bar.querySelector('.menu-logo-button') ?? bar).marginRight
+      getComputedStyle(bar.querySelector('.menu-logo-mark') ?? bar).marginRight
     );
     const widths = this.menuSections.map(section => this.sectionWidths.get(section.id) ?? 0);
     if (widths.some(width => width === 0)) {
@@ -731,12 +731,6 @@ export class Pix3MainMenu extends ComponentBase {
     }
   }
 
-  private handleLogoClick = (): void => {
-    this.activeSection = null;
-    this.menuOpenedByClick = false;
-    void this.executeMenuItem('project.close');
-  };
-
   private async executeMenuItem(commandId: string): Promise<void> {
     if (!this.canExecuteCommand(commandId)) {
       this.closeMenu(false);
@@ -898,15 +892,9 @@ export class Pix3MainMenu extends ComponentBase {
       </style>
       <div class="main-menu" @keydown=${this.handleKeydown}>
         <div class="menu-bar">
-          <button
-            type="button"
-            class="menu-logo-button"
-            title="Close project and return to the welcome screen"
-            aria-label="Close project"
-            @click=${this.handleLogoClick}
-          >
+          <span class="menu-logo-mark">
             <img src=${MENU_LOGO_URL} alt="Pix3" class="menu-logo" />
-          </button>
+          </span>
           ${this.menuSections
             .slice(0, this.inlineSectionCount)
             .map(section => this.renderSectionButton(section.id, section.label))}

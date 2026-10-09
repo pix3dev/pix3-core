@@ -746,20 +746,12 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showPicker: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'scriptCreatorService', {
-      value: { showCreator: vi.fn(), createScript: vi.fn(), checkIfScriptExists: vi.fn() },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'scriptRegistry', {
       value: { getComponentPropertySchema: vi.fn(() => null), getComponentType: vi.fn(() => null) },
       configurable: true,
     });
     Object.defineProperty(panel, 'iconService', {
       value: { getIcon: vi.fn(() => 'icon') },
-      configurable: true,
-    });
-    Object.defineProperty(panel, 'dialogService', {
-      value: { showConfirmation: vi.fn() },
       configurable: true,
     });
     Object.defineProperty(panel, 'projectStorage', {
@@ -833,20 +825,12 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showPicker: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'scriptCreatorService', {
-      value: { showCreator: vi.fn(), createScript: vi.fn(), checkIfScriptExists: vi.fn() },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'scriptRegistry', {
       value: { getComponentPropertySchema: vi.fn(() => null), getComponentType: vi.fn(() => null) },
       configurable: true,
     });
     Object.defineProperty(panel, 'iconService', {
       value: { getIcon: vi.fn(() => 'icon') },
-      configurable: true,
-    });
-    Object.defineProperty(panel, 'dialogService', {
-      value: { showConfirmation: vi.fn() },
       configurable: true,
     });
     Object.defineProperty(panel, 'projectStorage', {
@@ -926,20 +910,12 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showPicker: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'scriptCreatorService', {
-      value: { showCreator: vi.fn(), createScript: vi.fn(), checkIfScriptExists: vi.fn() },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'scriptRegistry', {
       value: { getComponentPropertySchema: vi.fn(() => null), getComponentType: vi.fn(() => null) },
       configurable: true,
     });
     Object.defineProperty(panel, 'iconService', {
       value: { getIcon: vi.fn(() => 'icon') },
-      configurable: true,
-    });
-    Object.defineProperty(panel, 'dialogService', {
-      value: { showConfirmation: vi.fn() },
       configurable: true,
     });
     Object.defineProperty(panel, 'projectStorage', {
@@ -1043,20 +1019,12 @@ describe('InspectorPanel asset preview rendering', () => {
       value: { showPicker: vi.fn() },
       configurable: true,
     });
-    Object.defineProperty(panel, 'scriptCreatorService', {
-      value: { showCreator: vi.fn(), createScript: vi.fn(), checkIfScriptExists: vi.fn() },
-      configurable: true,
-    });
     Object.defineProperty(panel, 'scriptRegistry', {
       value: { getComponentPropertySchema: vi.fn(() => null), getComponentType: vi.fn(() => null) },
       configurable: true,
     });
     Object.defineProperty(panel, 'iconService', {
       value: { getIcon: vi.fn(() => 'icon') },
-      configurable: true,
-    });
-    Object.defineProperty(panel, 'dialogService', {
-      value: { showConfirmation: vi.fn() },
       configurable: true,
     });
     Object.defineProperty(panel, 'assetsPreviewService', {
@@ -1426,20 +1394,12 @@ async function setupInspectorForNode(
     value: { showPicker: vi.fn() },
     configurable: true,
   });
-  Object.defineProperty(panel, 'scriptCreatorService', {
-    value: { showCreator: vi.fn(), createScript: vi.fn(), checkIfScriptExists: vi.fn() },
-    configurable: true,
-  });
   Object.defineProperty(panel, 'scriptRegistry', {
     value: { getComponentPropertySchema: vi.fn(() => null), getComponentType: vi.fn(() => null) },
     configurable: true,
   });
   Object.defineProperty(panel, 'iconService', {
     value: { getIcon: vi.fn(() => 'icon') },
-    configurable: true,
-  });
-  Object.defineProperty(panel, 'dialogService', {
-    value: { showConfirmation: vi.fn() },
     configurable: true,
   });
   Object.defineProperty(panel, 'projectStorage', {

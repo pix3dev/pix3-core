@@ -63,30 +63,12 @@ pix3-main-menu {
   height: 18px;
 }
 
-.menu-logo-button {
+.menu-logo-mark {
   display: inline-flex;
   align-items: center;
   flex: none;
   padding: 2px 4px;
   margin-right: 8px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  transition: background-color 0.12s ease;
-}
-
-.menu-logo-button:hover {
-  background-color: var(--bg-2);
-}
-
-.menu-logo-button:active {
-  background-color: var(--bg-3);
-}
-
-.menu-logo-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .menu-logo {

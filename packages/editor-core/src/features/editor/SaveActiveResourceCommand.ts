@@ -13,11 +13,11 @@ export class SaveActiveResourceCommand extends CommandBase<void, void> {
     title: 'Save',
     description: 'Save the active scene or animation',
     keywords: ['save', 'scene', 'animation', 'tab'],
-    menuPath: 'file',
+    menuPath: 'edit',
     keybinding: 'Mod+S',
     when: '!isInputFocused',
     addToMenu: true,
-    menuOrder: 200,
+    menuOrder: 300,
   };
 
   preconditions(context: CommandContext): CommandPreconditionResult {

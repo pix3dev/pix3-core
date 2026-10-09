@@ -169,9 +169,9 @@ describe('AssetTree', () => {
     );
   });
 
-  it('moves every path from a multi-path drop with a single confirmation', async () => {
+  it('imports OS files dropped on a folder through AssetImportService and moves nothing', async () => {
     const tree = document.createElement('pix3-asset-tree') as AssetTreeElement;
-    const { projectService, dialogService } = stubTreeServices(tree, {
+    const { assetImportService } = stubTreeServices(tree, {
       '.': [{ name: 'textures', path: 'textures', kind: 'directory', size: 0 }],
       textures: [],
     });
@@ -181,15 +181,6 @@ describe('AssetTree', () => {
       expect(Array.from(tree.querySelectorAll('.node-row'))).toHaveLength(1);
     });
 
-    dialogService.showConfirmation.mockResolvedValue(true);
-
-    const payload = new Map<string, string>([
-      [ASSET_PATH_LIST_MIME, JSON.stringify(['a.png', 'b.png'])],
-    ]);
-    const dataTransfer = {
-      getData: (type: string) => payload.get(type) ?? '',
-    } as unknown as DataTransfer;
-
     const targetNode = {
       name: 'textures',
       path: 'textures',
@@ -197,24 +188,34 @@ describe('AssetTree', () => {
       sizeBytes: 0,
       children: [],
     };
+    const drop = (dataTransfer: DataTransfer) =>
+      (
+        tree as unknown as {
+          onDrop: (event: DragEvent, node: typeof targetNode) => Promise<void>;
+        }
+      ).onDrop(
+        {
+          preventDefault: () => undefined,
+          stopPropagation: () => undefined,
+          dataTransfer,
+        } as unknown as DragEvent,
+        targetNode
+      );
 
-    await (
-      tree as unknown as {
-        onDrop: (event: DragEvent, node: typeof targetNode) => Promise<void>;
-      }
-    ).onDrop(
-      {
-        preventDefault: () => undefined,
-        stopPropagation: () => undefined,
-        dataTransfer,
-      } as unknown as DragEvent,
-      targetNode
-    );
+    // An in-editor asset drag (no OS files) is not a move any more: nothing happens.
+    const assetPayload = new Map<string, string>([
+      [ASSET_PATH_LIST_MIME, JSON.stringify(['a.png', 'b.png'])],
+    ]);
+    await drop({
+      types: [ASSET_PATH_LIST_MIME],
+      files: [],
+      getData: (type: string) => assetPayload.get(type) ?? '',
+    } as unknown as DataTransfer);
+    expect(assetImportService.importFiles).not.toHaveBeenCalled();
 
-    expect(dialogService.showConfirmation).toHaveBeenCalledTimes(1);
-    expect(projectService.moveItem).toHaveBeenCalledTimes(2);
-    expect(projectService.moveItem).toHaveBeenCalledWith('a.png', 'textures/a.png');
-    expect(projectService.moveItem).toHaveBeenCalledWith('b.png', 'textures/b.png');
+    const file = new File(['png'], 'hero.png', { type: 'image/png' });
+    await drop({ types: ['Files'], files: [file], getData: () => '' } as unknown as DataTransfer);
+    expect(assetImportService.importFiles).toHaveBeenCalledWith([file], 'textures');
   });
 
   it('formats byte values consistently', () => {
@@ -236,9 +237,8 @@ interface StubbedTreeServices {
     listDirectory: ReturnType<typeof vi.fn>;
     saveAssetBrowserState: ReturnType<typeof vi.fn>;
     loadAssetBrowserState: ReturnType<typeof vi.fn>;
-    moveItem: ReturnType<typeof vi.fn>;
   };
-  dialogService: { showConfirmation: ReturnType<typeof vi.fn> };
+  assetImportService: { importFiles: ReturnType<typeof vi.fn> };
   assetsPreviewService: { syncFromAssetSelection: ReturnType<typeof vi.fn> };
 }
 
@@ -256,15 +256,10 @@ function stubTreeServices(
     listDirectory: vi.fn(async (path = '.') => directories[path] ?? []),
     saveAssetBrowserState: vi.fn(),
     loadAssetBrowserState: vi.fn(() => persistedState),
-    moveItem: vi.fn(async () => undefined),
   };
 
-  const templateService = {
-    getSceneTemplate: vi.fn(() => ''),
-  };
-
-  const dialogService = {
-    showConfirmation: vi.fn(async () => false),
+  const assetImportService = {
+    importFiles: vi.fn(async () => ({ importedPaths: [], failures: [] })),
   };
 
   const iconService = {
@@ -279,12 +274,8 @@ function stubTreeServices(
     value: projectService,
     configurable: true,
   });
-  Object.defineProperty(tree, 'templateService', {
-    value: templateService,
-    configurable: true,
-  });
-  Object.defineProperty(tree, 'dialogService', {
-    value: dialogService,
+  Object.defineProperty(tree, 'assetImportService', {
+    value: assetImportService,
     configurable: true,
   });
   Object.defineProperty(tree, 'iconService', {
@@ -296,5 +287,5 @@ function stubTreeServices(
     configurable: true,
   });
 
-  return { projectService, dialogService, assetsPreviewService };
+  return { projectService, assetImportService, assetsPreviewService };
 }

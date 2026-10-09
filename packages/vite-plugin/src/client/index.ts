@@ -273,12 +273,6 @@ export class EditorHostConnection {
     return fetch(`${this.base}__pix3/api/${route}`, { ...init, headers });
   }
 
-  /** Open a project file in the user's code editor (Vite's `/__open-in-editor`). */
-  async openInEditor(path: string, line?: number): Promise<void> {
-    const file = `${this.info.root}/${path}${line ? `:${line}` : ''}`;
-    await fetch(`${this.base}__open-in-editor?file=${encodeURIComponent(file)}`);
-  }
-
   /** Become the writer (plan §C.3 step 2): the plugin answers with the disk to start from. */
   private async claim(): Promise<HostClaim> {
     const response = await this.api('handover/claim', {

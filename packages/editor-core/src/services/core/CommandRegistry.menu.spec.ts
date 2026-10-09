@@ -38,27 +38,23 @@ const registryWith = (...metadata: CommandMetadata[]): CommandRegistry => {
 };
 
 describe('CommandRegistry menu machinery', () => {
-  it('orders sections File · Edit · Create · Node · View · Run · Project · Window · Help', () => {
+  it('orders sections Edit · Create · Node · View · Run · Window · Help', () => {
     const registry = registryWith(
       { id: 'a.help', title: 'Help', menuPath: 'help', addToMenu: true, menuOrder: 100 },
       { id: 'a.window', title: 'Window', menuPath: 'window', addToMenu: true, menuOrder: 100 },
-      { id: 'a.project', title: 'Project', menuPath: 'project', addToMenu: true, menuOrder: 100 },
       { id: 'a.run', title: 'Run', menuPath: 'run', addToMenu: true, menuOrder: 100 },
       { id: 'a.view', title: 'View', menuPath: 'view', addToMenu: true, menuOrder: 100 },
       { id: 'a.node', title: 'Node', menuPath: 'node', addToMenu: true, menuOrder: 100 },
       { id: 'a.create', title: 'Create', menuPath: 'create', addToMenu: true, menuOrder: 100 },
-      { id: 'a.edit', title: 'Edit', menuPath: 'edit', addToMenu: true, menuOrder: 100 },
-      { id: 'a.file', title: 'File', menuPath: 'file', addToMenu: true, menuOrder: 100 }
+      { id: 'a.edit', title: 'Edit', menuPath: 'edit', addToMenu: true, menuOrder: 100 }
     );
 
     expect(registry.buildMenuSections().map(section => section.id)).toEqual([
-      'file',
       'edit',
       'create',
       'node',
       'view',
       'run',
-      'project',
       'window',
       'help',
     ]);
@@ -84,11 +80,11 @@ describe('CommandRegistry menu machinery', () => {
     const registry = registryWith(
       { id: 'a.zebra', title: 'Zebra', menuPath: 'zebra', addToMenu: true, menuOrder: 100 },
       { id: 'a.tools', title: 'Tools', menuPath: 'tools', addToMenu: true, menuOrder: 100 },
-      { id: 'a.file', title: 'Save', menuPath: 'file', addToMenu: true, menuOrder: 100 }
+      { id: 'a.edit', title: 'Save', menuPath: 'edit', addToMenu: true, menuOrder: 100 }
     );
 
     expect(registry.buildMenuSections().map(section => section.id)).toEqual([
-      'file',
+      'edit',
       'tools',
       'zebra',
     ]);
@@ -155,12 +151,12 @@ describe('CommandRegistry menu machinery', () => {
 
   it('carries menuOrder onto the menu item so the renderer can band it', () => {
     const registry = registryWith(
-      { id: 'file.save', title: 'Save', menuPath: 'file', addToMenu: true, menuOrder: 200 },
-      { id: 'file.new', title: 'New Project…', menuPath: 'file', addToMenu: true, menuOrder: 100 },
+      { id: 'edit.redo', title: 'Redo', menuPath: 'edit', addToMenu: true, menuOrder: 200 },
+      { id: 'edit.undo', title: 'Undo', menuPath: 'edit', addToMenu: true, menuOrder: 100 },
       {
-        id: 'file.close',
-        title: 'Close Project',
-        menuPath: 'file',
+        id: 'edit.settings',
+        title: 'Settings…',
+        menuPath: 'edit',
         addToMenu: true,
         menuOrder: 900,
       }
@@ -183,7 +179,7 @@ describe('CommandRegistry menu machinery', () => {
       {
         id: 'editor.save-active-resource',
         title: 'Save',
-        menuPath: 'file',
+        menuPath: 'edit',
         addToMenu: true,
         menuOrder: 200,
       }

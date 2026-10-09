@@ -1674,8 +1674,6 @@ export class InspectorPropertyRenderers {
               this.host.applyPropertyChange(prop.name, event.detail.url.trim())}
             @animation-drop=${(event: CustomEvent<{ event: DragEvent }>) =>
               this.host.onAnimationResourceDrop(prop.name, event.detail.event)}
-            @open-request=${(event: CustomEvent<{ url: string }>) =>
-              this.host.onOpenAnimationResource(event.detail.url)}
             @create-request=${() => this.host.onCreateAnimationResource(prop.name)}
           ></pix3-animation-resource-editor>
         </div>

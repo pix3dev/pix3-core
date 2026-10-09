@@ -8,15 +8,12 @@ import {
 } from '@/services/assets/AssetFileActivationService';
 import { AssetsPreviewService } from '@/services/assets/AssetsPreviewService';
 import { IconService, IconSize } from '@/services/editor/IconService';
-import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { AssetImportDialogService } from '@/services/assets/AssetImportDialogService';
-import { DialogService } from '@/services/editor/DialogService';
 import { ProjectService } from '@/services/project/ProjectService';
-import { AddAutoloadCommand } from '@/features/project/AddAutoloadCommand';
+import { hasGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import type { AssetTree } from './asset-tree';
 
 import '../shared/pix3-panel';
-import '../shared/pix3-dropdown-button';
 import './asset-tree';
 import './assets-content';
 import './assets-panel.ts.css';
@@ -26,8 +23,6 @@ interface ScriptRevealRequestDetail {
   scriptType: string;
   scriptName: string;
   candidatePaths: string[];
-  /** When true, the resolved file is opened in a code tab, not just revealed/selected. */
-  open?: boolean;
 }
 
 interface AssetsPreviewRevealPathDetail {
@@ -39,9 +34,10 @@ const DEFAULT_TREE_PANE_WIDTH = 220;
 
 /**
  * Unified Assets panel (Phase 4): a folder-only navigator (left) + thumbnail/list
- * content pane (right), split by a draggable handle. Hosts the create/import/rename/
- * delete/open-in-IDE toolbar and the project-root row; delegates file rendering to
- * `<pix3-assets-content>` and folder navigation to `<pix3-asset-tree>`.
+ * content pane (right), split by a draggable handle. Hosts the project-root row (Import…,
+ * group-by-type); delegates file rendering to `<pix3-assets-content>` and folder navigation
+ * to `<pix3-asset-tree>`. Browsing only: files and folders are created, renamed, moved and
+ * deleted by the coding agent or the IDE, and the listing follows the disk (`pix3:fs` frames).
  */
 @customElement('pix3-assets-panel')
 export class AssetsPanel extends ComponentBase {
@@ -54,14 +50,8 @@ export class AssetsPanel extends ComponentBase {
   @inject(IconService)
   private readonly iconService!: IconService;
 
-  @inject(DialogService)
-  private readonly dialogService!: DialogService;
-
   @inject(AssetImportDialogService)
   private readonly assetImportDialogService!: AssetImportDialogService;
-
-  @inject(CommandDispatcher)
-  private readonly commandDispatcher!: CommandDispatcher;
 
   @inject(ProjectService)
   private readonly projectService!: ProjectService;
@@ -82,7 +72,6 @@ export class AssetsPanel extends ComponentBase {
   private disposeViewModeSubscription?: () => void;
   private disposePreviewSubscription?: () => void;
 
-  private scriptFileCreatedHandler?: (e: Event) => void;
   private scriptFileRevealRequestHandler?: (e: Event) => void;
   private assetsPreviewRevealPathHandler?: (e: Event) => void;
 
@@ -120,12 +109,6 @@ export class AssetsPanel extends ComponentBase {
       this.treePaneWidth = Math.max(MIN_TREE_PANE_WIDTH, Math.round(persisted.treePaneWidth));
     }
 
-    this.scriptFileCreatedHandler = (e: Event) => {
-      const customEvent = e as CustomEvent<{ filePath: string }>;
-      void this.onScriptFileCreated(customEvent.detail.filePath);
-    };
-    window.addEventListener('script-file-created', this.scriptFileCreatedHandler as EventListener);
-
     this.scriptFileRevealRequestHandler = (e: Event) => {
       const customEvent = e as CustomEvent<ScriptRevealRequestDetail>;
       void this.onScriptFileRevealRequested(customEvent.detail);
@@ -153,13 +136,6 @@ export class AssetsPanel extends ComponentBase {
     this.disposePreviewSubscription?.();
     this.disposePreviewSubscription = undefined;
 
-    if (this.scriptFileCreatedHandler) {
-      window.removeEventListener(
-        'script-file-created',
-        this.scriptFileCreatedHandler as EventListener
-      );
-      this.scriptFileCreatedHandler = undefined;
-    }
     if (this.scriptFileRevealRequestHandler) {
       window.removeEventListener(
         'script-file-reveal-request',
@@ -216,47 +192,7 @@ export class AssetsPanel extends ComponentBase {
     void this.assetTreeRef?.selectPath(path);
   };
 
-  private onContentRenameRequest = (e: Event) => {
-    const path = (e as CustomEvent<{ path: string }>).detail?.path;
-    if (!path) return;
-    void this.renamePath(path);
-  };
-
-  private onContentDeleteRequest = (e: Event) => {
-    const paths = (e as CustomEvent<{ paths: string[] }>).detail?.paths;
-    if (!paths || paths.length === 0) return;
-    void this.deletePaths(paths);
-  };
-
-  /**
-   * A content-pane drop on a folder card / breadcrumb. Routed through the Asset Tree so
-   * grid drops and tree drops share one move flow (single confirmation, `res://`
-   * reference rewrite, tree + grid refresh).
-   */
-  private onContentMoveRequest = (e: Event) => {
-    const detail = (e as CustomEvent<{ paths: string[]; targetPath: string; targetLabel: string }>)
-      .detail;
-    if (!detail || detail.paths.length === 0 || isReadOnlyTab()) return;
-    void this.assetTreeRef?.movePathsInto(detail.paths, detail.targetPath, detail.targetLabel);
-  };
-
   // ── Toolbar actions ──────────────────────────────────────────────────────
-  private onCreateFolder = async () => {
-    try {
-      await this.assetTreeRef?.createFolder();
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to create folder:', error);
-    }
-  };
-
-  private onCreateScene = () => {
-    try {
-      this.assetTreeRef?.createScene();
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to create scene:', error);
-    }
-  };
-
   private onImportClick = async () => {
     try {
       const targetDirectory =
@@ -276,201 +212,7 @@ export class AssetsPanel extends ComponentBase {
     void this.assetTreeRef?.setViewMode(next);
   };
 
-  // ── Autoload script creation (migrated verbatim from AssetBrowserPanel) ────
-  private onCreateAutoloadScript = async () => {
-    const singletonName = this.promptForAutoloadSingleton();
-    if (!singletonName) {
-      return;
-    }
-
-    const filePath = `scripts/${singletonName}.ts`;
-    try {
-      await this.ensureScriptsDirectory();
-      const exists = await this.fileExists(filePath);
-      if (exists) {
-        await this.dialogService.showConfirmation({
-          title: 'File Already Exists',
-          message: `A script file already exists at "${filePath}". Choose a different singleton name.`,
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-        });
-        return;
-      }
-
-      const template = this.generateAutoloadTemplate(singletonName);
-      await this.projectService.writeFile(filePath, template);
-
-      // No build step here: the dev server picks the new file up and re-registers the scripts
-      // (`EditorHost.scripts.onChange`); the autoload entry only names the path.
-      const didMutate = await this.commandDispatcher.execute(
-        new AddAutoloadCommand({
-          scriptPath: filePath,
-          singleton: singletonName,
-          enabled: true,
-        })
-      );
-
-      if (!didMutate) {
-        await this.dialogService.showConfirmation({
-          title: 'Autoload Registration Failed',
-          message: `Created "${filePath}", but failed to add "${singletonName}" to project autoloads.`,
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-        });
-        return;
-      }
-
-      window.dispatchEvent(
-        new CustomEvent('script-file-created', {
-          detail: {
-            filePath,
-          },
-        })
-      );
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to create autoload script:', error);
-      await this.dialogService.showConfirmation({
-        title: 'Autoload Creation Failed',
-        message: error instanceof Error ? error.message : 'Failed to create autoload script.',
-        confirmLabel: 'OK',
-        cancelLabel: 'Close',
-      });
-    }
-  };
-
-  private promptForAutoloadSingleton(): string | null {
-    const input = window.prompt(
-      'Autoload singleton name (letters, numbers, underscore):',
-      'Events'
-    );
-    if (!input) {
-      return null;
-    }
-    const singletonName = input.trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(singletonName)) {
-      void this.dialogService.showConfirmation({
-        title: 'Invalid Singleton Name',
-        message:
-          'Singleton name must start with a letter or underscore and contain only letters, numbers, and underscores.',
-        confirmLabel: 'OK',
-        cancelLabel: 'Close',
-      });
-      return null;
-    }
-    return singletonName;
-  }
-
-  private async ensureScriptsDirectory(): Promise<void> {
-    try {
-      await this.projectService.createDirectory('scripts');
-    } catch {
-      // Directory already exists.
-    }
-  }
-
-  private async fileExists(path: string): Promise<boolean> {
-    try {
-      const entries = await this.projectService.listDirectory('scripts');
-      return entries.some(entry => entry.kind === 'file' && entry.path === path);
-    } catch {
-      return false;
-    }
-  }
-
-  private generateAutoloadTemplate(singletonName: string): string {
-    return `import { Script } from '@pix3/runtime';
-
-export class ${singletonName} extends Script {
-  onAttach(): void {
-    this.node?.signal('initialized');
-    this.node?.emit('initialized');
-  }
-}
-`;
-  }
-
-  // ── Grid file operations (dialog rename + multi-delete) ───────────────────
-  private async renamePath(path: string): Promise<void> {
-    if (isReadOnlyTab()) {
-      return;
-    }
-    const name = path.split('/').pop() ?? path;
-    const dotIndex = name.lastIndexOf('.');
-    const hasExtension = dotIndex > 0;
-    const baseName = hasExtension ? name.slice(0, dotIndex) : name;
-    const originalExtension = hasExtension ? name.slice(dotIndex) : '';
-
-    const input = window.prompt('Rename to:', baseName);
-    if (input === null) {
-      return;
-    }
-    const trimmed = input.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    // Preserve the original extension unless the user typed one explicitly.
-    const finalName =
-      originalExtension && !trimmed.includes('.') ? `${trimmed}${originalExtension}` : trimmed;
-    if (finalName === name) {
-      return;
-    }
-
-    const lastSlash = path.lastIndexOf('/');
-    const parentPath = lastSlash >= 0 ? path.slice(0, lastSlash) : '';
-    const newPath = parentPath ? `${parentPath}/${finalName}` : finalName;
-
-    try {
-      // moveItem bumps fileRefreshSignal + lastModifiedDirectoryPath, so both the
-      // AssetsPreviewService grid and the tree refresh automatically.
-      await this.projectService.moveItem(path, newPath);
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to rename asset:', error);
-    }
-  }
-
-  private async deletePaths(paths: string[]): Promise<void> {
-    if (isReadOnlyTab() || paths.length === 0) {
-      return;
-    }
-
-    const message =
-      paths.length === 1
-        ? `Are you sure you want to delete ${paths[0].split('/').pop() ?? paths[0]}?`
-        : `Delete ${paths.length} items?`;
-
-    const confirmed = await this.dialogService.showConfirmation({
-      title: paths.length === 1 ? 'Delete Item?' : 'Delete Items?',
-      message,
-      confirmLabel: 'Delete',
-      cancelLabel: 'Cancel',
-      isDangerous: true,
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      for (const path of paths) {
-        // deleteEntry bumps fileRefreshSignal + lastModifiedDirectoryPath (refreshes both panes).
-        await this.projectService.deleteEntry(path);
-      }
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to delete assets:', error);
-    }
-    // Drop the (now stale) grid selection; the content pane mirrors this.
-    this.assetsPreviewService.clearSelectedItem();
-  }
-
   // ── Window-event reveal handlers (external entry points) ──────────────────
-  private async onScriptFileCreated(filePath: string): Promise<void> {
-    try {
-      await this.assetTreeRef?.selectPath(filePath);
-    } catch (error) {
-      console.error('[AssetsPanel] Failed to select newly created script file:', error);
-    }
-  }
-
   private async onScriptFileRevealRequested(detail: ScriptRevealRequestDetail): Promise<void> {
     if (!detail || detail.scriptType.length === 0 || detail.scriptName.length === 0) {
       return;
@@ -483,10 +225,7 @@ export class ${singletonName} extends Script {
     }
 
     for (const candidatePath of detail.candidatePaths) {
-      const selected = detail.open
-        ? await this.assetTreeRef.revealAndOpen(candidatePath)
-        : await this.assetTreeRef.selectPath(candidatePath);
-      if (selected) {
+      if (await this.assetTreeRef.selectPath(candidatePath)) {
         return;
       }
     }
@@ -546,15 +285,20 @@ export class ${singletonName} extends Script {
     this.projectService.saveAssetBrowserState({ treePaneWidth: this.treePaneWidth });
   };
 
-  // ── Drop target for the root row ─────────────────────────────────────────
+  // ── Drop target for the root row (OS files, a generated image) ───────────
   private onRootDragOver = (event: DragEvent) => {
-    if (isReadOnlyTab()) {
+    const transfer = event.dataTransfer;
+    if (isReadOnlyTab() || !transfer) {
+      return;
+    }
+    const accepted =
+      hasGenerationDragData(transfer) ||
+      Array.from(transfer.items ?? []).some(item => item.kind === 'file');
+    if (!accepted) {
       return;
     }
     event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
+    transfer.dropEffect = 'copy';
   };
 
   private onRootDrop = (event: DragEvent) => {
@@ -575,9 +319,6 @@ export class ${singletonName} extends Script {
         actions-label="Assets actions"
         @asset-activate=${this.onAssetActivate}
         @folder-navigate=${this.onFolderNavigate}
-        @content-rename-request=${this.onContentRenameRequest}
-        @content-delete-request=${this.onContentDeleteRequest}
-        @content-move-request=${this.onContentMoveRequest}
       >
         <div
           class="assets-split"
@@ -596,31 +337,19 @@ export class ${singletonName} extends Script {
               >
               <span class="root-label" title=${rootLabel}>${rootLabel}</span>
               <span class="root-actions" @click=${(e: Event) => e.stopPropagation()}>
-                <pix3-dropdown-button
-                  class="root-create"
-                  icon="plus-circle"
-                  aria-label="Create asset"
+                <button
+                  type="button"
+                  class="root-action-btn"
+                  aria-label="Import…"
+                  title="Import files into the selected folder…"
                   ?disabled=${isReadOnly}
-                  .items=${[
-                    { id: 'folder', label: 'Create folder', icon: 'folder' },
-                    { id: 'scene', label: 'Create scene', icon: 'film' },
-                    { id: 'autoload-script', label: 'Create autoload script', icon: 'code' },
-                    { id: 'import-divider', label: '', divider: true },
-                    { id: 'import', label: 'Import…', icon: 'upload' },
-                  ]}
-                  @item-select=${(e: CustomEvent) => {
-                    const id = (e.detail as { id: string }).id;
-                    if (id === 'folder') {
-                      void this.onCreateFolder();
-                    } else if (id === 'scene') {
-                      this.onCreateScene();
-                    } else if (id === 'autoload-script') {
-                      void this.onCreateAutoloadScript();
-                    } else if (id === 'import') {
-                      void this.onImportClick();
-                    }
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    void this.onImportClick();
                   }}
-                ></pix3-dropdown-button>
+                >
+                  ${this.iconService.getIcon('upload', IconSize.SMALL)}
+                </button>
                 <button
                   type="button"
                   class="root-action-btn ${this.assetViewMode === 'by-type' ? 'is-active' : ''}"

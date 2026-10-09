@@ -12,8 +12,8 @@ import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlay
 import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-workspace';
 
 /**
- * Starts the game from the project's entry scene (Project Settings →
- * Default Export Scene Path), opening that scene first when needed. Falls
+ * Starts the game from the project's entry scene (`defaultExportScenePath` in
+ * `pix3project.yaml`), opening that scene first when needed. Falls
  * back to the active scene when no entry scene is configured.
  *
  * This is the **full-flow** run: on a recipe project the entry scene is the menu, so it also
@@ -86,7 +86,7 @@ export class StartMainSceneGameCommand extends CommandBase<void, void> {
       await ensureSceneActive(context.container, firstDescriptor.filePath);
     } else {
       console.warn(
-        '[StartMainSceneGameCommand] No main scene configured (Project Settings → Default Export Scene Path); playing the active scene.'
+        '[StartMainSceneGameCommand] No main scene configured (no defaultExportScenePath in pix3project.yaml); playing the active scene.'
       );
     }
 

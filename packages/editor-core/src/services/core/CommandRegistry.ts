@@ -53,26 +53,22 @@ export interface MenuSection {
  * becomes a section, sorted after these ones alphabetically.
  */
 export const MENU_SECTION_ORDER = [
-  'file',
   'edit',
   'create',
   'node',
   'view',
   'run',
-  'project',
   'window',
   'help',
 ] as const;
 
 /** Display labels for the top-level sections. Missing entries fall back to a capitalised id. */
 const SECTION_LABELS: Record<string, string> = {
-  file: 'File',
   edit: 'Edit',
   create: 'Create',
   node: 'Node',
   view: 'View',
   run: 'Run',
-  project: 'Project',
   window: 'Window',
   help: 'Help',
 };

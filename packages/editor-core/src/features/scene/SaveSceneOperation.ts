@@ -70,7 +70,7 @@ export class SaveSceneOperation implements Operation<SaveSceneOperationResult> {
     const filePath = descriptor.filePath;
     if (!filePath?.startsWith('res://')) {
       throw new Error(
-        `Scene must be saved within the project. Use Save As. (filePath: ${filePath})`
+        `Only a scene inside the project (res://) can be saved (filePath: ${filePath})`
       );
     }
 

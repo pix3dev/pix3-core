@@ -5,7 +5,6 @@ import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
 import { SceneManager } from '@pix3/runtime';
 import type { SceneGraph } from '@pix3/runtime';
 import { EditorTabService } from '@/services/editor/EditorTabService';
-import { IdeLauncherService } from '@/services/editor/IdeLauncherService';
 import { LightboxService } from '@/services/editor/LightboxService';
 import { HostService } from '@/host/HostService';
 
@@ -18,8 +17,9 @@ export interface AssetActivation {
 }
 
 /**
- * AssetFileActivationService handles opening asset files from the project tree.
- * It dispatches appropriate commands based on file type (e.g., LoadSceneCommand for .pix3scene files).
+ * AssetFileActivationService handles double-clicking an asset in the project tree: a scene opens in
+ * a tab, an image opens in the lightbox, a model is added to the active scene. Other files have no
+ * editor-side action.
  */
 export class AssetFileActivationService {
   /** Image formats a double-click previews full-screen. */
@@ -35,29 +35,6 @@ export class AssetFileActivationService {
     'tiff',
     'avif',
   ]);
-  /**
-   * Text files that open in the developer's IDE (2.x has no in-browser code editor). `pix3anim` is
-   * here too: its 1.x editor was the dropped Sprite Editor, and the file is plain YAML.
-   */
-  static readonly IDE_EXTENSIONS = new Set([
-    'ts',
-    'tsx',
-    'js',
-    'jsx',
-    'mjs',
-    'cjs',
-    'json',
-    'md',
-    'txt',
-    'yaml',
-    'yml',
-    'html',
-    'css',
-    'glsl',
-    'frag',
-    'vert',
-    'pix3anim',
-  ]);
   private static readonly UI_LAYER_NAME = 'UI Layer';
 
   @inject(CommandDispatcher)
@@ -68,9 +45,6 @@ export class AssetFileActivationService {
 
   @inject(EditorTabService)
   private readonly editorTabService!: EditorTabService;
-
-  @inject(IdeLauncherService)
-  private readonly ideLauncher!: IdeLauncherService;
 
   @inject(LightboxService)
   private readonly lightbox!: LightboxService;
@@ -102,15 +76,8 @@ export class AssetFileActivationService {
       return;
     }
 
-    // Scripts, JSON, markdown, config, … open in the IDE through the dev server.
-    if (AssetFileActivationService.IDE_EXTENSIONS.has(extension)) {
-      if (!(await this.ideLauncher.open(resourcePath))) {
-        console.info('[AssetFileActivationService] No IDE hook on this host for', resourcePath);
-      }
-      return;
-    }
-
-    console.info('[AssetFileActivationService] No handler for asset type', payload);
+    // Anything else (scripts, config, text, audio, …) has no editor-side action: files are edited by
+    // the coding agent or the IDE, not through the editor.
   }
 
   /**

@@ -7,11 +7,6 @@ import {
   defaultAssetFolder,
   ensureAssetTypeFolder,
   getAssetPathExtension,
-  groupedCategoryExpansionKey,
-  isResourceGraphPath,
-  RESOURCE_GRAPH_EXTENSIONS,
-  groupedDirectoryExpansionKey,
-  splitGroupedDirectoryExpansionKey,
 } from './asset-categories';
 
 describe('asset-categories', () => {
@@ -78,31 +73,5 @@ describe('asset-categories', () => {
     expect(ensureAssetTypeFolder('sprites/ui/car.png')).toBe('sprites/ui/car.png');
     expect(ensureAssetTypeFolder('generated\\car.png')).toBe('generated/car.png');
     expect(ensureAssetTypeFolder('archive.zip')).toBe('archive.zip');
-  });
-
-  it('round-trips grouped directory expansion keys', () => {
-    const key = groupedDirectoryExpansionKey('images', 'assets/sprites/ui');
-    expect(splitGroupedDirectoryExpansionKey(key)).toEqual({
-      categoryId: 'images',
-      path: 'assets/sprites/ui',
-    });
-  });
-
-  it('rejects non-directory expansion keys', () => {
-    expect(splitGroupedDirectoryExpansionKey(groupedCategoryExpansionKey('images'))).toBeNull();
-    expect(splitGroupedDirectoryExpansionKey('bogus::assets')).toBeNull();
-    expect(splitGroupedDirectoryExpansionKey('no-separator')).toBeNull();
-  });
-
-  it('walks scenes, prefabs and flipbooks as resource-graph files, nothing else', () => {
-    // The one table behind publish-to-library, playable export and insert remap.
-    expect([...RESOURCE_GRAPH_EXTENSIONS].sort()).toEqual(
-      ['pix3anim', 'pix3prefab', 'pix3scene', 'prefab'].sort()
-    );
-    expect(isResourceGraphPath('prefabs/Goblin.pix3scene')).toBe(true);
-    expect(isResourceGraphPath('sprites/goblin/goblin.PIX3ANIM')).toBe(true);
-    expect(isResourceGraphPath('sprites/goblin/idle_0001.png')).toBe(false);
-    expect(isResourceGraphPath('scripts/Enemy.ts')).toBe(false);
-    expect(isResourceGraphPath('locales/en.json')).toBe(false);
   });
 });

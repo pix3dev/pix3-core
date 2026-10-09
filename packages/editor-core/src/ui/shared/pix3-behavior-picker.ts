@@ -69,13 +69,6 @@ export class BehaviorPicker extends ComponentBase {
           <div class="picker-header">
             <div class="picker-header-row">
               <h2 class="dialog-title">Add Component</h2>
-              <button
-                class="btn-create-new"
-                @click=${this.dispatchCreateNew}
-                title="Create new script file"
-              >
-                ${this.iconService.getIcon('plus', 14)} Create New
-              </button>
             </div>
             <div class="search-box">
               ${this.iconService.getIcon('search', 14)}
@@ -174,16 +167,6 @@ export class BehaviorPicker extends ComponentBase {
   private dispatchCancel(): void {
     this.dispatchEvent(
       new CustomEvent('component-picker-cancelled', {
-        detail: { pickerId: this.pickerId },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private dispatchCreateNew(): void {
-    this.dispatchEvent(
-      new CustomEvent('component-picker-create-new', {
         detail: { pickerId: this.pickerId },
         bubbles: true,
         composed: true,

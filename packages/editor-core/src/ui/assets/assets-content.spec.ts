@@ -402,14 +402,14 @@ describe('AssetsContent (Phase 3 header)', () => {
     expect(keyDown.defaultPrevented).toBe(false);
   });
 
-  it('emits content-delete-request for the multi-selection', async () => {
+  it('offers no rename/delete/move rows: an image only gets "Add to Scene as Sprite2D"', async () => {
     const panel = document.createElement('pix3-assets-content') as AssetsContentElement;
     stubServices(
       panel,
       createSnapshot({
         items: [
           createItem({ name: 'a.png', path: 'assets/a.png', kind: 'file', previewType: 'image' }),
-          createItem({ name: 'b.png', path: 'assets/b.png', kind: 'file', previewType: 'image' }),
+          createItem({ name: 'notes.txt', path: 'assets/notes.txt', kind: 'file' }),
         ],
       })
     );
@@ -417,30 +417,24 @@ describe('AssetsContent (Phase 3 header)', () => {
     document.body.appendChild(panel);
     await panel.updateComplete;
 
-    const buttons = panel.querySelectorAll('.assets-preview-item');
-    buttons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    const cards = panel.querySelectorAll('.assets-preview-item');
+    const imageMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    cards[0]?.dispatchEvent(imageMenu);
     await panel.updateComplete;
 
-    // Right-click a member of the selection: keeps the multi-selection.
-    buttons[1]?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(imageMenu.defaultPrevented).toBe(true);
+    const labels = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '.assets-preview-context-menu button[role="menuitem"]'
+      )
+    ).map(button => button.textContent?.trim());
+    expect(labels).toEqual(['Add to Scene as Sprite2D']);
+
+    // A file with nothing to offer gets the browser's own menu, not an empty one.
+    const textMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    cards[1]?.dispatchEvent(textMenu);
     await panel.updateComplete;
-
-    const events: Array<{ paths: string[] }> = [];
-    panel.addEventListener('content-delete-request', event => {
-      events.push((event as CustomEvent<{ paths: string[] }>).detail);
-    });
-
-    document
-      .querySelectorAll<HTMLButtonElement>('.assets-preview-context-menu button[role="menuitem"]')
-      .forEach(button => {
-        if (button.textContent?.trim() === 'Delete') {
-          button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        }
-      });
-
-    expect(events).toHaveLength(1);
-    expect(events[0]?.paths.sort()).toEqual(['assets/a.png', 'assets/b.png']);
+    expect(textMenu.defaultPrevented).toBe(false);
   });
 
   it('keeps a shift-range selection when the preview service echoes the click', async () => {
@@ -547,16 +541,26 @@ describe('AssetsContent (Phase 3 header)', () => {
     expect(panel.getSelectedPaths()).toEqual(['assets/a.png']);
   });
 
-  it('drops a dragged multi-selection on a folder card as a move request', async () => {
+  it('drags the multi-selection as a copy and no card or breadcrumb takes a move drop', async () => {
     const panel = document.createElement('pix3-assets-content') as AssetsContentElement;
     stubServices(
       panel,
       createSnapshot({
-        selectedFolderPath: 'assets',
+        selectedFolderPath: 'assets/textures',
         items: [
-          createItem({ name: 'textures', path: 'assets/textures', kind: 'directory' }),
-          createItem({ name: 'a.png', path: 'assets/a.png', kind: 'file', previewType: 'image' }),
-          createItem({ name: 'b.png', path: 'assets/b.png', kind: 'file', previewType: 'image' }),
+          createItem({ name: 'ui', path: 'assets/textures/ui', kind: 'directory' }),
+          createItem({
+            name: 'a.png',
+            path: 'assets/textures/a.png',
+            kind: 'file',
+            previewType: 'image',
+          }),
+          createItem({
+            name: 'b.png',
+            path: 'assets/textures/b.png',
+            kind: 'file',
+            previewType: 'image',
+          }),
         ],
       }),
       { thumbnailSize: 104, contentView: 'grid' },
@@ -574,108 +578,19 @@ describe('AssetsContent (Phase 3 header)', () => {
 
     const dataTransfer = new FakeDataTransfer();
     cardA?.dispatchEvent(dragEvent('dragstart', dataTransfer));
-    // `copy` alone makes the browser reject the move drop targets outright.
-    expect(dataTransfer.effectAllowed).toBe('copyMove');
-
-    const dragOver = dragEvent('dragover', dataTransfer);
-    folderCard?.dispatchEvent(dragOver);
-    await panel.updateComplete;
-
-    expect(dragOver.defaultPrevented).toBe(true);
-    expect(dataTransfer.dropEffect).toBe('move');
-    expect(panel.querySelector('.assets-preview-item.is-drop-target')).toBe(folderCard);
-
-    const requests: Array<{ paths: string[]; targetPath: string; targetLabel: string }> = [];
-    panel.addEventListener('content-move-request', event => {
-      requests.push(
-        (event as CustomEvent<{ paths: string[]; targetPath: string; targetLabel: string }>).detail
-      );
-    });
-
-    folderCard?.dispatchEvent(dragEvent('drop', dataTransfer));
-    await panel.updateComplete;
-
-    expect(requests).toEqual([
-      {
-        paths: ['assets/a.png', 'assets/b.png'],
-        targetPath: 'assets/textures',
-        targetLabel: 'textures',
-      },
+    expect(dataTransfer.effectAllowed).toBe('copy');
+    expect(JSON.parse(dataTransfer.getData('application/x-pix3-asset-resource-list'))).toEqual([
+      'res://assets/textures/a.png',
+      'res://assets/textures/b.png',
     ]);
-    expect(panel.querySelector('.assets-preview-item.is-drop-target')).toBeNull();
-  });
 
-  it('ignores drops on a file card (only folders accept moves)', async () => {
-    const panel = document.createElement('pix3-assets-content') as AssetsContentElement;
-    stubServices(
-      panel,
-      createSnapshot({
-        items: [
-          createItem({ name: 'a.png', path: 'assets/a.png', kind: 'file', previewType: 'image' }),
-          createItem({ name: 'b.png', path: 'assets/b.png', kind: 'file', previewType: 'image' }),
-        ],
-      })
-    );
-
-    document.body.appendChild(panel);
-    await panel.updateComplete;
-
-    const cards = panel.querySelectorAll<HTMLElement>('.assets-preview-item');
-    const dataTransfer = new FakeDataTransfer();
-    cards[0]?.dispatchEvent(dragEvent('dragstart', dataTransfer));
-
-    const requests: unknown[] = [];
-    panel.addEventListener('content-move-request', event => requests.push(event));
-
-    const dragOver = dragEvent('dragover', dataTransfer);
-    cards[1]?.dispatchEvent(dragOver);
-    cards[1]?.dispatchEvent(dragEvent('drop', dataTransfer));
-    await panel.updateComplete;
-
-    expect(dragOver.defaultPrevented).toBe(false);
-    expect(requests).toHaveLength(0);
-  });
-
-  it('accepts a move drop on a parent breadcrumb', async () => {
-    const panel = document.createElement('pix3-assets-content') as AssetsContentElement;
-    stubServices(
-      panel,
-      createSnapshot({
-        selectedFolderPath: 'assets/textures',
-        items: [
-          createItem({
-            name: 'a.png',
-            path: 'assets/textures/a.png',
-            kind: 'file',
-            previewType: 'image',
-          }),
-        ],
-      })
-    );
-
-    document.body.appendChild(panel);
-    await panel.updateComplete;
-
-    const dataTransfer = new FakeDataTransfer();
-    panel
-      .querySelector<HTMLElement>('.assets-preview-item')
-      ?.dispatchEvent(dragEvent('dragstart', dataTransfer));
-
-    const requests: Array<{ paths: string[]; targetPath: string; targetLabel: string }> = [];
-    panel.addEventListener('content-move-request', event => {
-      requests.push(
-        (event as CustomEvent<{ paths: string[]; targetPath: string; targetLabel: string }>).detail
-      );
-    });
-
-    // Crumbs: [project root, "assets", "textures" (current, disabled)].
-    const crumbs = panel.querySelectorAll<HTMLElement>('.crumb');
-    crumbs[1]?.dispatchEvent(dragEvent('dragover', dataTransfer));
-    crumbs[1]?.dispatchEvent(dragEvent('drop', dataTransfer));
-
-    expect(requests).toEqual([
-      { paths: ['assets/textures/a.png'], targetPath: 'assets', targetLabel: 'assets' },
-    ]);
+    // Files are moved by the agent or the IDE: a folder card and a parent breadcrumb ignore it.
+    const overFolder = dragEvent('dragover', dataTransfer);
+    folderCard?.dispatchEvent(overFolder);
+    const overCrumb = dragEvent('dragover', dataTransfer);
+    panel.querySelectorAll<HTMLElement>('.crumb')[1]?.dispatchEvent(overCrumb);
+    expect(overFolder.defaultPrevented).toBe(false);
+    expect(overCrumb.defaultPrevented).toBe(false);
   });
 });
 
