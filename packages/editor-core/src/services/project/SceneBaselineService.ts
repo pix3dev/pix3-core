@@ -1,6 +1,7 @@
 import type { SavedSceneDocument } from '@pix3/runtime';
 import { injectable } from '@/fw/di';
 import { sha256 } from '@/core/hash';
+import { recordFlushedKeys, type FlushLedger } from '@/core/scene-patch/scene-merge';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
@@ -14,27 +15,21 @@ export interface SceneBaseline {
   readonly norm: SavedSceneDocument;
 }
 
-/** What the last flush of a path changed — for "the agent overwrote your edit" (§C.3). */
-export interface LastFlush {
-  readonly before: SavedSceneDocument;
-  readonly after: SavedSceneDocument;
-  readonly at: number;
-}
-
 /**
  * Per-path memory of the write model (replaces 1.x's `SceneDiskStateService`; keys are project
  * paths without a scheme, `scenes/a.pix3scene`):
  *
  * - the **baseline** of every open scene — `If-Match` of the next flush, B of the §C.3 merge, and
  *   the hash an own write is recognised by;
- * - the **last flush** per path (`before`/`after` norms);
+ * - the **flush ledger** per path: the keys the editor's flushes changed since the last external
+ *   version, for "the agent overwrote your edit" (§C.3);
  * - paths with a **pending external version** (seen on disk, not applied yet: settling, unparsable,
  *   or held for play). A flush skips them; the merge takes over.
  */
 @injectable()
 export class SceneBaselineService {
   private readonly baselines = new Map<string, SceneBaseline>();
-  private readonly flushes = new Map<string, LastFlush>();
+  private readonly ledgers = new Map<string, FlushLedger>();
   private readonly pending = new Set<string>();
   private readonly listeners = new Set<() => void>();
 
@@ -62,12 +57,22 @@ export class SceneBaselineService {
   /** After a successful flush: the new baseline, and what this flush changed. */
   recordFlush(path: string, previous: SceneBaseline, next: SceneBaseline): void {
     const key = toProjectPath(path);
-    this.flushes.set(key, { before: previous.norm, after: next.norm, at: Date.now() });
+    this.ledgers.set(
+      key,
+      recordFlushedKeys(this.ledgers.get(key) ?? new Map(), previous.norm, next.norm)
+    );
     this.set(key, next);
   }
 
-  lastFlush(path: string): LastFlush | null {
-    return this.flushes.get(toProjectPath(path)) ?? null;
+  /**
+   * The keys flushed since the last external version, handed over once: the external version
+   * that asks for them settles every one of them (`findClobberedKeys`).
+   */
+  takeFlushLedger(path: string): FlushLedger {
+    const key = toProjectPath(path);
+    const ledger = this.ledgers.get(key) ?? new Map();
+    this.ledgers.delete(key);
+    return ledger;
   }
 
   /** True when `hash` is the baseline of `path` — the editor's own write, or what it loaded. */
@@ -78,7 +83,7 @@ export class SceneBaselineService {
   forget(path: string): void {
     const key = toProjectPath(path);
     this.baselines.delete(key);
-    this.flushes.delete(key);
+    this.ledgers.delete(key);
     this.clearPendingExternal(key);
     this.notify();
   }
@@ -109,7 +114,7 @@ export class SceneBaselineService {
 
   reset(): void {
     this.baselines.clear();
-    this.flushes.clear();
+    this.ledgers.clear();
     this.pending.clear();
     this.notify();
   }

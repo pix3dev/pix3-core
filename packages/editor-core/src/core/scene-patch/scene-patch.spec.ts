@@ -24,7 +24,7 @@ import {
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
-import { findClobberedKeys, planMerge } from '@/core/scene-patch/scene-merge';
+import { findClobberedKeys, planMerge, recordFlushedKeys } from '@/core/scene-patch/scene-merge';
 
 /**
  * `ScenePatchWriter` + `norm` + the §C.3 rule on the template corpus — the S12 harness
@@ -459,17 +459,39 @@ describe('targeted cases', () => {
     ).toThrow(ScenePatchError);
   });
 
-  it('finds keys of the last flush an agent put back', async () => {
-    const before = await h.norm(
-      'root:\n  - id: a\n    type: Group2D\n    name: A\n',
-      'c.pix3scene'
-    );
-    const after = await h.norm('root:\n  - id: a\n    type: Group2D\n    name: B\n', 'c.pix3scene');
-    const stale = await h.norm(
-      'root:\n  - id: a\n    type: Group2D\n    name: A\n    properties:\n      width: 7\n',
-      'c.pix3scene'
-    );
-    expect(findClobberedKeys(before, after, stale).map(op => op.path.join('.'))).toEqual(['name']);
-    expect(findClobberedKeys(before, after, after)).toEqual([]);
+  it('finds flushed keys an agent put back — from any flush since the last external version', async () => {
+    const doc = (name: string, width?: number) =>
+      h.norm(
+        `root:\n  - id: a\n    type: Group2D\n    name: ${name}\n` +
+          (width === undefined ? '' : `    properties:\n      width: ${width}\n`),
+        'c.pix3scene'
+      );
+    const v0 = await doc('A');
+    const v1 = await doc('B'); // flush 1: rename
+    const v2 = await doc('B', 40); // flush 2: width
+    const v3 = await doc('C', 40); // flush 3: rename again
+    let ledger = recordFlushedKeys(new Map(), v0, v1);
+    ledger = recordFlushedKeys(ledger, v1, v2);
+    ledger = recordFlushedKeys(ledger, v2, v3);
+    const restored = (E: SavedSceneDocument) =>
+      findClobberedKeys(ledger, E).map(op =>
+        op.kind === 'set' ? `${op.path.join('.')}=${String(op.value)}` : `-${op.path.join('.')}`
+      );
+    // An agent that read before flush 1 (or 2): both keys come back as the editor wrote them.
+    expect(restored(v0)).toEqual(['name=C', 'properties.width=40']);
+    expect(restored(await doc('B'))).toEqual(['name=C', 'properties.width=40']);
+    // Read after flush 2: only the last rename was lost.
+    expect(restored(v2)).toEqual(['name=C']);
+    // A current read, or a new value of the agent's own: nothing to restore.
+    expect(restored(v3)).toEqual([]);
+    expect(restored(await doc('Agent', 99))).toEqual([]);
+  });
+
+  it('a key flushed back to its first value is not "clobbered" by that value', async () => {
+    const a = await h.norm('root:\n  - id: a\n    type: Group2D\n    name: A\n', 'c.pix3scene');
+    const b = await h.norm('root:\n  - id: a\n    type: Group2D\n    name: B\n', 'c.pix3scene');
+    const ledger = recordFlushedKeys(recordFlushedKeys(new Map(), a, b), b, a); // Ctrl+Z, flushed
+    expect(findClobberedKeys(ledger, a)).toEqual([]);
+    expect(findClobberedKeys(ledger, b).map(op => op.kind === 'set' && op.value)).toEqual(['A']);
   });
 });

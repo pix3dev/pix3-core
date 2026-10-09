@@ -210,4 +210,46 @@ describe('SceneMergeService — §C.3', () => {
     expect(node('box')?.width).toBe(240);
     expect(disk()).toBe(stale.replace('width: 100', 'width: 240'));
   });
+
+  it('a stale read from before SEVERAL flushes: every overwritten key is offered back', async () => {
+    const sceneId = await boot();
+    await setProp('box', 'width', 240);
+    await service(FlushService).saveScene(sceneId);
+    await setProp('box', 'height', 70);
+    await service(FlushService).saveScene(sceneId);
+    await setProp('other', 'name', 'Renamed');
+    await service(FlushService).saveScene(sceneId);
+    // Read before the first flush; the agent only meant to add a node.
+    const stale = SCENE.replace(
+      '    name: Other\n',
+      '    name: Other\n  - id: added\n    type: Group2D\n    name: Added\n'
+    );
+    await agentWrites(stale);
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Box › properties.width');
+    expect(notice?.detail).toContain('Box › properties.height');
+    expect(notice?.detail).toContain('Other › name');
+
+    await service(HostNoticeService).runAction(notice!.actions[0].id);
+    expect(disk()).toBe(
+      stale
+        .replace('width: 100', 'width: 240')
+        .replace('height: 50', 'height: 70')
+        .replace('name: Other', 'name: Renamed')
+    );
+    expect(node('added')).toBeTruthy();
+  });
+
+  it('an agent that read after the flushes: nothing is "overwritten"', async () => {
+    const sceneId = await boot();
+    await setProp('box', 'width', 240);
+    await service(FlushService).saveScene(sceneId);
+    await setProp('box', 'height', 70);
+    await service(FlushService).saveScene(sceneId);
+    await agentWrites(disk().replace('name: Other', 'name: Agent'));
+    expect(notices().filter(n => n.message.includes('overwrote'))).toEqual([]);
+    // The ledger was spent by that version: a later stale write is judged on later flushes only.
+    await agentWrites(disk().replace('name: Agent', 'name: Agent 2'));
+    expect(notices().filter(n => n.message.includes('overwrote'))).toEqual([]);
+  });
 });

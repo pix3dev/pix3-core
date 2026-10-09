@@ -7,6 +7,7 @@ import {
   leafKey,
   leafValues,
   type LeafOp,
+  type LeafPath,
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
 
@@ -150,30 +151,88 @@ function dropLaidOutWithParent(plan: MergePlan, ig: ReturnType<typeof indexNodes
 }
 
 /**
- * "Затирание по устаревшему чтению" (§C.3): keys the last flush changed (`before` → `after`) that
- * the external version E puts back to their pre-flush value — an agent wrote a file it read before
- * that flush. Only the last flush is caught (a known regression against 1.x's protected set).
+ * One key the editor's flushes changed since the last external version of the file: the value it
+ * wrote last (`undefined` = removed) and every value its flushes replaced on the way.
  */
-export function findClobberedKeys(
+export interface FlushedKey {
+  readonly nodeId: string | null;
+  readonly path: LeafPath;
+  readonly written: unknown;
+  readonly replaced: readonly unknown[];
+}
+
+/** `leafKey` → {@link FlushedKey}; immutable, a flush makes a new one. */
+export type FlushLedger = ReadonlyMap<string, FlushedKey>;
+
+/** How many replaced values a key remembers (oldest dropped first). */
+const MAX_REPLACED = 16;
+
+const valueAt = (
+  nodeId: string | null,
+  path: LeafPath,
+  leaves: Map<string, unknown>,
+  index: ReturnType<typeof indexNodes>
+): unknown =>
+  path.length === 1 && path[0] === 'components' && nodeId !== null
+    ? index.get(nodeId)?.def.components
+    : leaves.get(leafKey(nodeId, path));
+
+/** The ledger after a flush that turned `before` into `after`. */
+export function recordFlushedKeys(
+  ledger: FlushLedger,
   before: SavedSceneDocument,
-  after: SavedSceneDocument,
-  E: SavedSceneDocument
-): LeafOp[] {
+  after: SavedSceneDocument
+): FlushLedger {
+  const next = new Map(ledger);
   const lb = leafValues(before);
-  const le = leafValues(E);
-  const ie = indexNodes(E);
-  const clobbered: LeafOp[] = [];
+  const ib = indexNodes(before);
   for (const op of diffScenes(before, after)) {
     if (op.kind !== 'set' && op.kind !== 'delete') continue;
     const key = leafKey(op.nodeId, op.path);
-    const eValue = le.get(key);
-    if (op.nodeId !== null && !ie.has(op.nodeId)) continue;
-    if (
-      deepEqual(eValue, lb.get(key)) &&
-      !deepEqual(eValue, op.kind === 'set' ? op.value : undefined)
-    ) {
-      clobbered.push(op);
+    const written = op.kind === 'set' ? op.value : undefined;
+    const known = next.get(key);
+    const history = known
+      ? [...known.replaced, known.written]
+      : [valueAt(op.nodeId, op.path, lb, ib)];
+    const replaced: unknown[] = [];
+    for (const value of history) {
+      if (deepEqual(value, written) || replaced.some(v => deepEqual(v, value))) continue;
+      replaced.push(value);
     }
+    next.set(key, {
+      nodeId: op.nodeId,
+      path: op.path,
+      written,
+      replaced: replaced.slice(-MAX_REPLACED),
+    });
+  }
+  return next;
+}
+
+/**
+ * "Затирание по устаревшему чтению" (§C.3): keys the editor's flushes changed that the external
+ * version E puts back to a value one of those flushes replaced — an agent wrote a file it read
+ * before them. Every flush since the last external version counts, not only the last one (1.x's
+ * protected set covered the same window: what the writer of E could not have seen). Returns the
+ * ops that put the editor's values back.
+ *
+ * The ledger is spent by E either way: a key E holds at the editor's value was seen, one it changed
+ * to something new is the agent's now, and a clobbered one is offered back once.
+ */
+export function findClobberedKeys(ledger: FlushLedger, E: SavedSceneDocument): LeafOp[] {
+  const le = leafValues(E);
+  const ie = indexNodes(E);
+  const clobbered: LeafOp[] = [];
+  for (const entry of ledger.values()) {
+    if (entry.nodeId !== null && !ie.has(entry.nodeId)) continue;
+    const eValue = valueAt(entry.nodeId, entry.path, le, ie);
+    if (deepEqual(eValue, entry.written)) continue;
+    if (!entry.replaced.some(value => deepEqual(eValue, value))) continue;
+    clobbered.push(
+      entry.written === undefined
+        ? { kind: 'delete', nodeId: entry.nodeId, path: entry.path }
+        : { kind: 'set', nodeId: entry.nodeId, path: entry.path, value: entry.written }
+    );
   }
   return clobbered;
 }

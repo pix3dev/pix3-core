@@ -46,8 +46,9 @@ const NOTICE_KEYS = 4;
  *      the new `pending` and flush normally;
  *   4. history is cleared (its closures point at the old nodes);
  *   5. a notice names the dropped keys.
- * - **"Затирание по устаревшему чтению"** — if E puts the keys of the last flush back to their
- *   pre-flush values, a notice offers to restore them ("Restore my edit").
+ * - **"Затирание по устаревшему чтению"** — if E puts keys the editor's flushes changed (any
+ *   flush since the previous external version) back to a value they replaced, a notice offers to
+ *   restore them ("Restore my edit").
  */
 @injectable()
 export class SceneMergeService {
@@ -97,8 +98,7 @@ export class SceneMergeService {
       filePath: descriptor.filePath,
     });
     const E: SceneBaseline = { sha: version.hash, text: eText, norm: normOfGraph(eGraph) };
-    const lastFlush = this.baselines.lastFlush(path);
-    const clobbered = lastFlush ? findClobberedKeys(lastFlush.before, lastFlush.after, E.norm) : [];
+    const clobbered = findClobberedKeys(this.baselines.takeFlushLedger(path), E.norm);
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending =
@@ -111,7 +111,7 @@ export class SceneMergeService {
     } else {
       outcome = await this.merge(descriptor, path, B, E, version.text, eGraph, graph);
     }
-    if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, lastFlush!.after);
+    if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, E.norm);
     return outcome;
   }
 
@@ -244,21 +244,21 @@ export class SceneMergeService {
     );
   }
 
-  /** "The agent overwrote your edit X [Restore my edit]" — re-applies the last flush's keys. */
+  /** "The agent overwrote your edit X [Restore my edit]" — re-applies the flushed values. */
   private offerRestore(
     descriptor: SceneDescriptor,
     path: string,
     clobbered: readonly LeafOp[],
-    after: SavedSceneDocument
+    names: SavedSceneDocument
   ): void {
-    const names = clobbered.map(op =>
-      this.describe({ op, key: '', nodeId: op.nodeId, reason: 'same-key' }, after)
+    const labels = clobbered.map(op =>
+      this.describe({ op, key: '', nodeId: op.nodeId, reason: 'same-key' }, names)
     );
     this.notices.show({
       key: `clobber:${path}`,
       tone: 'warn',
       message: `An agent overwrote your edit in ${path}.`,
-      detail: `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''} — it wrote a file it read before your last save.`,
+      detail: `${labels.slice(0, NOTICE_KEYS).join('; ')}${labels.length > NOTICE_KEYS ? `; and ${labels.length - NOTICE_KEYS} more` : ''} — it wrote a file it read before you saved them.`,
       actions: [
         { label: 'Restore my edit', run: () => this.restoreKeys(descriptor, path, clobbered) },
       ],
