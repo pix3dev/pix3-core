@@ -1,4 +1,10 @@
-import { HostFileError, HostFilesClient } from './host-files.ts';
+import {
+  failureOf,
+  HostFileError,
+  HostFilesClient,
+  networkError,
+  type HostWriteResult,
+} from './host-files.ts';
 
 export { HostFileError, HostFilesClient } from './host-files.ts';
 
@@ -98,6 +104,30 @@ export interface HostInfo {
   readonly versions: HostVersions;
 }
 
+export type HostHistoryAuthor = 'editor' | 'external' | 'restore' | 'rejected-draft';
+
+export interface HostHistoryEntry {
+  readonly id: string;
+  readonly path: string;
+  readonly author: HostHistoryAuthor;
+  readonly at: number;
+  readonly sha256: string;
+  readonly size: number;
+  readonly note?: string;
+}
+
+export interface HostHistory {
+  list(path: string): Promise<HostHistoryEntry[]>;
+  read(path: string, id: string): Promise<string | null>;
+  record(
+    path: string,
+    text: string,
+    author: 'rejected-draft',
+    note?: string
+  ): Promise<HostHistoryEntry>;
+  restore(path: string, id: string, options?: { ifMatch?: string }): Promise<HostWriteResult>;
+}
+
 export interface HostClaim {
   readonly writerId: string;
   readonly seq: number;
@@ -161,6 +191,8 @@ export class EditorHostConnection {
     claim(): Promise<HostClaim>;
     onChange(listener: Listener<string | null>): () => void;
   };
+  /** The version journal `.pix3/history/` (plan §C.4). */
+  readonly history: HostHistory;
 
   private roots: ScriptRoots;
   private handlers: HostSyncHandlers = {};
@@ -206,6 +238,59 @@ export class EditorHostConnection {
       claim: () => this.claim(),
       onChange: listener => subscribe(this.writerListeners, listener),
     };
+    this.history = {
+      list: async path => {
+        const response = await this.call(`history?path=${encodeURIComponent(path)}`);
+        if (!response.ok) throw await failureOf(response);
+        return ((await response.json()) as { entries: HostHistoryEntry[] }).entries;
+      },
+      read: async (path, id) => {
+        const response = await this.call(
+          `history/version?path=${encodeURIComponent(path)}&id=${encodeURIComponent(id)}`
+        );
+        if (response.status === 404) return null;
+        if (!response.ok) throw await failureOf(response);
+        return response.text();
+      },
+      record: (path, text, author, note) =>
+        this.postJson<HostHistoryEntry>('history/record', {
+          path,
+          text,
+          author,
+          ...(note ? { note } : {}),
+        }),
+      restore: (path, id, options = {}) =>
+        this.postJson<HostWriteResult>(
+          'history/restore',
+          { path, id },
+          options.ifMatch
+            ? { 'If-Match': options.ifMatch === '*' ? '*' : `"${options.ifMatch}"` }
+            : {}
+        ),
+    };
+  }
+
+  /** {@link api} with failures as {@link HostFileError} (`network` when nothing answered). */
+  private async call(route: string, init?: RequestInit): Promise<Response> {
+    try {
+      return await this.api(route, init);
+    } catch (error) {
+      throw networkError(error);
+    }
+  }
+
+  private async postJson<T>(
+    route: string,
+    body: unknown,
+    headers: Record<string, string> = {}
+  ): Promise<T> {
+    const response = await this.call(route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw await failureOf(response);
+    return (await response.json()) as T;
   }
 
   /** Filled from the plugin's `welcome`; available once {@link ready} resolved. */

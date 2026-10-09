@@ -20,6 +20,8 @@ export type HostFileErrorCode =
 export interface HostFileFailure {
   readonly code: HostFileErrorCode;
   readonly status: number;
+  /** The file a changeset failed on. */
+  readonly path?: string;
   readonly currentHash?: string | null;
   readonly message: string;
 }
@@ -36,6 +38,26 @@ export interface HostWriteOptions {
   readonly ifMatch?: string;
   readonly createOnly?: boolean;
   readonly mutationId?: string;
+}
+
+export interface HostChangesetEntry {
+  readonly path: string;
+  readonly data: Uint8Array | string;
+  readonly ifMatch?: string;
+  readonly createOnly?: boolean;
+}
+
+export interface HostWriteResult {
+  readonly path: string;
+  readonly sha256: string;
+  readonly size: number;
+  readonly seq: number;
+  readonly mtime?: number;
+}
+
+export interface HostChangesetResult {
+  readonly seq: number;
+  readonly files: readonly HostWriteResult[];
 }
 
 /** What the files client needs from the connection. */
@@ -64,7 +86,7 @@ export class HostFileError extends Error {
   }
 }
 
-const failureOf = async (response: Response): Promise<HostFileError> => {
+export const failureOf = async (response: Response): Promise<HostFileError> => {
   let body: Record<string, unknown> = {};
   try {
     body = (await response.json()) as Record<string, unknown>;
@@ -83,16 +105,26 @@ const failureOf = async (response: Response): Promise<HostFileError> => {
     code,
     status: response.status,
     message: typeof body.message === 'string' ? body.message : `HTTP ${response.status}`,
+    ...(typeof body.path === 'string' ? { path: body.path } : {}),
     ...('currentHash' in body ? { currentHash: (body.currentHash as string | null) ?? null } : {}),
   });
 };
 
-const networkError = (error: unknown): HostFileError =>
+export const networkError = (error: unknown): HostFileError =>
   new HostFileError({
     code: 'network',
     status: 0,
     message: `The dev server did not answer: ${error instanceof Error ? error.message : String(error)}`,
   });
+
+/** Bytes as base64 without `Buffer` (this runs in the page); chunked to stay off the arg limit. */
+const toBase64 = (bytes: Uint8Array): string => {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+};
 
 const etagOf = (response: Response): string =>
   (response.headers.get('etag') ?? '').replace(/^W\//, '').replace(/^"|"$/g, '');
@@ -166,6 +198,31 @@ export class HostFilesClient {
       seq: number;
     };
     return body;
+  }
+
+  /**
+   * Several files as one transaction (plan §C.4). A refusal names the file in `failure.path`;
+   * nothing was written then.
+   */
+  async writeChangeset(
+    entries: readonly HostChangesetEntry[],
+    options: { mutationId?: string } = {}
+  ): Promise<HostChangesetResult> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (options.mutationId) headers['X-Mutation-Id'] = options.mutationId;
+    const files = entries.map(entry => ({
+      path: entry.path,
+      ...(typeof entry.data === 'string' ? { text: entry.data } : { base64: toBase64(entry.data) }),
+      ...(entry.ifMatch ? { ifMatch: entry.ifMatch } : {}),
+      ...(entry.createOnly ? { createOnly: true } : {}),
+    }));
+    const response = await this.call('changeset', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ files }),
+    });
+    if (!response.ok) throw await failureOf(response);
+    return (await response.json()) as HostChangesetResult;
   }
 
   async mkdir(path: string): Promise<void> {

@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   open,
+  readFile,
   rename,
   rm,
   rmdir,
@@ -13,12 +14,33 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { errnoCode, headerValue, HttpError, sendJson } from '../server/http.ts';
+import { errnoCode, headerValue, HttpError, readJson, sendJson } from '../server/http.ts';
+import {
+  changesetFingerprint,
+  fsyncDir,
+  MAX_CHANGESET_BYTES,
+  parseChangeset,
+  recoverTransactions,
+  renameIntoPlace,
+  rollBackFile,
+  stageTransaction,
+  writeIntent,
+  type ChangesetEntry,
+  type StagedFile,
+  type TxIntentFile,
+} from './changeset.ts';
 import { contentTypeFor } from './content-type.ts';
+import {
+  isJournaledPath,
+  parseRecordAuthor,
+  VersionJournal,
+  type HistoryAuthor,
+  type HistoryEntry,
+} from './history.ts';
 import { parentOf, parseWirePath, resolveInsideRoot, RESERVED_ROOT_DIR } from './paths.ts';
 import {
   applySubtree,
@@ -68,6 +90,22 @@ export interface ProjectFilesOptions {
   readonly onChange?: (frame: FsFrame) => void;
   /** Quiet time after the last watch event before a batch is scanned (plan §B.1: 300 ms). */
   readonly stabilityMs?: number;
+  /** Clock of the version journal (retention specs). */
+  readonly now?: () => number;
+  /**
+   * Test-only fault injection into a changeset. `afterRename(n)` runs after entry n was renamed
+   * into place: throwing makes the changeset fail (and roll back), resolving `'kill'` stops it dead
+   * — nothing more is renamed or cleaned up, as if the process died — for the recovery specs.
+   */
+  readonly faults?: {
+    readonly afterRename?: (index: number) => void | 'kill' | Promise<void | 'kill'>;
+  };
+}
+
+/** The answer of a changeset (`HostChangesetResult`). */
+export interface ChangesetResult {
+  readonly seq: number;
+  readonly files: readonly { path: string; sha256: string; size: number; seq: number }[];
 }
 
 interface MutationOutcome {
@@ -138,6 +176,45 @@ const outermost = (paths: Iterable<string>): string[] => {
   return prefixes;
 };
 
+/**
+ * `If-None-Match: *` / `If-Match` against the disk's sha256 (`null` = no file): 412 `exists` or
+ * `base_mismatch`, with the file's path and `currentHash` in the body so a changeset's caller
+ * knows which of its files was stale.
+ */
+const checkPreconditions = (
+  wirePath: string,
+  currentHash: string | null,
+  ifMatch: readonly string[] | null,
+  createOnly: boolean
+): void => {
+  if (createOnly && currentHash !== null) {
+    throw new HttpError(412, 'exists', `${wirePath} already exists.`, {
+      path: wirePath,
+      currentHash,
+    });
+  }
+  if (ifMatch && !ifMatch.includes('*') && !ifMatch.includes(currentHash ?? '')) {
+    throw new HttpError(412, 'base_mismatch', `${wirePath} changed since the base you edited.`, {
+      path: wirePath,
+      currentHash,
+    });
+  }
+  if (ifMatch && ifMatch.includes('*') && currentHash === null) {
+    throw new HttpError(412, 'base_mismatch', `${wirePath} does not exist.`, {
+      path: wirePath,
+      currentHash: null,
+    });
+  }
+};
+
+/** The same error, naming the changeset entry it is about. */
+const naming = (error: unknown, wirePath: string): unknown =>
+  error instanceof HttpError && !('path' in error.extra)
+    ? new HttpError(error.status, error.code, error.message, { ...error.extra, path: wirePath })
+    : error;
+
+const MAX_NOTE_LENGTH = 2_000;
+
 export class ProjectFiles {
   readonly root: string;
   private readonly log: (line: string) => void;
@@ -159,12 +236,17 @@ export class ProjectFiles {
   private firstDirtyAt = 0;
   private writer: string | null = null;
   private closed = false;
+  private readonly faults: NonNullable<ProjectFilesOptions['faults']>;
+  /** The version journal `.pix3/history/` (plan §C.4). */
+  readonly history: VersionJournal;
 
   constructor(options: ProjectFilesOptions) {
     this.root = options.root;
     this.log = options.log ?? (() => undefined);
     this.onChange = options.onChange ?? (() => undefined);
     this.stabilityMs = options.stabilityMs ?? STABILITY_INTERVAL_MS;
+    this.faults = options.faults ?? {};
+    this.history = new VersionJournal({ root: this.root, log: this.log, now: options.now });
   }
 
   get currentSeq(): number {
@@ -193,13 +275,53 @@ export class ProjectFiles {
     return out;
   }
 
+  /**
+   * Recover interrupted changesets (plan §C.4) before the first scan, so the table never sees a
+   * half-applied transaction; then journal every journaled file whose bytes the journal does not
+   * have as its newest version (`external`: an agent or an IDE changed it while no dev server
+   * ran), so the version before the next change always exists.
+   */
   async start(): Promise<void> {
     await this.serial(async () => {
+      const recovered = await recoverTransactions(this.root, line => this.log(line));
       const fresh: FileTable = new Map();
       await scanInto(this.root, '', this.cache, fresh);
       applySubtree(this.table, [''], fresh);
       this.revisionMemo = null;
+      for (const file of recovered) await this.journalFile(file.path, file.author);
+      for (const [path, entry] of this.table) {
+        if (entry.kind !== 'file' || !isJournaledPath(path)) continue;
+        if ((await this.history.newest(path))?.sha256 === entry.sha256) continue;
+        await this.journalFile(path, 'external');
+      }
     });
+  }
+
+  /**
+   * Journal what is on disk at `wirePath` now (if it is a journaled path). Never fails the caller:
+   * the write it follows already happened, and a lost journal entry is not a lost file.
+   */
+  private async journalFile(wirePath: string, author: HistoryAuthor): Promise<void> {
+    if (!isJournaledPath(wirePath)) return;
+    try {
+      const bytes = await readFile(join(this.root, ...wirePath.split('/')));
+      await this.history.record(wirePath, bytes, author);
+    } catch (error) {
+      if (errnoCode(error) === 'ENOENT') return;
+      this.log(
+        `history: could not journal ${wirePath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /** Journal the files of a batch the watcher or a rescan found (author as the frame says). */
+  private async journalEvents(events: readonly FsEvent[]): Promise<void> {
+    for (const event of events) {
+      if (event.kind !== 'file' || event.op === 'delete' || !event.sha256) continue;
+      // An `editor` event is the echo of an own write, journaled when it was written.
+      if (event.author === 'editor') continue;
+      await this.journalFile(event.path, 'external');
+    }
   }
 
   async close(): Promise<void> {
@@ -312,10 +434,11 @@ export class ProjectFiles {
           second.set(path, entry);
       }
     }
-    const events = applySubtree(this.table, prefixes, second);
+    const events = this.authored(applySubtree(this.table, prefixes, second));
     if (events.length > 0) {
       this.revisionMemo = null;
-      this.emit(this.authored(events));
+      this.emit(events);
+      await this.journalEvents(events);
     }
     return unstable;
   }
@@ -332,6 +455,7 @@ export class ProjectFiles {
       if (events.length > 0) {
         this.revisionMemo = null;
         this.emit(events);
+        await this.journalEvents(events);
       }
       return { events, seq: this.seq };
     });
@@ -377,6 +501,7 @@ export class ProjectFiles {
       if (events.length > 0) {
         this.revisionMemo = null;
         this.emit(events);
+        await this.journalEvents(events);
       }
       const files = [...this.table.entries()]
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -568,9 +693,14 @@ export class ProjectFiles {
     }
   }
 
-  /** Record an own write in the table; the watcher's echo then finds nothing new. */
-  private recordOwnFile(wirePath: string, stats: BigIntStats, sha256: string): void {
-    this.ownWrites.set(wirePath, sha256);
+  /**
+   * Record a write of the plugin in the table; the watcher's echo then finds nothing new. `own`
+   * false is a restore: the bytes are on disk because of the plugin, but no tab wrote them, so
+   * a later batch must not attribute them to the editor either.
+   */
+  private recordOwnFile(wirePath: string, stats: BigIntStats, sha256: string, own = true): void {
+    if (own) this.ownWrites.set(wirePath, sha256);
+    else this.ownWrites.delete(wirePath);
     if (isExcludedPath(wirePath)) return;
     const entry: FileEntry = {
       kind: 'file',
@@ -649,28 +779,13 @@ export class ProjectFiles {
         }
         const currentHash =
           resolved.kind === 'file' ? await this.currentHashOf(wirePath, resolved.absolute) : null;
-        if (createOnly && currentHash !== null) {
-          throw new HttpError(412, 'exists', `${wirePath} already exists.`, { currentHash });
-        }
-        if (ifMatch && !ifMatch.includes('*') && !ifMatch.includes(currentHash ?? '')) {
-          throw new HttpError(
-            412,
-            'base_mismatch',
-            `${wirePath} changed since the base you edited.`,
-            { currentHash }
-          );
-        }
-        if (ifMatch && ifMatch.includes('*') && currentHash === null) {
-          throw new HttpError(412, 'base_mismatch', `${wirePath} does not exist.`, {
-            currentHash: null,
-          });
-        }
+        checkPreconditions(wirePath, currentHash, ifMatch, createOnly);
         await mkdir(dirname(resolved.absolute), { recursive: true });
         if (resolved.kind === 'file') {
           const previous = await stat(resolved.absolute);
           await chmod(temp, previous.mode & 0o7777);
         }
-        await this.renameIntoPlace(temp, resolved.absolute);
+        await renameIntoPlace(temp, resolved.absolute);
         tempLive = false;
         const stats = await lstat(resolved.absolute, { bigint: true });
         const dirs = await this.recordAncestors(wirePath);
@@ -692,31 +807,11 @@ export class ProjectFiles {
               ]),
         ];
         const seq = this.emit(events, writerId ?? undefined);
+        await this.journalFile(wirePath, 'editor');
         return { status: 200, body: { path: wirePath, sha256, size, mtime: mtimeOf(stats), seq } };
       });
     } finally {
       if (tempLive) await rm(temp, { force: true });
-    }
-  }
-
-  private async renameIntoPlace(temp: string, target: string): Promise<void> {
-    try {
-      await rename(temp, target);
-    } catch (error) {
-      if (errnoCode(error) !== 'EXDEV') throw error;
-      // `.pix3/tmp` is on another device than the target: stage next to it instead.
-      const sibling = join(
-        dirname(target),
-        `.${basename(target)}.pix3-tmp-${randomBytes(6).toString('hex')}`
-      );
-      const source = await open(temp, 'r');
-      try {
-        await pipeline(source.createReadStream(), createWriteStream(sibling, { flags: 'wx' }));
-      } finally {
-        await source.close().catch(() => undefined);
-      }
-      await rename(sibling, target);
-      await rm(temp, { force: true });
     }
   }
 
@@ -780,10 +875,15 @@ export class ProjectFiles {
     for (const event of events) {
       if (event.kind === 'file' && event.sha256) this.ownWrites.set(event.path, event.sha256);
     }
-    return this.emit(
+    const seq = this.emit(
       events.map(event => ({ ...event, author: 'editor' as const })),
       writerId ?? undefined
     );
+    for (const event of events) {
+      if (event.kind === 'file' && event.op !== 'delete')
+        await this.journalFile(event.path, 'editor');
+    }
+    return seq;
   }
 
   private async performMkdir(wirePath: string, writerId: string | null): Promise<MutationOutcome> {
@@ -880,5 +980,264 @@ export class ProjectFiles {
         seq,
       },
     };
+  }
+
+  // --- Changeset (plan §C.4) ---------------------------------------------------------------------
+
+  /** `POST /__pix3/api/changeset` `{files: [{path, text? | base64?, ifMatch?, createOnly?}]}`. */
+  async writeChangeset(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const writerId = headerValue(req, 'x-pix3-writer');
+    const entries = parseChangeset(await readJson(req, MAX_CHANGESET_BYTES));
+    await this.journaled(req, res, changesetFingerprint(entries), async () => ({
+      status: 200,
+      body: { ...(await this.performChangeset(entries, writerId)) },
+    }));
+  }
+
+  /**
+   * Several files as one transaction, under {@link serial} like every write and the hand-over: so
+   * a changeset accepted before a claim completes before the claim answers, and one arriving after
+   * it gets `409 writer_superseded` (plan §C.3 step 3). Preflight → stage → rename each →
+   * `committed` → table, journal, ONE `pix3:fs` frame. A failed rename rolls the renamed files back
+   * from `old/` before the error is answered; a crash is recovered at the next {@link start}.
+   */
+  async performChangeset(
+    entries: readonly ChangesetEntry[],
+    writerId: string | null
+  ): Promise<ChangesetResult> {
+    this.checkWriter(writerId);
+    return this.serial(async () => {
+      this.checkWriter(writerId);
+      const files: StagedFile[] = [];
+      for (const entry of entries) {
+        try {
+          const resolved = await resolveInsideRoot(this.root, entry.path, { allowMissing: true });
+          if (resolved.kind === 'dir' || resolved.kind === 'other') {
+            throw new HttpError(409, 'not_a_file', `${entry.path} exists and is not a file.`);
+          }
+          const currentHash =
+            resolved.kind === 'file'
+              ? await this.currentHashOf(entry.path, resolved.absolute)
+              : null;
+          checkPreconditions(entry.path, currentHash, entry.ifMatch, entry.createOnly);
+          const mode =
+            resolved.kind === 'file' ? (await stat(resolved.absolute)).mode & 0o7777 : null;
+          files.push({ entry, absolute: resolved.absolute, mode });
+        } catch (error) {
+          throw naming(error, entry.path);
+        }
+      }
+
+      const { txDir, intent } = await stageTransaction(this.root, files);
+      const renamed: number[] = [];
+      let killed = false;
+      try {
+        for (const [n, file] of files.entries()) {
+          await mkdir(dirname(file.absolute), { recursive: true });
+          await renameIntoPlace(join(txDir, 'new', String(n)), file.absolute);
+          renamed.push(n);
+          if ((await this.faults.afterRename?.(n)) === 'kill') {
+            killed = true;
+            throw new Error(`changeset ${intent.id} killed after rename ${n} (test fault)`);
+          }
+        }
+      } catch (error) {
+        if (!killed) await this.rollBack(txDir, intent.files, renamed);
+        throw error;
+      }
+      for (const dir of new Set(files.map(file => dirname(file.absolute)))) await fsyncDir(dir);
+      await writeIntent(txDir, { ...intent, state: 'committed' });
+
+      const events: FsEvent[] = [];
+      for (const file of files) {
+        const stats = await lstat(file.absolute, { bigint: true });
+        const dirs = await this.recordAncestors(file.entry.path);
+        const existed = this.table.has(file.entry.path);
+        const unchanged = existed && this.table.get(file.entry.path)?.sha256 === file.entry.sha256;
+        this.recordOwnFile(file.entry.path, stats, file.entry.sha256);
+        events.push(...dirs.map(event => ({ ...event, author: 'editor' as const })));
+        if (!unchanged) {
+          events.push({
+            op: existed ? 'modify' : 'create',
+            path: file.entry.path,
+            kind: 'file',
+            sha256: file.entry.sha256,
+            author: 'editor',
+          });
+        }
+      }
+      await rm(txDir, { recursive: true, force: true });
+      const seq = this.emit(events, writerId ?? undefined);
+      for (const file of files) await this.journalFile(file.entry.path, 'editor');
+      return {
+        seq,
+        files: files.map(file => ({
+          path: file.entry.path,
+          sha256: file.entry.sha256,
+          size: file.entry.data.byteLength,
+          seq,
+        })),
+      };
+    });
+  }
+
+  /**
+   * Undo the renames of a failed changeset, newest first. If that fails too the transaction
+   * directory stays (still `prepared`), and recovery at the next start finishes the rollback.
+   */
+  private async rollBack(
+    txDir: string,
+    files: readonly TxIntentFile[],
+    renamed: readonly number[]
+  ): Promise<void> {
+    try {
+      for (const n of [...renamed].reverse()) await rollBackFile(this.root, txDir, files[n]);
+      await rm(txDir, { recursive: true, force: true });
+      if (renamed.length > 0) this.log(`changeset: rolled back ${renamed.length} renamed file(s)`);
+    } catch (error) {
+      this.log(
+        `changeset: rollback failed, left for recovery at the next start: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  // --- History (plan §C.4 "Журнал") --------------------------------------------------------------
+
+  /** `GET /__pix3/api/history?path=` → `{entries}`, newest first. */
+  async historyList(url: URL): Promise<Record<string, unknown>> {
+    const wirePath = parseWirePath(url.searchParams.get('path') ?? '');
+    return { entries: await this.history.list(wirePath) };
+  }
+
+  /** `GET /__pix3/api/history/version?path=&id=` → the version's raw bytes. */
+  async historyVersion(res: ServerResponse, url: URL, headOnly: boolean): Promise<void> {
+    const wirePath = parseWirePath(url.searchParams.get('path') ?? '');
+    const id = url.searchParams.get('id') ?? '';
+    const bytes = await this.history.read(wirePath, id);
+    if (!bytes) throw new HttpError(404, 'not_found', `No version ${id} of ${wirePath}.`);
+    res.writeHead(200, {
+      'Content-Type': contentTypeFor(wirePath),
+      'Content-Length': String(bytes.byteLength),
+      ETag: `"${createHash('sha256').update(bytes).digest('hex')}"`,
+      'Cache-Control': 'private, no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(headOnly ? undefined : bytes);
+  }
+
+  /**
+   * `POST /__pix3/api/history/record {path, text, author: 'rejected-draft', note?}`. No writer
+   * check: a superseded tab is exactly the one that has to keep its draft (§C.3 step 3).
+   */
+  async historyRecord(body: Record<string, unknown>): Promise<HistoryEntry> {
+    const wirePath = parseWirePath(body.path);
+    if (!isJournaledPath(wirePath)) {
+      throw new HttpError(
+        400,
+        'not_journaled',
+        `${wirePath} is not a scene, prefab or project file.`
+      );
+    }
+    if (typeof body.text !== 'string')
+      throw new HttpError(400, 'bad_request', '`text` must be a string.');
+    const author = parseRecordAuthor(body.author);
+    const note = body.note;
+    if (note !== undefined && (typeof note !== 'string' || note.length > MAX_NOTE_LENGTH)) {
+      throw new HttpError(
+        400,
+        'bad_request',
+        `\`note\` must be a string of at most ${MAX_NOTE_LENGTH} chars.`
+      );
+    }
+    const text = body.text;
+    return this.serial(() =>
+      this.history.record(wirePath, Buffer.from(text, 'utf8'), author, note || undefined)
+    );
+  }
+
+  /** `POST /__pix3/api/history/restore {path, id}` (+ `If-Match`, `X-Mutation-Id`). */
+  async historyRestore(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const wirePath = parseWirePath(body.path);
+    if (typeof body.id !== 'string')
+      throw new HttpError(400, 'bad_request', '`id` must be a string.');
+    const id = body.id;
+    const ifMatchRaw = headerValue(req, 'if-match');
+    const ifMatch = ifMatchRaw ? parseEntityTags(ifMatchRaw) : null;
+    const writerId = headerValue(req, 'x-pix3-writer');
+    await this.journaled(req, res, `restore\n${wirePath}\n${id}\n${ifMatchRaw ?? ''}`, () =>
+      this.performRestore(wirePath, id, ifMatch, writerId)
+    );
+  }
+
+  /**
+   * Write a journaled version back, like a PUT from the writer — but NOT as an own write: the
+   * frame says `external` and carries no writer, so the editor follows the disk (reload or §C.3
+   * merge) exactly as after an agent's change, instead of taking it for the echo of its flush.
+   */
+  private async performRestore(
+    wirePath: string,
+    id: string,
+    ifMatch: string[] | null,
+    writerId: string | null
+  ): Promise<MutationOutcome> {
+    this.checkWriter(writerId);
+    return this.serial(async () => {
+      this.checkWriter(writerId);
+      const bytes = await this.history.read(wirePath, id);
+      if (!bytes) throw new HttpError(404, 'not_found', `No version ${id} of ${wirePath}.`);
+      const resolved = await resolveInsideRoot(this.root, wirePath, { allowMissing: true });
+      if (resolved.kind === 'dir' || resolved.kind === 'other') {
+        throw new HttpError(409, 'not_a_file', `${wirePath} exists and is not a file.`);
+      }
+      const currentHash =
+        resolved.kind === 'file' ? await this.currentHashOf(wirePath, resolved.absolute) : null;
+      checkPreconditions(wirePath, currentHash, ifMatch, false);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const tempDir = join(this.root, RESERVED_ROOT_DIR, 'tmp');
+      await mkdir(tempDir, { recursive: true, mode: 0o700 });
+      const temp = join(tempDir, `restore-${randomBytes(8).toString('hex')}`);
+      try {
+        const handle = await open(temp, 'wx');
+        try {
+          await handle.writeFile(bytes);
+          await handle.sync();
+          if (resolved.kind === 'file')
+            await handle.chmod((await stat(resolved.absolute)).mode & 0o7777);
+        } finally {
+          await handle.close();
+        }
+        await mkdir(dirname(resolved.absolute), { recursive: true });
+        await renameIntoPlace(temp, resolved.absolute);
+      } finally {
+        await rm(temp, { force: true });
+      }
+      const stats = await lstat(resolved.absolute, { bigint: true });
+      const dirs = await this.recordAncestors(wirePath);
+      const existed = this.table.has(wirePath);
+      const unchanged = existed && this.table.get(wirePath)?.sha256 === sha256;
+      this.recordOwnFile(wirePath, stats, sha256, false);
+      const events: FsEvent[] = [
+        ...dirs.map(event => ({ ...event, author: 'external' as const })),
+        ...(unchanged
+          ? []
+          : [
+              {
+                op: existed ? ('modify' as const) : ('create' as const),
+                path: wirePath,
+                kind: 'file' as const,
+                sha256,
+                author: 'external' as const,
+              },
+            ]),
+      ];
+      const seq = this.emit(events);
+      try {
+        await this.history.record(wirePath, bytes, 'restore', `version ${id}`);
+      } catch (error) {
+        this.log(`history: could not journal the restore of ${wirePath}: ${String(error)}`);
+      }
+      return { status: 200, body: { path: wirePath, sha256, size: bytes.byteLength, seq } };
+    });
   }
 }

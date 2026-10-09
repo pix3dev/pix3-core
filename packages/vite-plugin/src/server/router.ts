@@ -24,6 +24,11 @@ import { errorBody, HttpError, readJson, sendJson } from './http.ts';
  * | `GET /__pix3/api/manifest` | full rescan + every file with its hash |
  * | `POST /__pix3/api/hash` | `{paths}` → `{hashes}` |
  * | `POST /__pix3/api/{mkdir,delete,move}` | |
+ * | `POST /__pix3/api/changeset` | `{files: [{path, text\|base64, ifMatch?, createOnly?}]}` as one transaction (§C.4) |
+ * | `GET /__pix3/api/history?path=` | `{entries}` of the version journal, newest first |
+ * | `GET\|HEAD /__pix3/api/history/version?path=&id=` | one journaled version's raw bytes |
+ * | `POST /__pix3/api/history/record` | `{path, text, author: 'rejected-draft', note?}` → the entry (any tab) |
+ * | `POST /__pix3/api/history/restore` | `{path, id}` (+ `If-Match`) → written back, seen as `external` |
  * | `POST /__pix3/api/handover/claim` | `{writerId}` → the disk the new writer starts from |
  * | `POST /__pix3/api/sync` | the barrier (§B.3) |
  * | `POST /__pix3/api/flush` | step 0 of the barrier on its own (the CLI before a build) |
@@ -104,6 +109,26 @@ export const createRouter = (deps: RouterDeps) => {
     }
     if (method === 'POST' && (api === 'mkdir' || api === 'delete' || api === 'move')) {
       await deps.files.jsonMutation(req, res, api, await readJson(req));
+      return;
+    }
+    if (method === 'POST' && api === 'changeset') {
+      await deps.files.writeChangeset(req, res);
+      return;
+    }
+    if (method === 'GET' && api === 'history') {
+      sendJson(res, 200, await deps.files.historyList(url));
+      return;
+    }
+    if ((method === 'GET' || method === 'HEAD') && api === 'history/version') {
+      await deps.files.historyVersion(res, url, method === 'HEAD');
+      return;
+    }
+    if (method === 'POST' && api === 'history/record') {
+      sendJson(res, 200, { ...(await deps.files.historyRecord(await readJson(req))) });
+      return;
+    }
+    if (method === 'POST' && api === 'history/restore') {
+      await deps.files.historyRestore(req, res);
       return;
     }
     if (method === 'POST' && api === 'handover/claim') {
