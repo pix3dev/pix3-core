@@ -228,10 +228,13 @@ describe('agent bridge', () => {
       ok: false,
       reason: 'already_playing',
     });
+    // A file written during play is held until play stops: the sync names it and the owner.
+    await host.externalWrite('scenes/main.pix3scene', SCENE.replace('"0"', '"1"'));
     expect(await callBridgeTool('pix3_sync')).toMatchObject({
       ok: false,
       reason: 'stale',
       playing: 'designer',
+      pending: ['scenes/main.pix3scene'],
     });
   });
 

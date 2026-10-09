@@ -110,7 +110,7 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       'Run the playing game frame by frame until a predicate holds (`until`, OR), one fails ' +
       '(`fail`, OR) or a budget runs out; read `verdict` first. Needs a running play session ' +
       '(pix3_play start). Predicates: {kind:"nodeProperty", name, path, op, value}, ' +
-      '{kind:"gameState", path, op, value}, {kind:"newErrors"}, {kind:"nodeVisible", name}… ' +
+      '{kind:"gameState", path, op, value}, {kind:"newErrors"}, {kind:"nodeAppeared"|"nodeGone", name}… ' +
       'Steps far faster than real time: give async init real time with `settleMs`.',
     inputSchema: {
       type: 'object',

@@ -67,6 +67,19 @@ describe('mountEditor', () => {
       changed: { 'scripts/A.ts': null },
       roots: host.scripts.current(),
     });
-    expect(reply).toMatchObject({ ok: false, reason: 'stale', playing: 'designer' });
+    expect(reply).toMatchObject({
+      ok: false,
+      reason: 'stale',
+      playing: 'designer',
+      pending: ['scripts/A.ts'],
+    });
+    // Nothing changed and nothing held for play (after a restart took the deferred version in):
+    // the game runs the disk's files, so the sync is a barrier even while playing.
+    const quiet = await host.handlers.applySync?.({
+      rev: 2,
+      changed: {},
+      roots: host.scripts.current(),
+    });
+    expect(quiet).toMatchObject({ ok: true, playing: 'designer' });
   });
 });

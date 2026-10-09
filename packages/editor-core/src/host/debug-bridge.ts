@@ -17,6 +17,7 @@ import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GameTestService, type GameRunSpec } from '@/services/game-test/GameTestService';
+import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
@@ -104,6 +105,9 @@ const refuse = <T extends object = object>(reason: string, detail?: string): Bri
 });
 
 let callCounter = 0;
+
+/** How long a restart waits for the versions held during play to be applied. */
+const RESTART_SETTLE_MS = 15_000;
 
 /** Keep the editor awake for the agent while `work` runs (plan §D.4). */
 const asAgentCall = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -264,15 +268,25 @@ const play = {
     if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing.');
     return ran(await resolveCommandDispatcher().executeById('game.stop'), 'game.stop');
   },
+  /**
+   * Plan §B.3: stop → apply the file changes held for play → start. The editor's own
+   * `game.restart` restarts the runtime in place and keeps the hold, so the version an agent
+   * wrote during play would still be waiting after it; this one goes through a real stop.
+   */
   async restart(): Promise<BridgeResult> {
     const refused = refuseDesignerSession();
     if (refused) return refused;
-    const executed = await resolveCommandDispatcher().executeById('game.restart');
-    if (executed && appState.ui.isPlaying) {
-      appState.ui.playOwner = 'agent';
-      service(AgentKeepaliveService).notePlayStartedByAgent();
-    }
-    return ran(executed, 'game.restart');
+    if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing; use start.');
+    const dispatcher = resolveCommandDispatcher();
+    const stopped = await dispatcher.executeById('game.stop');
+    if (!stopped) return ran(false, 'game.stop');
+    // Held external versions are re-read and delivered once play is off; the reloads they
+    // trigger complete before `whenSettled` resolves. Bounded: an unreadable file settles too.
+    await Promise.race([
+      service(ExternalChangeService).whenSettled(),
+      new Promise(resolve => setTimeout(resolve, RESTART_SETTLE_MS)),
+    ]);
+    return play.start();
   },
   async pause(): Promise<BridgeResult> {
     const refused = refuseDesignerSession();
