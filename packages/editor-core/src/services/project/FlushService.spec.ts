@@ -169,6 +169,38 @@ describe('FlushService — a flush is one patch from the baseline', () => {
     expect(disk()).toContain('width: 240');
   });
 
+  it('N8: coalesced input on both sides of a flush — the final value is written, Ctrl+Z works in memory', async () => {
+    const { flush, sceneId } = await boot();
+    // An inspector number drag: every step coalesces into one history entry whose undo goes
+    // back to the value before the drag (`previousValue`).
+    const step = (value: number) =>
+      service(OperationService).invokeAndPush(
+        new UpdateObjectPropertyOperation({
+          nodeId: 'box',
+          propertyPath: 'width',
+          value,
+          previousValue: 100,
+        }),
+        { coalesceKey: 'box.width' }
+      );
+    const entriesBefore = service(OperationService).history.snapshot().undoEntries.length;
+    await step(150);
+    expect(await flush.saveScene(sceneId)).toBe('saved');
+    expect(disk()).toContain('width: 150');
+    await step(200);
+    await step(260);
+    // Three steps, one entry (the singleton history may hold other specs' entries of this scene).
+    expect(service(OperationService).history.snapshot().undoEntries.length).toBe(entriesBefore + 1);
+    expect(await flush.saveScene(sceneId)).toBe('saved');
+    expect(disk()).toContain('width: 260');
+
+    await service(OperationService).undo();
+    expect(descriptor().isDirty).toBe(true);
+    expect(disk()).toContain('width: 260'); // undo is in memory until the next flush
+    expect(await flush.saveScene(sceneId)).toBe('saved');
+    expect(disk()).toBe(SCENE);
+  });
+
   it('never writes over an external version: 412 → nothing written, path pending', async () => {
     const { flush, sceneId } = await boot();
     await setWidth(240);
