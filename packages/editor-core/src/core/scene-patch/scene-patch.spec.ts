@@ -11,6 +11,7 @@ import {
 import { installCanvasOnlyDocument } from '@pix3/runtime/node';
 import {
   createSceneHarness,
+  extraCorpus,
   templateCorpus,
   type CorpusScene,
   type SceneHarness,
@@ -209,7 +210,8 @@ const lineBudget = (ops: SceneOp[]): number =>
 
 // --- corpus ---------------------------------------------------------------------------------------
 
-const corpus = templateCorpus();
+// `PIX3_EXTRA_CORPUS=<project dir>` adds another project's scenes (DeepCore before its migration).
+const corpus = [...templateCorpus(), ...extraCorpus()];
 
 describe.each(corpus.map(scene => [scene.name, scene] as const))('%s', (_name, scene) => {
   const h = createSceneHarness(scene.projectDir);
@@ -420,6 +422,33 @@ describe('targeted cases', () => {
     ]);
     expect(patched).toContain('position: {x: 5, y: 2}');
     expect(diffScenes({ version: '1', root: [] }, { version: '1', root: [] })).toEqual([]);
+  });
+
+  it('a JSON scene is patched as data and keeps its layout (minified, indented)', async () => {
+    const doc = {
+      version: '1.0.0',
+      root: [{ id: 'a', type: 'Group2D', name: 'A', properties: { width: 10, height: 5 } }],
+    };
+    const ops = [
+      { kind: 'set' as const, nodeId: 'a', path: ['properties', 'width'], value: 20 },
+      { kind: 'delete' as const, nodeId: 'a', path: ['properties', 'height'] },
+      { kind: 'set' as const, nodeId: 'a', path: ['properties', 'layout', 'enabled'], value: true },
+    ];
+    const expected = {
+      ...doc,
+      root: [{ ...doc.root[0], properties: { width: 20, layout: { enabled: true } } }],
+    };
+    expect(applySceneOps(JSON.stringify(doc), ops)).toBe(JSON.stringify(expected));
+    expect(applySceneOps(`${JSON.stringify(doc, null, 2)}\n`, ops)).toBe(
+      `${JSON.stringify(expected, null, 2)}\n`
+    );
+    const norm = await h.norm(applySceneOps(JSON.stringify(doc), ops), 'j.pix3scene');
+    expect(norm.root[0].properties).toMatchObject({ width: 20 });
+    // Not what JSON.stringify prints (hand-aligned): not the JSON path — YAML splices as before.
+    const aligned = '{ "version": "1.0.0", "root": [ { "id": "a", "name": "A" } ] }';
+    expect(() =>
+      applySceneOps(aligned, [{ kind: 'set', nodeId: 'a', path: ['name'], value: 'B' }])
+    ).not.toThrow();
   });
 
   it('refuses anchors and aliases', () => {

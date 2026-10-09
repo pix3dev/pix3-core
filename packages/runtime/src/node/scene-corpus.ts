@@ -63,6 +63,22 @@ export function templateCorpus(): CorpusScene[] {
     });
 }
 
+/**
+ * Scenes of another project, from `PIX3_EXTRA_CORPUS` (a project directory; `res://` = that
+ * directory). Not in CI: a local check of a real game before its migration (DeepCore, plan §A.4).
+ */
+export function extraCorpus(): CorpusScene[] {
+  const projectDir = process.env.PIX3_EXTRA_CORPUS;
+  if (!projectDir || !existsSync(projectDir)) return [];
+  return listScenes(projectDir)
+    .filter(full => !/[\\/](node_modules|dist|\.pix3)[\\/]/.test(full))
+    .sort()
+    .map(full => {
+      const path = relative(projectDir, full).replace(/\\/g, '/');
+      return { name: `extra:${path}`, projectDir, path, text: readFileSync(full, 'utf8') };
+    });
+}
+
 export interface SceneHarness {
   parse(text: string, path: string): Promise<SceneGraph>;
   /** `SceneSaver.serializeSceneDocument`, with `undefined` dropped as YAML drops it. */

@@ -18,6 +18,7 @@ import {
   type SceneOp,
   type StructuralOp,
 } from '@/core/scene-patch/scene-diff';
+import { applySceneOpsToJson, detectJsonLayout } from '@/core/scene-patch/scene-json-writer';
 
 /**
  * `ScenePatchWriter` (plan §C.2, S12): applies semantic ops (`scene-diff.ts`) to the **text on disk**.
@@ -518,6 +519,16 @@ const applyStructural = (src: string, op: StructuralOp): string => {
  */
 export function applySceneOps(text: string, ops: readonly SceneOp[]): string {
   if (ops.length === 0) return text;
+  // A JSON scene (valid YAML; agents and tools write them) is patched as data and re-printed
+  // with its own layout — it has no comments to keep, and splicing YAML into it breaks it.
+  const json = detectJsonLayout(text);
+  if (json) {
+    try {
+      return applySceneOpsToJson(text, ops, json);
+    } catch (error) {
+      throw new ScenePatchError(error instanceof Error ? error.message : String(error));
+    }
+  }
   const bom = text.startsWith('\uFEFF') ? '\uFEFF' : '';
   let src = bom ? text.slice(1) : text;
   const crlf = src.includes('\r\n');
