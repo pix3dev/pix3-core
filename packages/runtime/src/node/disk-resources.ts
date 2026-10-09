@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { Texture } from 'three';
 
 import { AssetLoader, type AssetLoaderResult, type LoadTextureOptions } from '../core/AssetLoader';
+import { readImageHeaderSize, type ImageHeaderSize } from '../core/image-header-size';
 import { ResourceManager } from '../core/ResourceManager';
 import type { SpineAsset, SpineAssetRequest } from '../core/spine/SpineAsset';
 
@@ -138,7 +139,13 @@ export class NodeAssetLoader extends AssetLoader {
     _options?: LoadTextureOptions
   ): Promise<Texture> {
     this.require(resourcePath);
-    return new Texture();
+    const texture = new Texture();
+    // The header's size, as the browser would decode it: an un-sized `Sprite2D` takes it, so the
+    // scene normalises here exactly as in the editor (`.plans/write-model.md` W2).
+    const path = this.disk.isProjectResource(resourcePath) ? this.disk.pathOf(resourcePath) : null;
+    const size = path ? readHeaderSizeOf(path) : null;
+    if (size) texture.image = { width: size.width, height: size.height };
+    return texture;
   }
 
   override async loadAsset(resourcePath: string): Promise<AssetLoaderResult> {
@@ -159,5 +166,20 @@ export class NodeAssetLoader extends AssetLoader {
       this.missingSet.add(resourcePath);
       throw new MissingResourceError(resourcePath);
     }
+  }
+}
+
+/** The first 64 KiB are enough for every header `readImageHeaderSize` knows (JPEG EXIF included). */
+function readHeaderSizeOf(path: string): ImageHeaderSize | null {
+  let fd: number | null = null;
+  try {
+    fd = openSync(path, 'r');
+    const buffer = new Uint8Array(64 * 1024);
+    const read = readSync(fd, buffer, 0, buffer.length, 0);
+    return readImageHeaderSize(buffer.subarray(0, read));
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) closeSync(fd);
   }
 }

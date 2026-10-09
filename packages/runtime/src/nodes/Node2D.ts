@@ -571,17 +571,23 @@ export class Node2D extends NodeBase {
     this.authoredLayoutSize.set(size.width, size.height);
   }
 
+  /**
+   * The `flow:` block: `enabled` plus only the keys that differ from their defaults, so turning
+   * the flow on or off in the inspector changes one line, not a whole block (plan §C.2, S12 §4.1).
+   * A disabled flow with tuned parameters keeps them (`enabled: false`), so switching it back on
+   * restores the column the author set up; a disabled one at defaults writes nothing.
+   */
   serializeFlow(): Record<string, unknown> | undefined {
-    if (!this._flow.enabled) return undefined;
-    return {
-      enabled: true,
-      direction: this._flow.direction,
-      gap: this._flow.gap,
-      paddingX: this._flow.paddingX,
-      paddingY: this._flow.paddingY,
-      align: this._flow.align,
-      autoSize: this._flow.autoSize,
-    };
+    const flow = this._flow;
+    const tuned: Record<string, unknown> = {};
+    if (flow.direction !== 'vertical') tuned.direction = flow.direction;
+    if (flow.gap !== 0) tuned.gap = flow.gap;
+    if (flow.paddingX !== 0) tuned.paddingX = flow.paddingX;
+    if (flow.paddingY !== 0) tuned.paddingY = flow.paddingY;
+    if (flow.align !== 'start') tuned.align = flow.align;
+    if (flow.autoSize) tuned.autoSize = true;
+    if (!flow.enabled && Object.keys(tuned).length === 0) return undefined;
+    return { enabled: flow.enabled, ...tuned };
   }
 
   applyAnchoredLayoutRecursive(
@@ -636,16 +642,13 @@ export class Node2D extends NodeBase {
     return { width: 0, height: 0 };
   }
 
+  /** The `layout:` block, written like {@link serializeFlow}: `enabled` plus non-default keys. */
   serializeLayout(): Record<string, unknown> | undefined {
-    if (!this._layoutEnabled) {
-      return undefined;
-    }
-
-    return {
-      enabled: true,
-      horizontalAlign: this._horizontalAlign,
-      verticalAlign: this._verticalAlign,
-    };
+    const tuned: Record<string, unknown> = {};
+    if (this._horizontalAlign !== 'center') tuned.horizontalAlign = this._horizontalAlign;
+    if (this._verticalAlign !== 'center') tuned.verticalAlign = this._verticalAlign;
+    if (!this._layoutEnabled && Object.keys(tuned).length === 0) return undefined;
+    return { enabled: this._layoutEnabled, ...tuned };
   }
 
   /**

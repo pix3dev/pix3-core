@@ -833,7 +833,7 @@ export class SceneSaver {
       props.subEmitterInheritVelocity = node.subEmitterInheritVelocity;
     }
 
-    return props;
+    return orderLikeSource(props, Object.keys(node.properties));
   }
 
   private captureInstanceComparableMap(root: NodeBase): Record<string, Record<string, unknown>> {
@@ -996,4 +996,27 @@ export class SceneSaver {
       }
     }
   }
+}
+
+/**
+ * `props` in a fixed order: the keys the node's property bag already had, in that order, then the
+ * keys a type branch materialised, and `transform` last. The branches above delete and re-add
+ * keys, so without this a save moved them after the authored keys and the NEXT save moved
+ * `transform` again: `save(load(save(x))) != save(x)` on 13 of 34 corpus files (S12 §2.3). Some
+ * nodes (lights) build their bag in the constructor rather than from the YAML, so "the file's
+ * order" is not available for every key — the fixed tail is what makes one round a fixed point.
+ */
+function orderLikeSource(
+  props: Record<string, unknown>,
+  sourceOrder: readonly string[]
+): Record<string, unknown> {
+  const ordered: Record<string, unknown> = {};
+  for (const key of sourceOrder) {
+    if (key !== 'transform' && key in props) ordered[key] = props[key];
+  }
+  for (const [key, value] of Object.entries(props)) {
+    if (key !== 'transform' && !(key in ordered)) ordered[key] = value;
+  }
+  if ('transform' in props) ordered.transform = props.transform;
+  return ordered;
 }

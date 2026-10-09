@@ -2434,13 +2434,12 @@ export class SceneLoader {
   /**
    * Container flow (`Node2DFlowConfig`): a stacked column/row, as opposed to `layout`, which
    * anchors ONE node to its parent's edges. Absent or `enabled: false` ⇒ children keep the
-   * positions they were authored at.
+   * positions they were authored at (a disabled block still carries its parameters).
    */
   private parseNode2DFlow(props: Record<string, unknown>): Node2DFlowConfig | undefined {
     const raw = props.flow;
     if (!raw || typeof raw !== 'object') return undefined;
     const record = raw as Record<string, unknown>;
-    if (record.enabled !== true) return undefined;
     const num = (value: unknown): number | undefined =>
       typeof value === 'number' && Number.isFinite(value) ? value : undefined;
     const direction = record.direction === 'horizontal' ? 'horizontal' : 'vertical';
@@ -2449,7 +2448,8 @@ export class SceneLoader {
         ? (record.align as 'center' | 'end')
         : 'start';
     return {
-      enabled: true,
+      // A disabled flow keeps its parameters (`SceneSaver` writes them as `enabled: false`).
+      enabled: record.enabled === true,
       direction,
       gap: num(record.gap),
       paddingX: num(record.paddingX),
