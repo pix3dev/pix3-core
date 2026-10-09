@@ -29,7 +29,7 @@ export interface ScanOptions {
   /** Where `res://` points, relative to the root (`'.'` by default). */
   readonly resRoot: string;
   readonly manifest: ProjectManifestInfo;
-  /** `pix3({ entryScene })` or `PIX3_ENTRY_SCENE`: a `res://`-relative scene path. */
+  /** `pix3({ entryScene })`: a `res://`-relative scene path. */
   readonly entryScene?: string | null;
 }
 

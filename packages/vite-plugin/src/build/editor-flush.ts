@@ -9,8 +9,7 @@ import { devJsonPath, type DevInfo } from '../dev-info.ts';
  * treated as gone (a stale `dev.json` after a crash); an editor that cannot flush in time is
  * `E_EDITOR_UNSYNCED` — the build would otherwise ship a scene older than what the designer sees.
  *
- * `PIX3_NO_SYNC=1` skips the step (the CLI's `--no-sync`; also what the plugin's own build child
- * gets, since its parent flushed already). The CLI carries its own copy of this logic
+ * `PIX3_NO_SYNC=1` skips the step (the CLI's `--no-sync`). The CLI carries its own copy of this logic
  * (`packages/cli/src/editor-sync.ts`); keep the two in step.
  */
 

@@ -14,8 +14,6 @@ export interface EditorHost {
   readonly scripts: HostScripts;
   readonly sync: HostSync;
   readonly writer: HostWriter;
-  /** Playable build from the editor (plan §B.6); absent until the plugin ships it. */
-  readonly build?: HostBuild;
   /** Version journal `.pix3/history/` (plan §C.4); absent on a host without one. */
   readonly history?: HostHistory;
 }
@@ -230,14 +228,6 @@ export interface HostWriter {
   /** Become the writer (plan §C.3): the plugin answers with the disk to start from. */
   claim(): Promise<HostClaim>;
   onChange(listener: (writerId: string | null) => void): Unsubscribe;
-}
-
-export interface HostBuild {
-  run(options: {
-    readonly format: 'html' | 'zip';
-    readonly compress?: boolean;
-    readonly entryScene?: string;
-  }): Promise<{ readonly path: string; readonly bytes: number; readonly sha256: string }>;
 }
 
 /** The {@link HostFileFailure} a host call rejected with, or null for any other error. */

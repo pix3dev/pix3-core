@@ -12,7 +12,7 @@ import { readBuildRecord } from './record.ts';
 
 /**
  * `vite build` with `pix3()` on the fixture project (plan §B.6): the single-file html, the zip,
- * `build: false`, the strip decisions and the option/env handling — judged by what lands in
+ * `build: false`, the strip decisions and the option handling — judged by what lands in
  * `dist/` and `.pix3/build.json`, not by the plugin's own log.
  */
 
@@ -21,8 +21,6 @@ const BUILD_TIMEOUT_MS = 120_000;
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  delete process.env.PIX3_BUILD_FORMAT;
-  delete process.env.PIX3_ENTRY_SCENE;
   delete process.env.PIX3_NO_SYNC;
 });
 
@@ -112,7 +110,7 @@ describe('build: html (single file)', () => {
   );
 
   it(
-    'boots the entry scene from the option, the env, or pix3project.yaml',
+    'boots the entry scene from the option or pix3project.yaml',
     async () => {
       const root = project({
         ...FIXTURE_FILES,
@@ -127,10 +125,6 @@ describe('build: html (single file)', () => {
       expect(html(join(root, 'dist'))).toMatch(/[`"']scenes\/other\.pix3scene[`"']/);
 
       await runBuild(root, { entryScene: 'res://scenes/other.pix3scene' });
-      expect(readBuildRecord(root)?.entryScene).toBe('scenes/other.pix3scene');
-
-      process.env.PIX3_ENTRY_SCENE = 'scenes/other.pix3scene';
-      await runBuild(root);
       expect(readBuildRecord(root)?.entryScene).toBe('scenes/other.pix3scene');
     },
     BUILD_TIMEOUT_MS
@@ -164,17 +158,6 @@ describe('build: zip', () => {
         .map(name => Buffer.from(entries[name]).toString('utf8'))
         .join('');
       expect(code).toContain('Slider2D was stripped from this build');
-    },
-    BUILD_TIMEOUT_MS
-  );
-
-  it(
-    'PIX3_BUILD_FORMAT overrides the configured format for one run',
-    async () => {
-      const root = project();
-      process.env.PIX3_BUILD_FORMAT = 'zip';
-      await runBuild(root, { build: 'html' });
-      expect(readBuildRecord(root)?.format).toBe('zip');
     },
     BUILD_TIMEOUT_MS
   );

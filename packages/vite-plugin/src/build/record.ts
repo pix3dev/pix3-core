@@ -6,8 +6,8 @@ import { RESERVED_ROOT_DIR } from '../files/paths.ts';
 
 /**
  * `.pix3/build.json` — what the last `vite build` produced. Written by the plugin at the end of a
- * build; read by the dev server after the child it spawned for `POST /__pix3/api/build` exits, so
- * the editor gets the artifact's path, size and hash without parsing Vite's output.
+ * build, so whoever ran `npm run build` (the coding agent, a script, CI) gets the artifact's path,
+ * size and hash without parsing Vite's output.
  */
 export interface BuildRecord {
   readonly format: 'html' | 'zip';

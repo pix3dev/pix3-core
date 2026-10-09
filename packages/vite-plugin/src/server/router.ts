@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { parseBuildRequest, type BuildRunner } from '../build/run-build.ts';
 import type { ProjectFiles } from '../files/project-files.ts';
 import {
   DEFAULT_SYNC_TIMEOUT_MS,
@@ -32,8 +31,7 @@ import { errorBody, HttpError, readJson, sendJson } from './http.ts';
  * | `POST /__pix3/api/history/restore` | `{path, id}` (+ `If-Match`) → written back, seen as `external` |
  * | `POST /__pix3/api/handover/claim` | `{writerId}` → the disk the new writer starts from |
  * | `POST /__pix3/api/sync` | the barrier (§B.3) |
- * | `POST /__pix3/api/flush` | step 0 of the barrier on its own (the CLI before a build) |
- * | `POST /__pix3/api/build` | `{format?, compress?, entryScene?}` → flush, `vite build` in a child, `.pix3/build.json` (§B.6) |
+ * | `POST /__pix3/api/flush` | step 0 of the barrier on its own (`vite build`, `pix3 check`/`smoke` before they read the disk) |
  */
 
 export interface RouterDeps {
@@ -42,8 +40,6 @@ export interface RouterDeps {
   readonly files: ProjectFiles;
   readonly socket: EditorSocket;
   readonly barrier: SyncBarrier;
-  /** The build runner, or null when `pix3({ build: false })`. */
-  readonly build: BuildRunner | null;
   readonly hello: () => Record<string, unknown>;
   readonly editorPage: () => { status: number; html: string };
   /** The prebuilt editor's stylesheet (`@pix3/editor-core/dist/editor.css`), or null. */
@@ -154,14 +150,6 @@ export const createRouter = (deps: RouterDeps) => {
         200,
         await deps.barrier.flush(parseTimeout(body.timeoutMs, DEFAULT_SYNC_TIMEOUT_MS))
       );
-      return;
-    }
-    if (method === 'POST' && api === 'build') {
-      if (!deps.build) {
-        throw new HttpError(400, 'build_disabled', 'pix3({ build: false }): no playable build.');
-      }
-      const record = await deps.build.run(parseBuildRequest(await readJson(req)));
-      sendJson(res, 200, { ok: true, ...record });
       return;
     }
     throw new HttpError(404, 'not_found', 'Not found.');

@@ -13,8 +13,8 @@
 - Strip (`src/build/strippable-runtime-modules.ts`): runtime modules nothing mentions are replaced by throwing stubs in the `load` hook; `postprocessing` resolves to a stub in an html build with no `PostProcess` node. On by default, off when a project dependency depends on `@pix3/runtime` (its imports are not scanned), `strip: false` / `strip: true` override. The table is guarded by `strippable-runtime-modules.spec.ts` against the runtime's import graph.
 - Before reading the disk, a build asks the dev server named by `.pix3/dev.json` to flush the editor's unsaved scenes (`POST /__pix3/api/flush`, 15 s); a live editor that cannot flush fails the build with `E_EDITOR_UNSYNCED`; `PIX3_NO_SYNC=1` skips it (as `pix3 check --no-sync` does).
 - Vite 7 and 8: single-chunk output is `inlineDynamicImports` (rollup) or `codeSplitting: false` (rolldown), chosen by `this.meta.rolldownVersion`; stable hooks only.
-- The result is recorded in `.pix3/build.json` (format, path, bytes, sha256, entry scene, assets, stripped modules, warnings). Env for one run: `PIX3_BUILD_FORMAT`, `PIX3_ENTRY_SCENE`, `PIX3_BUILD_COMPRESS`.
-- `POST /__pix3/api/build {format?, compress?, entryScene?}` from the editor (Run > Build Playable): flush the writer tab, spawn `process.execPath node_modules/vite/bin/vite.js build` (never `vite.cmd`), stream its output as `pix3:build` frames (`flush | start | output | done | failed`), answer with the record. One build at a time (`409 build_in_progress`); `400 build_disabled` under `build: false`.
+- The result is recorded in `.pix3/build.json` (format, path, bytes, sha256, entry scene, assets, stripped modules, warnings).
+- The build is run by whoever owns the terminal (`npm run build` — the coding agent, the user, CI), never from the editor: the dev server has no build route (owner decision 2026-10-10, `.plans/player-build.md`).
 - Not yet (P2): `compress`, `report.json`, scenes as documents, WebP, parsing a dependency's imports (N11), the gltf stub.
 
 Done (P1, dev side):
@@ -32,4 +32,4 @@ Done (P1, dev side):
 
 Not yet: the image-generation key proxy.
 
-Specs: `src/plugin.spec.ts`, `src/files/changeset.spec.ts`, `src/files/history.spec.ts` (real Vite on a free port, fake tab over the socket; crash/recovery cases drive `ProjectFiles` directly with its `faults` hook); `src/build/build.spec.ts` (a real `vite build` of the inline fixture in `src/test-support/build-fixture.ts`: html, zip, `build: false`, strip, options), `src/build/build-route.spec.ts` (the spawned child build), `src/build/scan.spec.ts`, `src/build/strippable-runtime-modules.spec.ts`.
+Specs: `src/plugin.spec.ts`, `src/files/changeset.spec.ts`, `src/files/history.spec.ts` (real Vite on a free port, fake tab over the socket; crash/recovery cases drive `ProjectFiles` directly with its `faults` hook); `src/build/build.spec.ts` (a real `vite build` of the inline fixture in `src/test-support/build-fixture.ts`: html, zip, `build: false`, strip, options), `src/build/scan.spec.ts`, `src/build/strippable-runtime-modules.spec.ts`.

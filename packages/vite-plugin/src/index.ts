@@ -38,7 +38,6 @@ import {
   type ProjectManifestInfo,
 } from './build/project-manifest.ts';
 import { fileDigest, writeBuildRecord } from './build/record.ts';
-import { BuildRunner } from './build/run-build.ts';
 import { isPrefabPath, listProjectFiles, scanProject, type ProjectScan } from './build/scan.ts';
 import { decideStrip } from './build/strip-decision.ts';
 import {
@@ -84,7 +83,7 @@ export interface Pix3Options {
   /**
    * Playable build format (plan §B.6): `'html'` (default) — one self-contained `dist/index.html`;
    * `'zip'` — `dist/<name>.zip` of the plain build with the assets beside it; `false` leaves
-   * `vite build` alone. `PIX3_BUILD_FORMAT` overrides a format for one run (the editor's build).
+   * `vite build` alone.
    */
   readonly build?: 'html' | 'zip' | false;
   /** Gzip + inline bootstrap (plan §B.6 item 5, P2 — accepted, not implemented yet). */
@@ -151,26 +150,17 @@ interface BuildState {
   readonly postprocessingInstalled: boolean;
 }
 
-const envFormat = (): 'html' | 'zip' | null => {
-  const value = process.env.PIX3_BUILD_FORMAT;
-  return value === 'html' || value === 'zip' ? value : null;
-};
-
 export function pix3(options: Pix3Options = {}): Plugin[] {
   const settings = {
     resRoot: stripRes(options.resRoot ?? '.').replace(/\/+$/, '') || '.',
     editor: options.editor ?? true,
     build: options.build ?? 'html',
-    compress: process.env.PIX3_BUILD_COMPRESS
-      ? process.env.PIX3_BUILD_COMPRESS === '1'
-      : (options.compress ?? false),
+    compress: options.compress ?? false,
     strip: options.strip,
-    entryScene: process.env.PIX3_ENTRY_SCENE ?? options.entryScene ?? null,
+    entryScene: options.entryScene ?? null,
     allowRemote: options.allowRemote ?? false,
   };
-  /** The format this process builds: the env override (the editor's request) beats the option. */
-  const buildFormat = (): 'html' | 'zip' | false =>
-    settings.build === false ? false : (envFormat() ?? settings.build);
+  const buildFormat = (): 'html' | 'zip' | false => settings.build;
 
   let config: ResolvedConfig | null = null;
   let server: ViteDevServer | null = null;
@@ -454,12 +444,6 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         log,
       });
       barrier = syncBarrier;
-      const buildRunner = new BuildRunner({
-        root: projectRoot,
-        flush: timeoutMs => syncBarrier.flush(timeoutMs),
-        broadcast: frame => editorSocket.broadcast({ ...frame }),
-        log,
-      });
       await projectFiles.start();
 
       devServer.httpServer?.on('upgrade', (req, sock, head) => {
@@ -477,7 +461,6 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           files: projectFiles,
           socket: editorSocket,
           barrier: syncBarrier,
-          build: settings.build === false ? null : buildRunner,
           log,
           hello: () => ({
             root: projectRoot,
