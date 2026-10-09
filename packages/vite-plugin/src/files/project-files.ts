@@ -330,8 +330,17 @@ export class ProjectFiles {
     await this.serialTail.catch(() => undefined);
   }
 
-  /** Every table mutation (own writes, watcher batches, scans) runs one at a time. */
+  /**
+   * Every table mutation (own writes, watcher batches, scans) runs one at a time. Once closed,
+   * new work is refused (503): what was queued before `close()` still finishes, nothing after it
+   * can land behind the back of the next server's instance.
+   */
   serial<T>(work: () => Promise<T>): Promise<T> {
+    if (this.closed) {
+      return Promise.reject(
+        new HttpError(503, 'closed', 'The dev server is shutting down; retry on the new one.')
+      );
+    }
     const run = this.serialTail.then(work, work);
     this.serialTail = run.catch(() => undefined);
     return run;

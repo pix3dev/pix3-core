@@ -118,6 +118,16 @@ export function pix3(options: Pix3Options = {}): Plugin {
       };
     },
 
+    /**
+     * Vite awaits this in `server.close()` — also on an in-process restart (a `vite.config` edit):
+     * every write already accepted finishes before a new server (and a new `ProjectFiles`) starts,
+     * so two instances never write the same project at once.
+     */
+    async closeBundle() {
+      await files?.close();
+      files = null;
+    },
+
     configResolved(resolved) {
       config = resolved;
       scripts = new ScriptGraph(resolved.root, () => server);

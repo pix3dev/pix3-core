@@ -211,6 +211,24 @@ describe('changeset transaction and recovery (ProjectFiles)', () => {
       ],
     });
 
+  it('close() lets an accepted changeset finish and refuses new work (an in-process restart)', async () => {
+    const root = makeRoot({ 'scenes/a.pix3scene': A_OLD, 'prefabs/p.prefab': P_OLD });
+    let release: () => void = () => {};
+    const gate = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    const { files: f } = await open(root, { faults: { afterRename: () => gate } });
+    const accepted = f.performChangeset(entries(), null);
+    await sleep(20);
+    const closing = f.close();
+    await expect(f.performChangeset(entries(), null)).rejects.toMatchObject({ status: 503 });
+    release();
+    await accepted;
+    await closing;
+    expect(text(root, 'scenes/a.pix3scene')).toBe(A_NEW);
+    expect(text(root, 'prefabs/p.prefab')).toBe(P_NEW);
+  });
+
   it('rolls the first file back when the run fails after its rename (nothing half-written)', async () => {
     const root = makeRoot({ 'scenes/a.pix3scene': A_OLD, 'prefabs/p.prefab': P_OLD });
     const { files: f, frames } = await open(root, {
