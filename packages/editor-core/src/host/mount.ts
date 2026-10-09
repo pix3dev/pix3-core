@@ -11,6 +11,7 @@ import { ProjectService } from '@/services/project/ProjectService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
+import { SceneDraftService } from '@/services/project/SceneDraftService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
 
@@ -79,6 +80,8 @@ export async function mountEditorWith(
 
   const sceneWrite = service(FlushService);
   sceneWrite.start();
+  const drafts = service(SceneDraftService);
+  drafts.start();
   const syncApply = service(SyncApplyService);
   host.sync.setHandlers({
     flush: timeoutMs => sceneWrite.flushDirty(timeoutMs),
@@ -97,6 +100,7 @@ export async function mountEditorWith(
       for (const dispose of disposers) dispose();
       host.sync.setHandlers({});
       sceneWrite.dispose();
+      drafts.dispose();
       writer.dispose();
       service(ExternalReloadService).dispose();
       // Per-file memory of this mount (pending external versions, baselines) goes with it.

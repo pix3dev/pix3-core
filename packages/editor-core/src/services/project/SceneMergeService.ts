@@ -253,10 +253,19 @@ export class SceneMergeService {
         op
       );
     }
-    const text = applySceneOps(B.text, [...keyed.values()]);
+    await this.adoptText(descriptor, applySceneOps(B.text, [...keyed.values()]));
+    await this.flush.flushScene(descriptor.id);
+  }
+
+  /**
+   * Make `text` the scene's graph on top of the current baseline: the difference is pending and
+   * flushes next (a restored draft, restored keys). History is cleared like on any reload.
+   */
+  async adoptText(descriptor: SceneDescriptor, text: string): Promise<void> {
+    const B = this.baselines.get(toProjectPath(descriptor.filePath));
+    if (!B) throw new Error(`${descriptor.filePath} has no disk baseline`);
     const graph = await this.sceneManager.parseScene(text, { filePath: descriptor.filePath });
     await this.install(descriptor, B, text, graph, true);
-    await this.flush.flushScene(descriptor.id);
   }
 
   private describe(dropped: DroppedKey, doc: SavedSceneDocument): string {

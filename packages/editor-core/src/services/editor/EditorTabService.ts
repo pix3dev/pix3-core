@@ -18,6 +18,7 @@ import { subscribe } from 'valtio/vanilla';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { FlushService } from '@/services/project/FlushService';
+import { SceneDraftService } from '@/services/project/SceneDraftService';
 
 export type DirtyCloseDecision = 'save' | 'dont-save' | 'cancel';
 
@@ -60,6 +61,9 @@ export class EditorTabService {
 
   @inject(FlushService)
   private readonly sceneWrite!: FlushService;
+
+  @inject(SceneDraftService)
+  private readonly drafts!: SceneDraftService;
 
   private disposeSceneSubscription?: () => void;
   private disposeAnimationSubscription?: () => void;
@@ -155,9 +159,13 @@ export class EditorTabService {
     this.handleBeforeUnload = (e: BeforeUnloadEvent) => {
       this.captureActiveContextState();
 
-      // Always warn while a scene has unsaved changes: nothing else holds an unsaved edit yet
-      // (until the IndexedDB draft of plan §C.1 exists, closing the tab loses it).
-      const hasDirty = appState.tabs.tabs.some(t => t.isDirty);
+      // Warn only when closing would lose something: a dirty animation, or a dirty scene whose
+      // current state is not in a durable draft checkpoint yet (plan §C.1). A last checkpoint is
+      // started on `pagehide` anyway.
+      const scenesCovered = this.drafts.isCovered();
+      const hasDirty = appState.tabs.tabs.some(
+        t => t.isDirty && (t.type !== 'scene' || !scenesCovered)
+      );
       if (hasDirty) {
         e.preventDefault();
       }

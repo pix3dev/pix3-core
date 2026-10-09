@@ -75,9 +75,25 @@ export type HostFileErrorCode =
   | 'network'
   | 'other';
 
+export interface HostChangesetEntry {
+  readonly path: string;
+  readonly data: Uint8Array | string;
+  /** sha256 the file must still have; omitted = unconditional; `createOnly` = must not exist. */
+  readonly ifMatch?: string;
+  readonly createOnly?: boolean;
+}
+
+export interface HostChangesetResult {
+  readonly seq: number;
+  /** In the order of the entries. */
+  readonly files: readonly HostWriteResult[];
+}
+
 export interface HostFileFailure {
   readonly code: HostFileErrorCode;
   readonly status: number;
+  /** The file a changeset failed on. */
+  readonly path?: string;
   /** The disk's sha256 when a conditional write was refused (`null` = no file). */
   readonly currentHash?: string | null;
   readonly message: string;
@@ -105,6 +121,14 @@ export interface HostFiles {
     data: Uint8Array | string,
     options?: HostWriteOptions
   ): Promise<HostWriteResult>;
+  /**
+   * Several files as one transaction (plan §C.4): every `ifMatch` is checked first, then all are
+   * staged under `.pix3/tx/` and renamed into place, with one `pix3:fs` frame; a crash between
+   * renames is rolled forward or back when the dev server starts. All or nothing: a mismatch
+   * rejects with `base_mismatch` (its `failure.path` names the file) and writes nothing; a
+   * superseded writer gets `writer_superseded`. Absent on a host without transactions.
+   */
+  writeChangeset?(entries: readonly HostChangesetEntry[]): Promise<HostChangesetResult>;
   mkdir(path: string): Promise<void>;
   delete(path: string, options?: { readonly recursive?: boolean }): Promise<void>;
   move(from: string, to: string, options?: { readonly overwrite?: boolean }): Promise<void>;
