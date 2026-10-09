@@ -3595,6 +3595,10 @@ export class ViewportRendererService {
 
       // Restore 2D overlay camera whenever the scene changes once viewport sizing is known.
       if (this.hasMeasuredViewport()) {
+        // A scene loaded into a viewport that was already measured gets its 2D layout pass now
+        // (anchors, flow columns, autoSize) — before, only a later resize ran it, so a flow
+        // column showed its children at their file positions while the game stacks them.
+        this.reflow2DLayout();
         this.restoreZoomFromState();
       }
     } catch (err) {
