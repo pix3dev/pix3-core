@@ -225,6 +225,25 @@ describe('kit drift', () => {
     expect(problems).toEqual([]);
   });
 
+  it("names only npm scripts the starter's package.json has, and AGENTS.md names all of them", () => {
+    const pkg = JSON.parse(
+      readFileSync(
+        join(repoRootOfCheckout(), 'packages/create-pix3/templates/base/files/package.json'),
+        'utf8'
+      )
+    ) as { scripts: Record<string, string> };
+    const scripts = Object.keys(pkg.scripts);
+    const problems: string[] = [];
+    for (const [file, content] of texts) {
+      for (const match of content.matchAll(/\bnpm run ([a-z][\w:-]*)/g)) {
+        if (!scripts.includes(match[1])) problems.push(`${file}: npm run ${match[1]}`);
+      }
+    }
+    expect(problems).toEqual([]);
+    for (const script of scripts) expect(text('AGENTS.md')).toContain(`\`npm run ${script}\``);
+    expect(pkg.scripts.editor).toBe('pix3 editor');
+  });
+
   const EDITOR_SKILL = '.claude/skills/pix3-editor/SKILL.md';
 
   /** `reason: '…'` literals of the sync barrier, the flush and the sync apply — what a sync answers. */

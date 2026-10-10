@@ -116,7 +116,14 @@ describe('pix3 new', () => {
         devDependencies: Record<string, string>;
       };
       expect(pkg.name).toBe('my-game');
-      expect(pkg.scripts).toMatchObject({ dev: 'vite', build: 'vite build', check: 'pix3 check' });
+      expect(pkg.scripts).toEqual({
+        dev: 'vite',
+        editor: 'pix3 editor',
+        build: 'vite build',
+        preview: 'vite preview',
+        check: 'pix3 check',
+        smoke: 'pix3 smoke',
+      });
       expect(pkg.dependencies).toMatchObject({
         '@pix3/runtime': CLI_VERSION,
         three: expect.stringMatching(/^~0\.183\./),

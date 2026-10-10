@@ -14,8 +14,8 @@ you edit files, the editor follows the disk, and `pix3_sync` is the barrier betw
 ## 1. Find the tab (once per thread, and again after any reload)
 
 1. `.pix3/dev.json` in the project → `editorUrl` (e.g. `http://localhost:5173/__pix3/`).
-   No file, or the server does not answer → `npx pix3 editor` (starts the dev server and
-   Chrome; `npm run editor` where the project has the script). No `pix3-browser` server in
+   No file, or the server does not answer → `npm run editor` (= `npx pix3 editor`: starts the
+   dev server and Chrome). No `pix3-browser` server in
    your MCP list → `npx pix3 agent-setup` once, then start a new thread.
 2. `list_pages` → the page whose URL starts with `editorUrl` → `select_page` with its id.
 3. `list_3p_developer_tools` → the `pix3` group with the seven `pix3_*` tools below. **Call it

@@ -173,6 +173,11 @@ add a second one.
 
 ## The CLI and the editor bridge
 
+A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite: the game at
+`/`, the editor at `/__pix3/`), `npm run editor` (`pix3 editor`), `npm run build` (`dist/`),
+`npm run preview` (serve the build), `npm run check` (`pix3 check`), `npm run smoke`
+(`pix3 smoke`; pass the scene after `--`). Elsewhere call `npx pix3 …` or read `package.json`.
+
 - `pix3 check [--json]` — after every batch (rule 4). `--json` prints `files` (`{ file, sha256 }`,
   sha256 of the raw bytes), `diagnostics`, `typecheck`, `kit`. It flushes the open editor's
   unsaved edits first (`--no-sync` skips that).

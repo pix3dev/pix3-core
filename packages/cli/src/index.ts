@@ -91,7 +91,7 @@ const runNew = async (args: ParsedArgs): Promise<number> => {
       '  npm install\n' +
       '  npm run dev          # the game at /, the Pix3 editor at /__pix3/\n' +
       '  npm run build        # dist/index.html\n' +
-      '  npx pix3 editor      # the editor in Chrome for your coding agent (starts dev if needed)\n' +
+      '  npm run editor       # the editor in Chrome for your coding agent (starts dev if needed)\n' +
       '  npx pix3 agent-setup # once per project: connects Codex / Claude Code to that Chrome\n\n' +
       'AGENTS.md / CLAUDE.md and .claude/skills/ tell the agent how, `npm run check` (pix3 check)\n' +
       'verifies its work.\n'

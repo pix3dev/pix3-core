@@ -6,8 +6,11 @@ A Pix3 game: a Vite + TypeScript project with `@pix3/runtime` and the Pix3 edito
 ```bash
 npm install
 npm run dev        # the game at http://localhost:5173/, the editor at http://localhost:5173/__pix3/
+npm run editor     # pix3 editor: the dev server (started if needed) + the editor in Chrome for a coding agent
 npm run build      # dist/index.html — one self-contained playable
+npm run preview    # serve dist/ to try the build
 npm run check      # pix3 check: scenes, res:// paths, components, a type-check of the scripts
+npm run smoke      # pix3 smoke: run the game headless for 2 s and report what threw
 ```
 
 ## Layout

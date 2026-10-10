@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "editor": "pix3 editor",
     "build": "vite build",
     "preview": "vite preview",
     "check": "pix3 check",
