@@ -1,8 +1,9 @@
 // @vitest-environment node
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 
+import { proveCdpProxy } from './cdp-proof.ts';
 import { CdpProxy } from './cdp-proxy.ts';
 import { FakeChrome } from './fake-chrome.ts';
 import { CDP_PROXY_HEADER } from './paths.ts';
@@ -149,6 +150,31 @@ describe('auth', () => {
     expect(proxy.clientCount).toBe(0);
     // Nothing reached Chrome for the refused ones but the page lookup.
     expect(chrome.received.map(m => m.method)).toEqual(['Target.attachToTarget']);
+  });
+});
+
+describe('proof of the token (a forwarded port on a shared host)', () => {
+  it('proves it knows the token without the client sending it; a squatter cannot', async () => {
+    const { port, proxy } = await start();
+    expect(await proveCdpProxy(port, TOKEN)).toEqual({ kind: 'ours' });
+    // Another user's proxy: it answers with the marker, but its proof is for its own token.
+    const other = await proveCdpProxy(port, 'b'.repeat(43));
+    expect(other.kind).toBe('foreign');
+    expect(other.kind === 'foreign' && other.detail).toMatch(/does not know this token/);
+    // A squatter that echoes the marker and the challenge back still has no proof.
+    const squatter = createServer((req, res) => {
+      res.writeHead(401, {
+        [CDP_PROXY_HEADER]: '1',
+        'X-Pix3-Proof': String(req.headers['x-pix3-challenge'] ?? ''),
+      });
+      res.end();
+    });
+    await new Promise<void>(resolve => squatter.listen(0, '127.0.0.1', resolve));
+    const squatterPort = (squatter.address() as { port: number }).port;
+    expect((await proveCdpProxy(squatterPort, TOKEN)).kind).toBe('foreign');
+    await new Promise<void>(resolve => squatter.close(() => resolve()));
+    expect(await proveCdpProxy(squatterPort, TOKEN)).toEqual({ kind: 'closed' });
+    expect(proxy.clientCount).toBe(0);
   });
 });
 

@@ -4,7 +4,8 @@ import type { Duplex, Readable, Writable } from 'node:stream';
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
-import { CDP_PROXY_HEADER, CDP_PROXY_PATH, CDP_PROXY_PROTOCOL } from './paths.ts';
+import { cdpProof, readChallenge } from './cdp-proof.ts';
+import { CDP_PROOF_HEADER, CDP_PROXY_HEADER, CDP_PROXY_PATH, CDP_PROXY_PROTOCOL } from './paths.ts';
 
 /**
  * The CDP token proxy (plan §D.5). `pix3 editor` owns Chrome through `--remote-debugging-pipe`
@@ -16,7 +17,10 @@ import { CDP_PROXY_HEADER, CDP_PROXY_PATH, CDP_PROXY_PROTOCOL } from './paths.ts
  * - `GET /json/version`, `/json/list` (`/json`) — tab discovery, as Chrome answers them;
  * - every request needs `Authorization: Bearer <~/.pix3/cdp-token>`, a loopback `Host` and no
  *   `Origin` (a web page always sends one; CDP clients do not) — otherwise 401/403, and a
- *   WebSocket upgrade is refused before it is accepted.
+ *   WebSocket upgrade is refused before it is accepted;
+ * - a request with `X-Pix3-Challenge: <nonce>` gets `X-Pix3-Proof` on its answer, refusals
+ *   included (`cdp-proof.ts`): a client proves the listener knows the token before it sends the
+ *   token — what a forwarded port on a shared host needs (Remote SSH, plan §E.3).
  *
  * Several clients share the one pipe. Each gets its own root session — the browser target
  * through `Target.attachToBrowserTarget` (its own auto-attach and discovery state, its own child
@@ -125,6 +129,7 @@ const digest = (value: string): Buffer => createHash('sha256').update(value).dig
 export class CdpProxy {
   readonly #pipe: CdpPipe;
   readonly #tokenDigest: Buffer;
+  readonly #token: string;
   readonly #log: (line: string) => void;
   readonly #server: Server;
   readonly #wss: WebSocketServer;
@@ -140,6 +145,7 @@ export class CdpProxy {
   constructor(options: CdpProxyOptions) {
     this.#pipe = options.pipe;
     this.#tokenDigest = digest(options.token);
+    this.#token = options.token;
     this.#log = options.log ?? (() => {});
     this.#wss = new WebSocketServer({
       noServer: true,
@@ -235,10 +241,12 @@ export class CdpProxy {
 
   async #onHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const refusal = this.#refusal(req);
+    const challenge = readChallenge(req.headers);
     const reply = (status: number, body: unknown) => {
       res.writeHead(status, {
         'Content-Type': 'application/json; charset=UTF-8',
         [CDP_PROXY_HEADER]: String(CDP_PROXY_PROTOCOL),
+        ...(challenge ? { [CDP_PROOF_HEADER]: cdpProof(this.#token, challenge) } : {}),
         ...(status === 401 ? { 'WWW-Authenticate': 'Bearer realm="pix3"' } : {}),
       });
       res.end(JSON.stringify(body, null, 2));

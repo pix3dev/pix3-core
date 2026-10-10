@@ -4,7 +4,14 @@ import { join, resolve } from 'node:path';
 
 import { ensureCdpToken } from '../editor/cdp-token.ts';
 import { readChromeState } from '../editor/chrome-state.ts';
-import { cdpWsEndpoint, DEFAULT_CDP_PORT } from '../editor/paths.ts';
+import { proveCdpProxy } from '../editor/cdp-proof.ts';
+import {
+  CDP_PORT_RANGE,
+  cdpWsEndpoint,
+  DEFAULT_CDP_PORT,
+  remoteMcpConfigPath,
+} from '../editor/paths.ts';
+import { findCdpForward, readRemoteCdpToken } from '../editor/remote.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import {
   AGENT_TARGETS,
@@ -13,8 +20,11 @@ import {
   isP1Entry,
   MCP_SERVER_NAME,
   mcpLaunch,
+  mcpRemoteLaunch,
   TOKEN_PLACEHOLDER,
+  writeRemoteMcpConfig,
   type AgentTarget,
+  type McpLaunch,
 } from './config.ts';
 
 /**
@@ -23,6 +33,13 @@ import {
  * `--repair` after such a launch is what re-points the agent at the right Chrome; the token is
  * `~/.pix3/cdp-token` (created here when `pix3 editor` has not run yet). `--repair` is also the
  * migration of a P1 entry (`--browserUrl`, open debugging port) to the proxy launch.
+ *
+ * `--remote` is the agent's side of Remote SSH (plan §E.3): the proxy runs on the human's
+ * machine and its port comes back here through `RemoteForward`. The token is
+ * `~/.pix3/remote-cdp-token` (copied over SSH by the line `pix3 editor --url` prints there); the
+ * port is `--cdp-port`, else the one of 9333–9339 that proves it knows the token (`cdp-proof.ts`
+ * — the token is never sent to a port on a shared host that has not proven it). The endpoint and
+ * the token go to `~/.pix3/remote-cdp.json` (0600); the project's config names only that file.
  */
 
 /** True when git ignores `file` in `root`; null when that cannot be told (no git, no repo). */
@@ -44,6 +61,7 @@ export interface AgentSetupArgs {
   readonly repair: boolean;
   readonly projectDir?: string;
   readonly cdpPort?: number;
+  readonly remote?: boolean;
 }
 
 export const parseAgentSetupArgs = (
@@ -53,9 +71,11 @@ export const parseAgentSetupArgs = (
   let repair = false;
   let projectDir: string | undefined;
   let cdpPort: number | undefined;
+  let remote = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--repair') repair = true;
+    else if (arg === '--remote') remote = true;
     else if (arg === '--project') {
       projectDir = argv[++i];
       if (!projectDir || projectDir.startsWith('-'))
@@ -67,7 +87,13 @@ export const parseAgentSetupArgs = (
     } else if (arg === 'claude' || arg === 'codex') targets.push(arg);
     else return { error: `agent-setup takes claude or codex, not "${arg}"` };
   }
-  return { targets: targets.length ? targets : AGENT_TARGETS, repair, projectDir, cdpPort };
+  return {
+    targets: targets.length ? targets : AGENT_TARGETS,
+    repair,
+    projectDir,
+    cdpPort,
+    ...(remote ? { remote } : {}),
+  };
 };
 
 export const runAgentSetupCli = async (
@@ -88,23 +114,42 @@ export const runAgentSetupCli = async (
     );
     return 2;
   }
-  const port = parsed.cdpPort ?? readChromeState(env)?.port ?? DEFAULT_CDP_PORT;
-  const token = ensureCdpToken(env);
+  let port: number;
+  let token: string;
+  let launch: McpLaunch | undefined;
+  let printed: string;
+  if (parsed.remote) {
+    const remote = await remoteEndpoint(parsed, io, env);
+    if (!remote) return 1;
+    ({ port, token } = remote);
+    const configPath = remoteMcpConfigPath(env);
+    writeRemoteMcpConfig(configPath, port, token);
+    launch = mcpRemoteLaunch(configPath);
+    printed = [launch.command, ...launch.args].join(' ');
+    io.stdout(
+      `${MCP_SERVER_NAME}: ${printed}\n` +
+        `  (chrome-devtools-mcp ${CHROME_DEVTOOLS_MCP_VERSION}; ${configPath} (0600) holds the endpoint ${cdpWsEndpoint(port)} — the SSH forward of your machine's CDP proxy — and its token)\n`
+    );
+  } else {
+    port = parsed.cdpPort ?? readChromeState(env)?.port ?? DEFAULT_CDP_PORT;
+    token = ensureCdpToken(env);
+    // Printed with the token masked: this output lands in agent transcripts and terminal logs.
+    printed = [
+      mcpLaunch(port, TOKEN_PLACEHOLDER).command,
+      ...mcpLaunch(port, TOKEN_PLACEHOLDER).args,
+    ].join(' ');
+    io.stdout(
+      `${MCP_SERVER_NAME}: ${printed}\n` +
+        `  (chrome-devtools-mcp ${CHROME_DEVTOOLS_MCP_VERSION}, the CDP proxy ${cdpWsEndpoint(port)}${port !== DEFAULT_CDP_PORT ? ' — the port pix3 editor recorded' : ''})\n`
+    );
+  }
   const outcomes = installAgentConfig(root, {
     targets: parsed.targets,
     port,
     token,
     repair: parsed.repair,
+    launch,
   });
-  // Printed with the token masked: this output lands in agent transcripts and terminal logs.
-  const printed = [
-    mcpLaunch(port, TOKEN_PLACEHOLDER).command,
-    ...mcpLaunch(port, TOKEN_PLACEHOLDER).args,
-  ].join(' ');
-  io.stdout(
-    `${MCP_SERVER_NAME}: ${printed}\n` +
-      `  (chrome-devtools-mcp ${CHROME_DEVTOOLS_MCP_VERSION}, the CDP proxy ${cdpWsEndpoint(port)}${port !== DEFAULT_CDP_PORT ? ' — the port pix3 editor recorded' : ''})\n`
-  );
   let drift = false;
   for (const outcome of outcomes) {
     const label = outcome.target === 'claude' ? 'Claude Code' : 'Codex';
@@ -126,10 +171,12 @@ export const runAgentSetupCli = async (
         break;
     }
   }
-  const exposed = outcomes
-    .filter(o => o.action === 'written' || o.action === 'repaired' || o.action === 'unchanged')
-    .map(o => o.file)
-    .filter(file => gitIgnores(root, file) === false);
+  const exposed = parsed.remote
+    ? [] // the project's file names the config file only; no token in it
+    : outcomes
+        .filter(o => o.action === 'written' || o.action === 'repaired' || o.action === 'unchanged')
+        .map(o => o.file)
+        .filter(file => gitIgnores(root, file) === false);
   if (exposed.length) {
     io.stdout(
       `  ${exposed.join(' and ')} ${exposed.length > 1 ? 'carry' : 'carries'} this machine's CDP token and git does not ignore ${exposed.length > 1 ? 'them' : 'it'}: add ${exposed.join(', ')} to .gitignore.\n`
@@ -149,8 +196,48 @@ export const runAgentSetupCli = async (
   }
   if (parsed.targets.includes('claude')) {
     io.stdout(
-      `Claude Code picks .mcp.json up from the project (approve it when asked); for every project instead: \`claude mcp add --scope user ${MCP_SERVER_NAME} -- ${printed}\` with the token put in.\n`
+      `Claude Code picks .mcp.json up from the project (approve it when asked); for every project instead: \`claude mcp add --scope user ${MCP_SERVER_NAME} -- ${printed}\`${parsed.remote ? '' : ' with the token put in'}.\n`
     );
   }
   return drift ? 1 : 0;
+};
+
+/**
+ * Remote SSH: the token copied from the human's machine and the forwarded port that proves it
+ * knows that token. Null after printing why not.
+ */
+const remoteEndpoint = async (
+  parsed: AgentSetupArgs,
+  io: AgentSetupIo,
+  env: NodeJS.ProcessEnv
+): Promise<{ port: number; token: string } | null> => {
+  const token = readRemoteCdpToken(env);
+  if (!token) {
+    io.stderr(
+      'pix3 agent-setup --remote: no ~/.pix3/remote-cdp-token here. On your machine, run\n' +
+        '  npx @pix3/cli editor --chrome-only --url <the editor address VS Code forwarded>\n' +
+        'and the ssh line it prints (it copies the token here over SSH; never paste the token by hand).\n'
+    );
+    return null;
+  }
+  if (parsed.cdpPort) {
+    const proven = await proveCdpProxy(parsed.cdpPort, token);
+    if (proven.kind !== 'ours') {
+      io.stdout(
+        `  Port ${parsed.cdpPort} does not answer with the proof of the token now (${proven.kind === 'closed' ? 'nothing listens' : proven.detail}); written anyway — it must once the SSH session is up.\n`
+      );
+    }
+    return { port: parsed.cdpPort, token };
+  }
+  const forward = await findCdpForward(token);
+  if (forward.live === null) {
+    io.stderr(
+      `pix3 agent-setup --remote: no port of ${DEFAULT_CDP_PORT}–${DEFAULT_CDP_PORT + CDP_PORT_RANGE} on this host proves it knows the token.\n` +
+        forward.taken.map(t => `  ${t.detail}\n`).join('') +
+        'Is the SSH session up with the RemoteForward line `pix3 editor` prints here, and `pix3 editor --chrome-only` running on your machine? ' +
+        'Or pass --cdp-port <the RemoteForward port>.\n'
+    );
+    return null;
+  }
+  return { port: forward.live, token };
 };

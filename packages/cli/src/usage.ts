@@ -13,12 +13,15 @@ Usage:
   pix3 editor [--project <dir>]    Find (or start, detached) the project's Vite dev server
         [--stop] [--chrome-only]   from .pix3/dev.json and open the editor in Chrome, its
         [--no-chrome] [--port <n>] CDP behind the token proxy ws://127.0.0.1:9333/pix3 (next
-        [--cdp-port <n>]           free port when taken); --stop-chrome ends that Chrome
-        [--headless] [--stop-chrome]
+        [--cdp-port <n>]           free port when taken); --stop-chrome ends that Chrome.
+        [--headless] [--stop-chrome] Over SSH: prints what to run on your machine instead;
+        [--url <editor url>]       there, --url opens a forwarded remote editor (no project)
+        [--ssh <host>]             and prints the line that copies the token to <host>
   pix3 agent-setup [claude|codex]  Write the project's MCP config for chrome-devtools-mcp
         [--repair] [--cdp-port <n>] (.mcp.json, .codex/config.toml, with the proxy token);
-        [--project <dir>]          --repair fixes an entry that drifted (version, port,
-                                   token, the P1 --browserUrl launch)
+        [--remote]                 --repair fixes an entry that drifted (version, port,
+        [--project <dir>]          token, the P1 --browserUrl launch); --remote: the agent
+                                   is on an SSH host, Chrome on your machine (forwarded)
   pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
         [--no-hydrate]             hydration with the real loader (exit 1 on errors)
   pix3 check [--json]              validate + TypeScript check of the scripts + merge-log +
