@@ -184,6 +184,9 @@ export class InspectorPanel extends ComponentBase {
   private disposeSceneSubscription?: () => void;
   private disposeUiSubscription?: () => void;
   private disposeLocalizationSubscription?: () => void;
+  private disposeScriptSubscription?: () => void;
+  /** `appState.project.scriptRefreshSignal` this panel last rendered against. */
+  private lastScriptRefreshSignal = appState.project.scriptRefreshSignal;
   private disposeAssetPreviewSubscription?: () => void;
   private disposeAnimationEditorSubscription?: () => void;
   disposeAnimationControllerSubscription?: () => void;
@@ -230,6 +233,16 @@ export class InspectorPanel extends ComponentBase {
     // Re-render the localization-key editor's status/preview when the preview
     // locale switches or a locale table is edited.
     this.disposeLocalizationSubscription = subscribe(appState.localization, () => {
+      this.requestUpdate();
+    });
+    // Project scripts re-registered (a sync or an edit re-imported them): component schemas
+    // come from the registry by type, so the selected node's fields are rebuilt from the new
+    // classes — a field a script added shows up without reselecting.
+    this.lastScriptRefreshSignal = appState.project.scriptRefreshSignal;
+    this.disposeScriptSubscription = subscribe(appState.project, () => {
+      if (appState.project.scriptRefreshSignal === this.lastScriptRefreshSignal) return;
+      this.lastScriptRefreshSignal = appState.project.scriptRefreshSignal;
+      this.updateSelectedNodes();
       this.requestUpdate();
     });
     this.disposeAssetPreviewSubscription = this.assetsPreviewService.subscribe(snapshot => {
@@ -312,6 +325,8 @@ export class InspectorPanel extends ComponentBase {
     this.disposeUiSubscription = undefined;
     this.disposeLocalizationSubscription?.();
     this.disposeLocalizationSubscription = undefined;
+    this.disposeScriptSubscription?.();
+    this.disposeScriptSubscription = undefined;
     this.stopLiveTimer();
     // Reset live-mirror UI state so a reused Lit instance starts clean even if it
     // was detached mid-play and play stopped while it was disconnected.
