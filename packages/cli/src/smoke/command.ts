@@ -18,6 +18,7 @@ import {
   type SmokeReport,
   type SmokeRunSet,
 } from './report.ts';
+import { runtimeVersionMismatch } from '../version-gate.ts';
 import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
 
 /**
@@ -52,7 +53,8 @@ export const SMOKE_USAGE = `Usage: pix3 smoke [scene] [--changed | --all] [--fra
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 
-  Exit: 0 = no errors, 1 = errors, 2 = could not run (no scene, bundle failure, unsupported, timeout).
+  Exit: 0 = no errors, 1 = errors, 2 = could not run (no scene, bundle failure, unsupported, timeout,
+  or E_RUNTIME_VERSION: the project installs another @pix3/runtime than this CLI runs).
 `;
 
 export interface SmokeIo {
@@ -264,6 +266,9 @@ const prepare = (projectRoot: string): Prepared | SmokeFailure => {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     return failure('E_SMOKE_NO_PROJECT', `${root} is not a folder.`);
   }
+  // The version gate: a run on another engine than the game ships says nothing about the game.
+  const mismatch = runtimeVersionMismatch(root);
+  if (mismatch) return failure('E_RUNTIME_VERSION', `${mismatch.message} Fix: ${mismatch.fix}.`);
   return { root, project: new ProjectFiles(root), manifest: readManifest(root) };
 };
 

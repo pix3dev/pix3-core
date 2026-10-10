@@ -284,7 +284,7 @@ describe('a project with its own tsconfig.json', () => {
     return root;
   };
 
-  it('runs that tsconfig, writes no .pix3/types, and warns on a runtime version mismatch', async () => {
+  it('runs that tsconfig, writes no .pix3/types, and fails the version gate on another runtime', async () => {
     const root = ownProject('1.2.0');
     const report = await check(root, false);
     expect(report.typecheck).toMatchObject({
@@ -293,11 +293,32 @@ describe('a project with its own tsconfig.json', () => {
       ok: true,
     });
     expect(existsSync(join(root, '.pix3', 'types'))).toBe(false);
-    expect(
-      report.diagnostics.find(d => d.code === 'W_RUNTIME_VERSION_MISMATCH')?.message
-    ).toContain('1.2.0');
-    expect(report.ok).toBe(true);
+    // Plan §A.1: the CLI validates with its bundled runtime; another installed one is an error.
+    const gate = report.diagnostics.find(d => d.code === 'E_RUNTIME_VERSION');
+    expect(gate).toMatchObject({ severity: 'error' });
+    expect(gate?.message).toContain('1.2.0');
+    expect(gate?.message).toContain(CLI_VERSION);
+    expect(gate?.fix).toContain('npx pix3');
+    expect(report.ok).toBe(false);
     expect(report.kit.version).toBeNull();
+  }, 60_000);
+
+  it('the same runtime passes the gate; another @pix3/* package is a warning', async () => {
+    const root = ownProject(CLI_VERSION);
+    const plugin = join(root, 'node_modules', '@pix3', 'vite-plugin');
+    mkdirSync(plugin, { recursive: true });
+    writeFileSync(
+      join(plugin, 'package.json'),
+      JSON.stringify({ name: '@pix3/vite-plugin', version: '2.0.0-alpha.999' })
+    );
+    const report = await check(root, false);
+    const codes = report.diagnostics.map(d => d.code);
+    expect(codes).not.toContain('E_RUNTIME_VERSION');
+    expect(report.diagnostics.find(d => d.code === 'W_PIX3_VERSION_MISMATCH')).toMatchObject({
+      severity: 'warning',
+      file: 'node_modules/@pix3/vite-plugin/package.json',
+    });
+    expect(report.ok).toBe(true);
   }, 60_000);
 
   it('W_RUNTIME_NOT_INSTALLED with node_modules but without @pix3/runtime', async () => {

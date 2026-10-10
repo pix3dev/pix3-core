@@ -61,7 +61,9 @@ Codes and what they usually mean:
 | `E_TYPECHECK_UNAVAILABLE` | TypeScript could not be installed — run the printed command |
 | `E_DEPENDENCIES_MISSING` | A project with its own `tsconfig.json` and no `node_modules` — `npm install`; tsc was skipped |
 | `E_EDITOR_UNSYNCED` | The open editor could not write its unsaved scenes before the check (a drag in progress, a tab that does not answer) — `pix3_sync` from the bridge, or `--no-sync` to read the disk as it is |
-| `W_RUNTIME_VERSION_MISMATCH` / `W_RUNTIME_NOT_INSTALLED` | A project with its own `tsconfig.json` type-checks against its own `node_modules/@pix3/runtime` — `npm install` it at the CLI's version |
+| `E_RUNTIME_VERSION` | The project installs another `@pix3/runtime` than the one this `pix3` checks and runs scenes with — call the project's own CLI (`npx pix3 check`), or `npm install` the runtime at the CLI's version; `pix3 smoke` refuses to run with the same code |
+| `W_PIX3_VERSION_MISMATCH` | Another installed `@pix3/*` package (`cli`, `vite-plugin`, `editor-core`) is not the CLI's version — `npm install` it at that version |
+| `W_RUNTIME_NOT_INSTALLED` | A project with its own `tsconfig.json` type-checks against its own `node_modules/@pix3/runtime`, and there is none — `npm install` |
 | `W_KIT_OUTDATED` | This kit is older than the CLI — `pix3 kit --update` |
 
 `pix3 validate --help` and `pix3 check --help` list every code. Level 2 of validate compiles
@@ -84,7 +86,7 @@ pointing at your `.ts` line), `E_SMOKE_CONSOLE_ERROR`, `E_SMOKE_UNHANDLED` (a re
 nobody awaited), `E_SMOKE_DOM` (a browser API the headless run lacks — `domAccess` names it; a
 browser-only feature, not necessarily a bug: say so). `W_SMOKE_MISSING_RESOURCE` is a `res://`
 typo. Exit 2 = it could not run (`E_SMOKE_NO_SCENE`: pass the scene; `E_SMOKE_TIMEOUT`: a loop
-that never ends). Nothing is drawn, heard or tapped: a green smoke run proves the game starts and
+that never ends; `E_RUNTIME_VERSION`: run the project's own `npx pix3 smoke`). Nothing is drawn, heard or tapped: a green smoke run proves the game starts and
 runs without throwing, not that it plays — report it as exactly that, and tell the human what to
 press and what they should see (section 4). With the editor open, `pix3_game_run` (section 3) is
 the stronger check.

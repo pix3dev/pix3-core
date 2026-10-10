@@ -107,7 +107,9 @@ export type SmokeFailureCode =
   | 'E_SMOKE_UNSUPPORTED'
   | 'E_SMOKE_TIMEOUT'
   | 'E_SMOKE_CRASH'
-  | 'E_EDITOR_UNSYNCED';
+  | 'E_EDITOR_UNSYNCED'
+  /** The project installs another `@pix3/runtime` than the one this CLI runs scenes with. */
+  | 'E_RUNTIME_VERSION';
 
 export interface SmokeFailure {
   readonly ok: false;
@@ -160,6 +162,7 @@ export const SMOKE_CODES: Readonly<
   E_SMOKE_TIMEOUT: 'failure',
   E_SMOKE_CRASH: 'failure',
   E_EDITOR_UNSYNCED: 'failure',
+  E_RUNTIME_VERSION: 'failure',
 };
 
 export const isSmokeFailure = (outcome: SmokeOutcome): outcome is SmokeFailure => 'code' in outcome;

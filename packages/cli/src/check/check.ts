@@ -14,6 +14,11 @@ import {
 } from '../types/project-types.ts';
 import type { BundledDiagnostic, BundledValidateReport } from '../validate/entry.ts';
 import { CLI_VERSION } from '../version.ts';
+import {
+  installedRuntimeVersion,
+  lockstepMismatches,
+  runtimeVersionMismatch,
+} from '../version-gate.ts';
 import { runTypecheck, type TypecheckResult } from './typecheck.ts';
 import {
   resolveTypeScript,
@@ -65,9 +70,15 @@ export const CHECK_CODES = {
     summary:
       'a running Pix3 editor did not flush its unsaved scenes in time, so the disk may be older than what the designer sees (--no-sync reads it anyway)',
   },
-  W_RUNTIME_VERSION_MISMATCH: {
+  E_RUNTIME_VERSION: {
+    severity: 'error',
+    summary:
+      "the project's node_modules/@pix3/runtime is not the runtime this CLI validates with (run the project's own CLI, or install the matching runtime)",
+  },
+  W_PIX3_VERSION_MISMATCH: {
     severity: 'warning',
-    summary: "the project's own node_modules/@pix3/runtime is not this CLI's version",
+    summary:
+      "an installed @pix3/cli, @pix3/vite-plugin or @pix3/editor-core is not this CLI's version (the packages are released in lockstep)",
   },
   W_RUNTIME_NOT_INSTALLED: {
     severity: 'warning',
@@ -217,25 +228,7 @@ export const hasNodeModules = (projectRoot: string): boolean => {
   }
 };
 
-/** Version of the `@pix3/runtime` a project resolves from `node_modules` (walking up), or null. */
-export const installedRuntimeVersion = (projectRoot: string): string | null => {
-  let dir = resolve(projectRoot);
-  for (;;) {
-    const candidate = join(dir, 'node_modules', '@pix3', 'runtime', 'package.json');
-    if (existsSync(candidate)) {
-      try {
-        const version = (JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown })
-          .version;
-        return typeof version === 'string' ? version : null;
-      } catch {
-        return null;
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-};
+export { installedRuntimeVersion };
 
 export const readMergeLogTail = (
   projectRoot: string,
@@ -466,14 +459,6 @@ export const checkProject = async (
           fix: 'npm install in the project, then run pix3 check again',
         })
       );
-    } else if (installed !== CLI_VERSION) {
-      diagnostics.push(
-        diag('W_RUNTIME_VERSION_MISMATCH', {
-          file: 'node_modules/@pix3/runtime/package.json',
-          message: `The project type-checks against @pix3/runtime ${installed}; this CLI (and its kit and validator) is ${CLI_VERSION}. APIs the kit describes may be missing, or behave differently.`,
-          fix: `npm install @pix3/runtime@${CLI_VERSION}, or run the @pix3/cli@${installed} that matches it`,
-        })
-      );
     }
   } else {
     tsconfig = CHECK_TSCONFIG;
@@ -520,6 +505,27 @@ export const checkProject = async (
     })
   );
   diagnostics.push(...typeDiagnostics);
+
+  // --- the version gate -----------------------------------------------------------------------
+  const mismatch = runtimeVersionMismatch(projectRoot);
+  if (mismatch) {
+    diagnostics.push(
+      diag('E_RUNTIME_VERSION', {
+        file: 'node_modules/@pix3/runtime/package.json',
+        message: mismatch.message,
+        fix: mismatch.fix,
+      })
+    );
+  }
+  for (const other of lockstepMismatches(projectRoot)) {
+    diagnostics.push(
+      diag('W_PIX3_VERSION_MISMATCH', {
+        file: `node_modules/${other.name}/package.json`,
+        message: `${other.name} ${other.installed} is installed; this CLI is ${CLI_VERSION}. The @pix3/* packages are released in lockstep, so the editor or the build may differ from what the kit and the CLI describe.`,
+        fix: `npm install ${other.name}@${CLI_VERSION}`,
+      })
+    );
+  }
 
   // --- kit ------------------------------------------------------------------------------------
   const kitVersion = readKitVersion(projectRoot);

@@ -309,6 +309,21 @@ describe('pix3 smoke', () => {
     });
   });
 
+  it('refuses to run (exit 2, E_RUNTIME_VERSION) when the project installs another runtime', async () => {
+    const root = project({
+      'scenes/a.pix3scene': scene(''),
+      'node_modules/@pix3/runtime/package.json': JSON.stringify({
+        name: '@pix3/runtime',
+        version: '1.6.2',
+      }),
+    });
+    const one = await runSmoke({ projectRoot: root, scene: 'scenes/a.pix3scene' });
+    expect(one).toMatchObject({ ok: false, code: 'E_RUNTIME_VERSION' });
+    expect(isSmokeFailure(one) && one.reason).toContain('1.6.2');
+    expect(smokeExitCode(one)).toBe(2);
+    expect(await runSmokeSet({ projectRoot: root })).toMatchObject({ code: 'E_RUNTIME_VERSION' });
+  });
+
   describe('no scene argument: which scenes run', () => {
     // A recipe's shape: a menu (the manifest's entry scene) that never leaves itself headless, and
     // the game, whose onStart throws. The old default ran only the menu and smoked green (D1).

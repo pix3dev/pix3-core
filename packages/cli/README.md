@@ -52,7 +52,8 @@ server is ignored). Diagnostics are one list, validate's plus:
 | `E_TYPE` | error | a tsc diagnostic (`message` starts with `TS<code>:`; `file`, `line`) |
 | `E_TYPECHECK_UNAVAILABLE` | error | TypeScript could not be found or installed (`fix` = the command to run) |
 | `E_EDITOR_UNSYNCED` | error | `.pix3/dev.json` points at a live dev server whose editor did not flush its unsaved scenes within 15 s (`--no-sync` reads the disk as it is) |
-| `W_RUNTIME_VERSION_MISMATCH` | warning | own `tsconfig.json`, and `node_modules/@pix3/runtime` is not this CLI's version |
+| `E_RUNTIME_VERSION` | error | the version gate: the project resolves a `node_modules/@pix3/runtime` that is not the runtime this CLI validates (and smoke-runs) with — run the project's own CLI (`npx pix3 …`) or install the matching runtime |
+| `W_PIX3_VERSION_MISMATCH` | warning | an installed `@pix3/cli`, `@pix3/vite-plugin` or `@pix3/editor-core` is not this CLI's version (lockstep packages) |
 | `W_RUNTIME_NOT_INSTALLED` | warning | own `tsconfig.json`, and no `node_modules/@pix3/runtime` |
 | `W_KIT_OUTDATED` | warning | `metadata.agentKit.version` is not this CLI's version (`pix3 kit --update`) |
 
@@ -206,7 +207,9 @@ Exit 0 = no errors (warnings allowed), 1 = errors, 2 = could not run (with sever
 worst run decides): `E_SMOKE_NO_PROJECT`,
 `E_SMOKE_NO_SCENE`, `E_SMOKE_BUNDLE`, `E_SMOKE_UNSUPPORTED` (no esbuild), `E_SMOKE_TIMEOUT`,
 `E_SMOKE_CRASH`, `E_EDITOR_UNSYNCED` (a live editor named by `.pix3/dev.json` did not flush its
-unsaved scenes first; `--no-sync` reads the disk as it is). The human report prints the `game` snapshot whole — on one line when it is short, pretty-printed
+unsaved scenes first; `--no-sync` reads the disk as it is), `E_RUNTIME_VERSION` (the version gate:
+the project installs another `@pix3/runtime` than the one bundled into this CLI, so a run would
+test an engine the game does not ship). The human report prints the `game` snapshot whole — on one line when it is short, pretty-printed
 and indented otherwise, cut only past 4 000 characters (`--json` always carries it whole).
 `--json` prints `{ ok, scene, frames, framesRequested, firstFrameOk, errors:
 [{ code, frame, script?, nodeId?, nodeName?, phase?, message, stack?, domAccess? }], warnings,
