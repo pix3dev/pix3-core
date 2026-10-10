@@ -1,6 +1,6 @@
 ---
 name: pix3-scene-format
-description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split; `.pix3anim` flipbooks (and `pix3 character-compile`) in `pix3anim.md` beside it. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
+description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split; `.pix3anim` flipbooks (and `pix3 character-compile`) in `pix3anim.md` beside it; creating, renaming, moving, deleting files, extracting a branch into a prefab, locales, `pix3project.yaml` and build options in `project-files.md` beside it. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -206,6 +206,8 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
 - Where prefabs live: `scenes/prefabs/` or a top-level `prefabs/` — the export
   treats both (and `scenes/ui/`) as prefabs, never as a boot scene.
 - Spawned at runtime with `await this.scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent })`.
+- Turning a branch of a scene into a prefab (the editor has no "Save as Prefab"):
+  `project-files.md` → "Extract a branch into a prefab".
 
 ## Full-screen UI lives in `scenes/ui/`
 

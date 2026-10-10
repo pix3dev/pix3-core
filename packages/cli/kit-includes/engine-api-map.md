@@ -21,7 +21,8 @@ what this map does not name, and say in one line what you were missing.
 - Transform is three.js and **read-only by reference**: `node.position.set(x, y, 0)`,
   `node.position.x += dx`, `node.rotation.z = radians`, `node.scale.set(s, s, 1)`. Never
   assign `node.position = …`.
-- `visible`, `name`, `id`, `children`, `parentNode`, `findById(id)`, `findByName(name)`,
+- `visible`, `name`, `nodeId` (the scene id; `id` is three.js's number), `children`,
+  `parentNode`, `findById(nodeId)`, `findByName(name)`,
   `adoptChild(child)` (runtime parenting), `queueFree()` (safe inside `onUpdate`; use
   `dispose()` only outside the tick), `getComponent(Class)`, `addComponent(c)`,
   `removeComponent(c)`.

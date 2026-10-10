@@ -111,6 +111,7 @@ xmlns), `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY`, `W_SVG_EXTERNAL_REF`.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `label` | string | "" | The text; `\n` breaks lines. Never only emoji |
+| `labelKey` | string | "" | A key of the locale tables (`locales/<id>.json` `strings`); when set it wins over `label`, and a key no table has shows as the key itself. Any UI control has it (`Button2D` too) — `project-files.md` → "Add or remove a locale" |
 | `labelFontSize` | number | 16 | px |
 | `labelColor` | colour | "#ffffff" | |
 | `labelFontFamily` | string | Arial | A family the project ships in `fonts/`, else a system face |
