@@ -188,6 +188,63 @@ export function resolvePendingComponents(
   return attached;
 }
 
+/**
+ * True when `component`'s type is registered with another class than the one it was built from —
+ * its script was edited and re-registered (the editor re-imports a changed project script as a new
+ * class; an unchanged module keeps its class, so its components are never touched).
+ */
+export function isStaleComponent(
+  component: ScriptComponent,
+  scriptRegistry: ScriptRegistry
+): boolean {
+  const info = scriptRegistry.getComponentType(component.type);
+  return info !== undefined && component.constructor !== info.componentClass;
+}
+
+/**
+ * Replace every stale live component ({@link isStaleComponent}) in a subtree with an instance of
+ * its type's current class: same id, `enabled` and slot in `node.components`, built like a load
+ * builds it from `{ id, type, enabled, config }`. `configOf` decides the config (default: the old
+ * instance's `config`, which is what a save writes for it). A type that cannot be instantiated
+ * keeps its old instance. The old instance is detached (`onDetach`) like a removed component.
+ *
+ * @returns how many components were replaced.
+ */
+export function replaceStaleComponents(
+  roots: Iterable<NodeBase>,
+  scriptRegistry: ScriptRegistry,
+  configOf: (node: NodeBase, component: ScriptComponent) => Record<string, unknown> = (_n, c) => ({
+    ...(c.config ?? {}),
+  })
+): number {
+  let replaced = 0;
+  const stack: NodeBase[] = [...roots];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node) continue;
+    for (const child of node.children) {
+      if (isNodeBase(child)) stack.push(child);
+    }
+    for (const old of [...node.components]) {
+      if (!isStaleComponent(old, scriptRegistry)) continue;
+      const fresh = instantiateComponent(
+        scriptRegistry,
+        { id: old.id, type: old.type, enabled: old.enabled, config: configOf(node, old) },
+        node.nodeId
+      );
+      if (!fresh) continue;
+      const index = node.components.indexOf(old);
+      node.removeComponent(old);
+      node.addComponent(fresh);
+      // Back into the old slot: the order of `components:` is part of the file.
+      node.components.splice(node.components.indexOf(fresh), 1);
+      node.components.splice(index, 0, fresh);
+      replaced += 1;
+    }
+  }
+  return replaced;
+}
+
 /** Authored definitions for everything on a node: live components first, then still-pending ones. */
 export function collectComponentDefinitions(node: NodeBase): ComponentDefinition[] {
   const definitions: ComponentDefinition[] = node.components.map(component => ({

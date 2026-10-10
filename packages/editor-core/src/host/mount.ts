@@ -12,6 +12,7 @@ import { ProjectStorageService } from '@/services/project/ProjectStorageService'
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneDraftService } from '@/services/project/SceneDraftService';
+import { LiveComponentService } from '@/services/scripting/LiveComponentService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
 
@@ -103,6 +104,7 @@ export async function mountEditorWith(
       drafts.dispose();
       writer.dispose();
       service(ExternalReloadService).dispose();
+      service(LiveComponentService).dispose();
       // Per-file memory of this mount (pending external versions, baselines) goes with it.
       externalChanges.reset();
       service(SceneBaselineService).reset();

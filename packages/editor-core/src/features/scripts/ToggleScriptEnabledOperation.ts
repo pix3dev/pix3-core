@@ -61,6 +61,8 @@ export class ToggleScriptEnabledOperation implements Operation<OperationInvokeRe
 
     const previousEnabled = component.enabled;
     component.enabled = this.params.enabled;
+    // By id on undo/redo: a re-registered script may have replaced the instance since.
+    const live = () => node.components.find(c => c.id === component.id) ?? component;
 
     // Mark scene as dirty
     const activeSceneId = context.state.scenes.activeSceneId;
@@ -76,7 +78,7 @@ export class ToggleScriptEnabledOperation implements Operation<OperationInvokeRe
       commit: {
         label: `Toggle ${component.type} ${this.params.enabled ? 'On' : 'Off'}`,
         undo: async () => {
-          component.enabled = previousEnabled;
+          live().enabled = previousEnabled;
           // Mark scene as dirty on undo
           if (activeSceneId) {
             const descriptor = context.state.scenes.descriptors[activeSceneId];
@@ -84,7 +86,7 @@ export class ToggleScriptEnabledOperation implements Operation<OperationInvokeRe
           }
         },
         redo: async () => {
-          component.enabled = this.params.enabled;
+          live().enabled = this.params.enabled;
           // Mark scene as dirty on redo
           if (activeSceneId) {
             const descriptor = context.state.scenes.descriptors[activeSceneId];

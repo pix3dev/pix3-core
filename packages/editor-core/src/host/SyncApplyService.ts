@@ -51,6 +51,8 @@ export class SyncApplyService {
     }
     const mark = this.externalChanges.reportMark();
     this.scripts.registerRoots(info.roots);
+    // The answer means the editor runs the files on disk: live components included.
+    await this.scripts.componentsSettled();
     const { failed } = await this.reloads.apply(changedPaths);
     this.externalChanges.acknowledge(
       changedPaths.filter(path => !failed.includes(path)),

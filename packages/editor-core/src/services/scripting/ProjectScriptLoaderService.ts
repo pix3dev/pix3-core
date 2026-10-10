@@ -12,6 +12,7 @@ import {
 import type { ScriptRoots } from '@/host/EditorHost';
 import { HostService } from '@/host/HostService';
 import { LoggingService } from '@/services/core/LoggingService';
+import { LiveComponentService } from '@/services/scripting/LiveComponentService';
 
 export interface SkippedScriptExport {
   /** Project-relative path of the module that exported it (`scripts/Foo.ts`). */
@@ -39,8 +40,9 @@ const projectPathOfGlobKey = (key: string): string => key.replace(/^(\.\.?\/|\/)
  * registers as `user:<export name>` — the rule `register-project-scripts.ts` applies in the player
  * and `pix3 validate` applies headless (`project-script-registration.ts` in the runtime).
  *
- * Live components are not re-instantiated on re-registration (1.x parity): a new class reaches a
- * scene on its next load. Components parked on nodes because their type was missing at load are
+ * Live components built from a class that changed are replaced by instances of the new class
+ * ({@link LiveComponentService}, `.plans/scripts-vite.md` S7); {@link componentsSettled} resolves
+ * when that is done. Components parked on nodes because their type was missing at load are
  * attached right away.
  */
 @injectable()
@@ -56,6 +58,9 @@ export class ProjectScriptLoaderService {
 
   @inject(HostService)
   private readonly hostService!: HostService;
+
+  @inject(LiveComponentService)
+  private readonly liveComponents!: LiveComponentService;
 
   private readonly registeredIds = new Set<string>();
   /** Roots that arrived during play mode ({@link queueRoots}); applied when play stops. */
@@ -106,6 +111,9 @@ export class ProjectScriptLoaderService {
         this.logger.warn(`Skipped project script ${skip.file} → ${skip.export}: ${skip.reason}`);
       }
       this.attachPendingSceneComponents();
+      void this.liveComponents.replaceStale().catch(error => {
+        this.logger.error('Failed to replace live components of changed scripts', error);
+      });
       appState.project.scriptRefreshSignal++;
       appState.project.scriptsStatus = 'ready';
     } catch (error) {
@@ -141,6 +149,11 @@ export class ProjectScriptLoaderService {
     const status = appState.project.scriptsStatus;
     if (status === 'ready' || status === 'error' || !HostService.isInstalled()) return;
     this.registerRoots(this.hostService.host.scripts.current());
+  }
+
+  /** Resolves once live components of the last registration follow their new classes. */
+  componentsSettled(): Promise<void> {
+    return this.liveComponents.settled();
   }
 
   getRegisteredIds(): ReadonlySet<string> {

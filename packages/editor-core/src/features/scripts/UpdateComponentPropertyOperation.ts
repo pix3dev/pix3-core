@@ -98,19 +98,32 @@ export class UpdateComponentPropertyOperation implements Operation<OperationInvo
     const activeSceneId = state.scenes.activeSceneId;
     this.markSceneDirty(state, activeSceneId);
 
+    // Undo/redo find the component by id: a script re-registered since then replaced the instance
+    // (`LiveComponentService`), and writing into the detached one would change nothing on screen.
+    const name = this.params.propertyName;
+    const apply = (value: unknown): void => {
+      const live = node.components.find(c => c.id === component.id) ?? component;
+      const liveDef =
+        live === component
+          ? propDef
+          : scriptRegistry
+              .getComponentPropertySchema(live.type)
+              ?.properties.find(p => p.name === name);
+      liveDef?.setValue(live, value);
+      live.config[name] = value;
+    };
+
     return {
       didMutate: true,
       commit: {
         label: `Update ${component.type}.${propDef.ui?.label ?? propDef.name}`,
         beforeSnapshot: context.snapshot,
         undo: async () => {
-          propDef.setValue(component, previousValue);
-          component.config[this.params.propertyName] = previousValue;
+          apply(previousValue);
           this.markSceneDirty(state, activeSceneId);
         },
         redo: async () => {
-          propDef.setValue(component, nextValue);
-          component.config[this.params.propertyName] = nextValue;
+          apply(nextValue);
           this.markSceneDirty(state, activeSceneId);
         },
       },

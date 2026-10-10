@@ -8,6 +8,7 @@ import { SceneSaver } from './SceneSaver';
 import { SceneManager } from './SceneManager';
 import { ScriptRegistry } from './ScriptRegistry';
 import { Script } from './ScriptComponent';
+import { isStaleComponent, replaceStaleComponents } from './component-hydration';
 
 /**
  * Regression guard for the most expensive defect of the Flow-vs-chat measurement: a scene that
@@ -249,5 +250,97 @@ root:
     expect(savedYaml).toContain('user:GameRules');
     expect(savedYaml).toContain('user:ScoreHud');
     expect(savedYaml).toContain('prefix: "Score: "');
+  });
+});
+
+describe('live components of a re-registered script (replaceStaleComponents)', () => {
+  const TWO = `version: '1.0.0'
+root:
+  - id: game-root
+    type: Group2D
+    name: GameRoot
+    components:
+      - id: first
+        type: 'core:Noop'
+      - id: game-rules
+        type: 'user:GameRules'
+        enabled: false
+        config:
+          lives: 5
+      - id: last
+        type: 'core:Noop'
+`;
+  class Noop extends Script {
+    static override getPropertySchema() {
+      return { nodeType: 'Noop', properties: [] };
+    }
+  }
+
+  it('swaps only stale instances, in their slot, with id, enabled and config kept', async () => {
+    const { loader, saver, registry } = makeStack();
+    registerGameRules(registry);
+    registry.registerComponent({
+      id: 'core:Noop',
+      displayName: 'Noop',
+      description: 'test',
+      category: 'Core',
+      componentClass: Noop,
+      keywords: [],
+    });
+    const graph = await loader.parseScene(TWO, { filePath: 'res://scenes/main.pix3scene' });
+    const root = graph.rootNodes[0];
+    const [first, old, last] = root.components;
+    const before = saver.serializeScene(graph);
+    expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(0);
+
+    // The script is edited: Vite re-imports it as a new class with a new field.
+    class GameRulesV2 extends GameRules {
+      shield = 0;
+      constructor(id: string, type: string) {
+        super(id, type);
+        this.config = { lives: 3, shield: 2 };
+      }
+    }
+    registry.registerComponent({
+      id: 'user:GameRules',
+      displayName: 'GameRules',
+      description: 'test',
+      category: 'Project',
+      componentClass: GameRulesV2,
+      keywords: [],
+    });
+    const detached = vi.spyOn(old, 'onDetach');
+    expect(isStaleComponent(old, registry)).toBe(true);
+
+    expect(replaceStaleComponents(graph.rootNodes, registry, (_n, c) => ({ ...c.config }))).toBe(1);
+    expect(root.components[0]).toBe(first);
+    expect(root.components[2]).toBe(last);
+    const fresh = root.components[1] as GameRulesV2;
+    expect(fresh).toBeInstanceOf(GameRulesV2);
+    expect(fresh).not.toBe(old);
+    expect(fresh.id).toBe('game-rules');
+    expect(fresh.enabled).toBe(false);
+    expect(fresh.node).toBe(root);
+    expect(fresh.lives).toBe(5);
+    // Class defaults merge under the kept config, as a load does.
+    expect(fresh.config).toEqual({ lives: 5, shield: 2 });
+    expect(detached).toHaveBeenCalledTimes(1);
+    expect(old.node).toBeNull();
+    // The file the saver writes differs only by the new default.
+    expect(saver.serializeScene(graph)).toBe(
+      before.replace('lives: 5', 'lives: 5\n          shield: 2')
+    );
+    expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(0);
+  });
+
+  it('keeps the old instance when its type is gone', async () => {
+    const { loader, registry } = makeStack();
+    registerGameRules(registry);
+    const graph = await loader.parseScene(SCENE_YAML, { filePath: 'res://scenes/main.pix3scene' });
+    const old = graph.rootNodes[0].components[0];
+    registry.unregisterComponent('user:GameRules');
+    expect(isStaleComponent(old, registry)).toBe(false);
+    expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(0);
+    expect(graph.rootNodes[0].components[0]).toBe(old);
   });
 });
