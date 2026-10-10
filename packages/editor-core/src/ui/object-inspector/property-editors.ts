@@ -1592,12 +1592,6 @@ export class AnimationResourceEditor extends ComponentBase {
   @property({ type: Boolean })
   disabled: boolean = false;
 
-  @property({ type: Boolean, attribute: 'show-create-button' })
-  showCreateButton: boolean = false;
-
-  @property({ type: Boolean, attribute: 'is-creating' })
-  isCreating: boolean = false;
-
   @state()
   private isDragOver = false;
 
@@ -1644,19 +1638,6 @@ export class AnimationResourceEditor extends ComponentBase {
     );
   }
 
-  private emitCreateRequest(): void {
-    if (this.disabled || this.isCreating) {
-      return;
-    }
-
-    this.dispatchEvent(
-      new CustomEvent('create-request', {
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
   protected render() {
     const hasResource = this.resourceUrl.trim().length > 0;
 
@@ -1674,37 +1655,21 @@ export class AnimationResourceEditor extends ComponentBase {
         <input
           type="text"
           .value=${this.resourceUrl}
-          ?disabled=${this.disabled || this.isCreating}
+          ?disabled=${this.disabled}
           placeholder="res://path/to/animation.pix3anim"
           @change=${(e: Event) => this.emitChange((e.target as HTMLInputElement).value)}
         />
-        ${!hasResource && this.showCreateButton
-          ? html`
-              <button
-                type="button"
-                ?disabled=${this.disabled || this.isCreating}
-                @click=${() => this.emitCreateRequest()}
-              >
-                ${this.isCreating ? 'Creating…' : 'Create'}
-              </button>
-            `
-          : html`
-              <button
-                type="button"
-                ?disabled=${!hasResource}
-                title="Show this file in the Asset Browser"
-                @click=${() => dispatchLocate(this, this.resourceUrl)}
-              >
-                Locate
-              </button>
-              <button
-                type="button"
-                ?disabled=${this.disabled || this.isCreating}
-                @click=${() => this.emitChange('')}
-              >
-                Clear
-              </button>
-            `}
+        <button
+          type="button"
+          ?disabled=${!hasResource}
+          title="Show this file in the Asset Browser"
+          @click=${() => dispatchLocate(this, this.resourceUrl)}
+        >
+          Locate
+        </button>
+        <button type="button" ?disabled=${this.disabled} @click=${() => this.emitChange('')}>
+          Clear
+        </button>
       </div>
     `;
   }

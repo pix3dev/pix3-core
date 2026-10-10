@@ -16,8 +16,6 @@ import {
 } from '@/services/localization/LocalizationExtractionService';
 import { UpdateLocaleEntryCommand } from '@/features/localization/UpdateLocaleEntryCommand';
 import { RemoveLocalizationKeyCommand } from '@/features/localization/RemoveLocalizationKeyCommand';
-import { AddLocaleCommand } from '@/features/localization/AddLocaleCommand';
-import { RemoveLocaleCommand } from '@/features/localization/RemoveLocaleCommand';
 import { SetPreviewLocaleCommand } from '@/features/localization/SetPreviewLocaleCommand';
 import { ExtractLocalizationKeysCommand } from '@/features/localization/ExtractLocalizationKeysCommand';
 import { RenameLocalizationKeyCommand } from '@/features/localization/RenameLocalizationKeyCommand';
@@ -69,9 +67,6 @@ export class LocalizationPanel extends ComponentBase {
   private targetLocale = '';
 
   @state()
-  private addingLocale = false;
-
-  @state()
   private addingKey = false;
 
   @state()
@@ -98,7 +93,7 @@ export class LocalizationPanel extends ComponentBase {
     super.disconnectedCallback();
   }
 
-  /** Keep the target column valid as locales are added/removed. */
+  /** Keep the target column valid as locale files appear and disappear. */
   private syncTargetLocale(): void {
     const others = this.otherLocales();
     if (this.targetLocale && others.includes(this.targetLocale)) return;
@@ -138,19 +133,6 @@ export class LocalizationPanel extends ComponentBase {
     );
   }
 
-  private onRemoveLocale(locale: string): void {
-    void this.commandDispatcher.execute(new RemoveLocaleCommand({ locale }));
-  }
-
-  private commitAddLocale(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const locale = input.value.trim().toLowerCase();
-    this.addingLocale = false;
-    if (locale) {
-      void this.commandDispatcher.execute(new AddLocaleCommand({ locale }));
-    }
-  }
-
   /** Add a key = create an (empty) entry in the default locale; the row then appears. */
   private commitAddKey(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -170,7 +152,6 @@ export class LocalizationPanel extends ComponentBase {
     if (event.key === 'Enter') {
       (event.target as HTMLInputElement).blur();
     } else if (event.key === 'Escape') {
-      this.addingLocale = false;
       this.addingKey = false;
       this.renamingKey = null;
     }
@@ -263,7 +244,10 @@ export class LocalizationPanel extends ComponentBase {
         <pix3-panel panel-description="Author locale tables and translations.">
           <div class="loc-empty">
             <p>No locales in this project yet.</p>
-            ${this.renderAddLocale('loc-empty-add')}
+            <p>
+              A locale is a <code>locales/&lt;id&gt;.json</code> file, written by the agent or the
+              IDE; reload this tab to pick up a new one.
+            </p>
           </div>
         </pix3-panel>
       `;
@@ -281,7 +265,6 @@ export class LocalizationPanel extends ComponentBase {
   }
 
   private renderToolbar() {
-    const def = this.service.getDefaultLocale();
     const others = this.otherLocales();
     const preview = this.service.getPreviewLocale();
     const locales = this.service.getLocales();
@@ -389,58 +372,8 @@ export class LocalizationPanel extends ComponentBase {
             )}
           </select>
         </label>
-
-        ${this.addingLocale
-          ? this.renderAddLocaleInput()
-          : html`<button
-              type="button"
-              class="loc-btn"
-              @click=${() => (this.addingLocale = true)}
-              title="Add a locale"
-            >
-              ${this.icons.getIcon('plus', IconSize.SMALL)} Locale
-            </button>`}
-        ${this.targetLocale && this.targetLocale !== def
-          ? html`<button
-              type="button"
-              class="loc-btn loc-btn-danger"
-              @click=${() => this.onRemoveLocale(this.targetLocale)}
-              title="Remove the target locale"
-              aria-label="Remove target locale"
-            >
-              ${this.icons.getIcon('trash-2', IconSize.SMALL)}
-            </button>`
-          : null}
       </div>
     `;
-  }
-
-  private renderAddLocale(cls: string) {
-    return this.addingLocale
-      ? this.renderAddLocaleInput()
-      : html`<button
-          type="button"
-          class="loc-btn ${cls}"
-          @click=${() => (this.addingLocale = true)}
-        >
-          ${this.icons.getIcon('plus', IconSize.SMALL)} Add locale
-        </button>`;
-  }
-
-  private renderAddLocaleInput() {
-    return html`<input
-      class="loc-add-input"
-      type="text"
-      placeholder="locale id (e.g. ru)"
-      @change=${this.commitAddLocale}
-      @keydown=${this.onEditKeydown}
-      @blur=${(e: Event) => {
-        // Commit on blur too, but only if it wasn't already committed by change.
-        if (this.addingLocale) this.commitAddLocale(e);
-      }}
-      autofocus
-      aria-label="New locale id"
-    />`;
   }
 
   /** Post-scan report: unlocalized scene labels + script keys missing from the template. */

@@ -97,11 +97,6 @@ pix3-localization-panel .loc-btn.is-active {
   border-color: var(--accent-line);
 }
 
-pix3-localization-panel .loc-btn-danger:hover {
-  color: var(--danger);
-  border-color: var(--danger-line);
-}
-
 pix3-localization-panel .loc-btn svg {
   width: 0.85rem;
   height: 0.85rem;

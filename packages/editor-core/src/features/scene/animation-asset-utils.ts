@@ -184,13 +184,3 @@ export function serializeAnimationResource(resource: AnimationResource): string 
   const normalized = normalizeAnimationResource(resource);
   return `${JSON.stringify(normalized, null, 2)}\n`;
 }
-
-export function getAssetParentDirectory(resourcePath: string): string {
-  const normalized = resourcePath.replace(/^res:\/\//, '').replace(/\\/g, '/');
-  const lastSlashIndex = normalized.lastIndexOf('/');
-  if (lastSlashIndex <= 0) {
-    return '.';
-  }
-
-  return normalized.slice(0, lastSlashIndex);
-}

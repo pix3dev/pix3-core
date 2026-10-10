@@ -1671,18 +1671,11 @@ export class InspectorPropertyRenderers {
           ${labelTemplate}
           <pix3-animation-resource-editor
             .resourceUrl=${state.value}
-            .showCreateButton=${this.host.canCreateAnimationResource(
-              prop.name,
-              state.value,
-              readOnly
-            )}
-            .isCreating=${this.host.creatingAnimationPropertyName === prop.name}
             ?disabled=${readOnly}
             @change=${(event: CustomEvent<{ url: string }>) =>
               this.host.applyPropertyChange(prop.name, event.detail.url.trim())}
             @animation-drop=${(event: CustomEvent<{ event: DragEvent }>) =>
               this.host.onAnimationResourceDrop(prop.name, event.detail.event)}
-            @create-request=${() => this.host.onCreateAnimationResource(prop.name)}
           ></pix3-animation-resource-editor>
         </div>
       `;

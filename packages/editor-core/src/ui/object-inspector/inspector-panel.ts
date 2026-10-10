@@ -1,17 +1,10 @@
 import { ComponentBase, customElement, html, state, subscribe, inject } from '@/fw';
-import {
-  getNodePropertySchema,
-  getRuntimeSceneRoot,
-  AnimatedSprite2D,
-  NodeBase,
-  Sprite2D,
-} from '@pix3/runtime';
+import { getNodePropertySchema, getRuntimeSceneRoot, NodeBase, Sprite2D } from '@pix3/runtime';
 import { SceneManager } from '@pix3/runtime';
 import { appState } from '@/state';
 import type { PropertySchema, PropertyDefinition } from '@/fw';
 import { UpdateObjectPropertyCommand } from '@/features/properties/UpdateObjectPropertyCommand';
 import { UpdateSprite2DSizeCommand } from '@/features/properties/UpdateSprite2DSizeCommand';
-import { CreateAndBindAnimationAssetCommand } from '@/features/scene/CreateAndBindAnimationAssetCommand';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { BehaviorPickerService } from '@/services/editor/BehaviorPickerService';
@@ -39,7 +32,6 @@ import { readAlphaMask } from '@/core/alpha-mask';
 import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';
-import { normalizeAnimationAssetPath } from '@/features/scene/animation-asset-utils';
 import { emojiAsArtFieldError } from '@/services/scene/emoji-as-art';
 import { InspectorResourcePreview } from './inspector-resource-preview';
 import { InspectorSectionRenderers } from './inspector-section-renderers';
@@ -70,8 +62,6 @@ interface PropertyUIState {
   /** Why the typed value is refused (shown under the field); nothing was written. */
   error?: string;
 }
-
-const DEFAULT_ANIMATION_ASSET_DIRECTORY = 'res://animations';
 
 @customElement('pix3-inspector-panel')
 export class InspectorPanel extends ComponentBase {
@@ -156,9 +146,6 @@ export class InspectorPanel extends ComponentBase {
 
   @state()
   selectedAssetItem: AssetPreviewItem | null = null;
-
-  @state()
-  creatingAnimationPropertyName: string | null = null;
 
   @state()
   activePreviewAnimation: string | null = null;
@@ -673,90 +660,6 @@ export class InspectorPanel extends ComponentBase {
     const url = this.hostService.host.files.url(this.hostService.wirePath(trimmedResourcePath));
     const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
     this.lightbox.open([{ kind: 'image', title, url, path: trimmedResourcePath }]);
-  }
-
-  canCreateAnimationResource(propertyName: string, value: string, readOnly: boolean): boolean {
-    return (
-      !readOnly &&
-      propertyName === 'animationResourcePath' &&
-      this.primaryNode instanceof AnimatedSprite2D &&
-      value.trim().length === 0
-    );
-  }
-
-  async onCreateAnimationResource(propertyName: string): Promise<void> {
-    if (
-      this.creatingAnimationPropertyName ||
-      propertyName !== 'animationResourcePath' ||
-      !(this.primaryNode instanceof AnimatedSprite2D)
-    ) {
-      return;
-    }
-
-    const nodeId = this.primaryNode.nodeId;
-    this.creatingAnimationPropertyName = propertyName;
-
-    try {
-      const assetPath = await this.getAvailableAnimationAssetPath(this.primaryNode.name);
-
-      const didMutate = await this.commandDispatcher.execute(
-        new CreateAndBindAnimationAssetCommand({
-          nodeId,
-          assetPath,
-          propertyPath: propertyName,
-          texturePath: '',
-          initialClipName: 'idle',
-        })
-      );
-
-      if (!didMutate) {
-        return;
-      }
-
-      await this.editorTabService.openResourceTab('animation', assetPath);
-    } catch (error) {
-      console.error('[InspectorPanel] Failed to create animation resource', error);
-    } finally {
-      this.creatingAnimationPropertyName = null;
-    }
-  }
-
-  private async getAvailableAnimationAssetPath(nodeName: string): Promise<string> {
-    const baseStem = this.getAnimationAssetStem(nodeName);
-    let suffix = 0;
-
-    while (true) {
-      const assetPath = normalizeAnimationAssetPath(
-        suffix === 0
-          ? `${DEFAULT_ANIMATION_ASSET_DIRECTORY}/${baseStem}`
-          : `${DEFAULT_ANIMATION_ASSET_DIRECTORY}/${baseStem}-${suffix + 1}`
-      );
-
-      if (!(await this.animationAssetExists(assetPath))) {
-        return assetPath;
-      }
-
-      suffix += 1;
-    }
-  }
-
-  private getAnimationAssetStem(nodeName: string): string {
-    const sanitized = nodeName
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    return sanitized || 'animated-sprite';
-  }
-
-  private async animationAssetExists(assetPath: string): Promise<boolean> {
-    try {
-      await this.projectStorage.readTextFile(assetPath);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   onComponentAudioResourceDrop(

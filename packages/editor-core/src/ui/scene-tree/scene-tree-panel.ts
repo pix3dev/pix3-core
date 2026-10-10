@@ -16,7 +16,6 @@ import { CreateAnimatedSprite2DCommand } from '@/features/scene/CreateAnimatedSp
 import { ReparentNodeCommand } from '@/features/scene/ReparentNodeCommand';
 import { CreatePrefabInstanceCommand } from '@/features/scene/CreatePrefabInstanceCommand';
 import { CreateSprite2DCommand } from '@/features/scene/CreateSprite2DCommand';
-import { SaveAsPrefabCommand } from '@/features/scene/SaveAsPrefabCommand';
 import { OpenPrefabCommand } from '@/features/scene/OpenPrefabCommand';
 import { UnlinkPrefabInstanceCommand } from '@/features/scene/UnlinkPrefabInstanceCommand';
 import { FrameSelectedCommand } from '@/features/viewport/FrameSelectedCommand';
@@ -374,14 +373,6 @@ export class SceneTreePanel extends ComponentBase {
                 <span class="context-menu-shortcut"
                   >${this.getCommandShortcut('scene.delete-object')}</span
                 >
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                @click=${() => this.onContextMenuAction('saveAsPrefab')}
-              >
-                <span>Save Branch as Prefab</span>
-                <span class="context-menu-shortcut"></span>
               </button>
             `}
       </div>
@@ -893,14 +884,7 @@ export class SceneTreePanel extends ComponentBase {
   }
 
   private async onContextMenuAction(
-    action:
-      | 'frame'
-      | 'duplicate'
-      | 'group'
-      | 'delete'
-      | 'saveAsPrefab'
-      | 'openPrefab'
-      | 'unlinkPrefab'
+    action: 'frame' | 'duplicate' | 'group' | 'delete' | 'openPrefab' | 'unlinkPrefab'
   ): Promise<void> {
     // Resolve the context node before clearing the menu — the node id is needed
     // for the prefab-specific actions.
@@ -936,15 +920,6 @@ export class SceneTreePanel extends ComponentBase {
         );
       } catch (error) {
         console.error('[SceneTreePanel] Failed to execute "Unlink Prefab Instance"', error);
-      }
-      return;
-    }
-
-    if (action === 'saveAsPrefab') {
-      try {
-        await this.commandDispatcher.execute(new SaveAsPrefabCommand());
-      } catch (error) {
-        console.error('[SceneTreePanel] Failed to execute "Save Branch as Prefab"', error);
       }
       return;
     }

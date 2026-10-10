@@ -42,27 +42,28 @@ describe('AnimationResourceEditor', () => {
     document.body.innerHTML = '';
   });
 
-  it('emits create-request when the create button is clicked for an empty animation slot', async () => {
+  it('clears the slot with an empty url and offers no Create (the agent writes .pix3anim files)', async () => {
     const editor = document.createElement(
       'pix3-animation-resource-editor'
     ) as AnimationResourceEditor;
-    editor.showCreateButton = true;
-    editor.resourceUrl = '';
+    editor.resourceUrl = 'res://animations/hero.pix3anim';
 
-    const onCreateRequest = new Promise<void>(resolve => {
-      editor.addEventListener('create-request', () => resolve(), { once: true });
+    const onChange = new Promise<string>(resolve => {
+      editor.addEventListener(
+        'change',
+        event => resolve((event as CustomEvent<{ url: string }>).detail.url),
+        { once: true }
+      );
     });
 
     document.body.appendChild(editor);
     await editor.updateComplete;
 
-    const button = editor.shadowRoot?.querySelector('button');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('Expected create button to be rendered');
-    }
+    const buttons = [...(editor.shadowRoot?.querySelectorAll('button') ?? [])];
+    expect(buttons.map(button => button.textContent?.trim())).toEqual(['Locate', 'Clear']);
 
-    button.click();
+    buttons[1].click();
 
-    await onCreateRequest;
+    expect(await onChange).toBe('');
   });
 });

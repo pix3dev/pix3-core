@@ -310,60 +310,6 @@ export class LocalizationEditorService {
     return removed;
   }
 
-  /** Declare a new locale and write an (empty) table file. */
-  async addLocale(locale: string): Promise<void> {
-    if (!locale || this.tables.has(locale)) return;
-    const table: LocaleTable = { locale, strings: {}, sprites: {} };
-    this.tables.set(locale, table);
-    if (this.settings) {
-      if (!this.settings.locales.includes(locale)) this.settings.locales.push(locale);
-    } else {
-      this.settings = { defaultLocale: locale, locales: [locale] };
-    }
-    this.ensurePreview().setTable(table);
-    await this.saveLocale(locale);
-    this.mirrorSlice();
-  }
-
-  /**
-   * Remove a declared locale: drop its table, its manifest/settings entry, and
-   * delete the `locales/<locale>.json` file. Returns the removed table so the
-   * operation can restore it on undo. Refuses to remove the default locale (it
-   * is the template) — returns null in that case.
-   */
-  async removeLocale(locale: string): Promise<LocaleTable | null> {
-    if (!this.settings || !this.tables.has(locale)) return null;
-    if (locale === this.settings.defaultLocale) return null;
-
-    const removed = this.tables.get(locale) ?? null;
-    this.tables.delete(locale);
-    this.settings.locales = this.settings.locales.filter(l => l !== locale);
-    if (this.previewLocale === locale) {
-      this.previewLocale = this.settings.defaultLocale;
-      void this.preview?.setLocale(this.settings.defaultLocale);
-    }
-    try {
-      await this.storage.deleteEntry(`${LOCALES_DIR}/${locale}.json`);
-    } catch (error) {
-      console.error(`[Localization] Failed to delete locale file "${locale}"`, error);
-    }
-    this.mirrorSlice();
-    return removed;
-  }
-
-  /** Re-insert a previously removed locale table (undo of {@link removeLocale}). */
-  async restoreLocale(table: LocaleTable): Promise<void> {
-    this.tables.set(table.locale, table);
-    if (this.settings) {
-      if (!this.settings.locales.includes(table.locale)) this.settings.locales.push(table.locale);
-    } else {
-      this.settings = { defaultLocale: table.locale, locales: [table.locale] };
-    }
-    this.ensurePreview().setTable(table);
-    await this.saveLocale(table.locale);
-    this.mirrorSlice();
-  }
-
   /**
    * Move a key to a new name in every locale table that has it. Returns the moved
    * values per locale (for undo — renaming back restores them exactly), or null

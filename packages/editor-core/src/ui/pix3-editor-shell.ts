@@ -41,7 +41,6 @@ import { DeleteObjectCommand } from '@/features/scene/DeleteObjectCommand';
 import { DuplicateNodesCommand } from '@/features/scene/DuplicateNodesCommand';
 import { GroupSelectedNodesCommand } from '@/features/scene/GroupSelectedNodesCommand';
 import { FitGroup2DToContentsCommand } from '@/features/scene/FitGroup2DToContentsCommand';
-import { SaveAsPrefabCommand } from '@/features/scene/SaveAsPrefabCommand';
 import { BrowseNodeTypesCommand } from '@/features/scene/BrowseNodeTypesCommand';
 import { UndoCommand } from '@/features/history/UndoCommand';
 import { RedoCommand } from '@/features/history/RedoCommand';
@@ -270,7 +269,6 @@ export class Pix3EditorShell extends ComponentBase {
       new DuplicateNodesCommand(),
       new GroupSelectedNodesCommand(),
       new FitGroup2DToContentsCommand(),
-      new SaveAsPrefabCommand(),
       new StartGameCommand(this.editorTabService, this.gamePlaySessionService),
       new StartMainSceneGameCommand(this.editorTabService, this.gamePlaySessionService),
       new StopGameCommand(this.editorTabService, this.gamePlaySessionService),
