@@ -87,7 +87,7 @@ export const runtimeVersionMismatch = (projectRoot: string): RuntimeVersionMisma
     installed,
     bundled,
     message: `The project installs @pix3/runtime ${installed}, but this CLI validates and runs scenes with the @pix3/runtime ${bundled} bundled into it — its answers would be about an engine the game does not ship.`,
-    fix: `run the project's own CLI (npx pix3 …, @pix3/cli ${installed}), or npm install @pix3/runtime@${bundled} @pix3/cli@${bundled}`,
+    fix: `run the project's own CLI (npx pix3 …, the @pix3/cli its package.json pins with runtime ${installed}), or npm install @pix3/runtime@${bundled} @pix3/cli@${bundled}`,
   };
 };
 
