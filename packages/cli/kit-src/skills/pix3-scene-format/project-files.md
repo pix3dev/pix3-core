@@ -52,10 +52,10 @@ Everything refers to files by path, and nothing rewrites those paths for you.
    move rewrites the prefix. A flipbook folder keeps its `<name>/<name>.pix3anim` pairing:
    renaming `sprites/coin/` to `sprites/coins/` renames `coin.pix3anim` to `coins.pix3anim` too.
    To delete, first remove or replace the references, then the file.
-3. `pix3 check` names a scene reference that still points nowhere (`E_MISSING_RESOURCE`,
-   `E_MISSING_PREFAB`); it does not look inside `.pix3anim` or locale files — `pix3 smoke` on a
-   scene that uses them reports a missing file when it loads, as the **warning**
-   `W_SMOKE_MISSING_RESOURCE` (exit 0).
+3. `pix3 check` names a reference that still points nowhere: a scene's (`E_MISSING_RESOURCE`,
+   `E_MISSING_PREFAB`) and a `.pix3anim` frame (`E_MISSING_FRAME`); it does not follow a locale
+   table's `sprites` — `pix3 smoke` on a scene that uses one reports a missing file when it
+   loads, as the **warning** `W_SMOKE_MISSING_RESOURCE` (exit 0).
 
 A script's file name is free to change: `type: user:Mover` names the exported class. Renaming
 the class means rewriting every `type: user:Mover` and every `import`.
@@ -173,11 +173,16 @@ Remove one:
    the id (`setLocale('de')`). An image only that table's `sprites` used is now unreferenced
    (`pix3 check` lists those under `sprites/` as `W_UNUSED_ASSET`).
 
-Nothing checks the tables: a `labelKey` no table has shows the key itself on screen, and a
-declared locale without its file loads empty — read the keys back yourself (or look at the
-running game). In a script, `this.scene.localization`: `tr(key, { name: value })` (fills
-`{name}`), `trPlural(key, count)`, `trSprite(key)`, `has(key)`, `locale`, `locales`,
-`setLocale(id)`, `onChange(fn)`; a node shows `tr(node.labelKey)` when it has a key.
+`pix3 check` checks the tables: a declared locale without its file (`E_LOCALE_MISSING` for the
+default or fallback locale, `W_LOCALE_MISSING` for another), a table that is not JSON
+(`E_`/`W_LOCALE_JSON`), a value that is not a string (`E_`/`W_LOCALE_VALUE` — keys are flat,
+`"menu.play"`, never nested), and a `labelKey` the default locale has no text for
+(`E_LOCALE_KEY`: the node would show the key itself). Keys a script passes to `tr()` are not
+checked — read those back yourself (or look at the running game).
+
+In a script, `this.scene.localization`: `tr(key, { name: value })` (fills `{name}`),
+`trPlural(key, count)`, `trSprite(key)`, `has(key)`, `locale`, `locales`, `setLocale(id)`,
+`onChange(fn)`; a node shows `tr(node.labelKey)` when it has a key.
 
 ## `pix3project.yaml`
 

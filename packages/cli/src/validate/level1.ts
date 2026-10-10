@@ -21,6 +21,7 @@ import {
 
 import { diagnostic, type Diagnostic, type DiagnosticInput } from './diagnostics.ts';
 import { toProjectPath, type ProjectFiles } from './project.ts';
+import type { LabelKeyUse } from './resource-files.ts';
 import { nearest } from './suggest.ts';
 import { inspectProjectSvg, isSvgPath } from './svg.ts';
 import type { UserScriptIndex } from './user-scripts.ts';
@@ -57,6 +58,8 @@ export interface SceneCheckResult {
   readonly references: ReadonlySet<string>;
   /** Parsed document (null when the YAML did not parse). */
   readonly parsed: ParsedYaml | null;
+  /** Every non-empty `labelKey` a node or an instance override sets (checked against the locales). */
+  readonly labelKeys: readonly LabelKeyUse[];
   /** Whether any node carries a `user:` component. */
   readonly usesUserComponents: boolean;
 }
@@ -170,6 +173,7 @@ const RES_PREFIX = /^res:\/\//i;
 class SceneChecker {
   readonly diagnostics: Diagnostic[] = [];
   readonly references = new Set<string>();
+  readonly labelKeys: LabelKeyUse[] = [];
   usesUserComponents = false;
   /** SVGs already reported for this scene (one report per file, at its first reference). */
   private readonly svgChecked = new Set<string>();
@@ -191,6 +195,17 @@ class SceneChecker {
         line: at ? this.parsed.lineOf(at) : undefined,
       })
     );
+  }
+
+  private noteLabelKey(value: unknown, nodeId: string | undefined, at: DocPath): void {
+    if (typeof value !== 'string' || value.trim() === '') return;
+    this.labelKeys.push({
+      file: this.file,
+      key: value,
+      nodeId,
+      path: formatPath(at),
+      line: this.parsed.lineOf(at),
+    });
   }
 
   run(): void {
@@ -419,6 +434,7 @@ class SceneChecker {
     const schema = schemaForType(format);
     for (const [key, value] of Object.entries(properties)) {
       const keyAt = [...at, key];
+      if (key === 'labelKey') this.noteLabelKey(value, nodeId, keyAt);
       const resolution = resolveSceneDiskKey(format, schema, key);
       switch (resolution.kind) {
         case 'schema':
@@ -854,6 +870,7 @@ class SceneChecker {
     for (const [key, value] of Object.entries(properties)) {
       const keyAt = [...at, key];
       this.checkStrings(value, keyAt, nodeId);
+      if (key === 'labelKey') this.noteLabelKey(value, nodeId, keyAt);
       if (key === 'transform') {
         if (!isRecord(value)) {
           this.report({
@@ -1019,6 +1036,7 @@ export const checkSceneLevel1 = (
       ),
       references: new Set(),
       parsed: null,
+      labelKeys: [],
       usesUserComponents: false,
     };
   }
@@ -1028,6 +1046,7 @@ export const checkSceneLevel1 = (
     diagnostics: checker.diagnostics,
     references: checker.references,
     parsed,
+    labelKeys: checker.labelKeys,
     usesUserComponents: checker.usesUserComponents,
   };
 };

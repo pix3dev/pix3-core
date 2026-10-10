@@ -116,6 +116,55 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a referenced .svg points outside itself (href, url(), @import) — never loads as an image',
   },
+  E_ANIM_JSON: {
+    severity: 'error',
+    level: 1,
+    summary: 'a .pix3anim is not a JSON object the loader can read (or its clips are not a list)',
+  },
+  E_MISSING_FRAME: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'an image a .pix3anim names (a frame texturePath, the spritesheet) does not exist; its .svg frames get the E_SVG_* checks too',
+  },
+  E_LOCALE_MISSING: {
+    severity: 'error',
+    level: 1,
+    summary: 'the default or fallback locale has no locales/<id>.json — labelKeys show the key',
+  },
+  W_LOCALE_MISSING: {
+    severity: 'warning',
+    level: 1,
+    summary: 'another declared locale has no locales/<id>.json — its texts fall back',
+  },
+  E_LOCALE_JSON: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'the default or fallback locale table is not a JSON object with strings/sprites maps — it loads empty',
+  },
+  W_LOCALE_JSON: {
+    severity: 'warning',
+    level: 1,
+    summary: 'another locale table is not a JSON object with strings/sprites maps — it loads empty',
+  },
+  E_LOCALE_VALUE: {
+    severity: 'error',
+    level: 1,
+    summary: 'a non-string value in the default or fallback locale table (the runtime drops it)',
+  },
+  W_LOCALE_VALUE: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'a non-string value in another locale table (the runtime drops it; the text falls back)',
+  },
+  E_LOCALE_KEY: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a labelKey the default (and fallback) locale has no text for — the key shows on screen',
+  },
   W_LEGACY_VERSION: {
     severity: 'warning',
     level: 1,

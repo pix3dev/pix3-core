@@ -130,6 +130,30 @@ a sized SVG auto-sizes the sprite to its `width`×`height`; a viewBox-only one t
 without `xmlns`, or any SVG whose Blob type is not `image/svg+xml`, fails to load (browsers do
 not sniff SVG).
 
+### `.pix3anim` frames and locale tables
+
+Level 1 also follows what a scene reaches through another file. Every `.pix3anim` (all of them on
+a whole-project run, else those the validated scenes name) must be a JSON object, and every image
+it names — each frame's `texturePath`, the spritesheet's top-level one — must exist; an `.svg`
+frame gets the sprite rules above (`E_SVG_*`), reported on the `.pix3anim` with the frame's path.
+The locales are the ones the plugin ships: the `localization:` block of `pix3project.yaml`, else
+every `locales/*.json` (`en` the default when there is one). Severity is what the player would
+see: the default or fallback locale's table not loading means every `labelKey` shows its key
+(error); another locale's means its texts fall back (warning).
+
+| Code | Severity | When |
+| --- | --- | --- |
+| `E_ANIM_JSON` | error | a `.pix3anim` is not JSON, not an object, or its `clips` are not a list |
+| `E_MISSING_FRAME` | error | a frame image or the spritesheet a `.pix3anim` names does not exist (case hint as for `E_MISSING_RESOURCE`) |
+| `E_LOCALE_MISSING` / `W_LOCALE_MISSING` | error / warning | a declared locale has no `locales/<id>.json` (default or fallback / another); on `pix3project.yaml` at its line |
+| `E_LOCALE_JSON` / `W_LOCALE_JSON` | error / warning | the table is not JSON, not an object, or `strings` / `sprites` is not a map |
+| `E_LOCALE_VALUE` / `W_LOCALE_VALUE` | error / warning | a `strings` / `sprites` value is not a string (the runtime drops it; nested keys are the usual cause) |
+| `E_LOCALE_KEY` | error | a `labelKey` (on a node or an instance) with no text in the default locale nor the fallback (`""` counts as none) — the node shows the key |
+
+The tables are checked on whole-project runs (as `W_UNUSED_ASSET`); `labelKey`s on every run.
+Not checked: keys a script passes to `tr()`, `textureKey` / `stateTextureKeys` against `sprites`,
+and the files a table's `sprites` name.
+
 ## `pix3 sfx` — sound effects without the editor
 
 ```text
