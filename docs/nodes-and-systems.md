@@ -33,8 +33,11 @@ When asked to implement a game feature:
 
 **A. In-editor user scripts** (the common path). A `Script` subclass in the
 project's `scripts/` folder, attached to a node as a component and referenced in
-the scene as `type: user:<ClassName>`. The editor compiles it (esbuild-wasm) and
-hot-reloads it. Scripts reach the engine through `this.scene` / `this.input` /
+the scene as `type: user:<ClassName>`. The game's own Vite dev server compiles it;
+the editor picks the new version up on `pix3_sync` (or a save), without reloading.
+A script — and every local module it imports — must not use `import.meta.hot`, a
+CSS import or a non-literal `import()`: each puts Vite's HMR client on the editor
+page (`pix3 check` warns, `W_EDITOR_*`). Scripts reach the engine through `this.scene` / `this.input` /
 `this.node`. Example: [example-scripts/RotatingCube.ts](example-scripts/RotatingCube.ts).
 
 **B. Consumer game project** (e.g. DeepCore) that imports `@pix3/runtime` from

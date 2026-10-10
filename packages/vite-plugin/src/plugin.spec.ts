@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
+import { ScriptGraph } from './sync/script-graph.ts';
 import { sleep, startProject, type TestProject } from './test-support/harness.ts';
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
@@ -372,9 +373,11 @@ describe('sync barrier', () => {
       reason: 'stale',
       playing: 'designer',
       pending: ['scenes/a.pix3scene'],
+      executed: { 'scripts/Foo.ts': sha('x') },
     }));
     const result = await sync(p, { tabId: 'tab-a' });
     expect(result).toMatchObject({ ok: false, reason: 'stale', playing: 'designer' });
+    expect(result.executed).toBeUndefined(); // the stamps are the judge's, not the agent's
   });
 
   it('flushes through the writer tab when the caller is not a tab', async () => {
@@ -486,5 +489,17 @@ describe('sync barrier', () => {
     writeFileSync(join(p.root, 'scripts/Foo.ts'), 'export const foo = 2;\n');
     const frame = await tab.waitFor(f => f.type === 'pix3:scripts', 5_000);
     expect(frame.path).toBe('scripts/Foo.ts');
+  });
+});
+
+describe('the script graph', () => {
+  it('takes project sources, not an in-project cacheDir, node_modules or other files', () => {
+    const graph = new ScriptGraph('/p', () => null, ['/p/.vite-cache/']);
+    expect(graph.wirePathOf('/p/scripts/A.ts?t=1')).toBe('scripts/A.ts');
+    expect(graph.wirePathOf('/p/src/game/x.js')).toBe('src/game/x.js');
+    expect(graph.wirePathOf('/p/.vite-cache/deps/three.js')).toBeNull();
+    expect(graph.wirePathOf('/p/node_modules/x/index.js')).toBeNull();
+    expect(graph.wirePathOf('/p/scenes/a.pix3scene')).toBeNull();
+    expect(graph.wirePathOf('/elsewhere/a.ts')).toBeNull();
   });
 });

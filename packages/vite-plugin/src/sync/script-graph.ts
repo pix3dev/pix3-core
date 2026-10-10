@@ -64,15 +64,22 @@ export class ScriptGraph {
   private readonly root: string;
   private readonly server: () => ViteDevServer | null;
 
-  constructor(root: string, server: () => ViteDevServer | null) {
+  /** Absolute directories inside the root that hold no project sources (Vite's `cacheDir`). */
+  private readonly ignored: readonly string[];
+
+  constructor(root: string, server: () => ViteDevServer | null, ignored: readonly string[] = []) {
     this.root = root;
     this.server = server;
+    this.ignored = ignored.map(dir => dir.replace(/[\\/]+$/, ''));
   }
 
   /** Module id (absolute path, maybe with a query) → wire path, when it is a project source. */
   wirePathOf(id: string): string | null {
     const file = id.split('?')[0];
     if (!isAbsolute(file) || !SOURCE_EXTENSION.test(file)) return null;
+    // A pre-bundled dependency in an in-project `cacheDir` is not the project's code.
+    if (this.ignored.some(dir => file.startsWith(`${dir}${sep}`) || file.startsWith(`${dir}/`)))
+      return null;
     const rel = relative(this.root, file);
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null;
     const wirePath = rel.split(sep).join('/');

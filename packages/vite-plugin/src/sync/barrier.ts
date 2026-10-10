@@ -201,7 +201,9 @@ export class SyncBarrier {
 
   private judge(reply: RequestReply, rev: number, required: Map<string, string>): SyncResult {
     if (!reply.ok) {
-      const { ok: _ok, ...rest } = reply;
+      // `executed` is every stamp on the page (hundreds of modules): proof for the judge, noise
+      // in an answer the agent reads.
+      const { ok: _ok, executed: _executed, ...rest } = reply;
       return {
         ok: false,
         reason: typeof reply.reason === 'string' ? reply.reason : 'refused',

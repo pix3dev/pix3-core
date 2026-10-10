@@ -348,8 +348,7 @@ Pix3 implements a comprehensive service layer providing core functionality:
 - **NodeRegistry**: Maps node type strings to node classes for instantiation
 - **ScriptExecutionService**: Runs game loop, calls tick on nodes, manages script lifecycle
 - **AssetLoader**: Loads 3D models, textures, and other assets
-- **ScriptCompilerService**: Handles on-the-fly compilation of scene scripts
-- **ScriptCreatorService**: Provides UI and logic for creating new script components
+- **ProjectScriptLoaderService**: Registers the project's `Script` exports as `user:<Name>` from the modules Vite evaluated (`virtual:pix3/editor-scripts`); the editor compiles nothing
 
 ### File System Services
 
