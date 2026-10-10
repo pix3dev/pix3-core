@@ -157,12 +157,20 @@ const newTabId = (): string =>
 
 /**
  * True when Vite's HMR client got onto this page — contract B is broken and a `full-reload` can
- * reach the editor. Checked once at load and reported, never silently tolerated.
+ * reach the editor. The page's inline probe (`editor-page.ts`) keeps `__PIX3_VITE_CLIENT__`
+ * current for the tab's whole life; the timeline is read too, because the observer reports
+ * asynchronously. Checked at load and on every sync (the answer carries `viteClient: true`), and
+ * `pix3_status` shows it.
  */
 export const viteClientLoaded = (): boolean =>
-  performance
-    .getEntriesByType('resource')
-    .some(entry => new URL(entry.name, location.href).pathname.endsWith('/@vite/client'));
+  (globalThis as { __PIX3_VITE_CLIENT__?: boolean }).__PIX3_VITE_CLIENT__ === true ||
+  (typeof performance !== 'undefined' &&
+    performance
+      .getEntriesByType('resource')
+      .some(entry => new URL(entry.name, location.href).pathname.endsWith('/@vite/client')));
+
+const VITE_CLIENT_MESSAGE =
+  '[pix3] /@vite/client is loaded on the editor page: a non-literal import(), import.meta.hot or a CSS import reached the editor chain (plan §B.2, contract B; `pix3 check` names the file).';
 
 /**
  * The page's `EditorHost` (`@pix3/editor-core` defines the contract, `.plans/editor-core-port.md`
@@ -206,6 +214,8 @@ export class EditorHostConnection {
   private readonly scriptListeners = new Set<Listener<ScriptRoots>>();
   private readonly writerListeners = new Set<Listener<string | null>>();
   private retryMs = 250;
+  /** The contract-B error is logged once per tab. */
+  private viteClientReported = false;
   private closed = false;
 
   constructor(options: HostOptions) {
@@ -480,7 +490,17 @@ export class EditorHostConnection {
         const applied = this.handlers.applySync
           ? await this.handlers.applySync({ rev, changed, roots })
           : { ok: true };
-        this.reply(id, { ...applied, rev, executed: this.executed() });
+        const viteClient = viteClientLoaded();
+        if (viteClient && !this.viteClientReported) {
+          this.viteClientReported = true;
+          console.error(VITE_CLIENT_MESSAGE);
+        }
+        this.reply(id, {
+          ...applied,
+          rev,
+          executed: this.executed(),
+          ...(viteClient ? { viteClient: true } : {}),
+        });
         return;
       }
       this.reply(id, { ok: false, reason: 'unknown_request' });

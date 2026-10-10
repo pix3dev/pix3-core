@@ -24,6 +24,10 @@ import { isGlobbedScript, type ScriptGraph } from './script-graph.ts';
  */
 
 export const DEFAULT_SYNC_TIMEOUT_MS = 10_000;
+export const VITE_CLIENT_WARNING =
+  "/@vite/client is loaded on the editor page, so the game's full-reload can reload the editor: " +
+  'a script, a bot policy or a module they import uses import.meta.hot, a CSS import or a ' +
+  'non-literal import(). `pix3 check` names the file (W_EDITOR_*).';
 const MAX_SYNC_TIMEOUT_MS = 120_000;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
@@ -179,6 +183,8 @@ export class SyncBarrier {
       ...(verdict.ok && expectMismatch.length > 0 ? { reason: 'expect_mismatch' } : {}),
       editor: true,
       tabId,
+      // Contract B broken: the page found /@vite/client loaded (plan §B.2).
+      ...(reply.viteClient === true ? { viteClient: true, warning: VITE_CLIENT_WARNING } : {}),
       ms: Date.now() - started,
     };
   }
