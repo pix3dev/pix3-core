@@ -436,16 +436,20 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    session (`Target.attachToBrowserTarget`, or `attachToTarget {flatten}` for a page), message
    ids are remapped per client, events go only to the client owning their session, another
    client's session is "not found", a client that leaves is detached with its child sessions.
-4. **The port.** `/json/version` with our token answering with the proxy's marker = ours →
-   reused (and when the editor tab is open there, nothing is launched). A proxy refusing our
-   token (another user's, another `PIX3_HOME`), a foreign DevTools endpoint or any other listener
-   → the next of 9334–9339, with a line per skipped port, the chosen one recorded in
-   `~/.pix3/chrome.json`, and the reminder to run `pix3 agent-setup --repair` (a running Codex /
-   Claude Code session keeps the old endpoint: new thread). A plain DevTools port with a
-   `/__pix3/` page (or on the recorded port) is the P1 launch (open port, no token): it holds the
-   profile, so `pix3 editor` stops and says to close that Chrome. When the port is the usual one
-   but the project's `.mcp.json` / `.codex/config.toml` entry does not match this port and
-   token, it says to run `pix3 agent-setup --repair`. `--cdp-port <n>` moves the preferred port
+4. **The port.** The check sends `X-Pix3-Challenge` and **no token**: a proxy answering with the
+   proof that it knows our token (`X-Pix3-Proof`, the HMAC of [Remote SSH](#remote-ssh--vs-code-on-a-remote-host-chrome-on-your-machine))
+   = ours → reused (only then is it asked, with the token, for its tabs; when the editor tab is
+   open there, nothing is launched). A proxy without that proof (another user's, another
+   `PIX3_HOME`, a squatter), a foreign DevTools endpoint or any other listener — none of which
+   ever sees the token — → the next of 9334–9339, with a line per skipped port, the chosen one
+   recorded in `~/.pix3/chrome.json`, and the reminder to run `pix3 agent-setup --repair` (a
+   running Codex / Claude Code session keeps the old endpoint: new thread). A plain DevTools port
+   with a `/__pix3/` page (or on the recorded port) is the P1 launch (open port, no token): it
+   holds the profile, so `pix3 editor` stops and says to close that Chrome. When the port is the
+   usual one but the project's `.mcp.json` / `.codex/config.toml` entry is not the current launch
+   (an older one — `--wsHeaders` with the token on its command line, `--browserUrl`), or the
+   `~/.pix3/cdp-mcp.json` it names holds another port or token, it says to run
+   `pix3 agent-setup --repair`. `--cdp-port <n>` moves the preferred port
    (test harnesses). `PIX3_HOME` relocates `~/.pix3`.
 
 Keepalive is the editor's: every bridge call keeps its loops running for 60 s, agent play until
@@ -461,30 +465,33 @@ Plan §D.6. Writes project-level config, idempotently:
   every other byte of the file kept.
 
 The entry is `npx -y chrome-devtools-mcp@1.10.1 --categoryExperimentalThirdParty=true
---experimentalVision=true --wsEndpoint=ws://127.0.0.1:<port>/pix3
---wsHeaders={"Authorization":"Bearer <token>"}` (`cmd /c npx …` on Windows;
+--experimentalVision=true --config=<~/.pix3/cdp-mcp.json>` (`cmd /c npx …` on Windows;
 `experimentalVision` enables `click_at {x, y}`, the agent's input at the coordinates
-`pix3_scene` returns as `screen`). `--wsEndpoint` / `--wsHeaders` are 1.10.1's own flags
-(`build/src/config/browser-options.js`; `--wsHeaders` is parsed as a JSON object): with
-`--wsEndpoint` puppeteer connects to that WebSocket only, sending the headers on the upgrade, and
-makes no `/json/*` request. The version is **pinned**:
+`pix3_scene` returns as `screen`). `~/.pix3/cdp-mcp.json` (mode 0600, written by this command,
+rewritten whenever the port or the token moves) holds `wsEndpoint` = `ws://127.0.0.1:<port>/pix3`
+and `wsHeaders` = `{"Authorization":"Bearer <token>"}`: 1.10.1's `--config` reads a JSON object
+with the flags' own options and coercions (`build/src/config/mcp-options.js`; `wsEndpoint` /
+`wsHeaders` in `build/src/config/browser-options.js`, `wsHeaders` parsed as a JSON object); with
+`wsEndpoint` puppeteer connects to that WebSocket only, sending the headers on the upgrade, and
+makes no `/json/*` request. So **the token is in no project file and on no command line** (every
+user of a box can read every process's command line). The version is **pinned**:
 the third-party tool category is experimental and may move in a minor release, so it changes
 only after the S4 transport run is repeated (`CHROME_DEVTOOLS_MCP_VERSION` in
 `src/agent-setup/config.ts`); the inline fallback (`window.__PIX3_DEBUG__.call`) works on any
 version. The port is `--cdp-port`, else what `~/.pix3/chrome.json` recorded, else 9333; the token
-is `~/.pix3/cdp-token` (created here if `pix3 editor` has not run yet). `--remote` is the other
-shape, for an agent on a Remote SSH host: the endpoint and the token in a 0600 `--config` file
-(see Remote SSH below).
+is `~/.pix3/cdp-token` (created here if `pix3 editor` has not run yet). `--remote` is the same
+shape for an agent on a Remote SSH host, with `~/.pix3/remote-cdp.json` (see Remote SSH below).
 
-The file then holds this machine's token: the command prints the launch with the token masked,
-and says so when git does not ignore the file (the starters' `.gitignore` lists `.mcp.json` and
-`.codex/config.toml`). An entry that already matches is `up to date`; one that differs (another
-version, port or token, or the P1 `--browserUrl` launch, named as such) is reported as drift and
-exit 1 — `--repair` rewrites it after copying the file to `<file>.bak`; that is the migration of
-a P1 project.
+The project files name a path in this machine's home, so the starters' `.gitignore` keeps
+listing `.mcp.json` and `.codex/config.toml`. An entry that already matches is `up to date`; one
+that differs (another version or config file, the P1 `--browserUrl` launch or the earlier
+`--wsEndpoint` + `--wsHeaders` launch that carried the token, each named as such) is reported as
+drift and exit 1 — `--repair` rewrites it after copying the file to `<file>.bak` (the `.bak` of a
+`--wsHeaders` entry still holds the token: delete it); that is the migration of a P1 or an early
+P2 project.
 Nothing is done to a sandbox: Codex must be allowed to reach `127.0.0.1` once when it asks.
-The alternative for every project at once is printed (`claude mcp add --scope user …` with the
-token put in, or the table in `~/.codex/config.toml`).
+The alternative for every project at once is printed (`claude mcp add --scope user …`, or the
+table in `~/.codex/config.toml`).
 
 **The proxy (plan §D.5).** Chrome opens no debugging port; the only way in is the proxy with the
 token, so another local user, a web page or a process that cannot read `~/.pix3/cdp-token`

@@ -6,7 +6,8 @@ import { cdpTokenPath } from './paths.ts';
 
 /**
  * `~/.pix3/cdp-token` (plan §D.5): the bearer token the CDP proxy of `pix3 editor` asks for and
- * `pix3 agent-setup` writes into chrome-devtools-mcp's `--wsHeaders`. Created once, mode 0600,
+ * `pix3 agent-setup` writes into chrome-devtools-mcp's 0600 `--config` file
+ * (`~/.pix3/cdp-mcp.json`). Created once, mode 0600,
  * never rotated by the CLI — delete the file to rotate, then `pix3 agent-setup --repair` and a
  * new `pix3 editor` (the running proxy keeps the token it started with).
  */

@@ -64,3 +64,12 @@ export const remoteCdpTokenPath = (env: NodeJS.ProcessEnv = process.env): string
  */
 export const remoteMcpConfigPath = (env: NodeJS.ProcessEnv = process.env): string =>
   join(pix3Home(env), 'remote-cdp.json');
+
+/**
+ * `~/.pix3/cdp-mcp.json`: chrome-devtools-mcp's `--config` file on this machine (`wsEndpoint`
+ * of the local proxy + `wsHeaders` with the token), mode 0600, written by `pix3 agent-setup`.
+ * The project's `.mcp.json` / `.codex/config.toml` name this file only — the token is in no
+ * project file and on no command line (the remote side's `remote-cdp.json`, applied locally).
+ */
+export const localMcpConfigPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'cdp-mcp.json');
