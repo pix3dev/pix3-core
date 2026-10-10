@@ -209,7 +209,7 @@ A 2D image display node. Renders a textured quad that always faces the camera.
 
 A texture mapped onto a rectangle of arbitrary size by one of five fill algorithms — the node for
 **UI panels, windows, bars and repeating backgrounds**, where `Sprite2D`'s plain stretch would smear
-the corners. This is the engine's nine-slice; UI Kit Forge emits its slice borders directly.
+the corners. This is the engine's nine-slice.
 
 **Type String:** `TiledSprite2D`
 
@@ -242,7 +242,8 @@ the corners. This is the engine's nine-slice; UI Kit Forge emits its slice borde
 ### AnimatedSprite2D
 
 Flipbook sprite animation driven by a `.pix3anim` resource — a set of named clips over a
-spritesheet or a list of frame images. Authored in the editor's Sprite Editor. For **skeletal**
+spritesheet or a list of frame images, written as a file (the kit's `pix3-scene-format/pix3anim.md`;
+`pix3 character-compile` for a character with variants). For **skeletal**
 animation use [SpineSkeleton2D](#spineskeleton2d) instead; for a property/timeline animation over any
 node, use the `core:AnimationPlayer` behaviour.
 
@@ -386,12 +387,12 @@ behaves.
 | `animation-looped`   | `(name, trackIndex)`                         | A looping animation completed a loop                       |
 | `spine-event`        | `(name, { int, float, string }, trackIndex)` | A keyed animation event fired                              |
 
-**Export:** the HTML / zip playable export bundles the Spine runtime _statically_
-into `index.html`, but only when a scene actually places a `SpineSkeleton2D` — a
-dynamic import would become a chunk that a single-file export can never fetch.
+**Build:** `vite build` bundles the Spine runtime _statically_ (through
+`virtual:pix3/spine`), but only when the project uses a `SpineSkeleton2D` — a
+dynamic import would become a chunk that a single-file build can never fetch.
 Skeleton, atlas and the atlas' page images ship with it; projects without a
-skeleton are unaffected in size. The generated npm project gets the dependency
-added to its `package.json` on the same condition.
+skeleton are unaffected in size. The project lists `@esotericsoftware/spine-threejs`
+in its own dependencies (the starters do not).
 
 **Usage Notes:**
 
@@ -1299,8 +1300,9 @@ and builds a composer from it; with no such node the plain two-pass path runs an
 - It has no transform: the properties sit flat in `properties`, and position/rotation/scale do not
   apply.
 - The whole stack is one lazily-created composer. Every effect off = no composer at all.
-- In a single-file playable export, `postprocessing` is pulled in through a generated
-  `virtual:runtime-*` module — using this node is fine for an export, it just adds weight.
+- In a single-file build, `postprocessing` is pulled in through the generated
+  `virtual:pix3/postprocessing` module (a stub when no scene has a `PostProcess`) — using this
+  node is fine for a build, it just adds weight.
 
 ---
 
@@ -1372,7 +1374,7 @@ filter).
 
 ### For 2D Projects:
 
-1. **Start with a Group2D** as your scene root (the game viewport size comes from project settings; use anchor layout for responsiveness)
+1. **Start with a Group2D** as your scene root (the game viewport size is `viewportBaseSize` in `pix3project.yaml`; use anchor layout for responsiveness)
 2. Add **Sprite2D** for images and graphics
 3. Before the art exists, build with **ColorRect2D** — it is the only solid-colour 2D primitive, and
    a game made of coloured rects is playable a day before a game waiting on sprites

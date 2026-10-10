@@ -140,7 +140,7 @@ bar.value = 30;    // field changes, NOTHING is redrawn
 ```
 
 The second spelling is the natural one, it type-checks, and the getter afterwards returns `30` —
-so state-based verification (including the agent's `game_observe`) confirms a success that never
+so state-based verification (including an agent's `pix3_game_run` observation) confirms a success that never
 reached the screen. The runtime shipped **31** such properties across 16 node types before this was
 measured; `UIControl2D.label` was found only because a human looked at the canvas.
 

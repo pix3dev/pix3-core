@@ -7,10 +7,10 @@ Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript 
 | Package | npm | What it is |
 | --- | --- | --- |
 | [`packages/runtime`](packages/runtime) | `@pix3/runtime` | The engine: scene graph, nodes, scripts, ECS, audio, resources |
-| [`packages/cli`](packages/cli) | `@pix3/cli` | `pix3 validate`, `check`, `smoke`, `tree`, `sfx`, `kit` |
+| [`packages/cli`](packages/cli) | `@pix3/cli` | `pix3 new`, `validate`, `check`, `smoke`, `tree`, `sfx`, `kit`, `character-compile`, `editor`, `agent-setup`, `gap` |
 | [`packages/vite-plugin`](packages/vite-plugin) | `@pix3/vite-plugin` | Editor at `/__pix3/`, file API, sync barrier, build |
 | [`packages/editor-core`](packages/editor-core) | `@pix3/editor-core` | The editor UI (Lit), prebuilt |
-| [`packages/create-pix3`](packages/create-pix3) | `create-pix3` | `npm create pix3@latest <dir> -- --template <id>` |
+| [`packages/create-pix3`](packages/create-pix3) | `create-pix3` | `npm create pix3@latest <dir> -- --template 2d\|3d` |
 
 ## Development
 

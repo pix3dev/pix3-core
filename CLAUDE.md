@@ -12,7 +12,7 @@ The design and phase plan is `.plans/pix3-core.md` in the `pix3` repo (sibling c
 
 ## Doc router — read the SECTION, not the whole file
 
-Every doc below is bigger than the answer to any single task. **Locate the anchor with `Grep`, then `Read` with `offset`/`limit`.** Anchors are the _descriptive_ heading text (grep that, not a section number). `AGENTS.md` is the binding code-rule set: read it before writing code. Sections of the spec that describe the 1.x editor (workspace, co-authoring, collab, Flow, live agent channel) are history until the port rewrites them.
+Every doc below is bigger than the answer to any single task. **Locate the anchor with `Grep`, then `Read` with `offset`/`limit`.** Anchors are the _descriptive_ heading text (grep that, not a section number). `AGENTS.md` is the binding code-rule set: read it before writing code. The spec's editor-facing sections describe 2.x as built and point at the `.plans/` records; its change-log entries from the `pix3` era are history.
 
 | Task | File → section (grep the heading text) |
 | --- | --- |
@@ -38,7 +38,7 @@ Every doc below is bigger than the answer to any single task. **Locate the ancho
 | 2D character with weapon/outfit variants and states, flipbook clip switching from a script, `pix3 character-compile` | `docs/nodes-and-systems.md` → "Character with variants/states"; `AnimatedSprite2D.play` in `docs/node-types-reference.md`; command `packages/cli/README.md` → "`pix3 character-compile`", code `packages/cli/src/character/` |
 | Tween a value, fade / cross-fade a node, ball trail                      | `docs/nodes-and-systems.md` → "Tweens (scene.tween)"; the `trail` line under "Juice & time-scale"                     |
 | 2D physics (bodies, colliders, sensors) / collision polygons            | `docs/nodes-and-systems.md` → "Physics — which tier to use", then "2D physics" / "2D collision"                                   |
-| Where a menu / end screen / modal belongs in a project or template      | `docs/pix3-specification.md` → "Project Templates, Target Platform and Agent Overlay" → the `scenes/ui/` paragraph                |
+| Where a menu / end screen / modal belongs in a project or template      | `docs/pix3-specification.md` → "Project Templates, Target Platform and Agent Kit" → the `scenes/ui/` paragraph                |
 | Command / Operation / undo wiring                                       | `AGENTS.md` → "Commands and Operations"; code in `packages/editor-core/src/features/<area>/`                                                           |
 | Add a menu command / which menu does it belong in / a toggle with a check | `AGENTS.md` → "Menu System" bullets, then `pix3-ui-conventions` skill §6; rationale in `../pix3/.plans/done/ui-consistency-pass.md` §2 |
 | Inspector control primitives (buttons, switches, radio groups, sub-blocks) | `pix3-ui-conventions` skill §7; source `packages/editor-core/src/ui/object-inspector/inspector-controls.ts.css`                                       |
