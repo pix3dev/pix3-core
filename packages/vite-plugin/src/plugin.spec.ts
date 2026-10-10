@@ -120,6 +120,22 @@ describe('editor page and discovery', () => {
     });
   });
 
+  it('the dev scene manifest carries the autoloads and follows pix3project.yaml', async () => {
+    const p = await start({
+      'scenes/main.pix3scene': SCENE,
+      'pix3project.yaml':
+        'autoloads:\n  - singleton: Counter\n    scriptPath: scripts/Counter.ts\n  - singleton: Off\n    scriptPath: scripts/Off.ts\n    enabled: false\n  - scriptPath: scripts/NoName.ts\n',
+    });
+    const autoloads = async (): Promise<unknown> => {
+      const code = await (await p.fetch('/@id/__x00__virtual:pix3/scene-manifest')).text();
+      return JSON.parse(/export const runtimeAutoloads = ([\s\S]*?);\n/.exec(code)?.[1] ?? 'null');
+    };
+    expect(await autoloads()).toEqual([
+      { singleton: 'Counter', scriptPath: 'scripts/Counter.ts', enabled: true },
+      { singleton: 'Off', scriptPath: 'scripts/Off.ts', enabled: false },
+    ]);
+  });
+
   it('answers hello with the revision, seq and versions', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const hello = await json(await p.fetch('/__pix3/api/hello'));

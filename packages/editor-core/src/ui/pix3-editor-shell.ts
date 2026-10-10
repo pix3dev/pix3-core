@@ -28,7 +28,6 @@ import {
   type NodeTypePickerInstance,
 } from '@/services/editor/NodeTypePickerService';
 import { ScriptExecutionService } from '@/services/play/ScriptExecutionService';
-import { AutoloadService } from '@/services/project/AutoloadService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { EditorTabService } from '@/services/editor/EditorTabService';
@@ -160,10 +159,6 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
 
-  /** Resolved for its side effect: the autoload lifecycle subscribes on construction. */
-  @inject(AutoloadService)
-  private readonly autoloadService!: AutoloadService;
-
   @state() private isLayoutReady = appState.ui.isLayoutReady;
   @state() private dialogs: DialogInstance[] = [];
   @state() private componentPickers: ComponentPickerInstance[] = [];
@@ -229,7 +224,6 @@ export class Pix3EditorShell extends ComponentBase {
     this.gamePlaySessionService.initialize();
     this.localizationEditorService.initialize();
     this.editorSettingsService.initialize();
-    void this.autoloadService;
   }
 
   disconnectedCallback(): void {

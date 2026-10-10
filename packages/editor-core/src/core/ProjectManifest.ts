@@ -1,8 +1,4 @@
-export interface AutoloadConfig {
-  scriptPath: string;
-  singleton: string;
-  enabled: boolean;
-}
+import { normalizeAutoloads, type AutoloadConfig } from '@pix3/runtime';
 
 /** Project-level ambient-occlusion default (top of the AO cascade). */
 export const PROJECT_AO_MODES = ['off', 'baked', 'realtime', 'adaptive'] as const;
@@ -372,27 +368,8 @@ export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
   }
 
   const record = input as Record<string, unknown>;
-  const rawAutoloads = Array.isArray(record.autoloads) ? record.autoloads : [];
-  const autoloads: AutoloadConfig[] = [];
-
-  for (const entry of rawAutoloads) {
-    if (!entry || typeof entry !== 'object') {
-      continue;
-    }
-
-    const autoload = entry as Record<string, unknown>;
-    const scriptPath = typeof autoload.scriptPath === 'string' ? autoload.scriptPath.trim() : '';
-    const singleton = typeof autoload.singleton === 'string' ? autoload.singleton.trim() : '';
-    if (!scriptPath || !singleton) {
-      continue;
-    }
-
-    autoloads.push({
-      scriptPath,
-      singleton,
-      enabled: autoload.enabled !== false,
-    });
-  }
+  // The runtime's reading, the one every host (player, play mode, headless) builds from.
+  const autoloads: AutoloadConfig[] = normalizeAutoloads(record.autoloads);
 
   const targetPlatform = normalizeTargetPlatform(record.targetPlatform);
 

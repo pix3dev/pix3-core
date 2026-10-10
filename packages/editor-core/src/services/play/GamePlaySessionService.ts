@@ -7,6 +7,7 @@ import {
   RuntimeRenderer,
   SceneManager,
   SceneRunner,
+  ScriptRegistry,
   setPhysicsDebugEnabled,
   setDirectionAxesEnabled,
 } from '@pix3/runtime';
@@ -79,6 +80,9 @@ export class GamePlaySessionService {
 
   @inject(FlushService)
   private readonly flush!: FlushService;
+
+  @inject(ScriptRegistry)
+  private readonly scriptRegistry!: ScriptRegistry;
 
   private initialized = false;
   private disposeUiSubscription?: () => void;
@@ -551,6 +555,9 @@ export class GamePlaySessionService {
     );
 
     runner.setFrameScheduler(this.frameTicker);
+    // The project's autoloads, built by the runtime as the player builds them: once per session,
+    // kept across `changeScene`, gone with the runner.
+    runner.setAutoloads(appState.project.manifest?.autoloads ?? [], this.scriptRegistry);
     this.renderer = renderer;
     this.runner = runner;
     // Phase 3: enable the 2D quad batcher for this run (flag-gated; off is

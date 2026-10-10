@@ -15,7 +15,6 @@ import {
   AudioService,
 } from '@pix3/runtime';
 import { NodeBase } from '@pix3/runtime';
-import { AutoloadService } from '@/services/project/AutoloadService';
 import { isEditorActive, onEditorKeepAliveChange } from '@/services/core/page-activity';
 import { BackgroundTicker } from '@/services/core/background-ticker';
 
@@ -34,9 +33,6 @@ export class ScriptExecutionService {
 
   @inject(InputService)
   private readonly input!: InputService;
-
-  @inject(AutoloadService)
-  private readonly autoloadService!: AutoloadService;
 
   @inject(AudioService)
   private readonly audioService!: AudioService;
@@ -81,7 +77,6 @@ export class ScriptExecutionService {
       this.captureNodeState(scene);
     }
 
-    this.startAutoloadScripts();
     this.handlePageActivityChange();
 
     console.log('[ScriptExecutionService] Started script execution loop');
@@ -175,15 +170,6 @@ export class ScriptExecutionService {
     // Calculate delta time in seconds
     const dt = (timestamp - this.lastTimestamp) / 1000;
     this.lastTimestamp = timestamp;
-
-    const autoloadService = this.getAutoloadServiceSafe();
-    if (autoloadService) {
-      const globalRoot = autoloadService.getGlobalRoot();
-      if (!globalRoot.input) {
-        globalRoot.input = input;
-      }
-      globalRoot.tick(dt);
-    }
 
     // Get active scene
     const scene = this.sceneManager.getActiveSceneGraph();
@@ -470,29 +456,6 @@ export class ScriptExecutionService {
 
   private getSnapshotKey(sceneId: string | null): string {
     return sceneId ?? '__active_scene__';
-  }
-
-  private startAutoloadScripts(): void {
-    const autoloadService = this.getAutoloadServiceSafe();
-    if (!autoloadService) {
-      return;
-    }
-
-    for (const component of autoloadService.getAutoloadInstances()) {
-      if (!component.enabled || component._started || !component.onStart) {
-        continue;
-      }
-      component.onStart();
-      component._started = true;
-    }
-  }
-
-  private getAutoloadServiceSafe(): AutoloadService | null {
-    try {
-      return this.autoloadService;
-    } catch {
-      return null;
-    }
   }
 
   private getInputServiceSafe(): InputService | null {

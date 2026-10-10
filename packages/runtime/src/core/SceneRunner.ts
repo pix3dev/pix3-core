@@ -40,6 +40,9 @@ import type { LocalizationConfig } from './localization/localization-types';
 import { setActiveLocalization, getActiveLocalization } from './localization/active-localization';
 import { applyLocaleToTree } from './localization/apply-locale-to-tree';
 import { ECSService } from './ECSService';
+import { AutoloadHost } from './autoloads';
+import type { AutoloadConfig } from './ProjectManifest';
+import type { ScriptRegistry } from './ScriptRegistry';
 import type { SceneRaycastHit } from './raycast';
 import type { RuntimeRendererStatsSnapshot } from './RuntimeRenderer';
 import {
@@ -182,6 +185,8 @@ export class SceneRunner {
   private readonly inputService: InputService;
   private readonly sceneService: SceneService;
   private readonly ecsService: ECSService;
+  /** The session's autoload singletons: built on the first start, kept across `changeScene`. */
+  private readonly autoloads = new AutoloadHost();
   private readonly audioService: AudioService;
   private readonly resourceManager: ResourceManager;
   private readonly clock: Clock;
@@ -341,7 +346,18 @@ export class SceneRunner {
     this.overlayCamera.layers.disableAll();
     this.overlayCamera.layers.enable(LAYER_2D_OVERLAY);
 
+    this.sceneService.setAutoloads(this.autoloads);
     this.bindSceneServiceDelegate();
+  }
+
+  /**
+   * The project's autoloads (`pix3project.yaml` `autoloads:`), built from `registry` when the
+   * session's first scene starts and kept until {@link stop} — a scene change keeps them. Scripts
+   * reach them with `this.scene.getAutoload(name)`. Call before the first start; a running
+   * session keeps the singletons it built.
+   */
+  setAutoloads(entries: readonly AutoloadConfig[], registry: ScriptRegistry): void {
+    this.autoloads.configure(entries, registry);
   }
 
   /**
@@ -521,7 +537,8 @@ export class SceneRunner {
    * synchronous, and the scene is running by the time the promise resolves.
    */
   private async runGraph(graph: import('./SceneManager').SceneGraph): Promise<void> {
-    this.stop();
+    // The scene only: the autoloads outlive a scene change.
+    this.stopScene();
     this.bindSceneServiceDelegate();
     playable.reset();
 
@@ -626,6 +643,10 @@ export class SceneRunner {
       this.reflowRoot2DNodes();
     }
 
+    // The session's autoloads, once: their `onStart` runs in the pre-roll tick below, before any
+    // scene component's.
+    this.autoloads.start(this.inputService, this.sceneService);
+
     // Initial tick to update transforms before render
     this.updateNodes(0);
     this.flushInstancedNodes();
@@ -708,7 +729,17 @@ export class SceneRunner {
    */
   private stopEpoch = 0;
 
+  /**
+   * End the session: the running scene, then the autoloads (`onDetach` after the scene's). The
+   * next start builds the autoloads afresh.
+   */
   stop(): void {
+    this.stopScene();
+    this.autoloads.stop();
+  }
+
+  /** Tear the running scene down; what outlives a scene change (autoloads, network) stays. */
+  private stopScene(): void {
     this.stopEpoch += 1;
     this.isRunning = false;
     // Tear down any active cutscene FIRST — while the graph is still live — so
@@ -1368,6 +1399,8 @@ export class SceneRunner {
   }
 
   private updateNodes(dt: number): void {
+    // Autoloads first: a scene script reads this frame's singleton state.
+    this.autoloads.tick(dt);
     const graph = this.runtimeGraph;
     if (graph) {
       for (const node of graph.rootNodes) {

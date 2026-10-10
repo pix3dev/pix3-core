@@ -11,6 +11,7 @@ import { pix3, type Pix3Options } from '../index.ts';
 import {
   DOT_PNG,
   FIXTURE_FILES,
+  FIXTURE_MANIFEST,
   NAMED_IMPORT_LIB,
   NAMESPACE_IMPORT_LIB,
   UNDECLARED_IMPORT_LIB,
@@ -187,6 +188,29 @@ describe('build: html (single file)', () => {
       ]);
       expect(sizes.assets.entries[1].rawBytes).toBe(DOT_PNG.byteLength);
       expect(sizes.assets.base64Bytes).toBeGreaterThan(sizes.assets.rawBytes);
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'ships the autoloads of pix3project.yaml with their script (the player builds them)',
+    async () => {
+      const root = project({
+        ...FIXTURE_FILES,
+        'pix3project.yaml': FIXTURE_MANIFEST.replace(
+          'autoloads: []',
+          'autoloads:\n  - singleton: Counter\n    scriptPath: scripts/Counter.ts\n'
+        ),
+        'scripts/Counter.ts':
+          "import { Script } from '@pix3/runtime';\nexport class Counter extends Script {\n  count = 0;\n  onUpdate(): void { this.count += 1; (globalThis as { __autoloadMarker?: number }).__autoloadMarker = this.count; }\n}\n",
+      });
+      const page = html(await runBuild(root));
+      // The player hands the manifest's list to the runner (string quotes vary with the minifier).
+      expect(page).toMatch(/singleton:\s*["'`]Counter["'`]/);
+      expect(page).toMatch(/scriptPath:\s*["'`]scripts\/Counter\.ts["'`]/);
+      expect(page).toMatch(/\.setAutoloads\(/);
+      // The class itself is in the bundle (the project-scripts glob), registered as user:Counter.
+      expect(page).toContain('__autoloadMarker');
     },
     BUILD_TIMEOUT_MS
   );

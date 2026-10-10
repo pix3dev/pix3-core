@@ -361,6 +361,72 @@ describe('level 1: components', () => {
     expect(report.notes.join(' ')).toContain('(user: component properties not checked)');
   });
 
+  it('E_AUTOLOAD: an autoload whose script or class does not resolve, a bad or repeated entry', async () => {
+    const autoloads = [
+      '  - singleton: Spin',
+      '    scriptPath: scripts/Spinner.ts', // fine: exports Spinner
+      '  - singleton: Gone',
+      '    scriptPath: scripts/Gone.ts', // [1] no such file
+      '  - singleton: Outside',
+      '    scriptPath: src/game/State.ts', // [2] not a script dir
+      '  - singleton: Named',
+      '    scriptPath: scripts/Helpers.ts', // [3] exports Spinner2, not Helpers
+      '  - singleton: Spin',
+      '    scriptPath: scripts/Spinner.ts', // [4] repeated singleton
+      '  - scriptPath: scripts/Spinner.ts', // [5] no singleton
+      '  - singleton: Off',
+      '    scriptPath: scripts/Off.ts', // [6] disabled: never built, not checked
+      '    enabled: false',
+    ].join('\n');
+    const report = await run(
+      {
+        'pix3project.yaml': `${MANIFEST}autoloads:\n${autoloads}\n`,
+        'scripts/Spinner.ts': SCRIPT_SPINNER,
+        'scripts/Helpers.ts': SCRIPT_SPINNER.replace(/Spinner/g, 'Spinner2'),
+        'src/game/State.ts': SCRIPT_SPINNER.replace(/Spinner/g, 'State'),
+      },
+      { hydrate: false }
+    );
+    const found = find(report, 'E_AUTOLOAD');
+    expect(found.map(d => d.path)).toEqual([
+      'autoloads[1].scriptPath',
+      'autoloads[2].scriptPath',
+      'autoloads[3].scriptPath',
+      'autoloads[4].singleton',
+      'autoloads[5]',
+    ]);
+    expect(found.every(d => d.file === 'pix3project.yaml' && d.severity === 'error')).toBe(true);
+    expect(found[0]).toMatchObject({
+      line: 10,
+      message: expect.stringContaining('does not exist'),
+    });
+    expect(found[2].message).toContain('does not export Helpers');
+
+    const clean = await run(
+      {
+        'pix3project.yaml': `${MANIFEST}autoloads:\n  - singleton: Spin\n    scriptPath: res://scripts/Spinner.ts\n`,
+        'scripts/Spinner.ts': SCRIPT_SPINNER,
+      },
+      { hydrate: false }
+    );
+    expect(codesOf(clean)).not.toContain('E_AUTOLOAD');
+  });
+
+  it('E_AUTOLOAD at level 2: the file exports a name like the file that is not a Script class', async () => {
+    const report = await run({
+      'pix3project.yaml': `${MANIFEST}autoloads:\n  - singleton: Fake\n    scriptPath: scripts/Fake.ts\n  - singleton: Spin\n    scriptPath: scripts/Spinner.ts\n`,
+      'scripts/Fake.ts':
+        '// mentions extends Script only in this comment\nconst gate = "extends Script";\nexport class Fake {\n  static getPropertySchema() { return { nodeType: "Fake", properties: [] }; }\n}\nexport { gate };\n',
+      'scripts/Spinner.ts': SCRIPT_SPINNER,
+    });
+    expect(find(report, 'E_AUTOLOAD')).toMatchObject([
+      {
+        path: 'autoloads[0].scriptPath',
+        message: expect.stringContaining('registers no Script class Fake'),
+      },
+    ]);
+  });
+
   it('scans export names the way the editor registers them', () => {
     const { names, hasStar } = scanExportNames(
       [

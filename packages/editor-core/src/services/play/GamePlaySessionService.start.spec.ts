@@ -31,6 +31,7 @@ const runtime = vi.hoisted(() => {
     setEditorPeekMask = vi.fn();
     setProjectFonts = vi.fn();
     setLocalizationConfig = vi.fn();
+    setAutoloads = vi.fn();
     getLiveRootNodes = vi.fn(() => []);
 
     constructor() {
@@ -78,6 +79,7 @@ function makeSession() {
   const invoke = vi.fn(async (operation: Operation) => operation.perform(createOperationContext()));
   const setAtlasResolver = vi.fn();
   const setRuntimeSink = vi.fn();
+  const registry = { label: 'the editor ScriptRegistry' };
 
   Object.defineProperties(service, {
     sceneManager: { value: {} },
@@ -88,6 +90,7 @@ function makeSession() {
     textureAtlasService: { value: { prepareForPlay: vi.fn(async () => {}) } },
     localizationEditorService: { value: { getRuntimeConfig: () => null } },
     peekService: { value: { setRuntimeSink } },
+    scriptRegistry: { value: registry },
   });
   // Keep state subscriptions out of the harness; tests explicitly drain the follow-up sync.
   internals.initialized = true;
@@ -98,7 +101,7 @@ function makeSession() {
     setRunningState: vi.fn(),
   };
 
-  return { service, internals, invoke, setAtlasResolver, setRuntimeSink };
+  return { service, internals, invoke, setAtlasResolver, setRuntimeSink, registry };
 }
 
 describe('GamePlaySessionService — failed launch cleanup', () => {
@@ -166,6 +169,23 @@ describe('GamePlaySessionService — failed launch cleanup', () => {
     expect(session.internals.tabHost.setRunningState).toHaveBeenLastCalledWith(true);
     expect(appState.ui.isPlaying).toBe(true);
     expect(appState.ui.playModeError).toBeNull();
+  });
+
+  it("hands the manifest's autoloads to the runtime, which builds them per session", async () => {
+    const autoloads = [
+      { singleton: 'GameState', scriptPath: 'scripts/GameState.ts', enabled: true },
+    ];
+    const previous = appState.project.manifest;
+    appState.project.manifest = { ...(previous ?? {}), autoloads } as typeof previous;
+    try {
+      await session.service.restart();
+      expect(runtime.runners[0].setAutoloads).toHaveBeenCalledWith(autoloads, session.registry);
+      expect(runtime.runners[0].setAutoloads.mock.invocationCallOrder[0]).toBeLessThan(
+        runtime.runners[0].startScene.mock.invocationCallOrder[0]
+      );
+    } finally {
+      appState.project.manifest = previous;
+    }
   });
 
   it('does not abort the current session when a superseded launch rejects late', async () => {

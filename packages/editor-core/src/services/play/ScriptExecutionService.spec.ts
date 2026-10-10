@@ -45,13 +45,6 @@ const createService = (scene: SceneGraph): ScriptExecutionService => {
     value: { beginFrame: vi.fn() },
     configurable: true,
   });
-  Object.defineProperty(service, 'autoloadService', {
-    value: {
-      getGlobalRoot: () => new NodeBase({ id: 'autoload-root', name: 'Autoload Root' }),
-      getAutoloadInstances: () => [],
-    },
-    configurable: true,
-  });
   Object.defineProperty(service, 'audioService', {
     value: { stopAll: vi.fn() },
     configurable: true,

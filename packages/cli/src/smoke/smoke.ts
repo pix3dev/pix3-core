@@ -3,6 +3,7 @@ import {
   describeThrown,
   getGameDebug,
   NodeBase,
+  normalizeAutoloads,
   registerBuiltInScripts,
   registerScriptErrorSink,
   SceneLoader,
@@ -424,6 +425,8 @@ export const runSmokeJob = async (
       renderEveryNTicks: NEVER_RENDER,
       muteAudio: true,
     });
+    // The project's autoloads run here as in the player and the editor's play mode.
+    runner.setAutoloads(normalizeAutoloads(job.autoloads), registry);
     if (isRecord(job.localization) && typeof job.localization.defaultLocale === 'string') {
       runner.setLocalizationConfig(job.localization as unknown as LocalizationConfig);
     }

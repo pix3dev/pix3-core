@@ -8,6 +8,7 @@ import { SceneLoader } from '../core/SceneLoader';
 import { SceneManager } from '../core/SceneManager';
 import { SceneRunner } from '../core/SceneRunner';
 import type { SceneService } from '../core/SceneService';
+import type { AutoloadConfig } from '../core/ProjectManifest';
 import { ScriptRegistry, type ComponentTypeInfo } from '../core/ScriptRegistry';
 import { registerBuiltInScripts } from '../behaviors/register-behaviors';
 import type { NodeBase } from '../nodes/NodeBase';
@@ -76,6 +77,12 @@ export interface HeadlessGameOptions {
    * behaviours are always registered and need no entry here.
    */
   readonly scripts?: Readonly<Record<string, ComponentTypeInfo['componentClass']>>;
+
+  /**
+   * The project's autoloads (`pix3project.yaml` `autoloads:`), resolved against {@link scripts}:
+   * `scriptPath: scripts/GameState.ts` needs a `GameState` entry there.
+   */
+  readonly autoloads?: readonly AutoloadConfig[];
 
   /** Design resolution that anchor layout resolves against. Defaults to 1920×1080. */
   readonly viewport?: { readonly width: number; readonly height: number };
@@ -280,6 +287,7 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
   const sceneManager = new SceneManager(sceneLoader);
   const renderer = createNullRenderer(viewport.width, viewport.height);
   const runner = new SceneRunner(sceneManager, renderer, audioService, assetLoader, viewport);
+  runner.setAutoloads(options.autoloads ?? [], scriptRegistry);
 
   const errors: ScriptErrorInfo[] = [];
   const releaseErrorSink = registerScriptErrorSink(error => {

@@ -63,6 +63,8 @@ what this map does not name, and say in one line what you were missing.
   finger (null once it is up). Godot's `get_global_mouse_position()`.
 - Spawning: `await scene.instantiate('res://prefabs/x.pix3scene', { parent: 'container' })`
   → the new node (prefab = a `.pix3scene` with one root). Despawn with `node.queueFree()`.
+- Autoloads (game-wide singletons from `pix3project.yaml` `autoloads:`, kept across
+  `changeScene`): `scene.getAutoload(GameState)` or `scene.getAutoload<GameState>('GameState')`.
 - Scenes & transitions: `await scene.changeScene('res://scenes/menu.pix3scene', {
   transition: 'fade' | 'none', durationSec: 0.3 })`; `scene.fadeToBlack(sec, onDone?)`,
   `scene.fadeFromBlack(sec, onDone?)`, `scene.switchCameraWithFade(cameraId, outSec, inSec,

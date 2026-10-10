@@ -237,6 +237,7 @@ describe('parseProjectManifest', () => {
       quality: { antialias: true, shadows: true, maxPixelRatio: 2 },
       fonts: [],
       localization: null,
+      autoloads: [],
     });
     expect(parseProjectManifest(':::bad', 'x').projectName).toBe('x');
   });

@@ -165,6 +165,12 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a labelKey the default (and fallback) locale has no text for — the key shows on screen',
   },
+  E_AUTOLOAD: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a pix3project.yaml autoload that never runs: no singleton/scriptPath, a repeated singleton, or a script that is missing, outside scripts/, or exports no Script class named like the file',
+  },
   W_LEGACY_VERSION: {
     severity: 'warning',
     level: 1,

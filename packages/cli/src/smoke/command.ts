@@ -136,10 +136,15 @@ interface ManifestBits {
   readonly defaultScene?: string;
   readonly viewport: { width: number; height: number };
   readonly localization: unknown;
+  readonly autoloads: unknown;
 }
 
 const readManifest = (root: string): ManifestBits => {
-  const fallback: ManifestBits = { viewport: { width: 1920, height: 1080 }, localization: null };
+  const fallback: ManifestBits = {
+    viewport: { width: 1920, height: 1080 },
+    localization: null,
+    autoloads: [],
+  };
   try {
     const data = parseYaml(readFileSync(join(root, PROJECT_MANIFEST_FILE), 'utf8')) as unknown;
     if (!isRecord(data)) return fallback;
@@ -156,6 +161,7 @@ const readManifest = (root: string): ManifestBits => {
     return {
       viewport: { width, height },
       localization: isRecord(data.localization) ? data.localization : null,
+      autoloads: data.autoloads ?? [],
       ...(defaultScene ? { defaultScene } : {}),
     };
   } catch {
@@ -278,6 +284,7 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   frames: options.frames ?? DEFAULT_FRAMES,
   viewport: prepared.manifest.viewport,
   localization: prepared.manifest.localization,
+  autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
   fallbackResolveDir: cliPackageRoot(),
 });

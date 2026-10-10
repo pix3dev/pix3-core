@@ -22,6 +22,7 @@ import {
   resolveLocalization,
 } from './resource-files.ts';
 import { scanUserScripts } from './user-scripts.ts';
+import { checkAutoloads, checkAutoloadTypes } from './autoloads.ts';
 
 export interface ValidateOptions {
   /** Project folder (the one holding `pix3project.yaml`, or any folder `res://` is relative to). */
@@ -191,6 +192,10 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     diagnostics.push(...checkLabelKeys(localization, tables.strings, uses));
   }
 
+  // `pix3project.yaml` `autoloads:` — project-level, checked on every run.
+  const autoloadDiagnostics = checkAutoloads(project);
+  diagnostics.push(...autoloadDiagnostics);
+
   const usesUserComponents = [...results.values()].some(result => result.usesUserComponents);
   const notes: string[] = [];
   let level2: Level2Status;
@@ -228,6 +233,14 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
       userSchemasAvailable = false;
       skipUserScenes = true;
       diagnostics.push(...scripts.diagnostics);
+    }
+    if (scripts.status === 'loaded') {
+      // An entry level 1 already reported is not reported twice.
+      const entryOf = (path: string | undefined): string => (path ?? '').split('.')[0];
+      const reported = new Set(autoloadDiagnostics.map(d => entryOf(d.path)));
+      diagnostics.push(
+        ...checkAutoloadTypes(project, registry).filter(d => !reported.has(entryOf(d.path)))
+      );
     }
     const prefabTargets = new Set<string>();
     for (const scene of project.scenes()) {

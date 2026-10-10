@@ -176,7 +176,8 @@ before children's.
 - Spawn: `const n = await scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent, instanceId })`
   (`parent` = node | query; prefab = a scene file with one root). Despawn: `n.queueFree()`.
 - Scene change: `await scene.changeScene('res://scenes/menu.pix3scene', { transition: 'fade' | 'none', durationSec: 0.3, onLoaded })`
-  (`durationSec` is each of fade-out and fade-in).
+  (`durationSec` is each of fade-out and fade-in). State that must survive it is an autoload:
+  `scene.getAutoload(GameState)` (recipe: `pix3-scene-format/project-files.md` → "An autoload").
 - Time: `scene.time.hitstop(ms)` — no options; only on a contact START, never per frame.
   `scene.time.slowMotion(scale, { durationMs, blendMs })` — both real-time ms; no `durationMs`
   = until `scene.time.reset()`.

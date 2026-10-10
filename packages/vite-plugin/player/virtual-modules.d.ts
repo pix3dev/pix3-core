@@ -27,6 +27,12 @@ declare module 'virtual:pix3/scene-manifest' {
     readonly fallbackLocale?: string;
     readonly locales: readonly string[];
   } | null;
+  /** `pix3project.yaml` `autoloads:`, normalised (the runtime's `AutoloadConfig`). */
+  export const runtimeAutoloads: readonly {
+    readonly singleton: string;
+    readonly scriptPath: string;
+    readonly enabled: boolean;
+  }[];
   export const netKindTable: {
     readonly prefabs: readonly string[];
     readonly authored: readonly string[];

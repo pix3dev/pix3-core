@@ -204,8 +204,30 @@ so), keep every key you do not know, and copy the style of the file.
 | `quality` | `{ antialias, shadows, maxPixelRatio }` |
 | `localization` | `{ defaultLocale, fallbackLocale?, locales }` — above |
 | `fonts` | `[{ family, path, weight, style, unicodeRange? }]` — font files registered before the first frame; `path` without `res://` |
-| `autoloads` | leave it `[]`: autoloads run only in the editor's play mode, never in `npm run dev` or a build. A script that must live for the whole game goes on the entry scene's root node |
+| `autoloads` | `[{ singleton, scriptPath, enabled }]` — game-wide script singletons that survive `changeScene` (recipe below); `[]` when there are none |
 | `metadata` | the editor's and `pix3 kit`'s bookkeeping (`projectId`, `agentKit`) — do not edit |
+
+### An autoload (state or a service for the whole game)
+
+State that must outlive a scene change (score across levels, settings, a music player) is an
+autoload: one script instance per game session, built before the first scene starts, kept
+across every `changeScene`, the same in the editor's play, `npm run dev` and the build.
+
+1. `scripts/GameState.ts`: `export class GameState extends Script { … }` — the class is named
+   like the file (that is how the autoload finds it).
+2. In `pix3project.yaml`:
+   ```yaml
+   autoloads:
+     - singleton: GameState
+       scriptPath: scripts/GameState.ts
+   ```
+3. Any script: `const state = this.scene.getAutoload(GameState)` (import the class) or
+   `this.scene.getAutoload<GameState>('GameState')`; null when it is not declared.
+
+It runs `onStart`/`onUpdate` like a scene script, before the scene's every frame, and has no
+node in any scene (it draws nothing; give the visuals to a scene). Commands it registers with
+`scene.commands` belong to the scene and go with it. `pix3 check` reports an autoload that does
+not resolve (`E_AUTOLOAD`).
 
 ## Build options
 

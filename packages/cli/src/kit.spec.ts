@@ -866,12 +866,20 @@ describe('kit drift', () => {
       ...manifest.TEXTURE_FILTERING_MODES,
     ]);
     expect(values(rows.get('ambientOcclusion') ?? '')).toEqual([...manifest.PROJECT_AO_MODES]);
-    // "autoloads run only in the editor's play mode": the player never reads them.
+    // Autoloads: the row's fields are the runtime's `AutoloadConfig`, and the recipe holds in a
+    // build because the player hands the manifest's list to the runner (the editor's play mode
+    // and `pix3 smoke` run the same runtime code).
+    const autoloadFields = manifestInterfaces(
+      'packages/runtime/src/core/ProjectManifest.ts',
+      'AutoloadConfig'
+    ).get('AutoloadConfig');
+    expect(braces(rows.get('autoloads') ?? '').sort()).toEqual(strip(autoloadFields ?? []).sort());
     const player = readFileSync(
       join(repoRootOfCheckout(), 'packages/vite-plugin/player/index.ts'),
       'utf8'
     );
-    expect(player).not.toMatch(/autoload/i);
+    expect(player).toMatch(/runner\.setAutoloads\(runtimeAutoloads, scriptRegistry\)/);
+    expect(text(PROJECT_FILES)).toContain('this.scene.getAutoload(GameState)');
   });
 
   it("names a node's scene id `nodeId` (three.js owns `id`)", () => {

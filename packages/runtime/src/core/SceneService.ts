@@ -19,6 +19,8 @@ import type { AssetLoader } from './AssetLoader';
 import type { ECSService } from './ECSService';
 import type { ResourceManager } from './ResourceManager';
 import type { SceneRaycastHit } from './raycast';
+import type { AutoloadHost } from './autoloads';
+import type { ScriptComponent } from './ScriptComponent';
 import { LocalizationService } from './localization/LocalizationService';
 import { getActiveLocalization } from './localization/active-localization';
 
@@ -157,6 +159,8 @@ export class SceneService {
    * Lazily replaced by an offline no-op instance when no host installed one.
    */
   private networkService: NetworkService | null = null;
+  /** The runner's autoload singletons (session-scoped, like the network); see {@link getAutoload}. */
+  private autoloads: AutoloadHost | null = null;
   /** Scene-scoped entity↔node bindings; see {@link netNodes}. Recreated per scene, unlike the session. */
   private networkNodeBinder: NetworkNodeBinder | null = null;
   /** True between {@link handleSceneStarted} and the delegate going away; gates remote spawning. */
@@ -448,6 +452,24 @@ export class SceneService {
       this.networkService = new NetworkService();
     }
     return this.networkService;
+  }
+
+  /**
+   * A project autoload (`pix3project.yaml` `autoloads:`) — a script singleton that lives for the
+   * whole game session and survives `changeScene`. Look it up by its `singleton` name or by its
+   * class: `this.scene.getAutoload<GameState>('GameState')` or
+   * `this.scene.getAutoload(GameState)`. Null when the project declares none of that name (or
+   * outside a running game). Every frame, autoloads tick before the scene.
+   */
+  getAutoload<T extends ScriptComponent = ScriptComponent>(
+    nameOrType: string | (abstract new (...args: never[]) => T)
+  ): T | null {
+    return this.autoloads?.get(nameOrType) ?? null;
+  }
+
+  /** Called by SceneRunner: where {@link getAutoload} looks. */
+  setAutoloads(host: AutoloadHost | null): void {
+    this.autoloads = host;
   }
 
   /**

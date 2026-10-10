@@ -18,6 +18,7 @@ import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
 import {
   activeScenePath,
   resourceBase,
+  runtimeAutoloads,
   runtimeFonts,
   runtimeLocalization,
   runtimeQuality,
@@ -127,6 +128,9 @@ export async function startGame(
       runtimeViewportBaseSize
     );
     state.runner = runner;
+    // Project autoloads: built once when the first scene starts, kept across `changeScene` —
+    // the same runtime code the editor's play mode runs.
+    runner.setAutoloads(runtimeAutoloads, scriptRegistry);
     // The loop runs on rAF; counting its iterations here is what `__PIX3_PLAYER__.frames` reports.
     runner.setFrameScheduler({
       request: callback =>

@@ -32,6 +32,13 @@ export interface LocalizationSettings {
   readonly locales: readonly string[];
 }
 
+/** One `autoloads:` entry (the runtime's `AutoloadConfig`). */
+export interface AutoloadEntry {
+  readonly singleton: string;
+  readonly scriptPath: string;
+  readonly enabled: boolean;
+}
+
 export interface ProjectManifestInfo {
   readonly projectName: string;
   /** `defaultExportScenePath` without `res://`, or null. */
@@ -41,6 +48,8 @@ export interface ProjectManifestInfo {
   readonly fonts: readonly ProjectFontFace[];
   /** The manifest's `localization` block, normalised; null = inert. */
   readonly localization: LocalizationSettings | null;
+  /** The `autoloads:` list, read as the runtime's `normalizeAutoloads` reads it. */
+  readonly autoloads: readonly AutoloadEntry[];
 }
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 } as const;
@@ -137,6 +146,26 @@ const normalizeLocalization = (input: unknown): LocalizationSettings | null => {
   };
 };
 
+/**
+ * Same rule as the runtime's `normalizeAutoloads` (this side of the plugin does not import the
+ * runtime): entries need a `singleton` and a `scriptPath`, `enabled` defaults to true, a repeated
+ * singleton keeps its first entry.
+ */
+const normalizeAutoloads = (input: unknown): AutoloadEntry[] => {
+  if (!Array.isArray(input)) return [];
+  const out: AutoloadEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of input) {
+    if (!isRecord(entry)) continue;
+    const scriptPath = typeof entry.scriptPath === 'string' ? entry.scriptPath.trim() : '';
+    const singleton = typeof entry.singleton === 'string' ? entry.singleton.trim() : '';
+    if (!scriptPath || !singleton || seen.has(singleton)) continue;
+    seen.add(singleton);
+    out.push({ singleton, scriptPath, enabled: entry.enabled !== false });
+  }
+  return out;
+};
+
 /** `res://x`, `./x`, `/x` → `x`. */
 export const stripRes = (path: string): string =>
   path
@@ -170,6 +199,7 @@ export const parseProjectManifest = (text: string, fallbackName: string): Projec
     quality: normalizeQuality(record.quality, platform.toLowerCase()),
     fonts: normalizeFonts(record.fonts),
     localization: normalizeLocalization(record.localization),
+    autoloads: normalizeAutoloads(record.autoloads),
   };
 };
 

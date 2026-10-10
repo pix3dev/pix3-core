@@ -64,6 +64,9 @@ export const sceneManifestSource = (model: SceneManifestModel): string =>
     `export const runtimeQuality = ${json(model.manifest.quality)};`,
     `export const runtimeFonts = ${json(model.manifest.fonts)};`,
     `export const runtimeLocalization = ${json(model.localization)};`,
+    // Autoloads (`pix3project.yaml` `autoloads:`): the player hands them to the runner, which
+    // builds them from the project-scripts registry once per session.
+    `export const runtimeAutoloads = ${json(model.manifest.autoloads)};`,
     // Multiplayer kind table (D6): the wire Kind is the index into `prefabs`; sorted by code
     // point so every build of this project agrees with the room allowlist.
     `export const netKindTable = ${json({ prefabs: model.netKindPrefabs, authored: [] })};`,

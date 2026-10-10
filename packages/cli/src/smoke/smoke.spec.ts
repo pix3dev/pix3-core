@@ -139,6 +139,34 @@ describe('pix3 smoke', () => {
     expect(smokeExitCode(report)).toBe(0);
   });
 
+  it('runs the autoloads of pix3project.yaml with the scene (getAutoload, ticked every frame)', async () => {
+    const root = project({
+      'pix3project.yaml': `${MANIFEST}autoloads:\n  - singleton: Score\n    scriptPath: scripts/Score.ts\n  - singleton: Gone\n    scriptPath: scripts/Gone.ts\n    enabled: false\n`,
+      'scenes/main.pix3scene': scene(component('user:Reader')),
+      'scripts/Score.ts': script(
+        'Score',
+        '  ticks = 0;\n  onUpdate(): void {\n    this.ticks += 1;\n  }'
+      ),
+      'scripts/Reader.ts': `import { Script, registerGameDebug, type PropertySchema } from '@pix3/runtime';
+import type { Score } from './Score';
+
+export class Reader extends Script {
+  static getPropertySchema(): PropertySchema {
+    return { nodeType: 'Reader', properties: [] };
+  }
+  onStart(): void {
+    const score = this.scene?.getAutoload<Score>('Score');
+    registerGameDebug({ name: 'reader', snapshot: () => ({ ticks: score?.ticks ?? -1 }) });
+  }
+}
+`,
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 20 }));
+    expect(report.errors).toEqual([]);
+    // The pre-roll frame plus 20 stepped ones.
+    expect(report.game).toEqual({ name: 'reader', snapshot: { ticks: 21 } });
+  });
+
   it('reports a throw in onStart with the script name, the node and frame 0', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:StartBoom')),

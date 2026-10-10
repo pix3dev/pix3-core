@@ -13,6 +13,7 @@ export * from './core/renderability-lint';
 export * from './core/scene-disk-format';
 export * from './core/emoji-as-art';
 export * from './core/project-script-registration';
+export { autoloadComponentType, normalizeAutoloads } from './core/autoloads';
 export * from './core/SceneSaver';
 export * from './core/SceneManager';
 export * from './core/SceneRunner';
