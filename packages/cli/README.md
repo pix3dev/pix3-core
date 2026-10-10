@@ -386,6 +386,24 @@ and the Spine runtime are not shipped: they are only reached from inside declara
 tsconfig.json                     { "extends": "./.pix3/tsconfig.check.json" } — so an IDE sees them
 ```
 
+## `pix3 gap` — what the agent had to work around
+
+Plan §G.3 «Чего не хватает?», §G.4. `pix3 gap "<what was missing>" --kind
+capability|tool|node|doc|other [--detail <text>] [--context <file or task>] [--agent <name>]`
+appends one line to the project's `.pix3/gaps.jsonl`:
+
+```json
+{"ts":"2026-10-10T12:00:00.000Z","agent":"claude-code","kind":"node","summary":"no 9-slice panel node","detail":"built from 9 Sprite2D","context":"scenes/ui/shop.pix3scene"}
+```
+
+`agent` comes from `--agent`, else the environment (`CLAUDECODE=1` → `claude-code`, a `CODEX_*`
+variable → `codex`), else it is left out; the summary is one line of ≤200 characters. One
+`O_APPEND` write per record, so two agents never interleave. `pix3 gap --list [--json]` prints
+them. The kit's `AGENTS.md` tells the agent to record a gap only after it worked around
+something Pix3 lacks — not its own mistakes or the game's features. A CLI command rather than a
+bridge tool: it needs no editor, and on a Remote SSH host it runs where the project is. `.pix3/`
+is gitignored in the starters: the file stays with the checkout.
+
 ## `pix3 editor` — the editor in Chrome, for the agent
 
 Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <dir>`):

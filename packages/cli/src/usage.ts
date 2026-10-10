@@ -43,5 +43,9 @@ Usage:
   pix3 sfx <preset|"text">         Synthesize a sound effect offline into a WAV (coin, jump,
         [--out <file.wav>]         hit, explosion, powerup, click; or "big explosion")
         [--seed <n>] [--json]
+  pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
+        [--kind capability|tool|node|doc|other] .pix3/gaps.jsonl;
+        [--detail <text>] [--context <text>] --list prints them
+        [--agent <name>] [--list] [--json] [--project <dir>]
   pix3 --version
 `;

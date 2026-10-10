@@ -192,6 +192,11 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   reachable only through its token proxy on port 9333; `pix3 agent-setup [claude|codex]
   [--repair]` — write the project's MCP config (`.mcp.json`, `.codex/config.toml`, with this
   machine's token — never commit them) for `chrome-devtools-mcp`, once.
+- `pix3 gap "<what was missing>" --kind capability|tool|node|doc|other [--detail "…"] [--context "<file or task>"]`
+  — when you had to **work around** something Pix3 does not have (an engine capability, a bridge
+  tool, a node type, a doc that was missing or wrong), record it once, after the workaround: one
+  line in `.pix3/gaps.jsonl` (local, read by the Pix3 team). Sparingly — not for your own
+  mistakes, a question to the human, or a feature the game itself should implement.
 - **The editor bridge.** With the editor tab open, the `pix3-browser` MCP server (Chrome
   DevTools) reaches it: `list_pages` → `select_page` → `list_3p_developer_tools` → the
   `pix3_*` tools — sync the editor with the disk, play, step the game with predicates, read the
