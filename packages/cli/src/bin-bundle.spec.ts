@@ -56,7 +56,8 @@ const run = (...args: string[]) =>
   spawnSync(process.execPath, [bin, ...args], {
     cwd: pkg,
     encoding: 'utf8',
-    env: { ...process.env, PIX3_CLI_DEV: '0' },
+    // PIX3_HOME: `agent-setup` creates the CDP token, never in the real ~/.pix3.
+    env: { ...process.env, PIX3_CLI_DEV: '0', PIX3_HOME: join(pkg, 'pix3-home') },
   });
 
 describe('single-file bin', () => {
@@ -81,6 +82,19 @@ describe('single-file bin', () => {
     expect(config.mcpServers['pix3-browser'].args).toContain(
       '--categoryExperimentalThirdParty=true'
     );
+    // The bundled `ws` and the proxy launch: the endpoint and the token header of the bin's home.
+    const token = readFileSync(join(pkg, 'pix3-home', 'cdp-token'), 'utf8').trim();
+    expect(config.mcpServers['pix3-browser'].args.slice(-2)).toEqual([
+      '--wsEndpoint=ws://127.0.0.1:9333/pix3',
+      `--wsHeaders={"Authorization":"Bearer ${token}"}`,
+    ]);
+  });
+
+  it('runs the Chrome owner, with ws bundled', () => {
+    // Bad options: the owner says so and exits 2 — proof the hidden command and `ws` load.
+    const result = run('__chrome-owner', 'not-json');
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stdout).toContain('bad options');
   });
 
   it('needs no runtime dependencies', () => {

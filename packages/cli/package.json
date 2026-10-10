@@ -45,7 +45,9 @@
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "@types/ws": "^8.18.1",
     "typescript": "~5.8.3",
+    "ws": "^8.18.0",
     "yaml": "^2.6.0"
   }
 }

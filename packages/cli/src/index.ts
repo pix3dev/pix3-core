@@ -138,6 +138,10 @@ const main = async (): Promise<number> => {
           stderr: text => process.stderr.write(text),
         }
       );
+    case '__chrome-owner': // hidden: the detached process `pix3 editor` starts (Chrome + proxy)
+      return (await import('./editor/chrome-owner.ts')).runChromeOwner(
+        process.argv.slice(process.argv.indexOf('__chrome-owner') + 1)
+      );
     case 'agent-setup': // own argument parsing; writes the project's MCP config files
       return (await import('./agent-setup/command.ts')).runAgentSetupCli(
         process.argv.slice(process.argv.indexOf('agent-setup') + 1),

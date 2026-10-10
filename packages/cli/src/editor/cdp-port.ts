@@ -1,20 +1,24 @@
 import { createConnection } from 'node:net';
 
-import { CDP_PORT_RANGE, DEFAULT_CDP_PORT } from './paths.ts';
+import { CDP_PORT_RANGE, CDP_PROXY_HEADER, DEFAULT_CDP_PORT } from './paths.ts';
 
 /**
- * The check of port 9333 before Chrome is launched (plan §D.4 «Проверка 9333»): something may
- * already listen there — our own Chrome from an earlier `pix3 editor` (reuse it), somebody else's
- * Chrome or any other process (leave it alone, take the next port), or nothing (launch).
+ * The check of port 9333 before Chrome is launched (plan §D.4 «Проверка 9333», §D.5): something
+ * may already listen there — our own proxy from an earlier `pix3 editor` (reuse it), somebody
+ * else's Chrome, proxy or any other process (leave it alone, take the next port), or nothing
+ * (launch).
  *
- * "Ours" is decided by what the port says, not by a pid: a page whose URL is a Pix3 editor
- * (`/__pix3/`) is the marker, and a port the state file recorded as ours counts too (the editor
- * window may be closed while Chrome keeps running).
+ * "Ours" is decided by what the port says, not by a pid: the proxy answers `/json/version` to our
+ * token (`~/.pix3/cdp-token`) with its `Pix3-Cdp-Proxy` marker. A plain DevTools endpoint with a
+ * Pix3 editor page (`/__pix3/`), or on the port the state file recorded, is the P1 launch
+ * (`--remote-debugging-port`, no token): `legacy` — it holds our profile, so a new Chrome cannot
+ * start on it, and it is open to every local process; `pix3 editor` asks for it to be closed.
  */
 
 export type CdpPortState =
   | { readonly kind: 'free' }
   | { readonly kind: 'ours'; readonly browser: string; readonly pages: string[] }
+  | { readonly kind: 'legacy'; readonly browser: string; readonly pages: string[] }
   | { readonly kind: 'foreign'; readonly browser: string | null; readonly detail: string };
 
 const PROBE_TIMEOUT_MS = 1_500;
@@ -28,11 +32,32 @@ interface JsonPage {
   type?: string;
 }
 
-const getJson = async <T>(url: string, fetchImpl: typeof fetch): Promise<T | null> => {
+type Probe<T> = {
+  readonly status: number;
+  readonly proxy: boolean;
+  readonly body: T | null;
+} | null;
+
+const getJson = async <T>(
+  url: string,
+  fetchImpl: typeof fetch,
+  token: string | null
+): Promise<Probe<T>> => {
   try {
-    const response = await fetchImpl(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
+    const response = await fetchImpl(url, {
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const proxy = response.headers.get(CDP_PROXY_HEADER) !== null;
+    let body: T | null = null;
+    if (response.ok) {
+      try {
+        body = (await response.json()) as T;
+      } catch {
+        body = null;
+      }
+    }
+    return { status: response.status, proxy, body };
   } catch {
     return null;
   }
@@ -43,12 +68,27 @@ export const isEditorPageUrl = (url: string): boolean => /\/__pix3\/(?:[?#]|$)/.
 
 export const inspectCdpPort = async (
   port: number,
-  options: { readonly recordedPort?: number | null; readonly fetch?: typeof fetch } = {}
+  options: {
+    readonly recordedPort?: number | null;
+    readonly fetch?: typeof fetch;
+    /** The proxy token; without it a proxy can only be told apart, never be ours. */
+    readonly token?: string | null;
+  } = {}
 ): Promise<CdpPortState> => {
   const fetchImpl = options.fetch ?? fetch;
+  const token = options.token ?? null;
   const base = `http://127.0.0.1:${port}`;
-  const version = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl);
-  if (!version) {
+  const version = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, token);
+  if (version?.proxy && !version.body) {
+    return {
+      kind: 'foreign',
+      browser: null,
+      detail:
+        `port ${port} is a Pix3 CDP proxy that refuses this token (HTTP ${version.status}): ` +
+        "another user's, or one started with another PIX3_HOME",
+    };
+  }
+  if (!version?.body) {
     // Not a DevTools endpoint: free, or another protocol entirely. Only a listening socket
     // that is not CDP is "foreign"; a refused connection is free.
     const listening = await isListening(port);
@@ -60,11 +100,14 @@ export const inspectCdpPort = async (
         }
       : { kind: 'free' };
   }
-  const browser = version.Browser ?? 'unknown browser';
-  const pages = (await getJson<JsonPage[]>(`${base}/json/list`, fetchImpl)) ?? [];
-  const urls = pages.filter(p => p.type === 'page' || p.type === undefined).map(p => p.url ?? '');
+  const browser = version.body.Browser ?? 'unknown browser';
+  const list = await getJson<JsonPage[]>(`${base}/json/list`, fetchImpl, token);
+  const urls = (Array.isArray(list?.body) ? list.body : [])
+    .filter(p => p.type === 'page' || p.type === undefined)
+    .map(p => p.url ?? '');
+  if (version.proxy) return { kind: 'ours', browser, pages: urls };
   if (urls.some(isEditorPageUrl) || options.recordedPort === port) {
-    return { kind: 'ours', browser, pages: urls };
+    return { kind: 'legacy', browser, pages: urls };
   }
   return {
     kind: 'foreign',
@@ -93,14 +136,15 @@ export interface PortChoice {
 }
 
 /**
- * The port to use: `preferred` when it is free or ours, else the first free/ours port of the
- * following range. Every port skipped is reported so `pix3 editor` can explain itself.
+ * The port to use: `preferred` when it is free, ours or the P1 launch (which the caller has to
+ * deal with), else the first such port of the following range. Every port skipped is reported so `pix3 editor` can explain itself.
  */
 export const chooseCdpPort = async (
   options: {
     readonly preferred?: number;
     readonly recordedPort?: number | null;
     readonly fetch?: typeof fetch;
+    readonly token?: string | null;
     readonly range?: number;
   } = {}
 ): Promise<PortChoice> => {

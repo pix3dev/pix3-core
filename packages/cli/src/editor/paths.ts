@@ -16,7 +16,7 @@ export const chromeProfileDir = (env: NodeJS.ProcessEnv = process.env): string =
 /** Fallback profile when the home directory cannot be written. */
 export const chromeProfileFallbackDir = (): string => join(tmpdir(), 'pix3-chrome');
 
-/** `~/.pix3/chrome.json`: the debugging port in use, for `agent-setup --repair`. */
+/** `~/.pix3/chrome.json`: the proxy port in use and its owner, for `agent-setup --repair`. */
 export const chromeStatePath = (env: NodeJS.ProcessEnv = process.env): string =>
   join(pix3Home(env), 'chrome.json');
 
@@ -24,3 +24,22 @@ export const chromeStatePath = (env: NodeJS.ProcessEnv = process.env): string =>
 export const DEFAULT_CDP_PORT = 9333;
 /** Ports tried when 9333 belongs to someone else: 9334–9339. */
 export const CDP_PORT_RANGE = 6;
+
+/** `~/.pix3/cdp-token`: the bearer token of the CDP proxy (plan §D.5), mode 0600. */
+export const cdpTokenPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'cdp-token');
+
+/** `~/.pix3/chrome-owner.log`: what the detached Chrome owner (proxy) says, for a failed start. */
+export const chromeOwnerLogPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'chrome-owner.log');
+
+/** The path the proxy serves the browser-level CDP WebSocket on. */
+export const CDP_PROXY_PATH = '/pix3';
+
+/** `ws://127.0.0.1:<port>/pix3`: what chrome-devtools-mcp's `--wsEndpoint` points at. */
+export const cdpWsEndpoint = (port: number): string => `ws://127.0.0.1:${port}${CDP_PROXY_PATH}`;
+
+/** The proxy's protocol: the `Pix3-Cdp-Proxy` field of its `/json/version`. */
+export const CDP_PROXY_PROTOCOL = 1;
+/** The header on every proxy answer, refusals included: tells our proxy from a foreign port. */
+export const CDP_PROXY_HEADER = 'X-Pix3-Cdp-Proxy';

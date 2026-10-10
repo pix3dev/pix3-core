@@ -143,6 +143,9 @@ describe('pix3 new', () => {
       );
       expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('<title>My Game!</title>');
       expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.pix3\/$/m);
+      // pix3 agent-setup writes the CDP token into these.
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.mcp\.json$/m);
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.codex\/config\.toml$/m);
       for (const file of walk(dir)) {
         if (/\.(json|ts|html|md|yaml|pix3scene)$/.test(file)) {
           expect(readFileSync(join(dir, file), 'utf8')).not.toMatch(/\{\{[A-Z_]+\}\}/);

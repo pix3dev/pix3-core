@@ -10,6 +10,9 @@
 // - the checkout-only modules (`validate/bundle.ts`, `smoke/bundle.ts`, the kit generator): they
 //   bundle `@pix3/runtime` from source and only run from a repo checkout, where the bin is never
 //   used. They are replaced by a stub that throws if ever reached.
+// - `ws`'s optional native speed-ups (`bufferutil`, `utf-8-validate`): `ws` requires them inside
+//   a try/catch and falls back to JS; here they resolve to a module that throws, so the bin
+//   neither bundles nor imports them (the CDP proxy of `pix3 editor` is what uses `ws`).
 // The prebuilt `dist/validate/prebuilt`, `dist/smoke/prebuilt` bundles, `kit/`, `runtime-types/`
 // and `templates/` stay files next to the bin, found through `src/package-root.ts`.
 //
@@ -54,6 +57,21 @@ const checkoutOnlyStub = {
   },
 };
 
+/** `ws`'s optional native modules: absent, the way `ws` expects them to be when not installed. */
+const wsOptionalAbsent = {
+  name: 'pix3-ws-optional-absent',
+  setup(build) {
+    build.onResolve({ filter: /^(bufferutil|utf-8-validate)$/ }, args => ({
+      path: args.path,
+      namespace: 'pix3-absent',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'pix3-absent' }, args => ({
+      contents: `throw new Error(${JSON.stringify(`${args.path} is not bundled`)});`,
+      loader: 'js',
+    }));
+  },
+};
+
 // `dist/` holds only what this and the validate / smoke prebuild scripts write.
 if (!customOutfile) rmSync(join(packageRoot, 'dist'), { recursive: true, force: true });
 
@@ -76,7 +94,7 @@ const result = await esbuild.build({
   legalComments: 'none',
   metafile: true,
   logLevel: 'warning',
-  plugins: [checkoutOnlyStub],
+  plugins: [checkoutOnlyStub, wsOptionalAbsent],
 });
 
 const size = statSync(outfile).size;

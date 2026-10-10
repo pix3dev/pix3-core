@@ -5,11 +5,13 @@ import { delimiter, join } from 'node:path';
 import { chromeProfileDir, chromeProfileFallbackDir } from './paths.ts';
 
 /**
- * Launching Chrome for the agent (plan §D.4 step 2): an app window on the editor URL, our own
- * profile, remote debugging on the chosen port, and the flags that stop Chrome from throttling a
- * background tab (the agent's tab is in the background almost all the time). A second launch
- * with the same `--user-data-dir` opens another app window in the running process — that is how
- * a second project joins the same Chrome and port.
+ * Launching Chrome for the agent (plan §D.4 step 2, §D.5): an app window on the editor URL, our
+ * own profile, remote debugging over `--remote-debugging-pipe` only (no debugging port: the
+ * owner process holds the pipe and serves it behind the token proxy, `chrome-owner.ts`), and the
+ * flags that stop Chrome from throttling a background tab (the agent's tab is in the background
+ * almost all the time). A second launch with the same `--user-data-dir` and no debugging flag
+ * (`handoffArgs`) opens another app window in the running process — that is how a second project
+ * joins the same Chrome and proxy.
  */
 
 export const CHROME_FLAGS: readonly string[] = [
@@ -38,14 +40,20 @@ const onPath = (name: string, env: NodeJS.ProcessEnv): string | null => {
   return null;
 };
 
-export type ChromeLaunch =
-  | { readonly kind: 'binary'; readonly path: string }
-  /** macOS: `open -na "Google Chrome" --args …` (keeps Chrome out of the caller's sandbox). */
-  | { readonly kind: 'open'; readonly app: string };
+/**
+ * The Chrome binary. Always a binary, macOS included: the pipe is a pair of inherited file
+ * descriptors, which `open -na` (the P1 launch, which kept Chrome out of the caller's seatbelt
+ * sandbox) cannot pass on.
+ */
+export interface ChromeLaunch {
+  readonly kind: 'binary';
+  readonly path: string;
+}
 
 /**
- * The Chrome to launch: `PIX3_CHROME` (a binary or a wrapper script), else the platform's usual
- * places. Null when none is found — `pix3 editor` then prints what to install or set.
+ * The Chrome to launch: `PIX3_CHROME` (a binary or a wrapper script that `exec`s one — the pipe
+ * fds 3 and 4 must reach Chrome), else the platform's usual places. Null when none is found —
+ * `pix3 editor` then prints what to install or set.
  */
 export const findChrome = (
   env: NodeJS.ProcessEnv = process.env,
@@ -53,13 +61,12 @@ export const findChrome = (
 ): ChromeLaunch | null => {
   if (env.PIX3_CHROME) return { kind: 'binary', path: env.PIX3_CHROME };
   if (platform === 'darwin') {
-    const apps = [
-      '/Applications/Google Chrome.app',
-      join(env.HOME ?? '', 'Applications/Google Chrome.app'),
+    const binaries = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      join(env.HOME ?? '', 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
     ];
-    for (const app of apps) if (existsSync(app)) return { kind: 'open', app: 'Google Chrome' };
-    for (const app of ['/Applications/Chromium.app'])
-      if (existsSync(app)) return { kind: 'open', app: 'Chromium' };
+    for (const path of binaries) if (existsSync(path)) return { kind: 'binary', path };
     return null;
   }
   if (platform === 'win32') {
@@ -101,28 +108,39 @@ export const ensureProfileDir = (env: NodeJS.ProcessEnv = process.env): string =
 export interface ChromeArgsOptions {
   readonly url: string;
   readonly profile: string;
-  readonly port: number;
   /** No window: `--headless=new` and the URL as a plain tab (headless Chrome ignores `--app`). */
   readonly headless?: boolean;
 }
 
+/** The owner's launch: CDP over the pipe (fds 3/4), never a TCP debugging port. */
 export const chromeArgs = (options: ChromeArgsOptions): string[] => [
   `--user-data-dir=${options.profile}`,
-  `--remote-debugging-port=${options.port}`,
+  '--remote-debugging-pipe',
   ...CHROME_FLAGS,
   ...(options.headless ? ['--headless=new', options.url] : [`--app=${options.url}`]),
 ];
 
-/** Start Chrome detached; the command returns while Chrome keeps running. */
-export const launchChrome = (
+/**
+ * Another app window in the Chrome that already runs this profile: the process singleton hands
+ * the URL over and the new process exits. No debugging flag — the running Chrome keeps its pipe.
+ */
+export const handoffArgs = (options: { url: string; profile: string }): string[] => [
+  `--user-data-dir=${options.profile}`,
+  ...CHROME_FLAGS,
+  `--app=${options.url}`,
+];
+
+/** Start a short-lived Chrome detached (the handoff launch); the command does not wait for it. */
+export const launchDetached = (
   launch: ChromeLaunch,
   args: readonly string[],
   spawnImpl: typeof spawn = spawn
 ): ChildProcess => {
-  const child =
-    launch.kind === 'open'
-      ? spawnImpl('open', ['-na', launch.app, '--args', ...args], { stdio: 'ignore' })
-      : spawnImpl(launch.path, [...args], { detached: true, stdio: 'ignore', windowsHide: false });
+  const child = spawnImpl(launch.path, [...args], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
+  });
   child.unref();
   return child;
 };

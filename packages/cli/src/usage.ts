@@ -11,12 +11,14 @@ Usage:
   pix3 new <2d|3d> [dir]           Create an empty project (dir defaults to pix3-<2d|3d>)
         [--name <project name>]
   pix3 editor [--project <dir>]    Find (or start, detached) the project's Vite dev server
-        [--stop] [--chrome-only]   from .pix3/dev.json and open the editor in Chrome with
-        [--no-chrome] [--port <n>] remote debugging on 9333 (next free port when taken)
-        [--cdp-port <n>] [--headless]
+        [--stop] [--chrome-only]   from .pix3/dev.json and open the editor in Chrome, its
+        [--no-chrome] [--port <n>] CDP behind the token proxy ws://127.0.0.1:9333/pix3 (next
+        [--cdp-port <n>]           free port when taken); --stop-chrome ends that Chrome
+        [--headless] [--stop-chrome]
   pix3 agent-setup [claude|codex]  Write the project's MCP config for chrome-devtools-mcp
-        [--repair] [--cdp-port <n>] (.mcp.json, .codex/config.toml); --repair fixes an
-        [--project <dir>]          entry that drifted (version, port)
+        [--repair] [--cdp-port <n>] (.mcp.json, .codex/config.toml, with the proxy token);
+        [--project <dir>]          --repair fixes an entry that drifted (version, port,
+                                   token, the P1 --browserUrl launch)
   pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
         [--no-hydrate]             hydration with the real loader (exit 1 on errors)
   pix3 check [--json]              validate + TypeScript check of the scripts + merge-log +

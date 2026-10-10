@@ -8,12 +8,14 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { DEFAULT_CDP_PORT } from '../editor/paths.ts';
+import { cdpWsEndpoint, DEFAULT_CDP_PORT } from '../editor/paths.ts';
 
 /**
  * The one-time agent configuration (plan §D.6): chrome-devtools-mcp as the `pix3-browser` MCP
- * server of Codex and Claude Code, pointed at the Chrome `pix3 editor` runs. Project-level files,
- * so a checkout carries its own setup:
+ * server of Codex and Claude Code, pointed at the CDP proxy `pix3 editor` runs (plan §D.5:
+ * `--wsEndpoint=ws://127.0.0.1:<port>/pix3` with `--wsHeaders` carrying the bearer token of
+ * `~/.pix3/cdp-token` — the files hold this machine's token, so they belong in `.gitignore`).
+ * Project-level files, so a checkout carries its own setup:
  *
  * - Claude Code: `.mcp.json` → `mcpServers["pix3-browser"]` (other servers kept);
  * - Codex: `.codex/config.toml` → `[mcp_servers.pix3-browser]` (the table is replaced whole,
@@ -37,16 +39,27 @@ export const CODEX_STARTUP_TIMEOUT_SEC = 20;
 export type AgentTarget = 'claude' | 'codex';
 export const AGENT_TARGETS: readonly AgentTarget[] = ['claude', 'codex'];
 
-export const browserUrl = (port: number): string => `http://127.0.0.1:${port}`;
+/** chrome-devtools-mcp's `--wsHeaders` value: JSON, as its yargs option parses it. */
+export const wsHeaders = (token: string): string =>
+  JSON.stringify({ Authorization: `Bearer ${token}` });
+
+/** What a printed launch shows instead of the token (stdout ends up in agent transcripts). */
+export const TOKEN_PLACEHOLDER = '<token of ~/.pix3/cdp-token>';
 
 export interface McpLaunch {
   readonly command: string;
   readonly args: readonly string[];
 }
 
-/** How chrome-devtools-mcp is started: `npx -y chrome-devtools-mcp@<pinned> …`. */
+/**
+ * How chrome-devtools-mcp is started: `npx -y chrome-devtools-mcp@<pinned> … --wsEndpoint=…
+ * --wsHeaders=…`. Both flags are 1.10.1's (`build/src/config/browser-options.js`): with
+ * `--wsEndpoint` puppeteer connects to that WebSocket only — no `/json/*` request — and sends
+ * the headers on the upgrade.
+ */
 export const mcpLaunch = (
   port: number = DEFAULT_CDP_PORT,
+  token: string,
   platform: NodeJS.Platform = process.platform
 ): McpLaunch => {
   const npx = [
@@ -57,7 +70,8 @@ export const mcpLaunch = (
     // `click_at {x, y}`: input at the coordinates `pix3_scene` returns as `screen` (the 1.x
     // `game_input` has no bridge counterpart; the page's own input is the honest one).
     '--experimentalVision=true',
-    `--browserUrl=${browserUrl(port)}`,
+    `--wsEndpoint=${cdpWsEndpoint(port)}`,
+    `--wsHeaders=${wsHeaders(token)}`,
   ];
   // Windows: `npx` is a .cmd shim, which a spawned MCP process cannot execute directly.
   return platform === 'win32'
@@ -184,6 +198,7 @@ export interface ConfigOutcome {
 export interface InstallAgentConfigOptions {
   readonly targets?: readonly AgentTarget[];
   readonly port?: number;
+  readonly token: string;
   readonly repair?: boolean;
   readonly platform?: NodeJS.Platform;
 }
@@ -202,22 +217,56 @@ const fileOf = (target: AgentTarget): string =>
   target === 'claude' ? CLAUDE_CONFIG_FILE : CODEX_CONFIG_FILE;
 
 /** Write (or check, or repair) the config of each target in `root`. */
+const currentAndExpected = (target: AgentTarget, existing: string | null, launch: McpLaunch) => {
+  const expected =
+    target === 'claude' ? JSON.stringify(claudeEntry(launch)) : normaliseToml(codexTable(launch));
+  const entry = target === 'claude' ? readClaudeEntry(existing) : null;
+  const current =
+    target === 'claude' ? (entry ? JSON.stringify(entry) : null) : readCodexTable(existing);
+  return { current, expected };
+};
+
+/** True when an entry is the P1 launch: `--browserUrl` at an open debugging port, no token. */
+export const isP1Entry = (current: string): boolean => current.includes('--browserUrl=');
+
+/**
+ * The config files (of `targets`) whose `pix3-browser` entry exists and differs from the launch
+ * for this port and token — `pix3 editor` names them. A missing entry is not stale: the project
+ * may not use that agent.
+ */
+export const checkAgentConfig = (
+  root: string,
+  options: {
+    port: number;
+    token: string;
+    targets?: readonly AgentTarget[];
+    platform?: NodeJS.Platform;
+  }
+): string[] => {
+  const launch = mcpLaunch(options.port, options.token, options.platform);
+  const stale: string[] = [];
+  for (const target of options.targets ?? AGENT_TARGETS) {
+    const { current, expected } = currentAndExpected(
+      target,
+      readText(join(root, fileOf(target))),
+      launch
+    );
+    if (current !== null && current !== expected) stale.push(fileOf(target));
+  }
+  return stale;
+};
+
 export const installAgentConfig = (
   root: string,
-  options: InstallAgentConfigOptions = {}
+  options: InstallAgentConfigOptions
 ): ConfigOutcome[] => {
-  const launch = mcpLaunch(options.port ?? DEFAULT_CDP_PORT, options.platform);
+  const launch = mcpLaunch(options.port ?? DEFAULT_CDP_PORT, options.token, options.platform);
   const outcomes: ConfigOutcome[] = [];
   for (const target of options.targets ?? AGENT_TARGETS) {
     const file = fileOf(target);
     const path = join(root, file);
     const existing = readText(path);
-    const expected =
-      target === 'claude' ? JSON.stringify(claudeEntry(launch)) : normaliseToml(codexTable(launch));
-    const current =
-      target === 'claude'
-        ? (readClaudeEntry(existing) ?? null) && JSON.stringify(readClaudeEntry(existing))
-        : readCodexTable(existing);
+    const { current, expected } = currentAndExpected(target, existing, launch);
     const render = target === 'claude' ? renderClaudeConfig : renderCodexConfig;
     if (current === null) {
       writeAtomic(path, render(existing, launch));
