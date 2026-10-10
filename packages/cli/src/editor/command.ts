@@ -35,6 +35,7 @@ import {
   tokenCopyLine,
 } from './remote.ts';
 import { checkAgentConfig } from '../agent-setup/config.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 
 /**
  * `pix3 editor` (plan §D.3, §D.4, §D.5): the dev server from `.pix3/dev.json` (started when
@@ -170,9 +171,13 @@ const projectRootOf = (io: EditorIo, args: EditorArgs): string | null => {
 };
 
 export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promise<number> => {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    io.stdout(COMMAND_USAGE.editor);
+    return 0;
+  }
   const parsed = parseEditorArgs(argv);
   if ('error' in parsed) {
-    io.stderr(`pix3 editor: ${parsed.error}\n`);
+    io.stderr(`pix3 editor: ${parsed.error}\n\n${COMMAND_USAGE.editor}`);
     return 1;
   }
   const env = io.env ?? process.env;

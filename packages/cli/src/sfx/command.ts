@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
 import { findProjectRoot } from '../manifest.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import {
   encodeWav16,
   mutateSfx,
@@ -16,18 +17,6 @@ import {
  * `pix3 sfx <preset|"text"> [--out audio/x.wav] [--seed n] [--json]` — a sound effect without the
  * editor. Offline, no network, no key, no native module; see `synth.ts`.
  */
-
-export const SFX_USAGE = `Usage: pix3 sfx <preset|"description"> [--out <file.wav>] [--seed <n>] [--json]
-
-Synthesizes a short sound effect offline into a 44.1 kHz 16-bit mono WAV.
-  presets     ${SFX_PRESET_NAMES.join(', ')}
-  description words that name a preset ("coin pickup", "big explosion"), plus modifiers:
-              high/low, short/long, soft
-  --out       output file (default: audio/<preset>.wav in the project root)
-  --seed      a variation of the preset (same seed, same sound); default: the preset as tuned
-  --json      print { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
-Reference it from a scene or script as res://<path inside the project>.
-`;
 
 export interface SfxIo {
   readonly cwd: string;
@@ -67,7 +56,7 @@ export const runSfx = (argv: readonly string[], io: SfxIo): number => {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') {
-      io.stdout(SFX_USAGE);
+      io.stdout(COMMAND_USAGE.sfx);
       return 0;
     }
     if (arg === '--json') {
@@ -86,14 +75,14 @@ export const runSfx = (argv: readonly string[], io: SfxIo): number => {
     } else if (arg.startsWith('--seed=')) {
       seedText = arg.slice(7);
     } else if (arg.startsWith('--')) {
-      io.stderr(`pix3 sfx: unknown option ${arg}.\n\n${SFX_USAGE}`);
+      io.stderr(`pix3 sfx: unknown option ${arg}.\n\n${COMMAND_USAGE.sfx}`);
       return 2;
     } else {
       text = text === undefined ? arg : `${text} ${arg}`;
     }
   }
   if (text === undefined || text.trim() === '') {
-    io.stderr(`pix3 sfx: say which sound.\n\n${SFX_USAGE}`);
+    io.stderr(`pix3 sfx: say which sound.\n\n${COMMAND_USAGE.sfx}`);
     return 2;
   }
   let seed: number | null = null;

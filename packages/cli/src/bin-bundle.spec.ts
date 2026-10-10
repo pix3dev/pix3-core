@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CHROME_DEVTOOLS_MCP_VERSION } from './agent-setup/config.ts';
+import { COMMAND_USAGE, USAGE } from './usage.ts';
 import {
   expandRuntimeTypes,
   packRuntimeTypes,
@@ -68,6 +69,38 @@ describe('single-file bin', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout.trim()).toBe(version);
   });
+
+  it('every command the entry dispatches has its own help, printed by --help, -h and pix3 help', () => {
+    // The dispatcher's cases (but the hidden `__chrome-owner`) are exactly the help table's keys.
+    const entry = readFileSync(join(packageDir, 'src', 'index.ts'), 'utf8');
+    const dispatched = [
+      ...entry.slice(entry.indexOf('const dispatch')).matchAll(/^\s+case '([a-z][\w-]*)':/gm),
+    ].map(match => match[1]);
+    expect(dispatched.sort()).toEqual(Object.keys(COMMAND_USAGE).sort());
+    for (const [command, usage] of Object.entries(COMMAND_USAGE)) {
+      expect(usage, command).toMatch(new RegExp(`^Usage: pix3 ${command}\\b`));
+      expect(USAGE, command).toContain(`pix3 ${command}`);
+      for (const argv of [
+        [command, '--help'],
+        [command, '-h'],
+        ['help', command],
+        ['--help', command],
+      ]) {
+        const result = run(...argv);
+        expect(result.status, `${argv.join(' ')}: ${result.stderr}`).toBe(0);
+        expect(result.stdout.startsWith(usage), argv.join(' ')).toBe(true);
+      }
+    }
+    // validate's help lists its codes; check's, the ones it adds.
+    expect(run('validate', '--help').stdout).toContain('E_LOCALE_SCRIPT_KEY');
+    expect(run('help', 'check').stdout).toContain('E_RUNTIME_VERSION');
+    // The overview, and a topic that is not a command.
+    expect(run('help')).toMatchObject({ status: 0, stdout: USAGE });
+    expect(run('--help')).toMatchObject({ status: 0, stdout: USAGE });
+    const unknown = run('help', 'serve');
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain('unknown command "serve"');
+  }, 60_000); // ~50 runs of the bin
 
   it('agent-setup writes the pinned chrome-devtools-mcp launch', () => {
     const project = join(pkg, 'proj');

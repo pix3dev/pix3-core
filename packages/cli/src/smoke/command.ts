@@ -19,6 +19,7 @@ import {
   type SmokeRunSet,
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
 
 /**
@@ -30,32 +31,6 @@ import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
  * game in a worker thread from the smoke bundle (`entry.ts`, `worker.ts`, `smoke.ts`) under a
  * wall-clock timeout. Exit codes: 0 = ran clean, 1 = at least one error, 2 = could not run.
  */
-
-export const SMOKE_USAGE = `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--timeout S] [--json] [--no-sync] [--project <dir>]
-
-  Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
-  loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
-  script throw (onAttach/onStart/onUpdate, with script name, frame and stack), console.error/warn,
-  unhandled rejections, missing res:// files and per-frame step time. Nothing is rendered; audio,
-  input and network are inert.
-
-  scene          .pix3scene to run (res://, project-relative or a path) — the surest way to test
-                 the game: pix3 smoke scenes/main.pix3scene. With no scene, several run one after
-                 another, a line each: in a git repo with uncommitted changes, the top-level scenes
-                 those changes reach (the scene, a prefab/overlay it instances, a user: script it
-                 attaches); otherwise — or when a changed scene/script reaches none — every
-                 top-level scene (not a prefab, not scenes/ui), scenes/main.pix3scene first.
-  --changed      only the scenes changed files reach (needs git; exit 2 when nothing changed)
-  --all          every top-level scene, whatever git says
-  --frames N     frames to step (default 120 = 2 s of game time)
-  --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
-  --json         machine-readable report
-  --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
-  --project dir  project folder (default: nearest folder with pix3project.yaml)
-
-  Exit: 0 = no errors, 1 = errors, 2 = could not run (no scene, bundle failure, unsupported, timeout,
-  or E_RUNTIME_VERSION: the project installs another @pix3/runtime than this CLI runs).
-`;
 
 export interface SmokeIo {
   readonly cwd: string;
@@ -499,11 +474,11 @@ export const formatSmokeSetJson = (set: SmokeRunSet, root: string): string =>
 export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise<number> => {
   const args = parseSmokeArgs(argv);
   if ('error' in args) {
-    io.stderr(`pix3 smoke: ${args.error}\n\n${SMOKE_USAGE}`);
+    io.stderr(`pix3 smoke: ${args.error}\n\n${COMMAND_USAGE.smoke}`);
     return 2;
   }
   if (args.help) {
-    io.stdout(SMOKE_USAGE);
+    io.stdout(COMMAND_USAGE.smoke);
     return 0;
   }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);

@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import {
   CharacterCompileError,
   compileCharacter,
@@ -31,38 +32,6 @@ import {
  * are all or nothing: an existing file with other bytes is refused (exit 1, nothing written)
  * unless `--force`; a file that already has exactly these bytes is left alone.
  */
-
-export const CHARACTER_COMPILE_USAGE = `Usage: pix3 character-compile <spec.yaml|spec.json> [--project <dir>] [--dry-run] [--force] [--json]
-
-  Build a 2D character from frame PNGs: <sprites>/<slug>/<slug>.pix3anim (clips named
-  <variant>.<state>), the frames copied beside it as <variant>_<state>_<nnnn>.png, and the prefab
-  <prefabs>/<Name>.pix3scene — an AnimatedSprite2D root with core:CharacterVisual2D. Game code
-  then says character.playState('attack', { restart: true }) / character.setVariant('bow').
-
-  The spec (paths relative to the spec file):
-    name: Goblin                    # display name and prefab file name
-    slug: goblin                    # sprite folder (default: from name)
-    anchor: { x: 0.5, y: 0.9 }      # where the node position lands, y from the top (the feet)
-    defaultVariant: sword           # the pair the prefab starts on (default: the first clip's)
-    defaultState: idle
-    spriteDirectory: sprites        # default sprites
-    prefabDirectory: scenes/prefabs # default scenes/prefabs
-    clips:
-      - { variant: sword, state: idle, fps: 10, frames: [art/sword/idle_1.png, art/sword/idle_2.png] }
-      - { variant: sword, state: attack, sequence: art/sword/attack }   # art/sword/attack_<n>.png
-      - { state: die, sequence: art/die, loop: false }                  # no variant: clip "die"
-
-  Defaults are proposals and are printed as warnings: fps 12; loop false for attack, die, death,
-  hit and hurt, true otherwise. Frames must be PNG.
-
-  --project dir  project root (default: nearest folder with pix3project.yaml)
-  --dry-run      print what would be written, write nothing
-  --force        replace files that exist with other bytes (default: refuse, write nothing)
-  --json         machine-readable report
-
-  Exit: 0 = written (or nothing to do), 1 = refused (bad spec, missing frame, existing files),
-  2 = usage or no project.
-`;
 
 export interface CharacterCompileIo {
   readonly cwd: string;
@@ -433,15 +402,17 @@ export const runCharacterCompileCli = async (
 ): Promise<number> => {
   const args = parseArgs(argv);
   if ('error' in args) {
-    io.stderr(`pix3 character-compile: ${args.error}\n\n${CHARACTER_COMPILE_USAGE}`);
+    io.stderr(`pix3 character-compile: ${args.error}\n\n${COMMAND_USAGE['character-compile']}`);
     return 2;
   }
   if (args.help) {
-    io.stdout(CHARACTER_COMPILE_USAGE);
+    io.stdout(COMMAND_USAGE['character-compile']);
     return 0;
   }
   if (!args.spec) {
-    io.stderr(`pix3 character-compile: name the spec file.\n\n${CHARACTER_COMPILE_USAGE}`);
+    io.stderr(
+      `pix3 character-compile: name the spec file.\n\n${COMMAND_USAGE['character-compile']}`
+    );
     return 2;
   }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);

@@ -2,7 +2,8 @@ import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { findProjectRoot } from '../manifest.ts';
-import { DIAGNOSTIC_CODES, type Diagnostic } from './diagnostics.ts';
+import { COMMAND_USAGE } from '../usage.ts';
+import { validateHelp, type Diagnostic } from './diagnostics.ts';
 import type { ScriptImportMap } from './level2.ts';
 import { ProjectFiles, SCENE_EXTENSION } from './project.ts';
 import { validateProject, type ValidateReport } from './validate.ts';
@@ -14,14 +15,6 @@ import { validateProject, type ValidateReport } from './validate.ts';
  * Exit codes: 0 = no errors (warnings allowed), 1 = at least one error, 2 = could not run
  * (bad arguments, no project found).
  */
-
-export const VALIDATE_USAGE = `Usage: pix3 validate [paths…] [--json] [--no-hydrate] [--project <dir>]
-
-  paths          .pix3scene files or folders (default: every scene in the project)
-  --json         machine-readable report (diagnostics + sha256 of each validated file)
-  --no-hydrate   level 1 only: no project code runs (user: component properties not checked)
-  --project dir  project root (default: nearest folder with pix3project.yaml)
-`;
 
 export interface ValidateIo {
   readonly cwd: string;
@@ -134,15 +127,11 @@ export const formatJsonReport = (report: ValidateReport): string =>
 export const runValidate = async (argv: readonly string[], io: ValidateIo): Promise<number> => {
   const args = parseValidateArgs(argv);
   if ('error' in args) {
-    io.stderr(`pix3 validate: ${args.error}\n\n${VALIDATE_USAGE}`);
+    io.stderr(`pix3 validate: ${args.error}\n\n${COMMAND_USAGE.validate}`);
     return 2;
   }
   if (args.help) {
-    io.stdout(
-      `${VALIDATE_USAGE}\nCodes:\n${Object.entries(DIAGNOSTIC_CODES)
-        .map(([code, info]) => `  ${code.padEnd(26)} L${info.level}  ${info.summary}`)
-        .join('\n')}\n`
-    );
+    io.stdout(validateHelp());
     return 0;
   }
   const start = args.project

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { prebuiltDir } from '../package-root.ts';
+import { validateHelp } from './diagnostics.ts';
 
 /**
  * `pix3 validate` as `index.ts` reaches it — deliberately free of runtime imports, so `pix3 new` /
@@ -106,8 +107,13 @@ export const withValidateBundle = async <T>(
 };
 
 /** Run `pix3 validate` with the arguments after the command word; resolves to the exit code. */
-export const runValidateCli = (argv: readonly string[]): Promise<number> =>
-  withValidateBundle((bundle, esbuildSpecifier) =>
+export const runValidateCli = async (argv: readonly string[]): Promise<number> => {
+  // The help needs no bundle (a published package without its prebuilt one still answers it).
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(validateHelp());
+    return 0;
+  }
+  return withValidateBundle((bundle, esbuildSpecifier) =>
     bundle.runBundledValidate(argv, {
       cwd: process.cwd(),
       stdout: text => process.stdout.write(text),
@@ -115,3 +121,4 @@ export const runValidateCli = (argv: readonly string[]): Promise<number> =>
       esbuildSpecifier,
     })
   );
+};

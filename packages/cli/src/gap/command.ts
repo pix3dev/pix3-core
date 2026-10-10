@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 
 /**
  * `pix3 gap "<summary>"` (plan §G.3 «Чего не хватает?», §G.4 item 1): the coding agent records
@@ -148,9 +149,13 @@ export const readGaps = (root: string): Gap[] => {
 };
 
 export const runGapCli = (argv: readonly string[], io: GapIo): number => {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    io.stdout(COMMAND_USAGE.gap);
+    return 0;
+  }
   const parsed = parseGapArgs(argv);
   if ('error' in parsed) {
-    io.stderr(`pix3 gap: ${parsed.error}\n`);
+    io.stderr(`pix3 gap: ${parsed.error}\n\n${COMMAND_USAGE.gap}`);
     return 1;
   }
   const start = parsed.projectDir ? resolve(io.cwd, parsed.projectDir) : io.cwd;

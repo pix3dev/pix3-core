@@ -1,3 +1,5 @@
+import { COMMAND_USAGE } from '../usage.ts';
+
 /**
  * What `pix3 validate` reports: one {@link Diagnostic} per problem, each with a stable `code`.
  *
@@ -226,6 +228,12 @@ type StaticCode = keyof typeof DIAGNOSTIC_CODES;
 export type RenderabilityCode = `W_RENDERABILITY_${string}`;
 
 export type DiagnosticCode = Exclude<StaticCode, 'W_RENDERABILITY'> | RenderabilityCode;
+
+/** `pix3 validate --help`: the usage, then every code with its level and summary. */
+export const validateHelp = (): string =>
+  `${COMMAND_USAGE.validate}\nCodes:\n${Object.entries(DIAGNOSTIC_CODES)
+    .map(([code, info]) => `  ${code.padEnd(26)} L${info.level}  ${info.summary}`)
+    .join('\n')}\n`;
 
 export const severityOf = (code: DiagnosticCode): Severity =>
   code.startsWith('W_') ? 'warning' : 'error';

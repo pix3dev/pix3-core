@@ -21,7 +21,14 @@ pix3 character-compile <spec> [--dry-run] [--force] [--json] [--project <dir>]
                                               a 2D character (.pix3anim + prefab) from frame PNGs
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
                                               synthesize a sound effect to WAV, offline
+pix3 gap "<what was missing>" [--kind …] [--list] record what the agent had to work around
+pix3 help [command]                           this overview, or one command's usage
 ```
+
+`pix3 <command> --help` (or `-h`, or `pix3 help <command>`) prints that command's own usage —
+every text lives in `src/usage.ts` (`USAGE`, `COMMAND_USAGE`), and `bin-bundle.spec` holds every
+command the entry dispatches to an entry there, answered by the bundled bin. `validate --help`
+adds its codes, `check --help` the ones it adds.
 
 `pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
 (package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore)

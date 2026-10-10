@@ -20,6 +20,7 @@ import {
   lockstepMismatches,
   runtimeVersionMismatch,
 } from '../version-gate.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import { runTypecheck, type TypecheckResult } from './typecheck.ts';
 import {
   resolveTypeScript,
@@ -39,19 +40,6 @@ import {
  * Imports nothing heavy at load time: the validator bundle, TypeScript and the runtime types are
  * all reached lazily.
  */
-
-export const CHECK_USAGE = `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
-
-  Everything \`pix3 validate\` checks, plus a TypeScript type-check of the project's scripts
-  (tsc --noEmit) and a version check.
-
-  --json         machine-readable report (diagnostics, sha256 of every checked file, typecheck,
-                 kit)
-  --no-hydrate   validate level 1 only (user: component properties not checked)
-  --offline      never install TypeScript (fails with the command to run instead)
-  --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
-  --project dir  project root (default: nearest folder with pix3project.yaml)
-`;
 
 /** Codes `check` adds to validate's (`src/validate/diagnostics.ts`). */
 export const CHECK_CODES = {
@@ -525,12 +513,12 @@ export const checkProject = async (
 export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<number> => {
   const args = parseCheckArgs(argv);
   if ('error' in args) {
-    io.stderr(`pix3 check: ${args.error}\n\n${CHECK_USAGE}`);
+    io.stderr(`pix3 check: ${args.error}\n\n${COMMAND_USAGE.check}`);
     return 2;
   }
   if (args.help) {
     io.stdout(
-      `${CHECK_USAGE}\nCodes added to validate's (pix3 validate --help lists those):\n${Object.entries(
+      `${COMMAND_USAGE.check}\nCodes added to validate's (pix3 validate --help lists those):\n${Object.entries(
         CHECK_CODES
       )
         .map(([code, info]) => `  ${code.padEnd(28)} ${info.summary}`)
