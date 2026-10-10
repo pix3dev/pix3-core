@@ -376,7 +376,9 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
 };
 
 /** Zero-config localization: `locales/*.json` → `en` if present, else the first (editor rule). */
-const discoverLocalization = (resFiles: ReadonlySet<string>): LocalizationSettings | null => {
+export const discoverLocalization = (
+  resFiles: ReadonlySet<string>
+): LocalizationSettings | null => {
   const ids = [...resFiles]
     .map(path => /^locales\/([^/]+)\.json$/.exec(path)?.[1] ?? null)
     .filter((id): id is string => id !== null)

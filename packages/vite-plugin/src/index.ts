@@ -62,7 +62,13 @@ import {
   writeBuildReport,
   type ModuleSize,
 } from './build/report.ts';
-import { isPrefabPath, listProjectFiles, scanProject, type ProjectScan } from './build/scan.ts';
+import {
+  discoverLocalization,
+  isPrefabPath,
+  listProjectFiles,
+  scanProject,
+  type ProjectScan,
+} from './build/scan.ts';
 import {
   decideStrip,
   KEEP_HINT,
@@ -286,7 +292,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
     const manifest = readProjectManifest(root());
     const resRoot = settings.resRoot;
     const wire = await listProjectFiles(root());
-    const scenePaths = wire
+    const resPaths = wire
       .map(path =>
         resRoot === '.'
           ? path
@@ -294,10 +300,9 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
             ? path.slice(resRoot.length + 1)
             : null
       )
-      .filter(
-        (path): path is string =>
-          path !== null && path.endsWith('.pix3scene') && !isPrefabPath(path)
-      )
+      .filter((path): path is string => path !== null);
+    const scenePaths = resPaths
+      .filter(path => path.endsWith('.pix3scene') && !isPrefabPath(path))
       .sort();
     const configured = settings.entryScene
       ? stripRes(settings.entryScene)
@@ -312,7 +317,8 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       scenePaths,
       entryScenePath,
       manifest,
-      localization: manifest.localization,
+      // As the build and the editor: the manifest's block, else the tables `locales/` has.
+      localization: manifest.localization ?? discoverLocalization(new Set(resPaths)),
       netKindPrefabs: [],
       resourceBase: `${baseUrl()}${resRoot === '.' ? '' : `${resRoot}/`}`,
     });

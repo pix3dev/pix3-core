@@ -105,6 +105,21 @@ describe('editor page and discovery', () => {
     forwarded.close();
   });
 
+  it('the dev scene manifest finds locales/*.json without a localization block, as the build does', async () => {
+    const table = (locale: string) => JSON.stringify({ $meta: { locale }, strings: {} });
+    const p = await start({
+      'scenes/main.pix3scene': SCENE,
+      'locales/de.json': table('de'),
+      'locales/en.json': table('en'),
+    });
+    const code = await (await p.fetch('/@id/__x00__virtual:pix3/scene-manifest')).text();
+    const localization = /export const runtimeLocalization = ([\s\S]*?);\n/.exec(code)?.[1];
+    expect(JSON.parse(localization ?? 'null')).toEqual({
+      defaultLocale: 'en',
+      locales: ['de', 'en'],
+    });
+  });
+
   it('answers hello with the revision, seq and versions', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const hello = await json(await p.fetch('/__pix3/api/hello'));
