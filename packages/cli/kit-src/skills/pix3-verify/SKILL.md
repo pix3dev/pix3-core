@@ -150,6 +150,39 @@ with:
 If the human reports an error from the editor, ask for the exact text (the editor's console
 or the load error shown on the scene), fix the first one, and check again.
 
+## 5. When it does not work
+
+**Small steps.** Never write a whole scene plus a long script before the first run: when a run
+fails there should be exactly one new thing in it to suspect. Run (`pix3 check`, then the game)
+after each step that can play.
+
+Faults that compile clean and then misbehave:
+
+- **A component threw and froze.** The engine disables a component that throws in
+  `onStart`/`onUpdate` and the game keeps running, looking fine while that part is dead.
+  `pix3_errors` (or `pix3 smoke`'s `E_SMOKE_SCRIPT`) shows the throw — read it right after
+  starting play, before judging anything else.
+- **`Cannot assign to read only property 'position'`** — transforms are mutated, never assigned:
+  `node.position.set(x, y, 0)`, `node.rotation.z = radians`. Never cast to `any` to get past it.
+- **`getComponent` takes the class, never a string**: import the other script's class
+  (`import { Mover } from './Mover'`) and call `node.getComponent(Mover)`. `user:Mover` is only
+  the scene file's name for it.
+- **Keys**: match `event.code` (`'KeyW'`, `'ArrowUp'`, `'Space'`); `event.key` depends on the
+  layout and on Shift.
+- **Moves the wrong way** (sideways, backwards) is a math bug, and flipping signs does not
+  converge. With world +Y up, `rotation.z` turns the node's local +Y (its nose) to
+  `(-sin θ, cos θ)`: forward is `vx = -Math.sin(rot) * speed`, `vy = Math.cos(rot) * speed`, and
+  aiming the nose along `(dx, dy)` is `rotation.z = Math.atan2(-dx, dy)`.
+- **A button does nothing**: something must `connect` to its signal (`pressed` / `click`) on the
+  node id the scene really has — check the id in `pix3 tree`, then that the script carrying the
+  handler is attached and `enabled`.
+
+**Stuck?** Two fixes that did not change the symptom mean the model of the bug is wrong: stop
+editing, re-read the code that should explain it (not from memory), add a `console.log` where the
+behaviour forks and read it back (`pix3_errors` lists console errors; `pix3 smoke --json` carries the
+logs), and if it still does not add up, tell the human the exact error text, the file and line,
+and what you tried.
+
 ## Known gaps
 
 - `pix3_sync` confirms the open scenes and the executed scripts; a prefab or asset the game

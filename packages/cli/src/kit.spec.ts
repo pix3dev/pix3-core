@@ -316,6 +316,23 @@ describe('kit drift', () => {
     expect(text('AGENTS.md')).toContain('pix3-editor/SKILL.md');
   });
 
+  it('quotes only verdict phrases and APIs the running game really has', () => {
+    // The verification guidance folded in from 1.x (`.plans/kit.md` K3) quotes what a run
+    // answers; an upper-case phrase in backticks must be one GameTestService produces.
+    const source = readFileSync(
+      join(repoRootOfCheckout(), 'packages/editor-core/src/services/game-test/GameTestService.ts'),
+      'utf8'
+    );
+    const phrases = [...text(EDITOR_SKILL).matchAll(/`([A-Z][A-Z ]{6,}[A-Z])\b[^`]*`/g)].map(
+      m => m[1]
+    );
+    expect(phrases).toEqual(
+      expect.arrayContaining(['PRECONDITION ALREADY MET', 'SCENE NOT RENDERABLE'])
+    );
+    expect(phrases.filter(phrase => !source.includes(phrase))).toEqual([]);
+    expect(typeof runtime.registerGameDebug).toBe('function');
+  });
+
   it('names only sync and bridge reasons the code produces', () => {
     const known = new Set<string>([...BRIDGE_REASONS, ...syncReasons()]);
     expect(known.has('stale')).toBe(true);

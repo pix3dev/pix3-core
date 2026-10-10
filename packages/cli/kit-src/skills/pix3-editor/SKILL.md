@@ -96,6 +96,30 @@ Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", na
 `{kind:"command", name}`, `{kind:"signal", name}`; `op` is `eq`, `ne`, `gt`, `gte`, `lt`,
 `lte` or `contains`.
 
+**Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
+works; a run with a stated success condition does:
+
+- **Read `verdict` first**: it is the one line that already decided the run.
+- **Assert the change, not the value.** A predicate that is already true at frame 0 ends the run
+  with `PRECONDITION ALREADY MET` and proves nothing: assert `gameStateChanged` on `score`, not
+  `gameState score gte 0`; restart play to get a clean board.
+- **Put a crash net in `fail`**: `{kind:"newErrors"}`. A `fail` beats an `until` on the same frame.
+- **Count frames, not wall time** (`maxFrames`, `{kind:"frames", n}`): the same test then means the
+  same thing on a slow machine.
+- **Make game state readable.** `gameState` / `gameStateChanged` read the snapshot the game
+  registers with `registerGameDebug({ name, snapshot })` (from `@pix3/runtime`); without one the
+  verdict says there is no provider. Keep it to the fields that decide a run (score, lives, phase,
+  wave) and add the field of every mechanic you add — state nothing reports is state nothing can
+  verify, and then only screenshots are left. `pix3 smoke` prints the same snapshot.
+- **Transient effects** (a hover scale, a flash, a punch, a fade) are back at rest by the time a
+  separate `take_screenshot` runs — judge them by state: a `nodeProperty` predicate on `scale.x`
+  or `opacity` inside the run, not a picture after it. Screenshots are for layout, colour and
+  placement.
+- **A black 3D screen** is usually a scene with no light or no camera, and the run's `notes` say
+  so (`SCENE NOT RENDERABLE — …`); when they do not, suspect a camera that looks away from the
+  content. The editor viewport lights the scene with fallback lights the running game does not
+  have, so the viewport is no evidence either way.
+
 ## 6. Before a build
 
 `npm run build` flushes the editor itself (and fails with `E_EDITOR_UNSYNCED` when the editor
