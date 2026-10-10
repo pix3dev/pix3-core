@@ -1,8 +1,8 @@
 # Pix3 — Technical Specification
 
-Version: 2.1
+Version: 2.2
 
-Date: 2026-10-10
+Date: 2026-10-11
 
 > **Reading this doc economically (agents):** it is long — don't load the whole
 > file. `Grep` the heading *text* below, then `Read` with `offset`/`limit`.
@@ -14,10 +14,10 @@ Date: 2026-10-10
 
 - Introduction · Key Features · Technology Stack · Architecture
 - Property Schema System · Script Component System
-- Group2D Sizing (Fit to Contents, Proportional Resize) · Project Templates, Target Platform and Agent Overlay
+- Group2D Sizing (Fit to Contents, Proportional Resize) · Project Templates, Target Platform and Agent Kit
 - Autoload Scripts and Asset Browser Template Flow · Signals Engine · Groups Engine · Editor Peek (View Mask)
-- Node Prefabs System · Keyframe Animation System · Localization (i18n) · UI Kit Assets
-- Scene File Format (\*.pix3scene) · MVP Plan · Non-Functional Requirements
+- Node Prefabs System · Keyframe Animation System · Localization (i18n) · AI Image Generation
+- Scene File Format (\*.pix3scene) · Non-Functional Requirements
 - Project Structure · Roadmap and Milestones · Change Log
 
 ## 1. Introduction
@@ -28,7 +28,7 @@ This document describes the technical requirements, architecture, and developmen
 
 ### 1.2 Product Overview
 
-Pix3 is a browser-based editor, similar to Figma and Unity, designed for rapid and iterative development of game scenes. It allows working with project files directly through the File System Access API, ensuring tight integration with external IDEs (like VS Code) for code editing.
+Pix3 is a browser-based editor, similar to Figma and Unity, for rapid and iterative development of game scenes. In 2.x a game is a plain Vite + TypeScript project: `@pix3/vite-plugin` serves the editor (`@pix3/editor-core`) at `/__pix3/` on the game's own dev server and builds the playable on `vite build`; the engine is `@pix3/runtime`, the CLI `@pix3/cli`, and a new project comes from `npm create pix3`. Code, files and project settings belong to the IDE or the coding agent; the editor edits the scenes of the project that is already open and follows the disk.
 
 ### 1.3 Target Audience
 
@@ -46,21 +46,22 @@ Success metrics:
 
 ### 1.4 Document Scope and Change Management
 
-This specification covers the MVP scope and foundation architecture. Changes are tracked in the changelog at the end of the document.
+This specification covers Pix3 2.x as built: the engine, the scene format and the editor. Changes are tracked in the changelog at the end of the document; the as-built records of the 2.x work are in `.plans/`.
 
 ## 2. Key Features
 
 - Hybrid 2D/3D Scene: The editor does not have a rigid separation between 2D and 3D modes. Instead, it uses a layer system, allowing 2D interfaces to be overlaid on top of 3D scenes — ideal for creating game UIs.
 - Godot-style Scene Structure: The scene architecture is based on a hierarchy of "nodes." Each node represents an object (a sprite, a 3D model, a light source). Nodes can be saved into separate scene files (\*.pix3scene) and reused (instanced) within other scenes.
-- Local File System Integration: Pix3 works directly with the project folder on the user's disk via the File System Access API. This eliminates the need to upload/download files and provides seamless synchronization with external code editors.
-- **Workspace backend (pix3 serve)**: a project folder on another machine (VS Code Remote SSH) or one the browser cannot pick is opened over HTTP + WebSocket instead of File System Access. `pix3 serve` (`packages/cli/README.md` is the wire contract) serves one root on loopback with a pairing token; **File → Connect to Workspace…** (also on the welcome screen) takes the address — whatever local port the forward uses — and the token. The project then has `backend: 'workspace'`, and `ProjectStorageService` routes every read/write through `WorkspaceClient` (`src/services/project/workspace/`): listings and mtimes come from the server manifest (patched by the client's own mutations and pushed events), reads revalidate with `If-None-Match`, every write carries `If-Match` = the hash of the bytes this editor last read or wrote plus an `X-Mutation-Id`, and a `409 base_mismatch` becomes a `WorkspaceConflictError` — never a silent overwrite of an agent's edit. `WorkspaceSessionService` runs `/ws/events` (auth frame first, token never in the URL): pushed `change` batches go into `FileWatchService.notifyExternalChange`, i.e. the same listeners the FSA poller drives, so an open scene reloads through `ReloadSceneCommand` exactly as for a local folder; a reconnect re-scans the whole manifest; the edit **lease** decides which window may write (another holder → read-only banner with **Take over**); the granted `leaseId` is kept per `workspaceId` in `sessionStorage`, so a reloaded tab resumes its own lease inside the server's grace — or, when the new page connects before the old page's socket closed, the server moves the lease to the socket presenting the holder's `leaseId` (`lost {reason: 'resumed_elsewhere'}` on the old one); a stored id is presented only on a reload or after the old page's `pagehide` marked it, so a duplicated tab never takes it (a second tab never shares it), and a `busy {inGrace: true}` answer is retried after `hello.leaseGraceMs` (+500 ms; 11 s fallback) until granted or held by a connected window. The co-authoring bookkeeping under `.pix3/` (protected set, merge log, recovery journal, acks) is read and written through the same routes and listed by the manifest, but stays out of the revision and of change events (except `.pix3/ack.json`); only the server's own `.pix3/workspace.json`, `serve.lock`, `tmp/`, `link/` are refused. The protocol version is `WORKSPACE_PROTOCOL` (`workspace-protocol.ts`), refused on mismatch. The token lives in IndexedDB keyed by `workspaceId`; the recents entry stores `{ backend: 'workspace', endpoint, workspaceId }` and reopens with one click, and a rejected token or dead server opens the connect dialog — never a folder picker. Refused for a workspace in this slice: picker-based Save As, cloud/hybrid sync, Open in IDE.
-- **Live agent channel (`pix3 mcp --workspace`)** — plan §5 D over the workspace backend; wire contract in `packages/cli/README.md` ("Agent lane", "`pix3 mcp --workspace`"). The agent's stdio MCP server finds the project's running `pix3 serve` through `.pix3/workspace.json` and relays every tool through the server's control-secret agent lane (`/ws/agent/*`; bearer tokens and `Origin`-bearing requests refused) to the lease-holding window, where `WorkspaceAgentToolBridge` (`src/services/project/workspace/`, registered by the editor shell into `WorkspaceSessionService.setCallHandler`) executes exactly 14 tools through `AgentToolRegistry.execute` — `project_status`, `play_start/stop/restart`, `play_status`, `game_run`, `game_input`, `game_observe`, `read_errors`, `read_logs`, `viewport_screenshot` (image block), `generate_asset`, `generate_sfx`, `get_selection` — plus internal `sync_barrier` / `sync_release` / `tools_manifest`; no scene mutation. `play_start` / `play_restart` / `game_run` pass the **sync barrier**: `expect` hashes vs. disk (`disk_differs_from_agent`, with a `.pix3/recovery/` copy only when one exists), then `sync_barrier` (`AutosaveService.hold`, stop play, `ProjectSyncService.barrierRevision()` = `syncNow()` + every open scene/prefab + every source the last script build read, entry scripts and bundled modules alike, with the hash the loader recorded while reading + `pix3project.yaml`, re-read by `syncNow()` when the disk moved) compared with disk hashes for ~5 s (`sync_timeout` / `load_failed` / `pending_external`; `expectation_stale` at once when only the agent's `expect` version is out of date and the editor already matches the disk), run — a start answers once the game is actually running (≤ 30 s, fail-fast when play mode stops, `startupMs` in the answer) — and a second hash + change-log check (`changedDuringRun`; the editor's own file-API writes go to `editorWroteDuringRun`); the verified hashes become `coauthoring.playRevision`, which observing tools report with `stale` (answers carry `revision` compact — `{ files, digest, changed }` relative to the MCP process's previous answer; `fullRevision: true` for the whole map). `generate_*` ask the human once per connection (server session + lease + MCP process, 60 s, then `permission_denied`), 20 generations per allowance, revocable from the status-bar **Agent** pill (`pix3-agent-channel-indicator`), which also switches the channel off. `pix3 new` writes a pinned `.mcp.json`; `pix3 setup [claude|codex]` prints the registration.
-- **Agent keepalive (the editor does not pause for an agent in the background)**. The battery-saving pauses of a background tab — play loop and viewport loop on focus loss / hidden, file polling and deferred script builds while hidden, throttled timers — stay for an idle editor, but never gate work an agent asked for: in the external-agent pipeline the tab is almost always in the background. `pix3 mcp --workspace` heartbeats `POST /ws/agent/presence` every 10 s (and on start/stop); `pix3 serve` expires a presence 30 s after its last heartbeat and pushes `{type:'agent-presence', attached, agent:{name, verified:false}|null}` (also in `hello.agentPresence`, `GET /ws/agent/status`). `AgentKeepaliveService` (`src/services/project/workspace/`) computes keepalive = setting on AND (the in-editor agent has a running turn, in Vibe or Studio, including provider waits — released immediately on completion, stop or error — OR presence attached — still for 5 min after the socket dropped — OR an agent call in flight or finished < 5 min ago OR play started through the channel and still running OR the events socket is reconnecting and keepalive was on when it dropped — at most 5 min, because while `pix3 serve` restarts presence cannot be learned and the call window may run out mid-reconnect), publishes it as `appState.project.coauthoring.agentKeepalive` (status-bar Agent pill: "Agent: connected · keepalive") and to `page-activity`'s `setEditorKeepAlive`. Every gate reads `isEditorActive()` (= document active OR keepalive) instead of the raw `isDocumentActive` / `isDocumentVisible`, which stay for callers that ask whether the human is looking. A hidden tab has no rAF and throttled timers, so under keepalive the play loop (`SceneRunner.setFrameScheduler`, `ScriptExecutionService`) and the viewport loop run off `BackgroundTicker` (`src/services/core/background-ticker.ts`: rAF while visible, an inline Blob-URL Web Worker's timer ticks while hidden — worker timers are not throttled), and the events socket's reconnect / silence / lease-retry timers, the autosave and script-build debounces and the FSA file pollers use `keepaliveTimer` / `keepaliveInterval` (worker-backed while keepalive is on, plain timers otherwise; a pending timer moves between the two when keepalive changes). Reconnect delays are 0.5 / 1 / 2 / 4 / 8 / 15 s (the last repeats); under keepalive they are capped at 2 s, so a hidden tab is back within ~2 s of a restarted `pix3 serve` listening. An attempt that has not said `hello` within 8 s is abandoned and the next one scheduled; each attempt and its outcome is a `console.debug` line `[workspace] reconnect attempt N in X ms → …` (with how late the timer really fired and which clock ran it), and `pix3 serve` logs every refusal on `/ws/events` (upgrade refused, auth refused, busy lease) in one line without the token. Render-on-demand is unchanged; screenshots always render a fresh frame. The setting is **Settings → General → Keep the editor running while an agent is connected** (`appState.ui.keepEditorRunningForAgent`, default on). With no agent involved nothing changes. Still paused by design: the `core:` audio context on blur/hidden (`AudioService`), the runtime's `NetworkService` visibility handling, `LibrarySyncService`'s focus-triggered cloud sync and the asset tree's focus re-scan (neither blocks the agent: workspace listings are pushed).
-- **Co-authoring mode (an external agent writes the same folder)** — plan `.plans/external-agent-authoring.md` §4.3/§5 C; code in `src/services/project/coauthoring/` + `autosave/`. Promise: a manual edit is never lost for good and never overwritten silently. (1) **Autosave** (`AutosaveService`): ~1 s after the last committed operation every dirty open `res://` scene is saved through `SaveSceneOperation` (`quiet`, invoked with `origin: 'system'`, never pushed to history). On for `workspace` projects, for local/browser folders with an agent kit (`AGENTS.md` at the root or a `.pix3/` directory, detected at open) or with the **Settings → General → Autosave scenes in local project folders** switch (`ui.autosaveLocalProjects`); never for cloud. Only the owner window saves (`ProjectOwnershipService`: workspace lease holder, or the Web Lock `pix3-project:<projectId>` holder — a second window queues for the lock; no lock API = owner). Held while that scene has a pending external version or a pointer gesture is in progress (`GestureStateService`). Status-bar pill: On disk / Autosave… / Saving… / Waiting for disk / Autosave off, plus **Stale** while play mode defers an external change. (2) **Pre-write check** (`SaveSceneOperation`): the file's current sha256 — always of the **raw bytes** (`coauthoring/disk-version.ts` → `readDiskVersion`; a BOM or CRLF is part of the hash, exactly as `pix3 serve` / `pix3 read` compute it) — must equal the version the editor last read or wrote (`SceneDiskStateService`, `path → {hash, genAtWrite}`, recorded by `LoadSceneCommand`, `ReloadSceneOperation` and every save); otherwise nothing is written, the path is reported to the external-change path and the outcome is `external-change` (the scene stays dirty; autosave retries after the reload). For workspaces the server's `If-Match` refusal (`WorkspaceConflictError`) maps to the same outcome. The dirty flag clears only after the write and only if no operation completed meanwhile. (3) **Recovery journal** (`RecoveryJournalService`): before every scene write, and before a reload replaces a dirty graph, the manual version goes to `.pix3/recovery/<encodeURIComponent(path)>/<ISO stamp with - for :.>-<hash8>.pix3scene`; ring per project of 200 versions / 7 days (the newest version of a scene never ages out), consecutive duplicates skipped; if `.pix3/` cannot be written (or the project is cloud) the versions go to IndexedDB. `.pix3/` is excluded from exports (`NON_SHIPPABLE_DIRECTORIES`), from FileWatch/workspace change dispatch and from `fileRefreshSignal` bumps. (4) **Protected set `P`** (`ProtectedSetService`): every operation pushed to history with origin `user`, and every undo/redo, is recorded via `recordHumanOperation` as the difference between the saved-form document before and after it (`external-merge/human-operation-diff.ts` — disk paths such as `properties.transform.position`, `components/@id/config/<key>`, whole-node create snapshots with `{parent, prevSibling}`, subtree tombstones on delete, LCS-based moves); reloads (tagged `NON_HUMAN_OPERATION_TAG`), `origin: 'external' | 'system'` and history-less operations only move the baseline. Persisted by the owner, debounced, to `.pix3/protected.json` = `{ format: 1, scenes: { <path>: ProtectedSetData } }`; every save records `(hash, genAtWrite)` via `recordEditorWrite`, and so does every version the editor accepts from disk as is — scene load and a plain reload, at the current gen (`SceneDiskStateService.acceptVersion` → `ProtectedSetService.trackAcceptedVersions`) — so a `pix3 read` of the bytes the editor opened is a known version, not `ack-unknown`. (5) **Stabilisation** (`ExternalChangeService`): a reported change (poll, push, refused pre-write check) is accepted when two snapshots (size + sha256) 300 ms apart match; files that change within one quiet window are delivered together to `onExternalBatch`, which the editor shell hands to `ExternalMergeService.handleBatch` (7); own writes are recognised by hash; a scene that does not parse (or that the loader rejects) keeps the last good graph, holds autosave for that path and after ~5 s logs "File not readable: …"; during play the change is detected but deferred (`coauthoring.stale`). FileWatch polls every 1 s while the document is **visible**, focused or not, and keeps polling during play. (6) **`ProjectSyncService.syncNow()`**: immediate scan (workspace manifest re-scan, or a poll of watched files + script sources vs. the last build), reports every open scene whose bytes differ, waits for the window to settle and for `ProjectScriptLoaderService.ensureReady()`, and returns `{ path: sha256 }` of the versions it holds. (7) **Merge instead of reload** (`ExternalMergeService`): the owner window reads `A` once as bytes and runs `mergeExternalVersion({ E, A, P, acks, externalHash, typeResolver })`, where `E` is the last version the editor wrote or accepted (`SceneDiskStateService.getEditorVersion`, set by load, accepting reloads and every save). Empty `P` and no acks → plain reload from `A` (fast path); `clean` with `M == A` → reload from `A`; `clean` otherwise or `conflicts` → journal the human version (`before-external`), reload from `M` (dirty), write `M` back through `SaveSceneOperation` (pre-write check), `conflicts` also opens the banner; `rejected` → the last good graph stays, nothing is written, the path is **held for a decision** (autosave waits) and a whole-scene banner offers *Accept agent's version* (reload `A`, release all of `P`) / *Keep mine* (`SaveSceneOperation({ overwriteExternalHash })` over exactly that version; the agent's file is journaled first). A non-owner window never merges — it reloads the disk. Every reload is non-destructive (selection kept by id — `ReloadSceneOperation` prunes only vanished ids; the camera state and the scene tree's collapsed ids are keyed by id and untouched; the viewport reconciles proxies incrementally), clears undo history and logs "… was changed outside Pix3 and reloaded — undo history was cleared", and highlights changed nodes in the scene tree for ~3 s (`coauthoring.recentlyChangedNodeIds`, class `tree-node__content--external-change`). (8) **Acks and merge log**: `.pix3/ack.json` = `{ acks: [{ path, sha256, at }] }` written by `pix3 read <path>` (prints the bytes, acks their hash) / `pix3 ack <path> --sha256 <h>`; `AckService` watches this one `.pix3/` file explicitly (2 s poll while visible; workspace push is let through `FileWatchService`), the merge re-reads it and passes that path's hashes as `acks`; `consumedAcks` are removed from the file (one-shot). Each `MergeLogEntry` (merge / ack-applied / ack-unknown, `mergedHash` stamped after the write) and each editor decision (accept-agent, keep-mine, restore-version) is appended by the owner to `.pix3/merge-log.jsonl` as `{ at, file, ... }`, a ring of 500 lines. (9) **Banner and restore** (`pix3-merge-banner`): "Agent changed N properties you edited in <scene> — yours were kept." with *Accept agent's version* (all), *Details* (each conflict: yours → agent's, per-item *Accept*) and *Restore my version before the agent's changes*. Accept = `AcceptAgentVersionCommand` → `AcceptAgentVersionOperation`: `acceptAgentVersion(P, conflicts)` then re-runs the merge of `A` against the released set, installs the result as a new graph instance; undo swaps the previous instance back (`SceneManager.setActiveSceneGraph(…, { disposePrevious: false })`) and restores `P`. Restore = `RestoreRecoveryVersionCommand` → `RestoreRecoveryVersionOperation`: a journal version as one undoable graph swap whose differences are recorded into `P` as one human operation. Right-clicking a scene/prefab tab (`LayoutManagerService.subscribeEditorTabContextMenu` → `pix3-recovery-menu`) offers *Restore my version…* over the last 10 journal versions. (10) **Second window**: a non-owner window is view-only — `CommandDispatcher` refuses every command outside a small allowlist (load/reload/prefab refresh, selection, `viewport.*`, `game.*`, `editor.open-*`; undo/redo and saves are refused) and sets `coauthoring.editBlockedAt`; local folders show "Project is being edited in another window — [Take over]" in `pix3-workspace-banner` (workspaces keep the lease banner). Take over (`ProjectOwnershipService.requestTakeOver`) posts on `BroadcastChannel('pix3-project:<id>')`; the owner runs its release hooks (`AutosaveService.handOver` = flush + journal whatever stays dirty; `ProtectedSetService.flush`), goes view-only and releases the Web Lock (the requester is queued first) and re-queues; no answer in 3 s → `steal: true`.
+- **Editor on the game's dev server.** `pix3()` in `vite.config.ts` serves the editor at `/__pix3/` with a file API (`/__pix3/api/*`: sha256 `ETag`, `If-Match` → 412, changesets, a version journal in `.pix3/history/`) and pushes every change on disk to the tab as `pix3:fs` frames, so an edit made in the IDE or by an agent reaches the open editor without a reload. One tab writes (Web Lock + the plugin's writer claim, `WriterService`); another is read-only with **Take over**. `packages/vite-plugin/README.md`; port record `.plans/editor-core-port.md`.
+- **Files are the truth.** The editor keeps the bytes it last read of each scene as its baseline and writes only the keys it changed (`FlushService` → `ScenePatchWriter`): on Save (Mod+S), 1.5 s after the last edit (at most 10 s under continuous work) and before play, a build, `pix3 check`, `pix3 smoke` or an agent's sync. An external change to an open scene is merged key by key (`SceneMergeService`), unflushed edits survive a dead dev server as an IndexedDB draft (`SceneDraftService`), and the History panel restores a journaled version. Locale tables follow the same rules. Record: `.plans/write-model.md`.
+- **No file or project management in the editor.** It never creates, renames, moves or deletes a file, never edits `pix3project.yaml` and never builds; the coding agent or the IDE does, with the kit's recipes (`pix3-scene-format/project-files.md`; coverage audit in `.plans/kit.md` K8). It writes files only through scene/locale edits, the asset panel's Import… and OS-file drops, and the Generate panel's Save to project.
+- **Coding agents drive the open tab** through Chrome DevTools MCP: the page registers the `pix3` tool group (`pix3_status`, `pix3_sync`, `pix3_scene`, `pix3_play`, `pix3_game_run`, `pix3_screenshot`, `pix3_errors`; table `packages/editor-core/src/host/bridge-tools.ts`), with `window.__PIX3_DEBUG__.call` as the inline fallback. `pix3 editor` starts the dev server and a Chrome behind a token-checked CDP proxy; `pix3 agent-setup` writes the agent's MCP configuration. There is no Pix3 MCP server and no in-editor agent. Record: `.plans/agent-bridge.md`; commands `packages/cli/README.md`.
+- **Agent keepalive.** A hidden or unfocused tab pauses its play and viewport loops to save battery, except while an agent works — a bridge call in flight or finished less than 60 s ago, or play an agent started (`AgentKeepaliveService`); a hidden tab then ticks from `BackgroundTicker`'s worker. Setting: Editor Settings → **Keep the editor running while an agent is connected** (`appState.ui.keepEditorRunningForAgent`, default on).
+- **Scripts through Vite.** Project scripts and bot policies reach the editor as Vite modules (`virtual:pix3/editor-scripts`, `virtual:pix3/bot-policies`) and register as `user:<Export>`; the editor compiles nothing and has no code editor, and the sync barrier proves the tab runs what is on disk. Record: `.plans/scripts-vite.md`.
+- **Playable build.** `npm run build` (`vite build`) writes one self-contained `dist/index.html` (or a zip) and `dist/<name>.report.json`; the editor has no build or export UI. Record: `.plans/player-build.md`.
 - Multi-tab Interface: Users can open and edit multiple scenes in different tabs simultaneously, simplifying work on complex projects.
-- Drag-and-Drop Assets: Project resources (images, models) can be dragged directly from the editor's file browser into the scene viewport to create nodes.
+- Drag-and-Drop Assets: Project resources (images, models) can be dragged directly from the editor's asset panel into the scene viewport to create nodes.
 - Customizable Interface: The user can move and dock editor panels to different areas of the window, similar to VS Code, and save their layout between sessions.
-- Workspace Presets: Provide opinionated workspace presets (Playable Ad, 3D Scene Authoring, UI Overlay).
 
 ## 3. Technology Stack
 
@@ -71,8 +72,8 @@ This specification covers the MVP scope and foundation architecture. Changes are
 | Rendering (3D) | Three.js | Modern WebGL renderer for 3D content. |
 | Panel Layout | Golden Layout | A ready-made solution for creating complex, customizable, and persistent panel layouts. |
 | Language | TypeScript | Strong typing to increase reliability, improve autocompletion, and simplify collaboration with AI agents. |
-| Build Tool | Vite | A modern and extremely fast build tool, perfectly suited for development with native web technologies. |
-| File System | File System Access API | Allows working with local files directly from the browser without needing Electron. |
+| Build Tool | Vite | The game's own dev server and build; `@pix3/vite-plugin` serves the editor on it and builds the playable. |
+| File System | `@pix3/vite-plugin` file API | The editor reads and writes the project through the dev server (`/__pix3/api/*`, behind `EditorHost`), so the project may live on another machine (Remote SSH, `.plans/agent-bridge.md`). |
 
 ### 3.1 Target Platforms
 
@@ -93,7 +94,7 @@ The application is built on the principles of unidirectional data flow and clear
 - **CommandDispatcher**: Primary entry point for all user actions. Ensures consistent lifecycle management, preconditions checking, and telemetry for all commands.
 - **Command Metadata**: Commands declare menu integration via metadata properties: `menuPath` (menu section), `shortcut` (display), and `addToMenu` (inclusion flag). Menu is generated from registered commands, not hardcoded.
 - **Core Managers**: Classes that orchestrate the main aspects of the editor (HistoryManager, SceneManager, LayoutManager). They manage their respective domains and emit events.
-- **Services**: Infrastructure layer for interacting with the outside world (FileSystemAPIService, ViewportRenderService, DialogService, LoggingService, FileWatchService). They implement `dispose()` and are registered with DI.
+- **Services**: Infrastructure layer for interacting with the outside world (`ProjectStorageService` — project files through the `EditorHost` file API; `ExternalChangeService` — changes on disk from `pix3:fs` frames; `FlushService`, `ViewportRenderService`, `DialogService`, `LoggingService`). They implement `dispose()` and are registered with DI.
 - **UI Components**: "Dumb" components extending `ComponentBase` from `src/fw`. They subscribe to state changes, render based on snapshots, and dispatch commands via CommandDispatcher rather than mutating state directly.
 - **Property Schema System**: Godot-inspired declarative property metadata system for dynamic inspector UI generation. Node classes expose editable properties via `static getPropertySchema()`, enabling automatic editor creation.
 
@@ -128,14 +129,14 @@ Floating UI elements such as dropdowns, context menus, and tooltips must use the
 2. Portals allow rendering the element at the `document.body` level with `position: fixed`, ensuring it appears on top of all other panels and UI layers.
 3. The `DropdownPortal` utility automatically handles viewport collision detection, ensuring the menu stays within the visible area.
 
-When implementing a context menu or dropdown, always check for the existence of an appropriate portal utility in `src/ui/shared`.
+When implementing a context menu or dropdown, use `DropdownPortal` (`packages/editor-core/src/ui/shared/dropdown-portal.ts`).
 
 ### 4.1 Core Architecture Contracts
 
 - **Operation Lifecycle (source of truth):** An operation implements `perform(context)` and returns an `OperationCommit` object containing closures for `undo()`/`redo()` and metadata for coalescing. OperationService executes operations, pushes commits to history when requested, emits telemetry, and is solely responsible for undo/redo.
 - **Command Lifecycle (thin wrappers):** `preconditions()` → `execute()`; commands delegate to OperationService to invoke operations and never implement their own undo/redo. They remain idempotent and emit telemetry via OperationService.
 - **SceneGraph & Node Lifecycle:** `SceneManager` owns a `SceneGraph` per loaded scene. Each `SceneGraph` contains a `nodeMap` (for fast lookup) and `rootNodes` array. Nodes extend Three.js `Object3D` and are **not stored in Valtio state**. State only maintains node IDs for selection and hierarchy reference via `SceneHierarchyState.rootNodes`.
-- **HistoryManager Contract:** Maintains a bounded stack of command snapshots, integrates with collaborative locking, and exposes `canUndo`/`canRedo` signals to the UI.
+- **HistoryManager Contract:** Maintains a bounded stack of command snapshots and exposes `canUndo`/`canRedo` signals to the UI.
 - **Service Layer:** Services implement `dispose()` and must be registered via DI. Singleton services load lazily on first injection.
 - **CommandDispatcher Contract:** Executes all commands; invokes preconditions, executes, and handles telemetry. All user actions route through CommandDispatcher.
 - **Property Schema Contract:** Node classes implement `static getPropertySchema(): PropertySchema` returning an object with `properties` array, `nodeType`, and optional `groups`. The Inspector uses `getNodePropertySchema()` to retrieve and render properties dynamically. Each property includes `getValue`/`setValue` closures for node interaction.
@@ -514,7 +515,7 @@ the running scene to a different `.pix3scene` file, the analogue of Godot's
 `get_tree().change_scene_to_file()`. It lets a project split its flow across
 separate scene files (menu → game → results) instead of toggling everything inside
 one scene, so each scene runs standalone in the editor and the exported build boots
-the entry scene (Project Settings → Default Export Scene Path).
+the entry scene (`defaultExportScenePath` in `pix3project.yaml`, or `pix3({ entryScene })`).
 
 ```typescript
 await this.scene.changeScene('res://scenes/main.pix3scene', {
@@ -550,14 +551,14 @@ await this.scene.changeScene('res://scenes/main.pix3scene', {
 
 Group2D is center-origin with an explicit `width`/`height` box and `isContainer = true`. The box is
 *authored* — it does not track its children — so the editor provides the two inverse authoring
-gestures below. Both are **editor-only**: the math lives in `src/features/scene/group2d-resize-utils.ts`
+gestures below. Both are **editor-only**: the math lives in `packages/editor-core/src/features/scene/group2d-resize-utils.ts`
 (pure, dependency-light) and the runtime is untouched. Games get responsive behavior from anchor
 layout (`Node2D.layoutEnabled` + align modes), not from these gestures.
 
 ### 6.15.1 Fit to Contents
 
-`FitGroup2DToContentsCommand` / `Operation` (Inspector *Size* section button, **Edit → Fit Group to
-Contents**, `Ctrl+Alt+F`) recomputes the group's `width`/`height` and shifts its origin so the box
+`FitGroup2DToContentsCommand` / `Operation` (Inspector *Size* section button, **Node → Fit Group to
+Contents**, `Mod+Alt+F`) recomputes the group's `width`/`height` and shifts its origin so the box
 wraps its contents, **without moving anything in world space**:
 
 1. Union of every `Node2D` descendant's node-only rect (anchor-aware per node type, plus each nested
@@ -593,7 +594,7 @@ just Group2D (e.g. a Sprite2D parenting other sprites).
 - **Hold `Ctrl` while dragging a resize handle** for a box-only resize (children keep their positions
   and sizes — the "ignore constraints" analog); releasing `Ctrl` mid-drag resumes proportional scaling
   from the same base states.
-- Non-editor writes to `width`/`height` (generic `UpdateObjectPropertyCommand`, agent tools, scripts,
+- Non-editor writes to `width`/`height` (generic `UpdateObjectPropertyCommand`, an agent's file edits, scripts,
   animation) keep box-only semantics plus anchor reflow. Proportional scaling is an *editor authoring*
   gesture, not a property semantic.
 
@@ -609,24 +610,16 @@ bounds** (same measurement as Fit to Contents, expressed in the new group's pare
 attaching the children — `attach()` preserves their world transforms, so no compensation pass is
 needed and a freshly created group already hugs its contents.
 
-## 6.16 Project Templates, Target Platform and Agent Overlay
+## 6.16 Project Templates, Target Platform and Agent Kit
 
-**2.x (pix3-core): two blank starters, no recipes.** A project is created by `npm create pix3 [dir] -- --template 2d|3d` (asks in a terminal), which runs `pix3 new <2d|3d> [dir]` of `@pix3/cli`. `packages/create-pix3/templates/` holds a shared layer `base/files/` (`package.json` with `@pix3/runtime`, `three`, `postprocessing`, `lit` and dev `vite`, `@pix3/vite-plugin`, `@pix3/editor-core`, `@pix3/cli`, `typescript`; `vite.config.ts` with `pix3()`; `index.html`; `src/main.ts` calling `startGame('#app')`; `tsconfig.json`; `gitignore`, renamed on copy) and two layers that `extends: base` in their `template.yaml` and add one empty entry scene each — `2d` (a stretched `Group2D` root and a background) and `3d` (camera, key light, ambient). The manifest is generated (`defaultExportScenePath: scenes/main.pix3scene`), the agent kit is installed on top. Nothing that plays a game ships; the 1.x recipes and playable templates described below survive only as the spec corpus in `packages/runtime/fixtures/scene-corpus/`. Record: `.plans/templates.md`. The rest of this section describes the 1.x editor wizard and is history, except the `scenes/ui/` convention, which still holds.
+A project is created by `npm create pix3 [dir] -- --template 2d|3d` (asks in a terminal), which runs `pix3 new <2d|3d> [dir]` of `@pix3/cli`. `packages/create-pix3/templates/` holds a shared layer `base/files/` (`package.json` with `@pix3/runtime`, `three`, `postprocessing`, `lit` and dev `vite`, `@pix3/vite-plugin`, `@pix3/editor-core`, `@pix3/cli`, `typescript`; `vite.config.ts` with `pix3()`; `index.html`; `src/main.ts` calling `startGame('#app')`; `tsconfig.json`; `README.md`; `gitignore`, renamed on copy) and two layers that `extends: base` in their `template.yaml` and add one empty entry scene each — `2d` (a stretched `Group2D` root and a background) and `3d` (camera, key light, ambient). The manifest is generated (`defaultExportScenePath: scenes/main.pix3scene`). Nothing that plays a game ships, and there are no mechanic recipes; the 1.x recipes and playable templates survive only as the spec corpus in `packages/runtime/fixtures/scene-corpus/`. Record: `.plans/templates.md`.
 
-**New Project** is a two-step wizard (`pix3-create-project-dialog`): template picker (cover cards) → parameters (name, storage, target platform, base size). Bundled templates live under `packages/create-pix3/templates/<id>/`:
-
-- `template.yaml` — `id`, `title`, `description`, `projectType` (`2d`|`3d`), `targetPlatform`, `viewport`, `order`, optional `directories` (empty dirs; bundles cannot carry them).
-- `cover.png` — wizard card artwork.
-- `files/**` — the project tree copied verbatim (`{{PROJECT_NAME}}` placeholders substituted). Scenes, scripts and binary assets are bundled via `import.meta.glob` and written through the File System Access API (`ProjectService.createProjectStructure`).
-
-v1 templates: `empty-3d`, `empty-2d`, `playable-3d`, `playable-2d` (tap-to-start intro that guarantees the audio-unlock gesture, end screen with a CTA button wired to the runtime **Playable SDK** — `playable.openStore(url)` / `playable.gameEnd()` in `@pix3/runtime`), `minigame-2d` (menu/game screens + reusable `scenes/ui/settings-window.pix3scene` prefab whose Music/SFX checkboxes drive the audio buses). Template validity is guarded by `src/services/project/ProjectTemplateScenes.spec.ts` (every scene must parse through the real `SceneLoader`).
-
-**Full-screen UI lives in `scenes/ui/`, never inline in the gameplay scene.** The editor opens `scenes/main.pix3scene` for every project it creates or reopens (`ProjectService.STARTUP_SCENE_PATH`), so an overlay authored there is the first thing a user sees of their own game. Each overlay — tap-to-start gate, win/lose card, settings modal — is its own `.pix3scene` under `scenes/ui/`, referenced from its host scene as `{ id, name, instance: res://scenes/ui/<file>.pix3scene, properties: { visible: false } }`. The two visibility flags are deliberately different mechanisms and both are needed:
+**Full-screen UI lives in `scenes/ui/`, never inline in the gameplay scene.** The editor opens the entry scene (`defaultExportScenePath`, else `scenes/main.pix3scene`; `ProjectService.entryScenePath`) when a project opens, so an overlay authored there is the first thing a user sees of their own game. Each overlay — tap-to-start gate, win/lose card, settings modal — is its own `.pix3scene` under `scenes/ui/`, referenced from its host scene as `{ id, name, instance: res://scenes/ui/<file>.pix3scene, properties: { visible: false } }`. The two visibility flags are deliberately different mechanisms and both are needed:
 
 - `visible` is applied at load by `NodeBase` — an **editor** hide, so `main.pix3scene` opens on the game. Ticking the eye previews the overlay composited; it must not be saved on.
 - `initiallyVisible` is applied by `SceneRunner.applyInitialVisibility` when **play mode** starts, and is authored on the overlay file's own root node (`true` for a tap gate that must be up at t=0, `false` for a result card a script reveals). Hiding an overlay with `initiallyVisible` alone was the old shape and does nothing in the editor.
 
-Instance children keep their authored ids when unique, so scripts keep addressing `result-label` / `retry-button` / `cta-button` by id across the split. Overlay scenes are embedded in exports like any other asset but are excluded from the navigable scene manifest and the entry-scene picker (`ProjectBuildService.isPrefabPath`), on the same grounds as `prefabs/`: they are instantiated, not booted into. In 1.x the convention was enforced over the shipped templates by `recipes.spec.ts` and `ProjectTemplateScenes.spec.ts`; the 2.x starters have no overlays, and the corpus that still carries them is checked by the loader and saver goldens only.
+Instance children keep their authored ids when unique, so scripts keep addressing `result-label` / `retry-button` / `cta-button` by id across the split. Overlay scenes ship like any other asset but are excluded from the navigable scene list and never booted (`isPrefabPath` in `packages/vite-plugin/src/build/scan.ts`), on the same grounds as `prefabs/`: they are instantiated, not booted into. The 2.x starters have no overlays; the corpus that still carries them is checked by the loader and saver goldens.
 
 The manifest also carries **`fonts:`** — the web fonts the project ships, each
 `{ family, path, weight, style, unicodeRange? }` with a project-relative `path`.
@@ -634,29 +627,16 @@ The manifest also carries **`fonts:`** — the web fonts the project ships, each
 the first frame**, for the same reason the locale seed is: a face that lands late
 repaints every caption, and a paused or unfocused session freezes on the frame
 drawn in the substituted face. The editor registers the same list on project open
-(its viewport draws its own canvas text), an export bakes it into the generated
-scene manifest and keeps the files as reachability roots, and a missing file is a
-warning — the caption falls back to a system face and the game still starts. UI Kit
-Forge writes this block when it ships a kit's typefaces (§6.23).
+(its viewport draws its own canvas text), the player reads it from
+`virtual:pix3/scene-manifest` (`runtimeFonts`) and a build ships the files, and a
+missing file is a warning — the caption falls back to a system face and the game
+still starts.
 
-The project manifest (`pix3project.yaml`) additionally stores `projectType`, `targetPlatform` (`mobile`|`desktop`|`universal`) and `quality` (`antialias`, `shadows`, `maxPixelRatio`; defaults derived from the platform). Play mode (`GamePlaySessionService`) and runtime/playable builds (via the generated `scene-manifest.ts` `runtimeQuality` export) apply the preset.
+The project manifest (`pix3project.yaml`) additionally stores `projectType`, `targetPlatform` (`mobile`|`desktop`|`universal`) and `quality` (`antialias`, `shadows`, `maxPixelRatio`; defaults derived from the platform). Play mode (`GamePlaySessionService`) and the player (`runtimeQuality` of `virtual:pix3/scene-manifest`) apply the preset. The editor never writes the manifest (except backfilling `metadata.projectId`); its keys are listed in the kit's `pix3-scene-format/project-files.md` → "`pix3project.yaml`".
 
-An optional `export:` block controls which files reach an HTML/ZIP build:
+The 1.x manifest's `export:` block (`pruneUnusedAssets`, `extraRootScenePaths`, `includeGlobs`, `excludeGlobs`) is still parsed but the 2.x build does not apply it yet; build options are `pix3({ … })` in `vite.config.ts` (`packages/vite-plugin/README.md`), and what a build shipped and why is `dist/<name>.report.json`.
 
-- `pruneUnusedAssets` (default `false`) — seed the asset scan from the entry scene + `extraRootScenePaths` instead of from every `.pix3scene` on disk, so unreachable scenes/prefabs and the assets only they reference stay out. Off by default because a game may load any scene at runtime; opting in is the author's call. Project scripts are still scanned broadly while pruning (they are the safety net for dynamically-built resource paths), and every pruned scene is **named in a build warning** — never dropped silently. Pruned scenes also leave the navigable scene manifest, since shipping a manifest entry without its file would only fail at load time.
-- `extraRootScenePaths` — additional reachability roots for the above: scenes/prefabs loaded dynamically (`level-${n}.pix3scene`, `instantiate()` with a computed path) that no static scan can see.
-- `includeGlobs` — force-ship these files even though nothing references them (paths assembled from save data). Matched scenes/prefabs join the reference scan as roots, so they bring their own textures.
-- `excludeGlobs` — never ship these. The exclusion gates the reference graph, not just the output: an excluded scene is not scanned, so assets only it referenced drop with it, and it also leaves the navigable scene manifest.
-
-Globs match project-relative paths (a leading `res://` is stripped) and support `*`, `**` and `?` (`src/services/export/glob-match.ts`). An all-default block is inert and is not written back to the manifest.
-
-Independently of every setting above, `RuntimeProjectBuildModel.reachability` records for each shipped asset **why** it is in the build (`entry-scene`, `extra-root`, `project-scene`, `scene-reference`, `script-reference`, `directory-expansion`, `atlas-page`, `locale-table`, `locale-sprite`, `include-glob`) and what referenced it. Both export commands surface it (`src/services/export/export-report.ts`): the confirmation body carries an **Assets included by reason** breakdown with per-reason file counts and bytes — a heavy `Whole directory pulled in by a dynamic path` row is the usual explanation for a surprising bundle size — and the expandable asset list names the scene, script or glob behind each file. This is what makes the deliberately over-inclusive collector auditable rather than mysterious.
-
-Every new project also receives an **agent overlay** (`src/templates/agent/**`): `design/` (GDD + references folder), `AGENTS.md`, `CLAUDE.md`, `.claude/skills/pix3-game-dev/` (with bundled copies of `nodes-and-systems.md` and `node-types-reference.md`) and `.claude/skills/pix3-remote-preview/`, plus `.pix3/template.json` (template id + editor version). This makes a freshly created project directly usable by coding agents working on the local folder.
-
-**Work with your own agent** (the site entry of the external-agent plan). The wizard's **Work With → Your Own Agent** choice (Folder storage only — an agent cannot open OPFS or cloud storage) creates the project **without** the in-editor agent overlay's `AGENTS.md`, `CLAUDE.md` and `.claude/` (`EXTERNAL_AGENT_TEMPLATE_SKIP`) and writes the **agent kit `pix3 kit` writes** instead: `AGENTS.md`, `CLAUDE.md`, `.claude/skills/pix3-*/{SKILL,reference}.md`, `.mcp.json`, the `.pix3/` line in `.gitignore`, a root `tsconfig.json` extending `.pix3/tsconfig.check.json` (the declarations it points at arrive with the first `pix3 check`), `.pix3/kit-manifest.json` and `metadata.agentKit`. **File → Install Agent Kit…** does the same for an open local-folder or `pix3 serve` project in update mode, with the CLI's ownership rules: a project's own `AGENTS.md` keeps it (the kit goes to `AGENTS.pix3.md`), a `CLAUDE.md` of its own is never touched, and a kit file edited since it was written (hash in `.pix3/kit-manifest.json`) is skipped. The kit files are the CLI's generated `packages/cli/kit/`, bundled as one lazy chunk (`src/services/project/agent-kit/bundled-kit.ts`; `scripts/ensure-agent-kit.mjs` regenerates the folder when `vite.config.ts` / `vitest.config.ts` load), and the install is a browser port of `packages/cli/src/kit/install.ts` that `agent-kit-install.spec.ts` runs against the CLI's on identical projects, byte for byte. `.mcp.json` pins a CLI version **confirmed on npm** (`cli-version-gate.ts`): the editor's lockstep version if `registry.npmjs.org` lists it, else the registry's `latest`, else — package missing or registry unreachable (a browser cannot tell the two apart: npm's 404 carries no CORS header) — the build's `VITE_PIX3_CLI_CONFIRMED_VERSION` when unreachable, otherwise `.mcp.json` is left out and the screen says the matching CLI is not published yet and gives the `pix3 kit --update` / `pix3 setup claude` commands to run once it is. Afterwards the **Continue in your agent** screen (`pix3-agent-handoff-dialog`) offers copyable `cd <folder> && claude` / `codex`, the first prompt (built from the recipe's `template.yaml` title and the presence of `design/recipe.md`), `pix3 setup codex`, and the live channel's state: on a workspace it shows **Agent connected** from `workspace.agentAttached`; for a folder opened directly it says plainly that the live channel needs `npx -y @pix3/cli@<v> serve` in the folder and File → Connect to Workspace… (discovery of an FSA-opened folder is not built yet).
-
-The editor ships as an installable **PWA** (`vite-plugin-pwa`, `autoUpdate`): standalone display, offline-precached app shell including `esbuild.wasm` (in-editor script compilation offline); the background-removal ONNX runtimes are excluded from precache. The legacy handwritten `src/sw.ts` remains unregistered.
+`pix3 new` also installs the **agent kit** (`pix3 kit`: `AGENTS.md`, `CLAUDE.md`, `.claude/skills/pix3-*`, the bot-policy types, `.pix3/kit-manifest.json`; `packages/cli/README.md` → "`pix3 kit`"); the agent's MCP configuration is `pix3 agent-setup`. A 1.x kit is migrated by `pix3 kit --migrate` (`.plans/kit.md`).
 
 ## 6.17 Autoload Scripts and Asset Browser Template Flow
 
@@ -809,11 +789,10 @@ Writes to `visible` set the authored flag and mirror `properties.visible`, which
 
 - **Not in `.pix3scene`.** With a mask active, `SceneSaver`'s output is byte-for-byte what it would
   be without one (pinned by `packages/runtime/src/core/editor-peek.spec.ts`).
-- **Not in an export**, by construction: the mask lives in no file the build reads.
-- **Not shared in collaboration**: it is per-user. The price is that a collaborator's or the agent's
-  picture can differ from the author's, which is paid for by making the state visible — the
-  "N hidden · Show all" pill, `peekHidden`/`peekWarning` on every agent tool that reports what is on
-  screen, and a warning on Export / Download HTML.
+- **Not in a build**, by construction: the mask lives in no file the build reads.
+- **Per-user**: the agent's picture can differ from the author's, which is paid for by making the
+  state visible — the "N hidden · Show all" pill, and `hiddenByEditor: true` on a masked node in
+  the bridge's node answers (`packages/editor-core/src/core/agent-introspection.ts`).
 - **`appState.scenes.peekHiddenByScene` / `peekSoloByScene`**, mirrored to `localStorage` keyed by
   the scene's file path so a reload does not force the author to re-hide everything.
 - **Outside undo.** The operation returns `didMutate` with no `commit`. Ctrl+Z after hiding the HUD
@@ -823,8 +802,7 @@ Writes to `visible` set the authored flag and mirror `properties.visible`, which
 
 The mask stays live while the game runs — that is the headline use case. A play graph is a
 serialize→parse clone, so it cannot carry the flags: the editor pushes them in with
-`SceneRunner.setEditorPeekMask(ids)`, which the runner re-applies on every start and restart (in
-Flow the stage restarts after each agent turn).
+`SceneRunner.setEditorPeekMask(ids)`, which the runner re-applies on every start and restart.
 
 ### 6.19a.5 Branches
 
@@ -852,11 +830,6 @@ is reported wherever it changes what is on screen:
   moved the mask while nothing on screen changed would be worse than a control that says why it is
   not offering itself. A chip that is authored-hidden *and* masked stays live: clearing the mask is
   a real step back towards seeing it.
-- **Flow's game stage gets the exit pill only.** Choosing what to look at is a scene-editing gesture
-  and belongs to the Scene view's viewport; a column of branch chips over a running game is editor
-  chrome on top of the thing being played. The mask still applies to the play clone (§6.19a.4), so
-  the pill appears there whenever something is hidden — which is the on-screen way back that a
-  state changing the game's appearance has to have.
 
 ## 6.20 Node Prefabs System
 
@@ -917,22 +890,18 @@ The prefab lifecycle is managed by these operations:
    - Updates hierarchy state and selection
    - Accepts an optional `viewportScreenPoint` to position a root-level drop at the cursor (Node2D vs Node3D resolved via `ViewportRendererService`)
 
-2. **SaveAsPrefabOperation** - Saves a selected node branch as a prefab file
-   - Serializes the selected node and its children to YAML
-   - Writes to the specified prefab path
-   - Replaces the original nodes with a single instance reference
-   - Preserves undo/redo for the replacement
-
-3. **RefreshPrefabInstancesOperation** - Rebuilds instance hierarchy from source prefab
-   - Triggered when source prefab files change (via FileWatchService)
+2. **RefreshPrefabInstancesOperation** - Rebuilds instance hierarchy from source prefab
+   - Triggered when a source prefab file changes on disk (§6.20.9)
    - Can target a specific prefab path or refresh all instances
    - Preserves property overrides while updating base structure
 
-4. **UnlinkPrefabInstanceOperation** (Unity "Unpack Prefab") - Converts an instance into plain, editable nodes
+3. **UnlinkPrefabInstanceOperation** (Unity "Unpack Prefab") - Converts an instance into plain, editable nodes
    - Strips `__pix3Prefab` markers from the outer instance and clears its `instancePath`, so its nodes serialize as ordinary children
    - **Nested instances stay linked**: their markers are re-rooted onto themselves (`instanceRootId`/`effectiveLocalId` recomputed relative to the nested root) and their `basePropertiesByLocalId` is rebuilt by freshly parsing the nested source prefab, so they keep round-tripping as `instance:` references with their overrides intact (empty-map fallback on read failure is lossless-but-verbose)
    - Shallow (one level); undo/redo restore before/after marker+`instancePath` snapshots without a scene reparse, so node identity and the rest of undo history survive
    - `OpenPrefabCommand` (not an operation; opens a tab) opens an instance's source prefab in its own scene tab, optionally pre-selecting the corresponding node by `localId`
+
+There is no "Save Branch as Prefab" in 2.x: the agent extracts a branch into a prefab file (kit `pix3-scene-format/project-files.md` → "Extract a branch into a prefab").
 
 ### 6.20.6 Inspector Integration
 
@@ -943,7 +912,7 @@ When inspecting a node that is part of a prefab instance:
 - Visual indicators distinguish between base values and overrides
 - `getPrefabBaseValueForProperty()` retrieves original values for comparison
 - Component actions are locked on instance nodes: **Add/Remove/Enable/Disable Component** and **component property value editors** are disabled on every instance node (component config is not serialized as an override), and the **name** field is disabled on instance children (the root keeps an editable name). See §6.20.8
-- **Default overrides (placement)**: on an instance **root**, `position`, `rotation`, `scale`, `name`, and the 2D anchored-layout keys (`layoutEnabled`, `horizontalAlign`, `verticalAlign`) describe where the instance sits in the host scene, not the prefab's content (Unity "default overrides"). They are **not** flagged as overrides and have no Revert button, even though they still serialize on the `instance:` definition — so moving, scaling, or anchoring an instance (e.g. pinning a panel to a window edge) is placement, not a content edit. The same properties on a child (or a nested-instance root) remain real content overrides. Implemented via `isInstancePlacementProperty` (`src/features/scene/prefab-utils.ts`)
+- **Default overrides (placement)**: on an instance **root**, `position`, `rotation`, `scale`, `name`, and the 2D anchored-layout keys (`layoutEnabled`, `horizontalAlign`, `verticalAlign`, the margins `layoutLeft` … `layoutBottom`) describe where the instance sits in the host scene, not the prefab's content (Unity "default overrides"). They are **not** flagged as overrides and have no Revert button, even though they still serialize on the `instance:` definition — so moving, scaling, or anchoring an instance (e.g. pinning a panel to a window edge) is placement, not a content edit. The same properties on a child (or a nested-instance root) remain real content overrides. Implemented via `isInstancePlacementProperty` (`packages/editor-core/src/features/scene/prefab-utils.ts`)
 
 ### 6.20.7 Scene Tree Integration
 
@@ -953,7 +922,7 @@ The scene tree distinguishes prefab nodes:
 - **Prefab child** - Dimmed row (~80% opacity), a small lock glyph, and a tooltip explaining the node is instance-locked
 - Instance roots are **collapsed by default** on scene load (once per load; user expand/collapse toggles are preserved afterward). Selecting a node still auto-expands its ancestors
 - **Double-click** a prefab node (root or child) opens its source prefab in a scene tab (a child pre-selects its corresponding node)
-- Context menu is prefab-aware: shows **Open Prefab** for any instance node and **Unlink Prefab Instance** for an instance root; hides Duplicate/Group/Delete/Save-as-Prefab for prefab children; keeps them for instance roots
+- Context menu is prefab-aware: shows **Open Prefab** for any instance node and **Unlink Prefab Instance** for an instance root; hides Duplicate/Group/Delete for prefab children; keeps them for instance roots
 
 ### 6.20.8 Structural Editing & Instance Lock
 
@@ -968,11 +937,10 @@ Instance **roots** stay fully editable structurally (move, delete, duplicate as 
 
 ### 6.20.9 Auto-Refresh Workflow
 
-1. User modifies and saves a prefab file externally (e.g., in VS Code) or in its own editor tab
-2. FileWatchService detects the file change
-3. EditorShell's `handleFileChanged()` triggers `RefreshPrefabInstancesCommand`; switching back to a scene tab also refreshes its instances on activation
-4. All instances referencing that prefab are rebuilt
-5. Property overrides are preserved during refresh
+1. A prefab file changes on disk — an agent's or the IDE's write, or the editor's own flush of the prefab's tab — and reaches the editor as a `pix3:fs` frame
+2. `ExternalChangeService` stabilises it and hands the batch to `ExternalReloadService` (`packages/editor-core/src/host/`)
+3. Every other open scene runs `RefreshPrefabInstancesCommand` for that prefab and re-derives its baseline (the override base moved); switching back to a scene tab also refreshes its instances on activation
+4. Property overrides are preserved during refresh
 
 ## 6.21 Keyframe Animation System
 
@@ -981,7 +949,7 @@ Godot/Unity-style keyframe animation of node properties with tweened interpolati
 ### 6.21.1 Runtime Model
 
 - **`core:AnimationPlayer`** is a built-in script component (`AnimationPlayerBehavior`), registered like other behaviors. It plays clips on its host node and the host's descendants.
-- Clip data lives in the component's `config.animations` (`KeyframeAnimationSet`), so it serializes with the scene verbatim — no SceneLoader/SceneSaver changes, and collaboration sync rides along with scene snapshots.
+- Clip data lives in the component's `config.animations` (`KeyframeAnimationSet`), so it serializes with the scene verbatim — no SceneLoader/SceneSaver changes.
 - Data model (`animation/keyframe-types.ts`, all plain JSON): `KeyframeAnimationSet { version, clips[] }` → `KeyframeClip { name, duration, loop, tracks[] }` → property tracks (`{ targetPath, property, valueType, keys: [{ time, value, easing }] }`), audio tracks (`{ name, keys: [{ time, audioPath, volume }] }`), and event tracks (`{ name, targetPath, keys: [{ time, signal, args }] }`). Vector values are stored as arrays (`[x, y]`, `[x, y, z]`); rotations are stored in **degrees** (the property schema converts to radians internally). `normalizeKeyframeAnimationSet()` defensively coerces arbitrary data; the component's hidden `animations` schema property applies it on scene load.
 - **Event tracks** are the cutscene glue: when the playhead crosses a key it emits `signal` on the track's target node (`emit(signal, ...args)`), so a single clip can synchronize camera, VFX, audio, and gameplay. `args` is a raw string parsed by `parseEventArgs()` at fire time — empty → no args, a JSON array → spread, any other JSON → one arg, unparseable text → the raw string as one arg. Gameplay scripts (typically on the host node) `connect()` to these signals; the signal engine already routes them.
 - **Track targeting** uses relative name paths from the host node (`''` = host itself, `'Child/GrandChild'` with `findByPath` semantics). Name paths survive prefab instancing (node ids are regenerated on instantiation, names are not); renaming a targeted node breaks the track and surfaces a warning icon in the timeline.
@@ -1016,247 +984,21 @@ Godot-inspired localization (`TranslationServer`/`tr()` adapted to Pix3): per-lo
 
 ### 6.22.3 Editor
 
-- **`LocalizationEditorService`**: loads tables at project open (manifest or auto-discovery), owns the preview instance, exposes the authoring API (`setEntry`/`removeKey`/`addLocale`/`removeLocale`/`getMissing`, all section-aware: `'strings' | 'sprites'`), write-through persists each edit, mirrors counters into `appState.localization` (IDs/counts only — tables stay in the service).
-- **Localization panel** (`pix3-localization-panel`, View → Localization): Strings/Sprites section tabs; rows = keys, columns = default locale + one target locale; filter, missing-only view with per-cell warning tint; add/remove locale and key; preview-locale dropdown that live-updates the viewport (labels *and* localized sprite proxies).
+- **`LocalizationEditorService`**: loads tables at project open (manifest or auto-discovery), owns the preview instance, exposes the authoring API (`setEntry`/`removeKey`/`renameKey`/`getMissing`, all section-aware: `'strings' | 'sprites'`), mirrors counters into `appState.localization` (IDs/counts only — tables stay in the service). Each edit writes through with `If-Match`; a table changed on disk is followed and merged key by key, and a write that got no answer is drafted in IndexedDB (`.plans/write-model.md` W20, W22).
+- **Localization panel** (`pix3-localization-panel`, Window → Localization): Strings/Sprites section tabs; rows = keys, columns = default locale + one target locale; filter, missing-only view with per-cell warning tint; add/remove key; preview-locale dropdown that live-updates the viewport (labels *and* localized sprite proxies). A locale is a file: adding or removing one is the agent's (kit `pix3-scene-format/project-files.md` → "Add or remove a locale").
 - **Inspector**: `labelKey`/`textureKey` render via the `localization-key` editor hint — autocomplete over known keys, resolve-status icon (checks both `strings` and `sprites`), and an **Extract** button that creates the key from the literal label in the default locale.
-- **Mutations** ride Commands/Operations under `src/features/localization/` (`UpdateLocaleEntry`, `RemoveLocalizationKey`, `AddLocale`, `RemoveLocale`, `SetPreviewLocale` — the last is non-dirtying, editor-view state). Node key properties ride the existing `UpdateObjectPropertyOperation`.
+- **Mutations** ride Commands/Operations under `packages/editor-core/src/features/localization/` (`UpdateLocaleEntry`, `RemoveLocalizationKey`, `RenameLocalizationKey`, `ExtractLocalizationKeys`, `SetPreviewLocale` — the last is non-dirtying, editor-view state). Node key properties ride the existing `UpdateObjectPropertyOperation`.
 - **Key rename** (`RenameLocalizationKeyCommand`/`Operation`, panel row pencil or double-click on the key): moves the key in every locale table AND rewrites `labelKey` / `textureKey`-family references in all **open** scenes through the property schema (touched scenes marked dirty); one undoable step. Refuses when the new key already exists. Closed scene files and script literals are not rewritten — a follow-up panel Scan reports the stale script keys.
 - **Key extraction** (the POT analog): the panel's **Scan** button runs `ExtractLocalizationKeysCommand` → `LocalizationExtractionService.scan()` finds (a) `UIControl2D` `label:` literals without a `labelKey` in every `.pix3scene` (the active scene is read from its live graph, so unsaved edits are honored) and (b) `tr`/`trSprite`/`trPlural`/`setTextKey` string-literal keys in project scripts that are missing from the default table (interpolated template literals are skipped; `trPlural` resolves through its suffix keys). The report renders in the panel: per-item **Extract** (creates the key in the default locale + sets `labelKey` via the property op; suggested keys are name-slugs deduped against the table — identical literals share a key) and per-item **Add** for missing script keys. `ExtractLocalizationKeysOperation` then seeds keys present in the default locale but absent from other locales as `""` placeholders (undo removes only still-empty ones).
 
-### 6.22.4 Export
+### 6.22.4 Build
 
-- `ProjectBuildService.collectAssetPaths` additionally enumerates the `locales/*.json` tables **declared in the effective localization config** (`defaultLocale` + `fallbackLocale` + `locales`) and every texture path in their `sprites` sections (invisible to the `res://` regex scan of scenes/scripts). Undeclared tables on disk — and the sprite variants only they reference — are excluded with a build warning: the exported runtime fetches `res://locales/<id>.json` solely for ids in the baked config, so they are provably unreachable. A `null` config (localization inert) excludes the whole folder.
-- The generated `scene-manifest.ts` exports `runtimeLocalization` (the effective config or `null`); the runtime bootstrap calls `runner.setLocalizationConfig(...)` before `startScene`, so the first frame renders in `defaultLocale` and playable-HTML exports work offline via embedded tables.
+- The build's asset scan (`packages/vite-plugin/src/build/scan.ts`) ships the `locales/*.json` tables of the effective localization config (`defaultLocale` + `fallbackLocale` + `locales`; without a `localization:` block, every table in `locales/`) and every texture path in their `sprites` sections (invisible to the `res://` scan of scenes and scripts). A `null` config (localization inert) ships no table.
+- `virtual:pix3/scene-manifest` exports `runtimeLocalization` (the effective config or `null`); the player calls `runner.setLocalizationConfig(...)` before the scene starts, so the first frame renders in `defaultLocale` and a single-file build works offline from its embedded tables.
 
-## 6.23 UI Kit Assets (theme, kit manifest, skins, templates)
+## 6.23 AI Image Generation
 
-A **UI kit** is the project-side output of UI Kit Forge (`docs/nodes-and-systems.md`
-→ "2D UI kit generation"): one theme, baked into PNG skins plus a manifest that
-says how each picture is nine-sliced, and consumed by the skinned 2D UI controls
-of §7.2.2 and by prefabs (§6.20). Four locations, all under project root:
-
-| Path | Written by | What it is |
-| --- | --- | --- |
-| `design/ui-theme.json` | `UiKitThemeService.save()` | the project's `ForgeTheme` — the source of every skin |
-| `design/ui-kit.json` | `UiKitProjectWriter.writeKit()` | the manifest of the last bake |
-| `sprites/ui/<kitId>/*.png` | `UiKitProjectWriter.writeKit()` | the baked skins |
-| `fonts/<family>-<weight>-<subset>.woff2` | `UiKitProjectWriter.writeKit()` | the theme's typefaces, declared in `pix3project.yaml` under `fonts:` and registered before the first frame (`ProjectFontLoader`) |
-| `prefabs/ui/<templateId>-<kitId>.pix3scene` | `UiKitPrefabBuilder` | dialog / settings templates as ordinary prefabs |
-
-`design/` is the same folder `design/style.md` lives in, deliberately: the theme is
-the machine-readable half of the style contract the brief writes for humans, and
-the two must not drift apart.
-
-The manifest additionally carries a **`typography`** block — the caption recipe the
-kit was designed with, so applying it never has to rebuild the theme:
-
-| Field | What it is |
-| --- | --- |
-| `family` / `weight` | the primary face and its own weight |
-| `cyrFamily` / `cyrWeight` | the Cyrillic supplier and ITS weight — a CSS stack carries one weight, and the Latin display faces are 400, so a stack draws Russian captions thin |
-| `outlineWidth` / `outlineColor` | the sticker edge, in px (half-width) |
-| `shadowColor` / `shadowOffsetX` / `shadowOffsetY` | the drop shadow; `shadowColor` is `null` when the theme's drop is too small to read |
-| `letterSpacing` | tracking, px |
-| `inkColor` | caption colour on the kit's own ground |
-
-A template node carries its own `fontSize` (derived from that node's height: a
-button caption is `h × 0.38`, a header title `h × 0.44`), so a prefab and the
-preview cannot disagree about type size. Applying a kit writes a size only onto a
-node still on the engine default (16), so a hand-tuned caption survives a re-skin.
-
-### 6.23.1 `design/ui-theme.json`
-
-```json
-{
-  "version": "1.0",
-  "generator": "UI Kit Forge",
-  "preset": "Brawl Stars",
-  "lang": "en",
-  "theme": { "hue": 0, "sat": 0, "light": 0, "radius": 6, "bevel": 7, "outline": 3,
-             "skew": 7, "pad": 24, "glossOn": 0, "glossType": "strip",
-             "shadowMode": 1, "shadowDx": 3, "shadowDy": 7, "shadowA": 55,
-             "font": "Lilita One", "fontCyr": "Rubik", "txtOut": 3.5,
-             "txtColor": "white", "darkTone": "#101820", "labelEdge": null,
-             "palette": { "blue": "#3f7fd8" } }
-}
-```
-
-- `theme` is a **normalized** `ForgeTheme` — absolute colours, never deltas. The
-  sample above is abridged; a written theme carries every key of the interface
-  (`DEFAULT_THEME` in `src/services/uikit/ForgeTheme.ts` is the full list).
-  Everything read from disk (or handed over by an agent, or pasted from the
-  standalone page) goes through `normalizeTheme()`: numbers coerced, hex values
-  regex-checked (a bad one falls back to the default), the legacy single
-  `shadowOff` migrated to the `shadowDx` / `shadowDy` pair, unknown keys dropped.
-- `theme.palette` is the per-role **absolute override** (`sky`, `blue`, `green`,
-  `yellow`, `bluegray`, `gray`, `white`, `red`, `orange`, `purple`) — how a
-  project's own colours enter the generator; `null` or an absent role means the
-  generated colour stands.
-- `preset` records which preset the theme was last derived from. It is a label,
-  not a constraint — the theme is authoritative.
-- A **bare theme object** (no wrapper) is also accepted on read, because that is
-  what the standalone host exchanges through the clipboard.
-- The file is not `appState`: it is a project document that outlives the session,
-  travels in the repository, and is readable by an agent with `fs_read`.
-
-### 6.23.2 `design/ui-kit.json`
-
-```json
-{
-  "version": "1.0",
-  "generator": "UI Kit Forge",
-  "kitId": "1a2b3c4d",
-  "scale": 2,
-  "createdAt": "2026-09-05T12:00:00.000Z",
-  "theme": { "...": "the same normalized ForgeTheme the bake used" },
-  "parts": {
-    "button/green/normal": {
-      "path": "sprites/ui/1a2b3c4d/btn_green_normal_250x88.png",
-      "w": 500, "h": 176,
-      "sliceBorder": { "left": 24, "right": 24, "top": 24, "bottom": 32 },
-      "role": "green", "component": "button", "state": "normal"
-    },
-    "slider-track": {
-      "path": "sprites/ui/1a2b3c4d/slider-track_240x24.png",
-      "w": 480, "h": 48,
-      "sliceBorder": { "left": 16, "right": 16, "top": 16, "bottom": 16 },
-      "role": null, "component": "slider-track", "state": null
-    }
-  },
-  "warnings": []
-}
-```
-
-Fields, all of them:
-
-| Field | Meaning |
-| --- | --- |
-| `version` | manifest schema version (`KIT_MANIFEST_VERSION`, currently `"1.0"`) |
-| `generator` | always `"UI Kit Forge"` |
-| `kitId` | first 8 hex of an FNV-1a over the normalized theme's **canonical** JSON (object keys sorted). The sprite folder name and the dedupe key |
-| `scale` | design units → raster px. Defaults to the project manifest's `quality.maxPixelRatio`, clamped 1…4 |
-| `createdAt` | ISO timestamp of the bake |
-| `theme` | the normalized `ForgeTheme` this kit was baked from — a kit is reproducible from its own manifest |
-| `parts` | map of **part key** → part record (below) |
-| `warnings` | slicing warnings from the raster measurement, each prefixed with its part key |
-
-A **part key** is `component[/role][/state]`, joined with `/` and omitting the
-absent segments: `button/green/normal`, `panel-body/sky`, `bar-fill/red`,
-`checkbox`, `slider-track`. Extra button sizes beyond the default 250×88 get
-`…@<w>x<h>` appended, so the default size stays addressable under the plain key —
-that is the key the skin operation resolves. A glyph button takes the glyph as a
-fourth segment, `icon-button/<glyph>/<role>/<state>`, because a kit ships several
-of them and component/role/state alone could address only one.
-
-A part record:
-
-| Field | Meaning |
-| --- | --- |
-| `path` | project-relative, no `res://` (e.g. `sprites/ui/1a2b3c4d/btn_green_normal_250x88.png`). A consumer prepends `res://` |
-| `w`, `h` | **raster** size in px (design size × `scale`) |
-| `sliceBorder` | `{left, right, top, bottom}` in **raster px** — straight into `sliceBorderLeft/Right/Top/Bottom` (§7.2.2) — or `null` when the theme's silhouette is not nine-sliceable (any `skew` or `puffy`), in which case a host must render per size |
-| `role` | the `PaletteId` this part was coloured for, or `null` for the role-free parts |
-| `component` | the `SkinComponent`: `button`, `icon-button`, `panel-body`, `header-plate`, `slot`, `checkbox`, `checkbox-mark`, `slider-track`, `slider-thumb`, `bar-trough`, `bar-fill` |
-| `state` | `normal` / `hover` / `pressed` / `disabled` for a button-like part, `null` otherwise |
-| `icon` | present on `icon-button` only: the glyph the picture carries, under its canonical name (`resolveIconName` accepts the aliases, e.g. `settings` → `gear`) |
-
-Insets are **measured off the rasterized pixels** (`frameMeta`) rather than assumed,
-so a shape the theme made non-uniform is caught and reported in `warnings`; where
-no canvas is available the generator's own design-unit border is scaled by `scale`
-instead (the two agree by construction).
-
-### 6.23.3 `sprites/ui/<kitId>/`
-
-File names are `btn_<role>_<state>_<w>x<h>.png` for buttons,
-`icon_<glyph>_<role>_<state>_64x64.png` for glyph buttons and
-`<component>[_<role>]_<w>x<h>.png` for everything else, where `<w>x<h>` is the
-**design** size. What is baked: per colour role, the four button states at 250×88
-plus `panel-body` (256×256), `header-plate` (256×70) and `bar-fill` (240×36); once,
-role-free, `slot` (320×56), `checkbox` and `checkbox-mark` (64×64), `slider-track`
-(240×24), `slider-thumb` (48×48) and `bar-trough` (240×36); and the glyph buttons
-`close`, `gear`, `plus`, `minus`, `left`, `right`, `check` at 64×64 in four states,
-each in **one** semantic role (a close is red, a plus is green) rather than all ten
-— seven glyphs × ten roles × four states would more than triple a bake for pictures
-nothing asks for, and `KitWriteOptions.iconButtonRoles` widens it when a caller
-wants more. A glyph button is **not** nine-sliced: the glyph sits in the region a
-nine-slice would stretch, so its record carries `sliceBorder: null` and a node of
-another size scales it uniformly.
-
-Two consequences of the hash-named folder, both load-bearing:
-
-- **Re-baking an unchanged theme overwrites the same files.** The kit id is a pure
-  function of the theme, so nothing accumulates.
-- **A re-theme writes a new folder and leaves the old one.** That is what makes
-  Ctrl+Z on a skin edit land on art that still exists — the property writes undo,
-  the binary writes do not — and the stale folder is later collected by
-  `export.pruneUnusedAssets`, not by the forge.
-
-Baked skins carry **no text**: captions are drawn by the engine
-(`Button2D` / `UIControl2D` label), which is what keeps one sprite valid across
-states and locales. The engine lane also forces `pad: 0` (the kit's default
-transparent margin would otherwise be dead border inside the node's hit box) and
-disables `feDropShadow` (its blur is GPU/browser dependent, so two machines
-regenerating one theme would produce different bytes).
-
-### 6.23.4 `prefabs/ui/`
-
-A template that cannot be one picture — a dialog, a settings window — is delivered
-as **parts plus a layout** (`TemplateSpec`) and assembled into an ordinary prefab
-(§6.20 Node Prefabs System) at `prefabs/ui/<templateId>-<kitId>.pix3scene`; template
-ids are `dialog` and `settings`. `TemplateNode.anchor` becomes `Node2D.layout`
-(`{enabled, horizontalAlign, verticalAlign}`); the template's top-left-origin,
-y-down rectangle is converted to pix3's centre-origin, y-up position by the builder.
-The file is a plain `.pix3scene` — no new format, and `instance:` references it like
-any other prefab.
-
-### 6.23.5 Consumers
-
-- **Editor** — the UI Kit tab bakes, applies and writes prefabs;
-  `properties.apply-uikit-skin` (args `{ nodeIds?, colorRole?, manifest? }`) writes
-  the texture slots and `sliceBorder*` of the selection through
-  `UpdateObjectPropertyOperation`, composed into one undoable step.
-- **Agent** — the `skin_ui` tool (`bake` / `apply` / `restyle`), or the bare
-  `run_command properties.apply-uikit-skin` whose zero-argument form means current
-  selection, role `blue`, manifest from `design/ui-kit.json`.
-- **T0 expander** — `PrototypeBootstrapService` derives a theme from the brief's
-  palette in `design/style.md`, bakes, and skins the recipe scenes' UI controls
-  with no agent turn.
-- **Runtime** — nothing in `@pix3/runtime` reads these files. Nodes carry plain
-  `res://` texture references and scalar insets (§7.2.2); the kit is an authoring
-  artifact, and a sliced skin is excluded from the pre-launch texture atlas because
-  patch geometry needs the whole source rect.
-
-## 6.24 AI Image Generation through Codex
-
-**Product use.** In Generate, Sprite Editor, or Settings → AI Images, select **Codex (ChatGPT)**
-to generate raster art with the local Codex CLI sign-in. The agent's `generate_asset` tool can
-select the same lane with `providerId: "codex"`; generated images then use the normal Pix3
-post-processing and project-save flow. This lane does not require an image API key. Its output
-uses the account's Codex image-generation allowance, so a limit error asks the user to retry
-after the allowance resets or choose another provider.
-The Codex chat model picker offers GPT-6.1 Sol, GPT-6 Sol, Luna, and Astra alongside GPT-5.6 models.
-While `generate_asset` runs, its chat row names the image provider actually selected for that
-call (including SVG via the agent LLM); once it finishes, the row shows elapsed generation,
-post-processing, and save time.
-
-**Setup and data flow.** The user starts Pix3AgentBridge, signs in with `codex login`, and pairs
-the editor with the bridge token in Settings → Agent (LLM). Pix3 reports the Codex image provider
-ready only when the paired bridge discovers an available, signed-in Codex lane. A prompt, optional
-reference images, aspect ratio, and transparent-background request go from the browser to the
-loopback bridge; the bridge invokes Codex's native image-generation tool and returns encoded raster
-bytes. Pix3 holds the image in generation history or saves it into the open project. The bridge
-does not store the generated image in its config.
-
-**Developer contract.** `CodexImageProvider` implements the same `ImageGenProvider` contract as
-the other image lanes, so `AssetGenService`, the Generate panel, and Sprite Editor share the
-result handling. `BridgeConnectionService` supplies the loopback URL and pairing token. The
-bridge route `POST /agents/codex/v1/images` requires that token, accepts `prompt`, `transparent`,
-`aspectRatio`, and up to three `{ mimeType, data }` reference images, and returns `{ mimeType,
-data, revisedPrompt? }`. `generateCodexImage` runs one ephemeral app-server turn in a temporary
-workspace, reads its `imageGeneration` item, validates the raster signature, and discards the
-workspace after exit. Cancellation follows the browser request. Image-result limits, missing
-Codex auth, and unsupported output are surfaced as generation errors; no CLI filesystem path is
-trusted as an output asset.
+The **Asset Generator** panel (`pix3-generate-panel`, Window → Asset Generator) makes raster art with Gemini or OpenAI; a result reaches the project only through the panel's **Save to project**. Keys are set in the panel or in Editor Settings → AI Images and stored by the plugin in `~/.pix3/keys.json` (0600; `.pix3/local/keys.json` when the home is not writable); the page sees only "set" and the last four characters, and every request goes through `/__pix3/api/proxy/{gemini,openai}`, which adds the key and forwards the generation endpoints only. Record: `.plans/editor-core-port.md` §11 ("Image-gen key proxy").
 
 ## 7. Scene File Format (\*.pix3scene)
 
@@ -1266,14 +1008,14 @@ The scene file uses the YAML format to ensure readability for both humans and ma
 
 - Declarative: The file describes the composition and structure of the scene, not the process of its creation.
 - Asset Referencing: Assets (models, textures) are not embedded in the file but are referenced via relative paths with a res:// prefix (path from the project root).
-- Flat Asset Layout: a game project keeps one folder per asset type **at its root** — `scenes/`, `sprites/` (images/textures), `models/`, `audio/`, `fonts/`, `spine/` (skeleton + atlas + pages together), `scripts/`, `locales/` — with free subdivision inside (`sprites/ui/…`). There is no `assets/` wrapper folder; the project templates ship this layout and `defaultAssetFolder()` (`src/core/asset-categories.ts`) is the canonical mapping used when the editor creates an asset from a bare file name.
-- SVG textures: an `.svg` works as a `Sprite2D` / `Button2D` texture only when its root `<svg>` carries `xmlns="http://www.w3.org/2000/svg"` and px `width`/`height` (a viewBox alone has no intrinsic size), it is self-contained, and the Blob it is decoded from is typed `image/svg+xml` — every read path therefore types image/audio blobs by extension when the stored type is generic (`CloudProjectCacheService.readBlob`, `PlayableHtmlBuildService.resolveMimeType`). `pix3 validate` checks referenced SVGs (`E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY`, `W_SVG_EXTERNAL_REF`).
+- Flat Asset Layout: a game project keeps one folder per asset type **at its root** — `scenes/`, `sprites/` (images/textures), `models/`, `audio/`, `fonts/`, `spine/` (skeleton + atlas + pages together), `scripts/`, `locales/` — with free subdivision inside (`sprites/ui/…`). There is no `assets/` wrapper folder; `pix3 new` creates this layout.
+- SVG textures: an `.svg` works as a `Sprite2D` / `Button2D` texture only when its root `<svg>` carries `xmlns="http://www.w3.org/2000/svg"` and px `width`/`height` (a viewBox alone has no intrinsic size), it is self-contained, and the Blob it is decoded from is typed `image/svg+xml` — the editor types the bytes it reads by extension (`packages/editor-core/src/services/project/file-content-type.ts`) and a build embeds every asset with its type (`packages/vite-plugin/src/files/content-type.ts`). `pix3 validate` checks referenced SVGs (`E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY`, `W_SVG_EXTERNAL_REF`).
 - Composition: Complex scenes are assembled from simpler ones by instantiating other scene files.
 - Unambiguous Structure: An explicit children key is used to denote the list of child nodes, which separates the hierarchy from the properties of the node itself.
 - Unique Identification: Every node must have an id field. The value is a short, cryptographically secure unique identifier (similar to Nano ID) to provide a balance between file readability and the absolute reliability of references.
 - Versioned Schema: Each file includes a `version` field; migrations are maintained in the SceneManager and run automatically on load.
 - Conflict Resolution: Instance overrides always win over parent definitions. Duplicate IDs trigger validation errors during import.
-- Forgiving Vocabulary: a `type:` the loader does not know does **not** fail the load — the node is built as a bare `NodeBase` placeholder that does nothing, so a scene written by a newer version (or with a typo) stays openable and editable. Because such a node is otherwise indistinguishable from a working one, it is reported on three surfaces: the renderability lint (`inert-nodes` in `scene_tree` / `game_observe` / play start), the loader diagnostic (`describeUnknownNodeType`, which suggests the nearest known name), and the Scene Tree row, which carries a warn badge and states the reason in its tooltip. `isInertNode` (`packages/runtime/src/core/renderability-lint.ts`) is the one predicate behind all three.
+- Forgiving Vocabulary: a `type:` the loader does not know does **not** fail the load — the node is built as a bare `NodeBase` placeholder that does nothing, so a scene written by a newer version (or with a typo) stays openable and editable. Because such a node is otherwise indistinguishable from a working one, it is reported on three surfaces: the renderability lint (`inert-nodes`, a warning when play starts and in `pix3_game_run` observations), the loader diagnostic (`describeUnknownNodeType`, which suggests the nearest known name), and the Scene Tree row, which carries a warn badge and states the reason in its tooltip. `isInertNode` (`packages/runtime/src/core/renderability-lint.ts`) is the one predicate behind all three; `pix3 validate` reports the same node as `E_UNKNOWN_NODE_TYPE`.
 
 ### 7.2 Example Structure
 
@@ -1316,7 +1058,7 @@ root:
 A `SpineSkeleton2D` references its Spine export by two `res://` paths — the
 skeleton (`.json` or `.skel`) and the atlas (`.atlas`). The atlas' page images are
 NOT listed: they are named inside the atlas text and resolved relative to it (the
-export asset collector parses `.atlas` files for the same reason). `texture` is an
+build's asset scan, `packages/vite-plugin/src/build/scan.ts`, parses `.atlas` files for the same reason). `texture` is an
 optional single-page override.
 
 ```yaml
@@ -1382,10 +1124,6 @@ that shrinks with `value` is **re-cut** at the new width, so its end caps keep
 their pixel size. All-zero (the default) is the plain stretch. A sliced skin opts
 out of the 2D quad batcher, because the batcher extracts four *unit* corners, and
 is excluded from the pre-launch texture atlas for the same reason.
-
-Sprites for every one of these slots — and the matching insets — can be generated
-and applied without leaving the editor; the files and their manifest are specified
-in **§6.23 UI Kit Assets**.
 
 ```yaml
 - id: 'q7Bd-1mZ_kTn0-Vx4pA'
@@ -1482,185 +1220,44 @@ migration command: a project moves over file by file as the editor saves them. O
 ### 7.3 Validation Rules
 
 - The root section must contain at least one node entry.
-- All node IDs must be unique across the entire resolved scene graph.
+- Node ids must be unique within a file (`E_DUPLICATE_ID`); an instance's inner ids that collide with the host scene's are renamed `<id>-1`, `<id>-2`, … by the loader.
 - `instance` entries must point to existing `.pix3scene` files; SceneManager resolves relative to project root.
 - Optional `metadata` block can include analytics tags, localization keys, and QA notes.
-- Continuous integration should run schema validation (AJV + generated JSON schema) against committed scene files.
+- CI and agents check committed scenes with `pix3 validate` / `pix3 check` (below).
 
 **Strict profile — `pix3 validate`.** The loader stays forgiving (above); strictness lives in the CLI (`packages/cli/src/validate/`), which reports every problem as `{severity, code, file, nodeId?, path, line?, message, fix?}` (`--json` adds the sha256 of each validated file; exit code 1 on any error). Level 1 reads files only — no project code, no DOM: document/node/component shape, `type:` vocabulary, property keys and values, `core:` component config, `user:` components by existence (a file under `scripts/` with `extends Script` exporting that name), `res://` targets, prefab targets/cycles/roots, override targets, duplicate ids, emoji-as-art. Level 2 (on unless `--no-hydrate`) hydrates the scene with the real `SceneLoader` in plain Node (`@pix3/runtime/node`: canvas-only `document` shim, disk `ResourceManager`, existence-checking `AssetLoader`) after compiling the project scripts with native esbuild, and reports loader rejections/warnings, still-pending components, `user:` config keys against the compiled schema, and the renderability lint as warnings. "Unknown property" is decided by the **disk format**, not by `getPropertySchema()`: `packages/runtime/src/core/scene-disk-format.ts` lists, per node type, which keys the loader reads under `properties:` (flat schema names, `transform`/`layout`/`flow`/`material`/`stateTextureKeys` nesting, per-type extras and read-compat aliases), and `scene-disk-format.spec.ts` pins it against what `SceneLoader` actually honours and what `SceneSaver` actually writes. There are no scene-format migrations today: `version` other than `1.0.0` is only a warning.
-
-## 9. MVP (Minimum Viable Product) Plan
-
-- Establish Vite + TypeScript + Lit project with ESLint, Prettier, Vitest, and CI lint/test workflows.
-- Implement the basic architecture: AppState with Valtio, Command pattern contracts, and DI container wiring.
-- Integrate FileSystemAPIService to open a project folder, list assets, and load `.pix3scene` files.
-- Integrate Golden Layout to create a basic layout: Scene Tree, Viewport, Inspector, Asset Browser. Provide layout presets.
-- Implement rendering of a simple 3D scene in the viewport using Three.js, including an orthographic pass for 2D overlays.
-- Create SceneManager to parse and display the scene structure (`*.pix3scene`) and expose diff events.
-- Implement commands for creating primitives (boxes, lights, cameras, sprites) with undoable operations.
-- Implement a basic Undo/Redo system using HistoryManager, wired to keyboard shortcuts and UI controls.
-- Implement property schema system for dynamic inspector UI generation.
-- Implement scene save/load/reload with file watch for external changes.
-- Deliver a playable-ad export preset (HTML bundle) and analytics logging stub.
 
 ## 10. Non-Functional Requirements
 
 - **Performance:** Maintain ≥ 85 FPS in viewport on baseline hardware. Initial load (cold) < 6s, warm reload < 2s. Command execution should visually update UI within 80ms.
 - **Accessibility:** WCAG 2.1 AA minimum for editor chrome; ensure keyboard navigation for panel focus and command palette. Provide high-contrast theme preset.
-- **Security & Privacy:** Avoid storing project contents on Pix3 servers. Request File System Access permissions per session and cache handles using IndexedDB with user consent. Plugins run in isolated workers and require explicit permission to access services.
-- **Reliability:** Autosave layout and session state every 30 seconds. Maintain undo history for at least the last 100 commands.
-- **Internationalization:** UI copy uses i18n keys; English and Russian shipped at MVP. YAML scenes may include localized strings via `locale` blocks.
+- **Security & Privacy:** Project contents never leave the machine through Pix3. The plugin's file API answers loopback peers only (unless `allowRemote`) and refuses a mutation without `X-Pix3: 1` and the page's own `Origin`; image-generation keys live in `~/.pix3/keys.json` (0600) behind the plugin's proxy and never reach the page; the agent reaches Chrome only through the token-checked CDP proxy of `pix3 editor` (`.plans/agent-bridge.md`, threat model).
+- **Reliability:** An edit is never lost silently: unflushed scene and locale-table edits survive a dead dev server as an IndexedDB draft, every scene write is journaled under `.pix3/history/`, and a write over a version the editor has not seen is refused (`If-Match` → 412) and merged instead (`.plans/write-model.md`). Undo history keeps at least the last 100 operations.
+- **Internationalization:** The editor's UI is English. A game's text is localized through locale tables and key properties (§6.22 Localization), never through strings in the scene file.
 
 ## 11. Project Structure
 
+npm workspaces, versions lockstep from the root `package.json`; `CLAUDE.md` → "Repository topology" is the authoritative list.
+
 ```
-/
-├── dist/                     # Build output (generated)
-├── public/                   # Static assets (logo, icons)
-├── src/
-│   ├── core/                 # Core business logic and managers
-│   │   ├── AssetLoader.ts
-│   │   ├── BulkOperation.ts
-│   │   ├── command.ts        # Command/Operation base contracts
-│   │   ├── HistoryManager.ts
-│   │   ├── LayoutManager.ts
-│   │   ├── Operation.ts
-│   │   ├── SceneLoader.ts
-│   │   ├── SceneSaver.ts
-│   │   └── SceneManager.ts   # Owns SceneGraph and Node lifecycle (non-reactive)
-│   ├── features/             # Feature-specific commands and operations
-│   │   ├── history/
-│   │   │   ├── RedoCommand.ts
-│   │   │   └── UndoCommand.ts
-│   │   ├── properties/
-│   │   │   ├── Transform2DCompleteOperation.ts
-│   │   │   ├── TransformCompleteOperation.ts
-│   │   │   ├── UpdateObjectPropertyCommand.ts
-│   │   │   └── UpdateObjectPropertyOperation.ts
-      │   │   ├── scene/
-      │   │   │   ├── AddModelCommand.ts
-      │   │   │   ├── CreateBoxCommand.ts
-      │   │   │   ├── CreateCamera3DCommand.ts
-      │   │   │   ├── CreateDirectionalLightCommand.ts
-      │   │   │   ├── CreateGroup2DCommand.ts
-      │   │   │   ├── CreateMeshInstanceCommand.ts
-      │   │   │   ├── CreatePointLightCommand.ts
-      │   │   │   ├── CreateSpotLightCommand.ts
-      │   │   │   ├── CreateSprite2DCommand.ts
-      │   │   │   ├── CreatePrefabInstanceCommand.ts
-      │   │   │   ├── CreatePrefabInstanceOperation.ts
-      │   │   │   ├── DeleteObjectCommand.ts
-      │   │   │   ├── LoadSceneCommand.ts
-      │   │   │   ├── prefab-utils.ts
-      │   │   │   ├── RefreshPrefabInstancesCommand.ts
-      │   │   │   ├── RefreshPrefabInstancesOperation.ts
-      │   │   │   ├── ReloadSceneCommand.ts
-      │   │   │   ├── ReparentNodeCommand.ts
-      │   │   │   ├── SaveAsPrefabCommand.ts
-      │   │   │   ├── SaveAsPrefabOperation.ts
-      │   │   │   ├── SaveAsSceneCommand.ts
-      │   │   │   ├── FitGroup2DToContentsCommand.ts
-      │   │   │   ├── group2d-resize-utils.ts
-      │   │   │   └── SaveSceneCommand.ts
-│   │   └── selection/
-│   │       ├── SelectObjectCommand.ts
-│   │       └── SelectObjectOperation.ts
-│   ├── fw/                   # Framework utilities (ComponentBase, DI, property schema)
-│   │   ├── component-base.ts # Extends LitElement with light DOM default
-│   │   ├── di.ts             # Dependency injection container
-│   │   ├── from-query.ts
-│   │   ├── hierarchy-validation.ts
-│   │   ├── index.ts
-│   │   ├── layout-component-base.ts
-│   │   ├── property-schema.ts
-│   │   └── property-schema-utils.ts
-│   ├── nodes/                # Node definitions (NOT in reactive state)
-│   │   ├── Node2D.ts
-│   │   ├── Node3D.ts
-│   │   ├── NodeBase.ts       # Extends Three.js Object3D; purely data/logic
-      │   │   ├── 2D/
-      │   │   │   ├── Group2D.ts
-      │   │   │   └── Sprite2D.ts
-│   │   └── 3D/
-│   │       ├── Camera3D.ts
-│   │       ├── DirectionalLightNode.ts
-│   │       ├── GeometryMesh.ts
-│   │       ├── MeshInstance.ts
-│   │       ├── PointLightNode.ts
-│   │       └── SpotLightNode.ts
-│   ├── services/             # Injectable services
-│   │   ├── AssetFileActivationService.ts
-│   │   ├── CommandDispatcher.ts  # Primary entry point for all actions
-│   │   ├── CommandRegistry.ts     # Command registration and menu building
-│   │   ├── DialogService.ts
-│   │   ├── FileWatchService.ts    # Watches for external file changes
-│   │   ├── FileSystemAPIService.ts
-│   │   ├── FocusRingService.ts
-│   │   ├── IconService.ts         # Centralized management of scalable vector icons
-│   │   ├── LoggingService.ts      # Centralized logging for editor
-│   │   ├── NodeRegistry.ts
-│   │   ├── OperationService.ts   # Executes operations; gateway for mutations
-│   │   ├── ProjectService.ts
-│   │   ├── ResourceManager.ts
-│   │   ├── TemplateService.ts
-│   │   ├── TransformTool2d.ts
-│   │   ├── ViewportRenderService.ts
-│   │   └── index.ts
-│   ├── state/                # Valtio app state definitions (UI, metadata, selection only)
-│   │   ├── AppState.ts       # Defines reactive state shape; no Nodes here
-│   │   └── index.ts
-│   ├── templates/            # Project templates
-│   │   ├── pix3-logo.png
-│   │   ├── startup-scene.pix3scene
-│   │   └── test_model.glb
-│   ├── ui/                   # Lit components extending ComponentBase
-│   │   ├── pix3-editor-shell.ts
-│   │   ├── pix3-editor-shell.ts.css
-│   │   ├── assets-browser/
-│   │   │   ├── asset-browser-panel.ts
-│   │   │   ├── asset-browser-panel.ts.css
-│   │   │   ├── asset-tree.ts
-│   │   │   └── asset-tree.ts.css
-│   │   ├── logs-view/
-│   │   │   ├── logs-panel.ts
-│   │   │   └── logs-panel.ts.css
-│   │   ├── object-inspector/
-│   │   │   ├── inspector-panel.ts
-│   │   │   ├── inspector-panel.ts.css
-│   │   │   └── property-editors.ts
-│   │   ├── scene-tree/
-│   │   │   ├── node-visuals.helper.ts
-│   │   │   ├── scene-tree-node.ts
-│   │   │   ├── scene-tree-node.ts.css
-│   │   │   ├── scene-tree-panel.ts
-│   │   │   └── scene-tree-panel.ts.css
-│   │   ├── shared/
-│   │   │   ├── pix3-confirm-dialog.ts
-│   │   │   ├── pix3-dropdown.ts
-│   │   │   ├── pix3-main-menu.ts
-│   │   │   ├── pix3-panel.ts
-│   │   │   ├── pix3-toolbar.ts
-│   │   │   └── pix3-toolbar-button.ts
-│   │   ├── viewport/
-│   │   │   ├── transform-toolbar.ts
-│   │   │   ├── viewport-panel.ts
-│   │   │   └── viewport-panel.ts.css
-│   │   └── welcome/
-│   │       ├── pix3-welcome.ts
-│   │       └── pix3-welcome.ts.css
+packages/
+├── runtime/        # @pix3/runtime — nodes, Script, ECS, SceneLoader/SceneSaver, SceneRunner (TS sources)
+├── vite-plugin/    # @pix3/vite-plugin — editor at /__pix3/, file API, sync, build (src/build/), player (player/)
+├── editor-core/    # @pix3/editor-core — the Lit editor, mounted through EditorHost (src/host/)
+│   └── src/        # core/ fw/ features/<area>/ services/<domain>/ state/ ui/<panel>/
+├── cli/            # @pix3/cli — validate, check, smoke, tree, kit, editor, agent-setup, …; kit-src/ = the agent kit
+└── create-pix3/    # npm create pix3 — templates/ (base + 2d/3d layers)
 ```
 
 ## 12. Roadmap and Milestones
 
-1. **Milestone 0 — Foundation (completed):** Repo bootstrap, DI utilities, layout shell, state scaffolding, CI pipeline.
-2. **Milestone 1 — Scene Authoring (completed):** SceneManager MVP, viewport rendering loop, asset browser, primitive tools, property schema system.
-3. **Milestone 2 — Playable Export (in progress):** Export preset, analytics stub, undo/redo polish, plugin SDK docs.
-4. **Milestone 3 — Collaboration Preview (future):** Shared sessions, commenting, live cursors (post-MVP).
+Phases and gates are §G of `../pix3/.plans/pix3-core.md`; what is built and what is not is the status paragraph of `CLAUDE.md` and the as-built records in `.plans/`.
 
 ## 13. Change Log
 
 > Section numbers cited in older entries reflect the numbering at that release; the appended systems were renumbered to 6.15–6.22 to remove duplicate numbers. Refer to sections by heading text.
 
+- **2.2 (2026-10-11):** **The editor-facing sections describe 2.x.** The 1.x machinery that 2.x does not have is cut from Key Features, Technology Stack, Architecture, Project Templates (now "…and Agent Kit"), Peek, Prefabs, Keyframe Animation and Localization: the `pix3 serve` workspace and its token, co-authoring (autosave, protected set, merge log, acks, recovery journal), the live agent channel and `pix3 mcp`, the in-editor agent, Flow and Vibe, the New Project wizard and its agent overlay, Install Agent Kit, the PWA and `esbuild.wasm`, the export dialog and its reachability report, Save as Prefab, the UI Kit Assets section (UI Kit Forge is not in 2.x and nothing in the runtime reads its files), AI image generation through Codex, the MVP plan and the 1.x source tree. In their place, briefly and pointing at the as-built records: the editor on the game's dev server, the write model, the agent bridge over Chrome DevTools MCP, scripts through Vite, the plugin's build, and the kit's recipes for the file and project work the editor no longer does. Engine and format sections are unchanged except for verified drift: Key Principles' SVG typing and inert-node surfaces, Spine atlas pages in the build scan, Validation Rules' id uniqueness.
 - **2.1 (2026-10-10):** **Anchor margins are stored in `layout:`.** An anchored 2D node's margins — the distance from the parent's edge to its own — used to exist only implicitly, as the node's rect against its parent's *authored* size (`Node2D.resolveHorizontalLayout`), so resizing a container in the editor had to rewrite every stretched or edge-anchored child's `width`/`height`/`position` (`.plans/write-model.md` W16's open debt). The `layout:` block now carries `left` / `right` / `top` / `bottom` for the sides the alignment keeps, the saver writes nothing they derive (`0` for the position component of an anchored axis, no `width`/`height` under `stretch`), the loader resolves the rect from the margins and the parent's current size, and a parent resize writes the parent alone (§7.2.3). Files without margins load as before — the margins are derived once from the rect — and the editor converts such a file on its first write of it (a partial patch of a legacy entry is not sound once a parent's size changes); no scene-format version bump, no migration command. `pix3 validate` knows the four keys; the inspector shows the margins the anchors keep under the anchor modes; on an instance root they are `layoutLeft` … `layoutBottom`. The merge rule's `laid-out` drop reason is gone with the rects it protected. Proven over the whole scene corpus and DeepCore: the margin form places every node where the legacy rect did, at the design size and on a wider or taller screen. Also: `Sprite2D` fills only the axis the file leaves out from the texture (it used to replace both), and the runner lays 2D roots out before the pre-roll tick so `onStart` reads resolved rects. In the editor, a locale table's write that got no answer is drafted in IndexedDB and offered on the next open like a scene's (W22).
 - **2.0 (2026-10-08):** **pix3-core repository seeded.** This spec, the runtime, the CLI and the project templates moved from `pix3` (now `pix3-full`, frozen on 1.6.x) into `pix3-core` with their history; this file is the version of record from here on. Pix3 2.x is a Vite plugin (`@pix3/vite-plugin`) that serves the editor (`@pix3/editor-core`) on the game's own dev server, plus `@pix3/runtime`, `@pix3/cli` and `create-pix3` (`.plans/pix3-core.md` in `pix3`). Editor-facing sections below still describe the 1.x editor until the port lands; entries up to 1.42 are the `pix3` history.
 - **1.42 (2026-09-28):** **Library insert reuses content the project already has, and lands in one refresh.** Dropping a published Seven character back into its own project wrote a second copy of all 137 files under `assets/library/<slug>/`, one sequential request per file, and bumped `fileRefreshSignal` after every file — over a remote `pix3 serve` that re-listed the asset tree ~140 times, and because the prefab and flipbook were written first, each refresh loaded a character whose frames did not exist yet (hundreds of "Resource not found" failures). `LibraryInsertService` now dedups by content: a bundle file whose sha256 matches a project file at any path is referenced there instead of copied — hashes come from the backend's manifest (`ProjectStorageService.getContentHashIndex`: `pix3 serve` and cloud already carry sha256; local FSA has none, so only the file's own original path is hashed and compared). Text files are matched after their references are remapped, so a flipbook whose frames were all found compares equal to the project's own and is reused too; among byte-identical files (a looping flipbook repeats frames) the file's own path wins, or the remap would rewrite `…_0009.png` to its twin `…_0005.png` and defeat that match. Writes go binaries → text files in dependency order → entry last, six at a time, with each directory created once; a reference cycle is copied into the target folder rather than stalling. `ProjectStorageService.batchMutations(fn)` coalesces the local listing signal of every write inside it into one (collaborators still see each write). Measured on the live Seven project: re-inserting Knight wrote 1 file and signalled once. Guarded by `LibraryInsertService.spec.ts` (order, cycle, hash dedup at another path, twin frames, local fallback, differing content) and `ProjectStorageService.spec.ts` (coalescing, including a failing batch).
