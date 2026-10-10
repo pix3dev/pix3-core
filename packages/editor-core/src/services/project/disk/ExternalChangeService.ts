@@ -48,6 +48,8 @@ interface PendingEntry {
   failure: string | null;
   noticeShown: boolean;
   retries: number;
+  /** {@link ExternalChangeService.reportMark} value of the latest report of this path. */
+  reportedAt: number;
 }
 
 /**
@@ -167,6 +169,8 @@ export class ExternalChangeService {
   }
 
   /** Project paths detected and not delivered yet (settling, or held for play). */
+  private reports = 0;
+
   getPendingPaths(): string[] {
     return [...this.entries.keys()];
   }
@@ -176,16 +180,38 @@ export class ExternalChangeService {
     return this.unreadable;
   }
 
+  /** Reports seen so far; {@link acknowledge} drops only entries reported up to a mark. */
+  reportMark(): number {
+    return this.reports;
+  }
+
+  /**
+   * The sync barrier applied these paths as they are on disk (plan §B.3): their entries — reported
+   * by `pix3:fs` frames up to `mark`, i.e. before the plugin asked this tab to apply — have nothing
+   * left to deliver. Without this, a version still settling would be held for a play started right
+   * after the sync and reported `stale` although the game runs it. A path reported again after
+   * `mark` (a newer write) stays.
+   */
+  acknowledge(paths: readonly string[], mark: number): void {
+    for (const path of paths) {
+      const key = toProjectPath(path);
+      const entry = key ? this.entries.get(key) : undefined;
+      if (entry && entry.reportedAt <= mark) this.drop(entry.path);
+    }
+  }
+
   /** A file may have changed on disk. Cheap and idempotent; `.pix3/` is ignored. */
   report(path: string): void {
     const key = toProjectPath(path);
     if (!key || isPix3InternalPath(key)) {
       return;
     }
+    this.reports += 1;
     const existing = this.entries.get(key);
     if (existing) {
       // Moving again: it must settle anew.
       existing.stable = false;
+      existing.reportedAt = this.reports;
     } else {
       this.entries.set(key, {
         path: key,
@@ -195,6 +221,7 @@ export class ExternalChangeService {
         failure: null,
         noticeShown: false,
         retries: 0,
+        reportedAt: this.reports,
       });
     }
     this.diskState.markPendingExternal(key);

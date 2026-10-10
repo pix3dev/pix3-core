@@ -210,6 +210,24 @@ describe('ExternalChangeService — stabilisation window', () => {
     h.service.dispose();
   });
 
+  it('drops what a sync applied, but not a path reported again after the sync asked', async () => {
+    const h = createService();
+    h.storage.files.set('scripts/A.ts', 'a');
+    h.storage.files.set('scripts/B.ts', 'b');
+    h.service.report('scripts/A.ts');
+    h.service.report('scripts/B.ts');
+    const mark = h.service.reportMark();
+    h.service.report('scripts/B.ts'); // a newer write, after the sync's rescan
+    h.service.acknowledge(['scripts/A.ts', 'res://scripts/B.ts'], mark);
+    expect(h.service.getPendingPaths()).toEqual(['scripts/B.ts']);
+    // A play started now holds nothing the sync already applied.
+    appState.ui.isPlaying = true;
+    await h.service.tick();
+    await h.service.tick();
+    expect(h.service.getPendingPaths()).toEqual(['scripts/B.ts']);
+    h.service.dispose();
+  });
+
   it('ignores .pix3/ bookkeeping', async () => {
     const h = createService();
     h.service.report('.pix3/recovery/x.pix3scene');

@@ -17,7 +17,7 @@ export function pendingDuringPlay(
   externalPending: readonly string[]
 ): string[] {
   const applied = (path: string): boolean => path.startsWith(`${BOT_DIRECTORY}/`);
-  return [...new Set([...changedPaths.filter(path => !applied(path)), ...externalPending])];
+  return [...new Set([...changedPaths, ...externalPending])].filter(path => !applied(path));
 }
 
 /**
@@ -49,8 +49,13 @@ export class SyncApplyService {
       if (pending.length > 0) return { ok: false, reason: 'stale', playing, pending };
       return { ok: true, playing, staleScenes: [...appState.project.host.staleScenes] };
     }
+    const mark = this.externalChanges.reportMark();
     this.scripts.registerRoots(info.roots);
     const { failed } = await this.reloads.apply(changedPaths);
+    this.externalChanges.acknowledge(
+      changedPaths.filter(path => !failed.includes(path)),
+      mark
+    );
     return failed.length > 0
       ? { ok: false, reason: 'reload_failed', paths: failed }
       : { ok: true, staleScenes: [...appState.project.host.staleScenes] };

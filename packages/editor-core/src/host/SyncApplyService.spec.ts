@@ -10,7 +10,10 @@ describe('pendingDuringPlay', () => {
         ['scenes/main.pix3scene', 'scripts/Player.ts']
       )
     ).toEqual(['scripts/Player.ts', 'scenes/main.pix3scene']);
-    expect(pendingDuringPlay(['design/tests/bots/dodge.ts'], [])).toEqual([]);
+    // The page's own frame queue holds the policy too (a pix3:fs frame arrived during play).
+    expect(
+      pendingDuringPlay(['design/tests/bots/dodge.ts'], ['design/tests/bots/dodge.ts'])
+    ).toEqual([]);
     // A helper outside the policy folder may be the game's too: it waits.
     expect(pendingDuringPlay(['design/tests/lib/aim.ts'], [])).toEqual(['design/tests/lib/aim.ts']);
   });
