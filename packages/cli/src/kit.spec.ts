@@ -46,6 +46,7 @@ import { listTemplates } from './templates.ts';
 /** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
 const CORPUS_ROOT = fileURLToPath(new URL('../../runtime/fixtures/scene-corpus', import.meta.url));
 import { ensureRuntimeTypes } from './types/runtime-types.ts';
+import { GAP_KINDS, GAPS_FILE } from './gap/command.ts';
 import { SMOKE_CODES } from './smoke/report.ts';
 import { USAGE } from './usage.ts';
 import { DIAGNOSTIC_CODES } from './validate/diagnostics.ts';
@@ -316,6 +317,14 @@ describe('kit drift', () => {
     // Every tool is explained in the editor skill, and AGENTS.md sends the agent there.
     for (const name of BRIDGE_TOOL_NAMES) expect(text(EDITOR_SKILL)).toContain(`\`${name}\``);
     expect(text('AGENTS.md')).toContain('pix3-editor/SKILL.md');
+  });
+
+  it("tells the agent when to record a gap, with the CLI's kinds and file", () => {
+    const agents = text('AGENTS.md');
+    const shown = /pix3 gap "[^"]*" --kind ([a-z|]+)/.exec(agents);
+    expect(shown?.[1].split('|')).toEqual([...GAP_KINDS]);
+    expect(agents).toContain(GAPS_FILE.split(sep).join('/'));
+    expect(agents).toMatch(/work around/);
   });
 
   it('quotes only verdict phrases and APIs the running game really has', () => {

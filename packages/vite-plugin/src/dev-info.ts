@@ -23,7 +23,53 @@ export interface DevInfo {
   readonly pid: number;
   readonly versions: Versions;
   readonly startedAt: string;
+  /**
+   * Where the browser reaches this server when that is not `url` (Remote SSH, plan §E.3: VS Code
+   * forwards 5173 to another local port). `PIX3_PUBLIC_URL` when set, else learnt from the
+   * `Origin` of an editor tab that connected through another address. Absent = `url`.
+   */
+  readonly publicUrl?: string;
+  readonly publicEditorUrl?: string;
 }
+
+const LOCAL_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The public base URL for `dev.json`: `PIX3_PUBLIC_URL` (an origin or an origin with the base
+ * path) wins; otherwise a tab's `Origin` that is not this server's own loopback address. Null
+ * when neither says anything new. The result always ends with `base`.
+ */
+export const publicUrlOf = (options: {
+  readonly env?: string | undefined;
+  readonly tabOrigin?: string | null;
+  readonly port: number;
+  readonly base: string;
+}): string | null => {
+  const withBase = (origin: string) => `${origin}${options.base}`;
+  if (options.env) {
+    try {
+      const url = new URL(options.env);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      const path = url.pathname.replace(/\/+$/, '');
+      // `http://localhost:5174` or `http://localhost:5174/game/` (the base spelled out).
+      return path && path !== options.base.replace(/\/+$/, '')
+        ? `${url.origin}${path}/`
+        : withBase(url.origin);
+    } catch {
+      return null;
+    }
+  }
+  if (!options.tabOrigin) return null;
+  let origin: URL;
+  try {
+    origin = new URL(options.tabOrigin);
+  } catch {
+    return null;
+  }
+  const port = Number(origin.port || (origin.protocol === 'https:' ? 443 : 80));
+  if (LOCAL_NAMES.has(origin.hostname) && port === options.port) return null;
+  return withBase(origin.origin);
+};
 
 export const devJsonPath = (root: string): string => join(root, '.pix3', 'dev.json');
 

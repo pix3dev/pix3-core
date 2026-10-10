@@ -21,6 +21,7 @@ import { ensureCdpToken, readCdpToken } from './cdp-token.ts';
 import { chromeArgs, findChrome, handoffArgs } from './chrome.ts';
 import { readChromeState, writeChromeState } from './chrome-state.ts';
 import { parseEditorArgs, runEditorCli } from './command.ts';
+import { findCdpForward, remoteForwardLines, tokenCopyLine } from './remote.ts';
 import { findDevServer, findViteBin, readDevInfo, stopDevServer } from './dev-server.ts';
 import { FakeChrome } from './fake-chrome.ts';
 import {
@@ -29,6 +30,7 @@ import {
   chromeProfileDir,
   chromeStatePath,
   DEFAULT_CDP_PORT,
+  remoteCdpTokenPath,
 } from './paths.ts';
 
 /**
@@ -339,9 +341,14 @@ describe('pix3 editor', () => {
     expect(noChrome.out()).toContain(`Editor:     http://127.0.0.1:${port}/__pix3/`);
     expect(noChrome.out()).toContain('reused');
 
-    const ssh = io(root, { SSH_CONNECTION: '1.2.3.4 1 5.6.7.8 22', PATH: scratch });
-    expect(await runEditorCli([], ssh.io)).toBe(0);
+    const ssh = io(root, {
+      SSH_CONNECTION: '1.2.3.4 1 5.6.7.8 22',
+      PATH: scratch,
+      PIX3_HOME: join(scratch, 'home-ssh'),
+    });
+    expect(await runEditorCli(['--cdp-port', String(await freePort())], ssh.io)).toBe(0);
     expect(ssh.out()).toContain('SSH session');
+    expect(ssh.out()).toContain('no token here yet');
 
     const none = io(root, { PATH: scratch, PIX3_HOME: join(scratch, 'home2') });
     expect(await runEditorCli([], none.io)).toBe(1);
@@ -459,6 +466,77 @@ describe('pix3 editor', () => {
     expect(await runEditorCli(['--cdp-port', String(p1)], run.io)).toBe(1);
     expect(run.err()).toContain('open debugging port and no token');
     expect(run.err()).toContain('Close that Chrome');
+  });
+
+  it('--url: no project needed; a forward that does not answer is said so', async () => {
+    expect(parseEditorArgs(['--url', 'http://localhost:5174'])).toEqual({
+      url: 'http://localhost:5174/__pix3/',
+      chromeOnly: true,
+    });
+    expect(
+      parseEditorArgs(['--url', 'http://localhost:5174/game/__pix3/', '--ssh', 'box'])
+    ).toEqual({ url: 'http://localhost:5174/game/__pix3/', chromeOnly: true, sshHost: 'box' });
+    expect(parseEditorArgs(['--url', 'file:///x'])).toEqual({
+      error: '--url needs an http(s) URL, not "file:///x"',
+    });
+    const run = io(scratch, { PIX3_HOME: join(scratch, 'home-url') });
+    expect(await runEditorCli(['--url', `http://127.0.0.1:${await freePort()}/`], run.io)).toBe(1);
+    expect(run.err()).toContain('does not answer as a Pix3 editor');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'Remote SSH: the human side opens the forwarded editor and prints the token copy; the remote side sees the forward',
+    async () => {
+      // The human's machine: no project, the editor of a remote dev server through a forward.
+      const hello = await serve({ '/__pix3/api/hello': { ok: true } });
+      const editorUrl = `http://127.0.0.1:${hello}/__pix3/`;
+      const fake = fakeChrome('fake-chrome-remote');
+      const cdp = await freePort();
+      const local = { PIX3_CHROME: fake.path, PIX3_HOME: join(scratch, 'home-local') };
+      const run = io(scratch, local);
+      expect(
+        await runEditorCli(
+          ['--url', editorUrl, '--ssh', 'devbox', '--cdp-port', String(cdp), '--headless'],
+          { ...run.io, entry: join(SRC, 'index.ts') }
+        ),
+        run.err()
+      ).toBe(0);
+      expect(fake.args().at(-1)).toBe(editorUrl);
+      const token = readCdpToken(local) as string;
+      expect(run.out()).toContain(tokenCopyLine(cdpTokenPath(local), 'devbox', 'linux'));
+      expect(run.out()).toContain(`RemoteForward 127.0.0.1:${DEFAULT_CDP_PORT} 127.0.0.1:${cdp}`);
+      expect(run.out()).not.toContain(token);
+
+      // The remote host: its "forward" is the proxy's port itself here (the e2e forwards it).
+      const remote = { PIX3_HOME: join(scratch, 'home-remote') };
+      expect((await findCdpForward(null, { preferred: cdp })).live).toBeNull();
+      mkdirSync(remote.PIX3_HOME, { recursive: true });
+      writeFileSync(remoteCdpTokenPath(remote), `${token}\n`, { mode: 0o600 });
+      const { root } = await liveProject();
+      const ssh = io(root, { ...remote, SSH_CONNECTION: '1.2.3.4 1 5.6.7.8 22' });
+      expect(await runEditorCli(['--cdp-port', String(cdp)], ssh.io)).toBe(0);
+      expect(ssh.out()).toContain(`CDP forward: live on 127.0.0.1:${cdp}`);
+      expect(ssh.out()).toContain(remoteForwardLines(cdp)[0]);
+      expect(ssh.out()).toContain('editor --chrome-only --url http://127.0.0.1:');
+      // Another user's token is not proven, and nothing was launched on the remote side.
+      writeFileSync(remoteCdpTokenPath(remote), `${'z'.repeat(43)}\n`);
+      const other = await findCdpForward('z'.repeat(43), { preferred: cdp });
+      expect(other.live).toBeNull();
+      expect(other.taken[0]).toMatchObject({ port: cdp });
+
+      const stop = io(scratch, local);
+      expect(await runEditorCli(['--stop-chrome'], stop.io)).toBe(0);
+    },
+    30_000
+  );
+
+  it('prints the token copy for cmd / PowerShell on Windows', () => {
+    expect(tokenCopyLine('C:\\Users\\a\\.pix3\\cdp-token', 'box', 'win32')).toBe(
+      'type "C:\\Users\\a\\.pix3\\cdp-token" | ssh box "umask 077 && mkdir -p ~/.pix3 && cat > ~/.pix3/remote-cdp-token"'
+    );
+    expect(tokenCopyLine('/h/.pix3/cdp-token', 'box', 'linux')).toBe(
+      "ssh box 'umask 077 && mkdir -p ~/.pix3 && cat > ~/.pix3/remote-cdp-token' < /h/.pix3/cdp-token"
+    );
   });
 
   it('--stop-chrome without a recorded owner says so', async () => {

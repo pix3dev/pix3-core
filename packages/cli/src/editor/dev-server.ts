@@ -22,6 +22,9 @@ export interface DevInfo {
   readonly pid: number;
   readonly startedAt?: string;
   readonly versions?: Record<string, string | null>;
+  /** Where the browser reaches the server when that is not `url` (Remote SSH; the plugin's). */
+  readonly publicUrl?: string;
+  readonly publicEditorUrl?: string;
 }
 
 export const readDevInfo = (root: string): DevInfo | null => {

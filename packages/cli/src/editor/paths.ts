@@ -43,3 +43,24 @@ export const cdpWsEndpoint = (port: number): string => `ws://127.0.0.1:${port}${
 export const CDP_PROXY_PROTOCOL = 1;
 /** The header on every proxy answer, refusals included: tells our proxy from a foreign port. */
 export const CDP_PROXY_HEADER = 'X-Pix3-Cdp-Proxy';
+
+/** A client's nonce: the proxy answers it with {@link CDP_PROOF_HEADER} (`cdp-proof.ts`). */
+export const CDP_CHALLENGE_HEADER = 'X-Pix3-Challenge';
+/** `base64url(HMAC-SHA256(key = sha256(token), challenge))`: the listener knows the token. */
+export const CDP_PROOF_HEADER = 'X-Pix3-Proof';
+
+/**
+ * Remote SSH (plan §E.3), on the machine the agent runs on: `~/.pix3/remote-cdp-token` is the
+ * token of the CDP proxy on the human's machine, copied here over SSH (never typed, never
+ * printed); mode 0600.
+ */
+export const remoteCdpTokenPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'remote-cdp-token');
+
+/**
+ * Remote SSH: chrome-devtools-mcp's `--config` file (`wsEndpoint` + `wsHeaders`), mode 0600 —
+ * the token stays out of the project's MCP config and out of the process list, which every user
+ * of a shared host can read.
+ */
+export const remoteMcpConfigPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'remote-cdp.json');

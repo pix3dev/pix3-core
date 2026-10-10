@@ -381,6 +381,24 @@ and the Spine runtime are not shipped: they are only reached from inside declara
 tsconfig.json                     { "extends": "./.pix3/tsconfig.check.json" } — so an IDE sees them
 ```
 
+## `pix3 gap` — what the agent had to work around
+
+Plan §G.3 «Чего не хватает?», §G.4. `pix3 gap "<what was missing>" --kind
+capability|tool|node|doc|other [--detail <text>] [--context <file or task>] [--agent <name>]`
+appends one line to the project's `.pix3/gaps.jsonl`:
+
+```json
+{"ts":"2026-10-10T12:00:00.000Z","agent":"claude-code","kind":"node","summary":"no 9-slice panel node","detail":"built from 9 Sprite2D","context":"scenes/ui/shop.pix3scene"}
+```
+
+`agent` comes from `--agent`, else the environment (`CLAUDECODE=1` → `claude-code`, a `CODEX_*`
+variable → `codex`), else it is left out; the summary is one line of ≤200 characters. One
+`O_APPEND` write per record, so two agents never interleave. `pix3 gap --list [--json]` prints
+them. The kit's `AGENTS.md` tells the agent to record a gap only after it worked around
+something Pix3 lacks — not its own mistakes or the game's features. A CLI command rather than a
+bridge tool: it needs no editor, and on a Remote SSH host it runs where the project is. `.pix3/`
+is gitignored in the starters: the file stays with the checkout.
+
 ## `pix3 editor` — the editor in Chrome, for the agent
 
 Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <dir>`):
@@ -406,8 +424,7 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    window in the running Chrome (a short launch of the same profile, no debugging flag; with
    `--headless`, a new tab through the proxy). `--headless` opens the URL as a plain tab with
    `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
-   under `SSH_CONNECTION` Chrome is not launched (plan §E.3 — the browser is on the machine with
-   the screen; `--chrome-only` there, after the port forward).
+   under `SSH_CONNECTION` Chrome is not launched — see [Remote SSH](#remote-ssh--vs-code-on-a-remote-host-chrome-on-your-machine).
 3. **The token proxy (9333).** The owner serves `ws://127.0.0.1:9333/pix3` (the browser target;
    `…/pix3/page/<targetId>` for one page) and `GET /json/version`, `/json/list` (`/json`) on
    loopback. Every request needs `Authorization: Bearer <token>`, the token of
@@ -455,7 +472,9 @@ the third-party tool category is experimental and may move in a minor release, s
 only after the S4 transport run is repeated (`CHROME_DEVTOOLS_MCP_VERSION` in
 `src/agent-setup/config.ts`); the inline fallback (`window.__PIX3_DEBUG__.call`) works on any
 version. The port is `--cdp-port`, else what `~/.pix3/chrome.json` recorded, else 9333; the token
-is `~/.pix3/cdp-token` (created here if `pix3 editor` has not run yet).
+is `~/.pix3/cdp-token` (created here if `pix3 editor` has not run yet). `--remote` is the other
+shape, for an agent on a Remote SSH host: the endpoint and the token in a 0600 `--config` file
+(see Remote SSH below).
 
 The file then holds this machine's token: the command prints the launch with the token masked,
 and says so when git does not ignore the file (the starters' `.gitignore` lists `.mcp.json` and
@@ -471,9 +490,73 @@ token put in, or the table in `~/.codex/config.toml`).
 token, so another local user, a web page or a process that cannot read `~/.pix3/cdp-token`
 cannot drive the editor's Chrome (checked: `../pix3-core-spikes/editor-e2e/gate-p2.mjs`). Same-user
 processes can read the token file — the boundary is the user account, as for any file in the
-home directory. Not yet: Remote SSH (§E.3: the agent on the remote host reaching the local
-Chrome through a forwarded proxy port needs the local token there and `PIX3_PUBLIC_URL` in
-`dev.json`), and Chrome on macOS / Windows is untested (`.plans/agent-bridge.md` debt).
+home directory. Chrome on macOS / Windows is untested (`.plans/agent-bridge.md` debt).
+
+## Remote SSH — VS Code on a remote host, Chrome on your machine
+
+Plan §E.3. You work in VS Code connected to a Linux box over **Remote SSH**: the project, Vite and
+the coding agent (Claude Code, Codex) run there; the browser runs on your machine. The editor
+reaches your browser through VS Code's port forward; the agent reaches that browser through an SSH
+`RemoteForward` of the CDP token proxy, back onto the remote host's loopback.
+
+1. **On the remote host** (VS Code's terminal, in the project): `npm run editor`. Under
+   `SSH_CONNECTION` it starts (or reuses) the dev server, launches no Chrome, and prints what to
+   do on your machine — with the ports it found free there:
+
+   ```text
+   On your machine, once — ~/.ssh/config, under the Host you connect to, then reconnect:
+       RemoteForward 127.0.0.1:9333 127.0.0.1:9333
+       ExitOnForwardFailure yes
+   On your machine, each session — VS Code forwards port 5173 (its Ports tab shows the local address):
+       npx @pix3/cli@<version> editor --chrome-only --url http://localhost:5173/__pix3/
+   ```
+
+   VS Code forwards the dev server's port by itself (it sees the URL in the terminal; the Ports
+   tab lists it). When the local port is not the same (5173 was taken on your machine), use the
+   local address in `--url`.
+2. **On your machine, once:** add the two lines to `~/.ssh/config` under that `Host`, close the
+   remote window and connect again. The first port is the one on the remote host (`pix3 editor`
+   skips one another user of that host already holds); the second is your proxy (9333 unless
+   `pix3 editor` said it had to use another). `ExitOnForwardFailure yes` is not optional: without
+   it a connection whose forward failed — because someone else on the remote host took the port —
+   comes up anyway, and the agent would hand its token to whoever holds the port.
+3. **On your machine, each session:** the `npx @pix3/cli … editor --chrome-only --url …` line.
+   No project needed there: it checks that the URL answers as a Pix3 editor, starts Chrome behind
+   the token proxy (as `pix3 editor` always does) and opens the editor. It then prints one line
+   that copies its token to the remote host (`--ssh <host>` fills the host in):
+
+   ```text
+   ssh <host> 'umask 077 && mkdir -p ~/.pix3 && cat > ~/.pix3/remote-cdp-token' < ~/.pix3/cdp-token
+   ```
+
+   Run it once (again only after the token changes). The token goes from your token file through
+   the SSH channel into a 0600 file on the remote host: it is never printed, typed, pasted or put
+   on a command line.
+4. **On the remote host, once:** `npx pix3 agent-setup --remote`, then a new agent thread. It
+   finds the forward among 9333–9339 by asking each port for **proof** that it knows the token
+   (`X-Pix3-Challenge` → `X-Pix3-Proof`, an HMAC the proxy computes; the token itself is never
+   sent to a port that has not proven it), writes `~/.pix3/remote-cdp.json` (0600: the endpoint
+   `ws://127.0.0.1:<port>/pix3` and the token, read by chrome-devtools-mcp's `--config`), and the
+   project's `.mcp.json` / `.codex/config.toml` entry `npx -y chrome-devtools-mcp@1.10.1 …
+   --config=<that file>`, which holds no secret. `--cdp-port <n>` names the port instead.
+   `npm run editor` on the remote host says whether the forward is live (`CDP forward: live on
+   127.0.0.1:9333`).
+
+The agent finds its tab by `.pix3/dev.json`: `publicEditorUrl` is the address your browser
+reached the dev server at — learnt from the editor tab's `Origin` when it differs from the
+server's own (a port forward that is not 1:1), or set with `PIX3_PUBLIC_URL=http://localhost:5174`
+in the environment of the dev server; absent, `editorUrl` is the address.
+
+Why it is safe on a shared host: the remote host's loopback is reachable by every user of it, and
+so is the forwarded port — that is what the token is for (no token → 401). On the remote host the
+token lives only in two 0600 files of your home; not in the project, not in any process's command
+line (readable by every user of a host), not in any output. What the token does not protect: a
+process of your own account on the remote host can read it (the same boundary as on your
+machine), and the dev server itself (`/__pix3/api/*` reads and writes the project) answers any
+local user of the remote host, as every Vite dev server does. To rotate: delete
+`~/.pix3/cdp-token` on your machine, `pix3 editor --stop-chrome`, run the `--chrome-only` line and
+the copy line again, then `npx pix3 agent-setup --remote` and a new thread. Untested: a Windows
+or macOS machine on the human side (the `type … | ssh` line is cmd's and PowerShell's).
 
 ## The editor bridge — what the tab exposes
 

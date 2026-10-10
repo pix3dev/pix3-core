@@ -182,6 +182,15 @@ const main = async (): Promise<number> => {
           stderr: text => process.stderr.write(text),
         }
       );
+    case 'gap': // own argument parsing; appends to .pix3/gaps.jsonl
+      return (await import('./gap/command.ts')).runGapCli(
+        process.argv.slice(process.argv.indexOf('gap') + 1),
+        {
+          cwd: process.cwd(),
+          stdout: text => process.stdout.write(text),
+          stderr: text => process.stderr.write(text),
+        }
+      );
     case 'sfx': // own argument parsing; offline synth, no dependencies
       return (await import('./sfx/command.ts')).runSfx(
         process.argv.slice(process.argv.indexOf('sfx') + 1),

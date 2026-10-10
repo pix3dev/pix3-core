@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -77,6 +78,41 @@ export const mcpLaunch = (
   return platform === 'win32'
     ? { command: 'cmd', args: ['/c', ...npx] }
     : { command: npx[0], args: npx.slice(1) };
+};
+
+/**
+ * The Remote SSH launch (plan §E.3): the endpoint and the token are in chrome-devtools-mcp's
+ * `--config` file (`~/.pix3/remote-cdp.json`, 0600, written by `writeRemoteMcpConfig`) — 1.10.1's
+ * `config` option (`build/src/config/mcp-options.js`: a JSON object parsed with the same options
+ * and coercions as the flags, so `wsHeaders` is the same JSON string). On a shared host the
+ * project's `.mcp.json` and every process's command line are readable by other users; that file
+ * is not.
+ */
+export const mcpRemoteLaunch = (
+  configPath: string,
+  platform: NodeJS.Platform = process.platform
+): McpLaunch => {
+  const npx = [
+    'npx',
+    '-y',
+    `chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}`,
+    '--categoryExperimentalThirdParty=true',
+    '--experimentalVision=true',
+    `--config=${configPath}`,
+  ];
+  return platform === 'win32'
+    ? { command: 'cmd', args: ['/c', ...npx] }
+    : { command: npx[0], args: npx.slice(1) };
+};
+
+/** `~/.pix3/remote-cdp.json`: what `--config` reads; rewritten whole, mode 0600. */
+export const writeRemoteMcpConfig = (path: string, port: number, token: string): void => {
+  mkdirSync(dirname(path), { recursive: true });
+  const text = `${JSON.stringify({ wsEndpoint: cdpWsEndpoint(port), wsHeaders: wsHeaders(token) }, null, 2)}\n`;
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, text, { mode: 0o600 });
+  renameSync(tmp, path);
+  if (process.platform !== 'win32') chmodSync(path, 0o600);
 };
 
 // --- Claude Code: .mcp.json --------------------------------------------------------------------
@@ -201,6 +237,8 @@ export interface InstallAgentConfigOptions {
   readonly token: string;
   readonly repair?: boolean;
   readonly platform?: NodeJS.Platform;
+  /** Another launch than the local proxy's (Remote SSH: `mcpRemoteLaunch`). */
+  readonly launch?: McpLaunch;
 }
 
 const readText = (path: string): string | null =>
@@ -260,7 +298,8 @@ export const installAgentConfig = (
   root: string,
   options: InstallAgentConfigOptions
 ): ConfigOutcome[] => {
-  const launch = mcpLaunch(options.port ?? DEFAULT_CDP_PORT, options.token, options.platform);
+  const launch =
+    options.launch ?? mcpLaunch(options.port ?? DEFAULT_CDP_PORT, options.token, options.platform);
   const outcomes: ConfigOutcome[] = [];
   for (const target of options.targets ?? AGENT_TARGETS) {
     const file = fileOf(target);
