@@ -19,8 +19,6 @@ export const IconSize = {
   XLARGE: 24,
 } as const;
 
-export type IconSizeValue = (typeof IconSize)[keyof typeof IconSize];
-
 /**
  * Centralized icon service for rendering SVG icons throughout the application.
  * Supports Feather Icons library and custom SVG registrations with caching for performance.

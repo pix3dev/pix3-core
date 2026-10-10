@@ -82,9 +82,6 @@ export const hashFile = (absolute: string): Promise<string> =>
     stream.on('end', () => resolve(hash.digest('hex')));
   });
 
-export const hashBytes = (bytes: Uint8Array): string =>
-  createHash('sha256').update(bytes).digest('hex');
-
 /**
  * sha256 per wire path, reused while `(ino, size, mtimeNs)` is unchanged. Shared by the table
  * scans and the read-only routes (`file` ETag, `hash`).
@@ -168,12 +165,6 @@ export const scanInto = async (
   for (const child of names) {
     await scanInto(root, wirePath ? `${wirePath}/${child}` : child, cache, out);
   }
-};
-
-export const scanTree = async (root: string, cache: HashCache): Promise<FileTable> => {
-  const table: FileTable = new Map();
-  await scanInto(root, '', cache, table);
-  return table;
 };
 
 /** `revision` = sha256 over the sorted `path:sha256` lines of every FILE, joined by `\n`. */

@@ -1,0 +1,53 @@
+// `npm run knip`: unused files, exports, dependencies across the workspaces. Entry points are what
+// a package publishes or a script runs; knip's vitest/vite/eslint/typescript plugins add the specs,
+// configs and setup files on their own. Every ignore below says why knip cannot see the use.
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // An export the declaring file uses itself is API shape, not dead code.
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    // `export default pix3` beside `export { pix3 }`: the usual default of a Vite plugin
+    // (`import pix3 from '@pix3/vite-plugin'`); the starters use the named one.
+    "packages/vite-plugin/src/index.ts": ["duplicates"]
+  },
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs"],
+      // `docs/example-scripts/*.ts` are documentation linked from docs/nodes-and-systems.md.
+      "project": ["scripts/*.mjs", "*.{js,ts}"]
+    },
+    "packages/runtime": {
+      // package.json `exports` (`.`, `./testing`, `./node`) are found from the manifest. The wire
+      // codec's barrel is its own surface: free-standing, pinned to the pix3-rooms protocol vectors
+      // and kept whole for both directions (net/protocol/index.ts says why it is not re-exported).
+      "entry": ["src/net/protocol/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/cli": {
+      "entry": [
+        "scripts/*.mjs",
+        // esbuild entry points named by path in smoke/bundle.ts and validate/bundle.ts
+        "src/smoke/worker.ts",
+        "src/tree/defaults.ts",
+        "src/validate/bundle-main.ts",
+        "src/{smoke,validate}/bundle-entries/*.ts"
+      ],
+      "project": ["src/**/*.ts", "scripts/*.mjs"]
+    },
+    "packages/vite-plugin": {
+      "entry": ["src/index.ts", "player/index.ts"],
+      "project": ["src/**/*.ts", "player/**/*.ts"]
+    },
+    "packages/editor-core": {
+      "entry": ["scripts/*.mjs"],
+      "project": ["src/**/*.ts", "scripts/*.mjs"],
+      // golden-layout's CJS `main` (what Node-side vitest resolves) requires tslib without
+      // declaring it.
+      "ignoreDependencies": ["tslib"]
+    },
+    "packages/create-pix3": {
+      "entry": ["src/create.js"],
+      "project": ["src/**/*.{js,ts}"]
+    }
+  }
+}

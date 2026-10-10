@@ -6,7 +6,7 @@ import {
   type HostWriteResult,
 } from './host-files.ts';
 
-export { HostFileError, HostFilesClient } from './host-files.ts';
+export { HostFilesClient } from './host-files.ts';
 
 /**
  * Page side of the plugin (plan §B.2 variant B, §B.3 step 4): runs in the editor tab, imported by

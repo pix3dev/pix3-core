@@ -15,7 +15,6 @@ import { join } from 'node:path';
 
 export const EDITOR_FLUSH_TIMEOUT_MS = 15_000;
 const PROBE_TIMEOUT_MS = 2_000;
-export const E_EDITOR_UNSYNCED = 'E_EDITOR_UNSYNCED';
 
 export type EditorSyncResult =
   | { readonly status: 'skipped' }

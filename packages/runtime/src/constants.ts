@@ -1,6 +1,6 @@
 export const LAYER_3D = 0;
 export const LAYER_2D = 1;
-export const LAYER_GIZMOS = 2;
+// 2 was the 1.x editor gizmo layer; nothing renders on it any more.
 /**
  * 2D "overlay" band. Nodes on this layer are drawn AFTER the post-processing
  * composer (see {@link ./core/PostProcessingPipeline}), so screen effects like

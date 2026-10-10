@@ -47,7 +47,7 @@ interface PollRecordingInput {
   takeObservedPolls(): ObservedPollsSnapshot;
 }
 
-export type { NodeActivity, WatchLogEntry } from '@/services/game-test/NodeWatchRecorder';
+export type { NodeActivity } from '@/services/game-test/NodeWatchRecorder';
 
 /**
  * One scripted input step for {@link GameInputService.run}. Coordinates are in

@@ -30,7 +30,7 @@ Authoritative code rules for pix3-core (runtime, CLI, editor-core, Vite plugin, 
 - **Decorators**: Use `@injectable()` for services and `@inject(ServiceClass)` for injection.
 - **Container**: Register services in `ServiceContainer` (singleton by default).
 - **Lifecycle**: Services must implement `dispose()` if they hold resources or subscriptions.
-- **Lazy injection**: `@injectLazy(() => import('…').then(m => m.ServiceClass))` makes the property a `LazyService<T>` async accessor — the module is `import()`-ed once (cached), and the service is resolved through the container on every `await this.foo()` call, so re-registration is observed and singleton/transient lifetimes behave exactly like `@inject`. Keeps heavy modules out of the eager bundle. Use **sparingly** for heavy, rarely-used services whose consumers only touch them inside async flows (e.g. Monaco IntelliSense, playable export); `@inject` remains the default.
+- **Lazy modules**: a heavy, rarely used module is a literal `import('…')` inside the async flow that needs it (contract B: `packages/editor-core/scripts/check-dist.mjs` fails a non-literal one). There is no lazy-injection decorator; `@inject` is the only one.
 
 ### State Management (Valtio)
 

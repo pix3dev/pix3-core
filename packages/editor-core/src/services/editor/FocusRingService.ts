@@ -246,5 +246,3 @@ export class FocusRingService {
     // FocusRingService is stateless — cleanup is per-host via the returned teardown fn
   }
 }
-
-export type FocusRingServiceOptions = RovingFocusOptions;

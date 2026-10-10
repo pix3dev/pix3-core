@@ -20,8 +20,6 @@ import type { Plugin } from 'esbuild';
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, '..', '..');
 
-export const VALIDATE_BUNDLE_MAIN = 'bundle-main.js';
-
 /** One three.js: resolve every `three` import from this package, whoever imports it. */
 const dedupeThree = (): Plugin => ({
   name: 'pix3-dedupe-three',

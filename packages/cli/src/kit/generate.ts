@@ -35,13 +35,7 @@ import {
   type KitManifestFile,
 } from './kit-format.ts';
 
-export type {
-  CoreComponentInfo,
-  CoreComponentProperty,
-  GenerateKitOptions,
-  KitManifestFile,
-} from './kit-format.ts';
-export { KIT_FILES_DIR, KIT_FORMAT, KIT_MANIFEST } from './kit-format.ts';
+export type { CoreComponentInfo, GenerateKitOptions, KitManifestFile } from './kit-format.ts';
 
 const DIRECTIVE = /\{\{(include|generated):([^}]+)\}\}|\{\{version\}\}/g;
 const COMMENT_LINE = /^[ \t]*\{\{#[^}]*\}\}[ \t]*\r?\n/gm;

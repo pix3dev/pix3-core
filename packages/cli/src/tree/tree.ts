@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 
 import { isRecord } from '../validate/yaml-doc.ts';
@@ -83,9 +82,6 @@ export const parseSceneText = (text: string): Record<string, unknown> => {
   }
   return data;
 };
-
-export const readSceneFile = (absolutePath: string): Record<string, unknown> =>
-  parseSceneText(readFileSync(absolutePath, 'utf8'));
 
 /** `res://a/b.pix3scene` → `a/b.pix3scene` (null for other schemes). */
 export const resToProjectPath = (reference: string): string | null => {

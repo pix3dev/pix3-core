@@ -27,33 +27,15 @@ export const resetAppState = (): void => {
   appState.editorContext = defaults.editorContext;
 };
 
-export { createInitialHostConnectionState } from './AppState';
-
 export type {
-  AnimationDescriptor,
-  AnimationLoadState,
-  AnimationsState,
   AppState,
   AssetBrowserViewMode,
-  CameraState,
   EditorCameraProjection,
   EditorTab,
-  HostConnectionState,
   HostNotice,
   EditorTabType,
   NavigationMode,
-  OperationState,
   PanelVisibilityState,
-  ProjectBackend,
-  ProjectState,
-  ProjectStatus,
   SceneDescriptor,
-  SceneHierarchyState,
-  SceneLoadState,
-  ScenesState,
-  SelectionState,
-  TabsState,
   TransformMode,
-  ThemeName,
-  UIState,
 } from './AppState';

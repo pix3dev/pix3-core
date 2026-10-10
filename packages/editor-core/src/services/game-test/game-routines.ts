@@ -106,12 +106,6 @@ export function routineFilePath(name: string): string {
   return `${ROUTINE_DIRECTORY}/${bare}${ROUTINE_FILE_SUFFIX}`;
 }
 
-/** `design/tests/routines/buy-item.json` → `buy-item`. */
-export function routineNameFromPath(path: string): string {
-  const file = path.split('/').pop() ?? path;
-  return file.endsWith(ROUTINE_FILE_SUFFIX) ? file.slice(0, -ROUTINE_FILE_SUFFIX.length) : file;
-}
-
 /**
  * The storage seam, same shape as `TraceStore`: the service holds one of these and
  * the tool layer decides whether it is the open project's files

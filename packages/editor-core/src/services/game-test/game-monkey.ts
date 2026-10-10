@@ -355,20 +355,6 @@ function activityFingerprint(frame: AssertionFrame): string {
 // The driver
 // ---------------------------------------------------------------------------
 
-export interface MonkeySpec {
-  /** Mandatory — see rule 1 in the module doc. */
-  seed: number;
-  /** Input action names the run may press, on top of whatever the game declares. */
-  actions?: string[];
-  /** Frames between two decisions. */
-  everyFrames?: number;
-  /** Frames an input action is held for. */
-  holdFrames?: number;
-  /** Hard cap on decisions in one run. */
-  maxActions?: number;
-  invariants?: MonkeyInvariantOptions;
-}
-
 /** A quarter-second at 1/60: fast enough to cover ground, slow enough to react. */
 const DEFAULT_EVERY_FRAMES = 12;
 /** Long enough that a per-tick poll cannot miss the press. */
