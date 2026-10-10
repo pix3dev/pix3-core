@@ -16,6 +16,8 @@ pix3 smoke [scene] [--changed|--all] [--frames N] [--timeout S] [--json] [--proj
 pix3 tree [scene] [--depth N] [--types A,B] [--props] [--json] [--project <dir>]
                                               scene outline, one line per node; no scene = overview
 pix3 kit [--update] [--project <dir>]         install / update the agent kit in a project
+pix3 character-compile <spec> [--dry-run] [--force] [--json] [--project <dir>]
+                                              a 2D character (.pix3anim + prefab) from frame PNGs
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
                                               synthesize a sound effect to WAV, offline
 ```
@@ -146,6 +148,50 @@ blocker, peak normalisation. It does not use the editor's `@txt2sfx/*` packages:
 renderer drives an `OfflineAudioContext` the caller supplies, i.e. a native Web Audio module
 (`node-web-audio-api`) in Node. Each preset renders in well under 10 ms; the whole command runs in
 ~0.12 s; files are 2–67 KiB (click 24 ms … explosion 772 ms).
+
+## `pix3 character-compile` — a 2D character from frame PNGs
+
+```text
+pix3 character-compile art/goblin.yaml            # writes into the project around the cwd
+pix3 character-compile art/goblin.yaml --dry-run  # the plan, nothing written
+pix3 character-compile art/goblin.yaml --json     # { ok, name, slug, animationPath, prefabPath, clips, files, warnings }
+```
+
+The 1.x Store compiler (`character2d`, `pix3: src/services/library/character-compiler.ts`) as a
+command. A spec (YAML or JSON; frame paths relative to the spec file) groups PNG frames into
+`variant × state` clips:
+
+```yaml
+name: Goblin                     # display name, prefab file name
+slug: goblin                     # sprite folder (default: from name)
+anchor: { x: 0.5, y: 0.9 }       # frame anchor, y from the top: the feet land on the node position
+defaultVariant: sword            # the pair the prefab starts on (default: the first clip's)
+defaultState: idle
+clips:
+  - { variant: sword, state: idle, fps: 10, frames: [sword/idle_1.png, sword/idle_2.png] }
+  - { variant: sword, state: attack, fps: 15, sequence: sword/attack }  # sword/attack_<n>.png, numeric order
+  - { state: die, sequence: die/die }                                   # no variant: clip "die"
+```
+
+Output, in the managed-sprite-folder layout the editor's Sprite Editor shows as one card:
+`sprites/<slug>/<slug>.pix3anim` (clips `<variant>.<state>`, every frame with `texturePath`,
+`anchor`, `sourceSize`), the frames copied beside it as `<variant>_<state>_<nnnn>.png`, and
+`scenes/prefabs/<Name>.pix3scene` — an `AnimatedSprite2D` root (`sizeMode: native`) carrying
+`core:CharacterVisual2D` (`variant`, `state`, `separator`); game code calls
+`playState('attack', { restart: true })` / `setVariant('bow')`. `spriteDirectory` /
+`prefabDirectory` / `separator` override the defaults. Defaults are proposals and print as
+warnings (fps 12; `loop: false` for `attack`, `die`, `death`, `hit`, `hurt`); a sequence with gaps
+warns, one with a duplicate number fails. Writes are all or nothing: a target that exists with
+other bytes is refused (exit 1, nothing written) unless `--force`; identical bytes are `current`.
+Frames must be PNG (the size comes from the header; the Node-runnable CLI does not load the
+engine's image reader). Exit 0 = written or current, 1 = refused, 2 = usage / no project.
+
+`src/character/character.spec.ts` holds the output to the runtime (`normalizeAnimationResource` of
+the written `.pix3anim` is the identity; the compiler's types are assignable to
+`AnimationResource`), to the editor's frame naming (`buildAnimationFrameResourcePath`), and to
+`pix3 validate` on a starter that instances the prefab; `character.headless.spec.ts` boots the
+prefab through the real loader and drives idle → attack → restart → die → variant switch. The
+format itself: the kit's `.claude/skills/pix3-scene-format/pix3anim.md`.
 
 ## `pix3 smoke` — run the game headless
 

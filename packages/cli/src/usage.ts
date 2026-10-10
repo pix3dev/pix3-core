@@ -31,6 +31,9 @@ Usage:
         [--props] [--project <dir>]
   pix3 kit [--update]              Install (or update) the agent kit: AGENTS.md, CLAUDE.md,
         [--project <dir>]          .claude/skills/pix3-*, script types
+  pix3 character-compile <spec>    A 2D character from frame PNGs: <slug>.pix3anim with
+        [--dry-run] [--force]      <variant>.<state> clips + a prefab with
+        [--json] [--project <dir>] core:CharacterVisual2D (refuses to overwrite)
   pix3 sfx <preset|"text">         Synthesize a sound effect offline into a WAV (coin, jump,
         [--out <file.wav>]         hit, explosion, powerup, click; or "big explosion")
         [--seed <n>] [--json]

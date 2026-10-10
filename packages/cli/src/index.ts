@@ -168,6 +168,15 @@ const main = async (): Promise<number> => {
       return (await import('./validate/entry.ts')).runValidateCli(
         process.argv.slice(process.argv.indexOf('validate') + 1)
       );
+    case 'character-compile': // own argument parsing; plain Node (PNG headers, yaml)
+      return (await import('./character/command.ts')).runCharacterCompileCli(
+        process.argv.slice(process.argv.indexOf('character-compile') + 1),
+        {
+          cwd: process.cwd(),
+          stdout: text => process.stdout.write(text),
+          stderr: text => process.stderr.write(text),
+        }
+      );
     case 'sfx': // own argument parsing; offline synth, no dependencies
       return (await import('./sfx/command.ts')).runSfx(
         process.argv.slice(process.argv.indexOf('sfx') + 1),
