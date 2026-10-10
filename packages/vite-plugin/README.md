@@ -23,7 +23,7 @@ Done (P1, dev side):
 
 - editor page at `/__pix3/` as raw HTML (variant B: no `/@vite/client`), own WebSocket `/__pix3/ws`;
 - file API ported from `packages/cli/src/serve/` without token/lease: `file` GET/HEAD/PUT with sha256 ETag, `If-Match` → 412, `manifest`, `hash`, `mkdir|delete|move`, `X-Mutation-Id` replay, `hello`;
-- write guard: Host check, loopback peers unless `allowRemote`, `X-Pix3: 1` + own `Origin` for mutations and the socket;
+- write guard: Host check (`localhost`, a literal 127.0.0.0/8 / `::1` address, `server.allowedHosts`, and any IP literal under `allowRemote`), loopback peers unless `allowRemote`, `X-Pix3: 1` + own `Origin` for mutations and the socket;
 - writer hand-over `handover/claim` under the write mutex, `409 writer_superseded`;
 - changeset `POST /__pix3/api/changeset` (plan §C.4): several files as one transaction under the same mutex — preflight of every `If-Match`/`createOnly` (412 names the file), staging in `.pix3/tx/<id>/{new,old}/<n>` + `intent.json` with fsync, renames, one `pix3:fs` frame; a failed rename rolls back from `old/`, a crash is rolled forward (complete staging) or back at the next start;
 - version journal `.pix3/history/<path>/{index.jsonl,<stamp>-<hash8>}` for `*.pix3scene`, `*.prefab`, `pix3project.yaml` (200 versions / 7 days per path, the newest always kept): authors `editor` (PUT, changeset), `external` (watcher, rescans, a start-up snapshot of what changed while no server ran), `restore`, `rejected-draft` (posted by any tab); routes `history`, `history/version`, `history/record`, `history/restore` (a restore is broadcast as `external`, so the editor follows it like an agent's change);

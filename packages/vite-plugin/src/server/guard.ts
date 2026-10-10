@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { BlockList, isIP } from 'node:net';
 
 import { headerValue, HttpError } from './http.ts';
 
@@ -8,8 +9,10 @@ import { headerValue, HttpError } from './http.ts';
  *
  * The plugin's middleware runs before Vite's own host validation (it is a pre-middleware), so it
  * checks the `Host` itself:
- * - **Host** — a literal loopback name or one of `server.allowedHosts` (DNS rebinding: a page on an
- *   attacker's domain that resolves to 127.0.0.1 still sends its own name);
+ * - **Host** — `localhost`, a literal loopback address (127.0.0.0/8, ::1) or one of
+ *   `server.allowedHosts` (DNS rebinding: a page on an attacker's domain that resolves to
+ *   127.0.0.1 still sends its own name — and `127.evil.com` is a name, not an address); under
+ *   `allowRemote` any IP literal too, as Vite allows (a rebinding page never has one);
  * - **peer address** — loopback unless `allowRemote` (a dev server started with `--host` must not
  *   hand the project's files to the LAN);
  * - **mutations and the WebSocket** — `X-Pix3: 1` (mutations) and, when the request carries an
@@ -27,7 +30,26 @@ export interface GuardOptions {
   readonly allowedHosts: () => AllowedHosts;
 }
 
-const LOOPBACK_NAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK.addAddress('::1', 'ipv6');
+
+/** A literal IP address (`[…]` brackets dropped), or null for a name. */
+const ipLiteral = (name: string): { address: string; family: 'ipv4' | 'ipv6' } | null => {
+  const bare = name.startsWith('[') && name.endsWith(']') ? name.slice(1, -1) : name;
+  const family = isIP(bare);
+  return family === 4
+    ? { address: bare, family: 'ipv4' }
+    : family === 6
+      ? { address: bare, family: 'ipv6' }
+      : null;
+};
+
+/** In 127.0.0.0/8 or ::1 (IPv4-mapped included) — by address, never by how a name begins. */
+const isLoopbackIp = (address: string): boolean => {
+  const ip = ipLiteral(address);
+  return ip !== null && LOOPBACK.check(ip.address, ip.family);
+};
 
 /** `Host` header → lower-cased name (`[::1]` keeps its brackets), or null when malformed. */
 export const hostNameOf = (hostHeader: string | undefined): string | null => {
@@ -59,19 +81,22 @@ const matchesAllowed = (name: string, entry: string): boolean => {
   return name === allowed;
 };
 
-export const isAllowedHost = (hostHeader: string | undefined, allowed: AllowedHosts): boolean => {
+export const isAllowedHost = (
+  hostHeader: string | undefined,
+  allowed: AllowedHosts,
+  options: { readonly allowRemote?: boolean } = {}
+): boolean => {
   const name = hostNameOf(hostHeader);
   if (name === null) return false;
-  if (LOOPBACK_NAMES.has(name) || name.startsWith('127.')) return true;
+  if (name === 'localhost' || isLoopbackIp(name)) return true;
+  // An IP literal cannot be a rebinding page's name; the peer check still applies.
+  if (options.allowRemote && ipLiteral(name) !== null) return true;
   if (allowed === true) return true;
   return allowed.some(entry => matchesAllowed(name, entry));
 };
 
-export const isLoopbackAddress = (address: string | undefined): boolean => {
-  if (!address) return false;
-  const plain = address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address;
-  return plain === '::1' || plain.startsWith('127.');
-};
+export const isLoopbackAddress = (address: string | undefined): boolean =>
+  Boolean(address) && isLoopbackIp(address ?? '');
 
 /** `Origin` header, or null when absent (a non-browser client). */
 export const originOf = (req: IncomingMessage): string | null => headerValue(req, 'origin');
@@ -91,7 +116,11 @@ export class RequestGuard {
 
   /** Every `/__pix3/*` request, reads included. */
   checkPeer(req: IncomingMessage): void {
-    if (!isAllowedHost(req.headers.host, this.options.allowedHosts())) {
+    if (
+      !isAllowedHost(req.headers.host, this.options.allowedHosts(), {
+        allowRemote: this.options.allowRemote,
+      })
+    ) {
       throw new HttpError(403, 'forbidden_host', 'Forbidden host.');
     }
     if (!this.options.allowRemote && !isLoopbackAddress(req.socket.remoteAddress)) {
