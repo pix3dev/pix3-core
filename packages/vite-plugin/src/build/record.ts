@@ -20,6 +20,8 @@ export interface BuildRecord {
   readonly assets: number;
   readonly stripped: readonly string[];
   readonly warnings: readonly string[];
+  /** Absolute path of `dist/<name>.report.json` (sizes by group, stubs, assets, compression). */
+  readonly report?: string;
 }
 
 export const buildRecordPath = (root: string): string =>

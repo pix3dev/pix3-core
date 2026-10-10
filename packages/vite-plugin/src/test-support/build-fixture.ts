@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -137,9 +144,19 @@ export const FIXTURE_FILES: Readonly<Record<string, string | Buffer>> = {
 /** This checkout's `node_modules` (the plugin sits in `packages/vite-plugin/src/build/`). */
 export const CHECKOUT_NODE_MODULES = join(import.meta.dirname, '../../../../node_modules');
 
+export interface FixtureProjectOptions {
+  readonly nodeModules?: boolean;
+  /**
+   * Local packages to put into the project's `node_modules` (N11 fixtures): `name → files`.
+   * With any given, `node_modules` is a real directory of links to this checkout's entries plus
+   * these packages, instead of one link to the checkout's `node_modules`.
+   */
+  readonly packages?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+
 export const writeFixtureProject = (
   files: Readonly<Record<string, string | Buffer>> = FIXTURE_FILES,
-  options: { readonly nodeModules?: boolean } = {}
+  options: FixtureProjectOptions = {}
 ): string => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-build-')));
   for (const [path, content] of Object.entries(files)) {
@@ -147,8 +164,65 @@ export const writeFixtureProject = (
     mkdirSync(dirname(absolute), { recursive: true });
     writeFileSync(absolute, content);
   }
-  if (options.nodeModules ?? true) {
+  const packages = options.packages ?? {};
+  if (Object.keys(packages).length > 0) {
+    const nodeModules = join(root, 'node_modules');
+    mkdirSync(nodeModules);
+    for (const entry of readdirSync(CHECKOUT_NODE_MODULES)) {
+      if (entry === '.bin' || entry === '.package-lock.json') continue;
+      symlinkSync(join(CHECKOUT_NODE_MODULES, entry), join(nodeModules, entry), 'dir');
+    }
+    for (const [name, packageFiles] of Object.entries(packages)) {
+      for (const [path, content] of Object.entries(packageFiles)) {
+        const absolute = join(nodeModules, ...name.split('/'), ...path.split('/'));
+        mkdirSync(dirname(absolute), { recursive: true });
+        writeFileSync(absolute, content);
+      }
+    }
+  } else if (options.nodeModules ?? true) {
     symlinkSync(CHECKOUT_NODE_MODULES, join(root, 'node_modules'), 'dir');
   }
   return root;
 };
+
+/** A library that declares the runtime and takes `GeometryMesh` from it by name (N11). */
+export const NAMED_IMPORT_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'named-import-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+    peerDependencies: { '@pix3/runtime': '*' },
+  }),
+  'index.js':
+    "import { GeometryMesh } from '@pix3/runtime';\nexport const makeBox = () => new GeometryMesh();\n",
+};
+
+/** The same library, importing the whole barrel: the build cannot see what it uses. */
+export const NAMESPACE_IMPORT_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'namespace-import-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+    peerDependencies: { '@pix3/runtime': '*' },
+  }),
+  'index.js':
+    "import * as pix3 from '@pix3/runtime';\nexport const makeBox = () => new pix3.GeometryMesh();\n",
+};
+
+/** A library that does NOT declare the runtime yet imports it (the transform safety net). */
+export const UNDECLARED_IMPORT_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'undeclared-import-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+  }),
+  'index.js':
+    "import { Slider2D } from '@pix3/runtime';\nexport const makeSlider = () => new Slider2D();\n",
+};
+
+/** A project script that uses a library's export (the scan sees `makeBox`, not `GeometryMesh`). */
+export const usesLibScript = (lib: string, fn: string): string =>
+  `import { Script } from '@pix3/runtime';\nimport { ${fn} } from '${lib}';\n\nexport class UsesLib extends Script {\n  onStart(): void {\n    void ${fn};\n  }\n}\n`;

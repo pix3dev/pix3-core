@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { parse as parseYaml } from 'yaml';
+
 import { contentTypeFor } from '../files/content-type.ts';
 import { SCRIPT_DIRS } from '../sync/script-graph.ts';
 import type { LocalizationSettings, ProjectManifestInfo } from './project-manifest.ts';
@@ -23,6 +25,11 @@ export const NETWORK_ID = 'virtual:pix3/network';
 /** What `postprocessing` resolves to in a single-file build whose scenes place no `PostProcess`. */
 export const POSTPROCESSING_STUB_ID = 'virtual:pix3/postprocessing-stub';
 
+/** What `yaml` resolves to for the runtime when the scenes ship as JSON. */
+export const YAML_STUB_ID = 'virtual:pix3/yaml-stub';
+/** What `three/examples/jsm/loaders/GLTFLoader.js` resolves to when no model is shipped. */
+export const GLTF_LOADER_STUB_ID = 'virtual:pix3/gltf-loader-stub';
+
 export const PLAYER_VIRTUAL_IDS: readonly string[] = [
   SCENE_MANIFEST_ID,
   EMBEDDED_ASSETS_ID,
@@ -31,6 +38,8 @@ export const PLAYER_VIRTUAL_IDS: readonly string[] = [
   POSTPROCESSING_ID,
   NETWORK_ID,
   POSTPROCESSING_STUB_ID,
+  YAML_STUB_ID,
+  GLTF_LOADER_STUB_ID,
 ];
 
 export interface SceneManifestModel {
@@ -80,37 +89,110 @@ export interface EmbeddedAssetsSourceOptions {
   readonly resRoot: string;
   /** `res://`-relative paths to embed. */
   readonly assetPaths: readonly string[];
+  /** The bytes that ship for a path (a scene as JSON, say); the file's own bytes by default. */
+  readonly shippedBytes?: (resPath: string, bytes: Buffer) => Buffer;
+}
+
+export interface EmbeddedAssetEntry {
+  readonly path: string;
+  readonly rawBytes: number;
+  readonly base64Bytes: number;
 }
 
 export interface EmbeddedAssetsResult {
   readonly source: string;
   readonly rawBytes: number;
+  readonly base64Bytes: number;
   readonly count: number;
+  /** Largest first. */
+  readonly entries: readonly EmbeddedAssetEntry[];
 }
 
 /** `{ [resPath]: { base64, mimeType } }` of every shipped asset (single-file build). */
 export const embeddedAssetsSource = async (
   options: EmbeddedAssetsSourceOptions
 ): Promise<EmbeddedAssetsResult> => {
-  const entries: string[] = [];
+  const lines: string[] = [];
+  const entries: EmbeddedAssetEntry[] = [];
   let rawBytes = 0;
+  let base64Bytes = 0;
   for (const resPath of options.assetPaths) {
     const absolute =
       options.resRoot === '.'
         ? join(options.root, ...resPath.split('/'))
         : join(options.root, options.resRoot, ...resPath.split('/'));
-    const bytes = await readFile(absolute);
+    const file = await readFile(absolute);
+    const bytes = options.shippedBytes ? options.shippedBytes(resPath, file) : file;
+    const base64 = bytes.toString('base64');
     rawBytes += bytes.byteLength;
-    entries.push(
-      `${JSON.stringify(resPath)}: { base64: ${JSON.stringify(bytes.toString('base64'))}, mimeType: ${JSON.stringify(contentTypeFor(resPath).split(';')[0])} }`
+    base64Bytes += base64.length;
+    entries.push({ path: resPath, rawBytes: bytes.byteLength, base64Bytes: base64.length });
+    lines.push(
+      `${JSON.stringify(resPath)}: { base64: ${JSON.stringify(base64)}, mimeType: ${JSON.stringify(contentTypeFor(resPath).split(';')[0])} }`
     );
   }
+  entries.sort((a, b) => b.rawBytes - a.rawBytes || (a.path < b.path ? -1 : 1));
   return {
-    source: `export const embeddedAssets = {\n${entries.join(',\n')}\n};\n`,
+    source: `export const embeddedAssets = {\n${lines.join(',\n')}\n};\n`,
     rawBytes,
+    base64Bytes,
     count: options.assetPaths.length,
+    entries,
   };
 };
+
+/** Scene-shaped resources (`.pix3scene`, `.prefab`): the ones the runtime parses as YAML. */
+export const SCENE_LIKE_ASSET = /\.(pix3scene|prefab)$/i;
+
+/**
+ * A scene's bytes for a build that stubs `yaml` ({@link yamlStubSource}): the same document as
+ * JSON. JSON is YAML, so a project script that reads the text with its own `yaml` import still
+ * parses it; the runtime's `parse` becomes `JSON.parse`. The 1.x export did the same.
+ */
+export const sceneAsJson = (text: string): string => JSON.stringify(parseYaml(text));
+
+/**
+ * What `yaml` resolves to **for the runtime's own importers** (`SceneLoader`, `SceneSaver`) when
+ * every scene ships as JSON: `parse` is `JSON.parse`, `stringify` throws (a player never writes a
+ * scene — `SceneSaver` is not even constructed, so this tree-shakes out). A project module that
+ * imports `yaml` itself keeps the real parser; this stub is decided per importer.
+ */
+export const yamlStubSource = (): string =>
+  [
+    '// Scenes and prefabs ship as JSON in this build: the YAML parser is not bundled.',
+    'export const parse = text => JSON.parse(text);',
+    "export const stringify = () => { throw new Error('[Pix3] yaml.stringify was stripped from this build: a player never writes scenes.'); };",
+    'export default { parse, stringify };',
+    '',
+  ].join('\n');
+
+/** The specifier `AssetLoader` imports the loader by. */
+export const GLTF_LOADER_SPECIFIER = 'three/examples/jsm/loaders/GLTFLoader.js';
+
+/**
+ * `GLTFLoader` (three addons, ~100 KiB rendered) is value-imported by `AssetLoader` for every
+ * build; a project with no `.glb`/`.gltf` asset and no script naming `GLTFLoader` gets a loader
+ * that fails the way a missing file would (the 1.x `gltf-loader-stub`).
+ */
+export const gltfLoaderStubSource = (): string =>
+  [
+    '// Stripped from this build: no scene or script names a .glb/.gltf model.',
+    "const stripped = () => new Error('[Pix3] GLTFLoader was stripped from this build because no scene or script names a .glb/.gltf model.');",
+    'export class GLTFLoader {',
+    '  setPath() { return this; }',
+    '  setResourcePath() { return this; }',
+    '  setDRACOLoader() { return this; }',
+    '  setKTX2Loader() { return this; }',
+    '  setMeshoptDecoder() { return this; }',
+    '  register() { return this; }',
+    '  unregister() { return this; }',
+    '  load(_url, _onLoad, _onProgress, onError) { const error = stripped(); if (onError) onError(error); else throw error; }',
+    '  loadAsync() { return Promise.reject(stripped()); }',
+    '  parse(_data, _path, _onLoad, onError) { const error = stripped(); if (onError) onError(error); else throw error; }',
+    '  parseAsync() { return Promise.reject(stripped()); }',
+    '}',
+    '',
+  ].join('\n');
 
 export const noEmbeddedAssetsSource = (): string => `export const embeddedAssets = {};\n`;
 
