@@ -154,6 +154,18 @@ The tables are checked on whole-project runs (as `W_UNUSED_ASSET`); `labelKey`s 
 Not checked: keys a script passes to `tr()`, `textureKey` / `stateTextureKeys` against `sprites`,
 and the files a table's `sprites` name.
 
+### Autoloads
+
+`pix3project.yaml` `autoloads:` is checked on every run, against the rule every host builds them
+by (the runtime's `normalizeAutoloads` / `autoloadComponentType`; the player, the editor's play
+mode and `pix3 smoke` run them): each entry needs a `singleton` and a `scriptPath`, the file must
+be a script entry under `scripts/` or `src/scripts/` exporting a `Script` class named like the
+file. A disabled entry is not checked.
+
+| Code | Severity | When |
+| --- | --- | --- |
+| `E_AUTOLOAD` | error | an autoload that would never run: no `singleton`/`scriptPath`, a repeated singleton, a script that is missing, outside the script folders, not an entry, or exporting no class named like the file (level 1, by text); at level 2, the class named like the file is not a `Script` |
+
 ## `pix3 sfx` — sound effects without the editor
 
 ```text

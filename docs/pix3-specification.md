@@ -15,7 +15,7 @@ Date: 2026-10-10
 - Introduction · Key Features · Technology Stack · Architecture
 - Property Schema System · Script Component System
 - Group2D Sizing (Fit to Contents, Proportional Resize) · Project Templates, Target Platform and Agent Overlay
-- Autoload Scripts and Asset Browser Template Flow · Signals Engine · Groups Engine · Editor Peek (View Mask)
+- Autoload Scripts · Signals Engine · Groups Engine · Editor Peek (View Mask)
 - Node Prefabs System · Keyframe Animation System · Localization (i18n) · UI Kit Assets
 - Scene File Format (\*.pix3scene) · MVP Plan · Non-Functional Requirements
 - Project Structure · Roadmap and Milestones · Change Log
@@ -658,55 +658,86 @@ Every new project also receives an **agent overlay** (`src/templates/agent/**`):
 
 The editor ships as an installable **PWA** (`vite-plugin-pwa`, `autoUpdate`): standalone display, offline-precached app shell including `esbuild.wasm` (in-editor script compilation offline); the background-removal ONNX runtimes are excluded from precache. The legacy handwritten `src/sw.ts` remains unregistered.
 
-## 6.17 Autoload Scripts and Asset Browser Template Flow
+## 6.17 Autoload Scripts
 
-Pix3 supports project-level autoload scripts configured in `pix3project.yaml` under `autoloads`.
-Each autoload entry includes:
+An **autoload** is a project-wide script singleton (Godot's autoloads): one instance per game
+session, built before the first scene's first frame and kept across every `changeScene`. State
+that must outlive a scene (score across levels, settings, a music service) lives in one. Autoloads
+are declared in `pix3project.yaml` and run by the **runtime**, so the editor's play mode, the
+player in `npm run dev`, the built game and `pix3 smoke` behave the same (owner decision
+2026-10-10; before it, only the 1.x editor's play mode built them and a build skipped them
+silently — record in `.plans/scripts-vite.md` S10).
 
-- `scriptPath` - file path relative to project root (for example, `scripts/Events.ts`)
-- `singleton` - global singleton name
-- `enabled` - whether the autoload is active
-
-Autoload management is available in two editor entry points:
-
-- **Project Settings > Autoload tab** for add/remove/enable/reorder.
-- **Asset Browser > Create dropdown > Create autoload script** for fast scaffolding.
-
-When `Create autoload script` is used, the editor:
-
-1. Prompts for a singleton name.
-2. Creates `scripts/<SingletonName>.ts` from the autoload template.
-3. Triggers project script compilation.
-4. Adds the autoload entry to `pix3project.yaml`.
-5. Reveals the created script in the Asset Browser.
-
-### 6.17.1 Autoload Runtime Model
-
-- Autoload scripts are instantiated as script components and attached to an internal global root node.
-- They are initialized from project manifest order and persist across scene changes.
-- They are ticked before active-scene root nodes.
-- They are not serialized into `.pix3scene` files.
-
-### 6.17.2 `pix3project.yaml` Example
+### 6.17.1 Declaration
 
 ```yaml
-version: 1.0.0
 autoloads:
-  - scriptPath: scripts/Events.ts
-    singleton: Events
-    enabled: true
-  - scriptPath: scripts/GameManager.ts
-    singleton: GameManager
-    enabled: true
-export:
-  pruneUnusedAssets: true
-  extraRootScenePaths:
-    - res://src/assets/scenes/level-2.pix3scene
-  includeGlobs:
-    - src/assets/audio/voice/**/*.mp3
-  excludeGlobs:
-    - src/assets/scenes/scratch/**
+  - singleton: GameState            # the name scripts look it up by
+    scriptPath: scripts/GameState.ts
+    enabled: true                   # optional, default true
 ```
+
+- `scriptPath` is a project script entry: a `.ts`/`.js` file under `scripts/` or `src/scripts/`
+  containing `extends Script`. The singleton's class is the export **named like the file**
+  (`scripts/GameState.ts` → `user:GameState`; `autoloadComponentType` in
+  `packages/runtime/src/core/autoloads.ts`).
+- Every host reads the list with the runtime's `normalizeAutoloads`: an entry without a
+  `singleton` or a `scriptPath` is dropped, `enabled` defaults to true, a repeated singleton keeps
+  its first entry. The plugin's Node side mirrors that rule for `virtual:pix3/scene-manifest`.
+- `pix3 validate` / `pix3 check` report every enabled entry that would never run as `E_AUTOLOAD`
+  (a missing or misplaced file, no class named like the file, a bad or repeated entry; at level 2,
+  a class that is not a `Script`).
+- There is no editor UI for autoloads in 2.x: the coding agent edits `pix3project.yaml` and the
+  script (the kit's `project-files.md` recipe).
+
+### 6.17.2 Runtime model
+
+`SceneRunner.setAutoloads(entries, registry)` hands the list to the runner's `AutoloadHost`
+(`packages/runtime/src/core/autoloads.ts`). Hosts: the player (`@pix3/vite-plugin/player`, from
+`runtimeAutoloads` in `virtual:pix3/scene-manifest` and the classes of
+`virtual:pix3/project-scripts`), the editor's play mode (`GamePlaySessionService`, from the open
+project's manifest and the editor's `ScriptRegistry`), `pix3 smoke` and the headless harness
+(`createHeadlessGame({ autoloads })`).
+
+- **Session, not scene.** The singletons are built when the session's first scene starts and
+  dropped by `SceneRunner.stop()`. A scene change (`changeScene` → `loadAndStartScene`) tears down
+  the scene only. The editor builds a new runner per play, so every play starts with fresh
+  singletons.
+- **Where they live.** Each singleton is a component on its own node (`autoload:<singleton>`,
+  named like the singleton) under a hidden root (`__autoloads__`) that is not in any scene graph
+  and is not rendered: an autoload is logic and state. It gets `this.input` and `this.scene` like
+  a scene script; `this.scene.findNode(…)` searches the running scene.
+- **Lifecycle.** `onAttach` of every enabled entry in manifest order when the session starts;
+  `onStart` on the first frame, **before** any scene component's `onStart`; `onUpdate(dt)` every
+  frame (scaled game time) **before** the scene's nodes tick; `onDetach` when the session stops,
+  **after** the scene's, in reverse manifest order. A throwing hook disables that autoload and is
+  reported like any script error.
+- **Unresolved type.** An entry whose class is not registered is reported as a script error
+  (`phase: 'attach'`, the singleton and path in the message) and skipped; the game runs on and
+  `getAutoload` returns null for it.
+- **Scene-scoped services stay scene-scoped.** Commands an autoload registers with
+  `scene.commands`, its tweens and its `scene.physics2d` bodies belong to the running scene and are
+  cleared with it; the network session (`scene.network`) is session-scoped like the autoloads.
+- **Live script edits.** The editor swaps nothing during play (the registration waits for play to
+  stop, `.plans/scripts-vite.md` S7), and every play builds the autoloads from the registry as it
+  is then, so an edited autoload script runs its new class from the next play on.
+
+### 6.17.3 Script API
+
+```ts
+import { Script } from '@pix3/runtime';
+import { GameState } from './GameState';
+
+export class Hud extends Script {
+  onStart(): void {
+    const state = this.scene?.getAutoload(GameState); // by class, typed
+    const same = this.scene?.getAutoload<GameState>('GameState'); // by singleton name
+  }
+}
+```
+
+`SceneService.getAutoload(nameOrClass)` returns the singleton or `null` (not declared, disabled,
+unresolved, or no session running).
 
 ## 6.18 Signals Engine
 

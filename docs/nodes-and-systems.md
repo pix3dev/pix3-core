@@ -906,6 +906,23 @@ scene keeps running until the new one parses, so a missing/invalid target fades
 back and rejects instead of stranding a black screen; overlapping calls are
 ignored. Use it to wire menu → game → results flows across separate scene files
 (each scene runs standalone in the editor). `transition: 'none'` swaps instantly.
+State that must survive a scene change belongs in an autoload (next).
+
+### Autoloads (game-wide singletons, `scene.getAutoload`)
+
+Godot's autoloads: a script declared in `pix3project.yaml` (`autoloads: [{ singleton,
+scriptPath, enabled }]`) is built once per game session, before the first scene's first
+frame, and kept across every `changeScene` — score across levels, settings, a music
+service. The runtime runs them (`SceneRunner.setAutoloads`), so the editor's play mode,
+`npm run dev`, the build and `pix3 smoke` agree. The class is the export named like the
+file (`scripts/GameState.ts` → `GameState`). Reach one from any script with
+`this.scene.getAutoload(GameState)` (by class) or `getAutoload<GameState>('GameState')`
+(by name); `null` when it is not declared. It ticks (`onStart`, then `onUpdate`) before
+the scene every frame and detaches when the session stops; it has no node in any scene
+and draws nothing. `scene.commands`, tweens and physics bodies it registers are scene
+state and go with the scene. An entry that does not resolve is a script error at start
+and `E_AUTOLOAD` in `pix3 validate`/`check`. Spec: `pix3-specification.md` → "Autoload
+Scripts".
 
 ### Playable SDK (store CTA / game end / viewport)
 
@@ -945,7 +962,7 @@ scope (agent HTTP/preview commands) arrives in Phase 2 — see `.plans/asset-lib
 Inside any `Script` subclass:
 
 - `this.node` — the owning `NodeBase` (transform, `visible`, `getComponent`, `addComponent`, `connect`/`emit`, `findById`/`findByName`/`findByPath`, `children`, `parentNode`). `getComponent<T>(type: new (...args) => T): T | null` takes the component **class**, not a string ID — `node.getComponent(CarController)`, importing the class by relative path (`./CarController`). There is no string-based lookup (`getComponent('user:CarController')` fails); `user:*` IDs are for `add_component`/scene YAML only. To fetch by hand: `node.components.find(c => c instanceof CarController)`.
-- `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, and `commands` for named game intents). May be `undefined` in some editor previews — guard it.
+- `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, `commands` for named game intents, and `getAutoload(nameOrClass)` for the project's autoload singletons). May be `undefined` in some editor previews — guard it.
 - `this.input` — the `InputService` (§4 Input).
 - `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`).
 - `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`). In the in-editor code editor the argument autocompletes to the node names/paths of the open scenes and the return type is the exact node type (`this.getNode('Hero')` → `Sprite2D`), à la Godot's `$Node` / WPF `x:Name`. Any other string resolves to `NodeBase`, so a script reused in a scene that lacks the name still type-checks — the names are hints, never constraints. (Typed names come from the editor augmenting `SceneNodeNames`; it's empty in exported games, where only `getNode<T>(query)` applies.)
