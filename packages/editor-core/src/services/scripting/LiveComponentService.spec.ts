@@ -130,6 +130,37 @@ describe('LiveComponentService', () => {
     expect(hero()?.components[0]).toBe(fresh);
   });
 
+  it('a script deleted: the component is parked as a load would park it, the scene stays clean, and it comes back', async () => {
+    const old = hero()?.components[0];
+    const noScripts: ScriptRoots = {
+      editorScripts: { __pix3Revision: 2, modules: {} },
+      botPolicies: { __pix3Revision: 2, modules: {} },
+    };
+    const before = sceneText();
+    expect(
+      await host.handlers.applySync?.({
+        rev: 2,
+        changed: { 'scripts/Mover.ts': null },
+        roots: noScripts,
+      })
+    ).toMatchObject({ ok: true });
+    expect(hero()?.components).toEqual([]);
+    expect(old?.node).toBeNull();
+    expect(hero()?.pendingComponents).toEqual([
+      { id: 'mover', type: 'user:Mover', enabled: true, config: { speed: 3 } },
+    ]);
+    // Nothing to write: the file keeps the component, exactly as a fresh load would keep it.
+    expect(descriptor().isDirty).toBe(false);
+    expect(await callBridgeTool('pix3_status')).toMatchObject({ dirty: [], pending: {} });
+    expect(sceneText()).toBe(before);
+
+    // The file comes back: the parked definition attaches as an instance of the new class.
+    expect(await sync(3, V2)).toMatchObject({ ok: true });
+    expect(hero()?.components[0]).toBeInstanceOf(V2);
+    expect(hero()?.components[0]).toMatchObject({ id: 'mover', config: { speed: 3, jump: 5 } });
+    expect(hero()?.pendingComponents).toEqual([]);
+  });
+
   it('a dirty scene keeps its unsaved edit through the swap, and undo reaches the new instance', async () => {
     await service(CommandDispatcher).execute(
       new UpdateComponentPropertyCommand({

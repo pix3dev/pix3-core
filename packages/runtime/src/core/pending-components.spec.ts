@@ -8,7 +8,11 @@ import { SceneSaver } from './SceneSaver';
 import { SceneManager } from './SceneManager';
 import { ScriptRegistry } from './ScriptRegistry';
 import { Script } from './ScriptComponent';
-import { isStaleComponent, replaceStaleComponents } from './component-hydration';
+import {
+  isStaleComponent,
+  replaceStaleComponents,
+  resolvePendingComponents,
+} from './component-hydration';
 
 /**
  * Regression guard for the most expensive defect of the Flow-vs-chat measurement: a scene that
@@ -333,14 +337,43 @@ root:
     expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(0);
   });
 
-  it('keeps the old instance when its type is gone', async () => {
-    const { loader, registry } = makeStack();
+  it('parks a component whose type is gone, as a fresh load would, and attaches it when it returns', async () => {
+    const { loader, saver, registry } = makeStack();
     registerGameRules(registry);
     const graph = await loader.parseScene(SCENE_YAML, { filePath: 'res://scenes/main.pix3scene' });
-    const old = graph.rootNodes[0].components[0];
+    const root = graph.rootNodes[0];
+    const old = root.components[0] as GameRules;
+    old.enabled = false;
+    old.config = { ...old.config, lives: 7 }; // an unsaved edit
+    const detached = vi.spyOn(old, 'onDetach');
+
+    // The script file is deleted (or the class renamed): the type is no longer registered.
     registry.unregisterComponent('user:GameRules');
-    expect(isStaleComponent(old, registry)).toBe(false);
+    expect(isStaleComponent(old, registry)).toBe(true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(1);
+    expect(root.components).toEqual([]);
+    expect(detached).toHaveBeenCalledTimes(1);
+    expect(old.node).toBeNull();
+    expect(root.pendingComponents).toEqual([
+      { id: 'game-rules', type: 'user:GameRules', enabled: false, config: { lives: 7 } },
+    ]);
+    // What a fresh load of the same text builds now: the same parked definition, the same file.
+    const fresh = await loader.parseScene(saver.serializeScene(graph), {
+      filePath: 'res://scenes/main.pix3scene',
+    });
+    expect(fresh.rootNodes[0].pendingComponents).toEqual(root.pendingComponents);
+    expect(saver.serializeScene(fresh)).toBe(saver.serializeScene(graph));
     expect(replaceStaleComponents(graph.rootNodes, registry)).toBe(0);
-    expect(graph.rootNodes[0].components[0]).toBe(old);
+
+    // The file comes back: the parked definition attaches, its config kept.
+    registerGameRules(registry);
+    expect(resolvePendingComponents(graph.rootNodes, registry)).toBe(1);
+    const back = root.components[0] as GameRules;
+    expect(back).toBeInstanceOf(GameRules);
+    expect(back).not.toBe(old);
+    expect(back.lives).toBe(7);
+    expect(back.enabled).toBe(false);
+    expect(root.pendingComponents).toEqual([]);
   });
 });

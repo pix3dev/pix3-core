@@ -189,26 +189,36 @@ export function resolvePendingComponents(
 }
 
 /**
- * True when `component`'s type is registered with another class than the one it was built from —
- * its script was edited and re-registered (the editor re-imports a changed project script as a new
- * class; an unchanged module keeps its class, so its components are never touched).
+ * True when `component` no longer matches its type's registration: the type is registered with
+ * another class than the one it was built from — its script was edited and re-registered (the
+ * editor re-imports a changed project script as a new class; an unchanged module keeps its class,
+ * so its components are never touched) — or the type is not registered at all any more (the
+ * script file was deleted, or the class renamed).
  */
 export function isStaleComponent(
   component: ScriptComponent,
   scriptRegistry: ScriptRegistry
 ): boolean {
   const info = scriptRegistry.getComponentType(component.type);
-  return info !== undefined && component.constructor !== info.componentClass;
+  return info === undefined || component.constructor !== info.componentClass;
 }
 
 /**
- * Replace every stale live component ({@link isStaleComponent}) in a subtree with an instance of
- * its type's current class: same id, `enabled` and slot in `node.components`, built like a load
- * builds it from `{ id, type, enabled, config }`. `configOf` decides the config (default: the old
- * instance's `config`, which is what a save writes for it). A type that cannot be instantiated
- * keeps its old instance. The old instance is detached (`onDetach`) like a removed component.
+ * Replace every stale live component ({@link isStaleComponent}) in a subtree with what a fresh
+ * load of the scene would build for it now:
  *
- * @returns how many components were replaced.
+ * - its type is registered with a new class: an instance of that class, same id, `enabled` and
+ *   slot in `node.components`, built like a load builds it from `{ id, type, enabled, config }`;
+ * - its type is gone (file deleted, class renamed): the definition is **parked** in
+ *   {@link NodeBase.pendingComponents}, as {@link attachComponentDefinitions} parks a type it
+ *   cannot resolve — kept for the save, attached again by {@link resolvePendingComponents} when
+ *   the type comes back (`.plans/scripts-vite.md` S12).
+ *
+ * `configOf` decides the config (default: the old instance's `config`, which is what a save
+ * writes for it). A registered type that fails to instantiate keeps its old instance. The old
+ * instance is detached (`onDetach`) like a removed component.
+ *
+ * @returns how many components were replaced or parked.
  */
 export function replaceStaleComponents(
   roots: Iterable<NodeBase>,
@@ -227,6 +237,13 @@ export function replaceStaleComponents(
     }
     for (const old of [...node.components]) {
       if (!isStaleComponent(old, scriptRegistry)) continue;
+      if (!scriptRegistry.getComponentType(old.type)) {
+        const config = configOf(node, old);
+        node.removeComponent(old);
+        node.pendingComponents.push({ id: old.id, type: old.type, enabled: old.enabled, config });
+        replaced += 1;
+        continue;
+      }
       const fresh = instantiateComponent(
         scriptRegistry,
         { id: old.id, type: old.type, enabled: old.enabled, config: configOf(node, old) },
