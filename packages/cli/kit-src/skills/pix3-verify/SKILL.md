@@ -52,14 +52,16 @@ Codes and what they usually mean:
 | `E_UNKNOWN_COMPONENT` | `user:X` with no exported `class X extends Script` that has `static getPropertySchema()` in `scripts/`; or a `core:` name that does not exist |
 | `E_UNKNOWN_PROPERTY` | Key not read for that node / component — check `pix3-nodes`; a flat `horizontalAlign` belongs in `layout:` |
 | `E_PROPERTY_TYPE` | `"10"` for a number, a colour without quotes, an enum value not in the list |
-| `E_MISSING_RESOURCE` | `res://` path typo, or the asset was never written |
+| `E_MISSING_RESOURCE` | `res://` path typo, or the asset was never written (an `AnimatedSprite3D` `frames` entry too, `res://` or not) |
 | `E_MISSING_PREFAB`, `E_PREFAB_*`, `E_DUPLICATE_ID` | Fix the `instance:` path; a prefab file needs exactly one root; ids are unique |
 | `E_EMOJI_AS_ART` | A `label`/`text` that is only emoji — use a sprite or `ColorRect2D` |
 | `E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY` | An `.svg` sprite without `xmlns` or without `width`/`height` in px — see the SVG template in `pix3-nodes` |
 | `W_SVG_EXTERNAL_REF` | An `.svg` that links a file, URL or font — it will draw without it; inline it |
 | `E_MISSING_FRAME`, `E_ANIM_JSON` | A `.pix3anim` names a frame (or a spritesheet) that does not exist, or is not a JSON object — fix the path or the file; its `.svg` frames get the `E_SVG_*` checks, reported on the `.pix3anim` |
 | `E_LOCALE_*`, `W_LOCALE_*` | A locale table (`locales/<id>.json`) that is missing, not JSON, or has a non-string value (keys are flat: `"menu.play": "Play"`, never nested) — `E_` for the default or fallback locale (every `labelKey` would show its key), `W_` for another declared locale (its texts fall back) |
-| `E_LOCALE_KEY` | A `labelKey` the default locale (and the fallback) has no text for — the node would show the key; add it to `strings` of the default table and the others |
+| `E_LOCALE_KEY`, `E_LOCALE_SCRIPT_KEY` | A `labelKey`, or a key a script passes as a literal to `tr('…')` / `setTextKey('…')` / `trPlural('…')`, that the default locale (and the fallback) has no text for — the game would show the key; add it to `strings` of the default table and the others (`trPlural` needs `<key>.other`, or `<key>`). A key the script computes is not checked |
+| `E_LOCALE_SPRITE_KEY`, `W_LOCALE_SPRITE_KEY` | A `textureKey`, a `Button2D` `stateTextureKeys` entry or a `trSprite('…')` key with no `sprites` entry in the default (or fallback) table — `E_` for a `Sprite2D` with no `texture` of its own (it draws nothing), `W_` otherwise (its own texture shows in every locale; `trSprite` returns null) |
+| `E_MISSING_LOCALE_SPRITE` | An image a table's `sprites` names does not exist — in any locale, since its keyed nodes draw nothing there; its `.svg` images get the `E_SVG_*` checks, reported on the table |
 | `E_TYPE` | A TypeScript error in a script (`TS2339: Property … does not exist …`) |
 | `E_TYPECHECK_UNAVAILABLE` | TypeScript could not be installed — run the printed command |
 | `E_DEPENDENCIES_MISSING` | A project with its own `tsconfig.json` and no `node_modules` — `npm install`; tsc was skipped |

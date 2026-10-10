@@ -1,3 +1,4 @@
+import { scanScriptLocalizationKeys } from '@pix3/runtime';
 import { parse as parseYaml } from 'yaml';
 
 import { diagnostic, type Diagnostic, type DiagnosticCode } from './diagnostics.ts';
@@ -6,8 +7,10 @@ import { inspectProjectSvg, isSvgPath } from './svg.ts';
 import { formatPath, isRecord, parseYamlWithLines, type DocPath } from './yaml-doc.ts';
 
 /**
- * The project files a scene reaches through another file: the frames a `.pix3anim` names, and the
- * locale tables (`locales/<id>.json`) a `labelKey` is looked up in. Level 1, no project code.
+ * The project files a scene reaches through another file: the frames a `.pix3anim` names, the
+ * locale tables (`locales/<id>.json`) and the images their `sprites` name, and the keys looked up
+ * in them — a node's `labelKey` / `textureKey` / `stateTextureKeys`, a script's literal
+ * `tr('…')`. Level 1, no project code runs (scripts are read as text).
  *
  * Severity follows what the player would see. A `.pix3anim` frame that does not load is a sprite
  * that draws nothing: an error, as for a scene's own reference. A locale table is an error when it
@@ -167,8 +170,12 @@ export const resolveLocalization = (project: ProjectFiles): LocalizationPlan | n
 
 export const localeTablePath = (locale: string): string => `locales/${locale}.json`;
 
-/** `strings` of each table that loads (only string values — what the runtime keeps). */
-export type LocaleStrings = ReadonlyMap<string, Readonly<Record<string, string>>>;
+/** `strings` and `sprites` of each table that loads (only string values — what the runtime keeps). */
+export interface LocaleEntries {
+  readonly strings: Readonly<Record<string, string>>;
+  readonly sprites: Readonly<Record<string, string>>;
+}
+export type LoadedLocales = ReadonlyMap<string, LocaleEntries>;
 
 /** Where `pix3project.yaml` names a locale, for a diagnostic about its missing table. */
 const manifestPathOf = (plan: LocalizationPlan, locale: string): DocPath =>
@@ -179,16 +186,17 @@ const manifestPathOf = (plan: LocalizationPlan, locale: string): DocPath =>
       : ['localization', 'locales', plan.locales.indexOf(locale)];
 
 /**
- * Every table the plan loads: it exists, is a JSON object, and its `strings` / `sprites` are flat
- * maps of strings (the runtime silently drops anything else). Returns the strings of the tables
- * that load, for {@link checkLabelKeys}.
+ * Every table the plan loads: it exists, is a JSON object, its `strings` / `sprites` are flat maps
+ * of strings (the runtime silently drops anything else), and every image its `sprites` name exists
+ * (and, for an `.svg`, passes the sprite rules). Returns the entries of the tables that load, for
+ * {@link checkLabelKeys}, {@link checkSpriteKeys} and {@link checkScriptKeys}.
  */
 export const checkLocaleTables = (
   project: ProjectFiles,
   plan: LocalizationPlan
-): { diagnostics: Diagnostic[]; strings: LocaleStrings } => {
+): { diagnostics: Diagnostic[]; tables: LoadedLocales } => {
   const diagnostics: Diagnostic[] = [];
-  const strings = new Map<string, Record<string, string>>();
+  const strings = new Map<string, LocaleEntries>();
   const ids = [...new Set([plan.defaultLocale, plan.fallbackLocale, ...plan.locales])];
   for (const locale of ids) {
     const critical = locale === plan.defaultLocale || locale === plan.fallbackLocale;
@@ -249,6 +257,7 @@ export const checkLocaleTables = (
       continue;
     }
     const kept: Record<string, string> = {};
+    const keptSprites: Record<string, string> = {};
     for (const section of ['strings', 'sprites'] as const) {
       const map = data[section];
       if (map === undefined) continue;
@@ -267,6 +276,10 @@ export const checkLocaleTables = (
       for (const [key, value] of Object.entries(map)) {
         if (typeof value === 'string') {
           if (section === 'strings') kept[key] = value;
+          else {
+            keptSprites[key] = value;
+            diagnostics.push(...checkLocaleSpriteImage(project, table, key, value, lineOf));
+          }
           continue;
         }
         diagnostics.push(
@@ -283,10 +296,64 @@ export const checkLocaleTables = (
         );
       }
     }
-    strings.set(locale, kept);
+    strings.set(locale, { strings: kept, sprites: keptSprites });
   }
-  return { diagnostics, strings };
+  return { diagnostics, tables: strings };
 };
+
+/**
+ * One image a table's `sprites` names: it must exist, or every node keyed to it draws nothing in
+ * that locale — the table wins over the node's own texture and there is no further fallback, so
+ * this is an error in any locale (unlike the text codes, whose other-locale problems fall back).
+ */
+const checkLocaleSpriteImage = (
+  project: ProjectFiles,
+  table: string,
+  key: string,
+  value: string,
+  lineOf: (path: DocPath) => number | undefined
+): Diagnostic[] => {
+  const target = toProjectPath(value);
+  if (!target) return [];
+  const at: DocPath = ['sprites', key];
+  const where = { file: table, path: formatPath(at), line: lineOf(at) };
+  if (!project.has(target)) {
+    const caseMatch = project.files.find(f => f.toLowerCase() === target.toLowerCase());
+    return [
+      diagnostic({
+        code: 'E_MISSING_LOCALE_SPRITE',
+        ...where,
+        message: `sprites."${key}" in ${table} is ${value}, which does not exist in the project: a node keyed to "${key}" draws nothing in this locale.`,
+        fix: caseMatch ? `the file is res://${caseMatch} (case differs)` : undefined,
+      }),
+    ];
+  }
+  if (!isSvgPath(target)) return [];
+  return inspectProjectSvg(project, target).map(finding =>
+    diagnostic({
+      code: finding.code,
+      ...where,
+      message: `sprites."${key}": ${value}: ${finding.message}`,
+      fix: finding.fix,
+    })
+  );
+};
+
+/** Whether a key has a non-empty entry in the default or the fallback table (`LocalizationService`'s
+ *  chain); null when the default table did not load — that is its own error, nothing more is said. */
+const lookup = (
+  plan: LocalizationPlan,
+  tables: LoadedLocales,
+  section: keyof LocaleEntries
+): ((key: string) => boolean) | null => {
+  const primary = tables.get(plan.defaultLocale)?.[section];
+  if (!primary) return null;
+  const fallback = tables.get(plan.fallbackLocale)?.[section];
+  return key => Boolean(primary[key] || fallback?.[key]);
+};
+
+const tablesNamed = (plan: LocalizationPlan): string =>
+  `${localeTablePath(plan.defaultLocale)}${plan.fallbackLocale !== plan.defaultLocale ? ` nor in ${localeTablePath(plan.fallbackLocale)}` : ''}`;
 
 /** A `labelKey` a scene sets on a node (collected by level 1). */
 export interface LabelKeyUse {
@@ -305,15 +372,14 @@ export interface LabelKeyUse {
  */
 export const checkLabelKeys = (
   plan: LocalizationPlan,
-  strings: LocaleStrings,
+  tables: LoadedLocales,
   uses: readonly LabelKeyUse[]
 ): Diagnostic[] => {
-  const primary = strings.get(plan.defaultLocale);
-  if (!primary) return [];
-  const fallback = strings.get(plan.fallbackLocale);
+  const has = lookup(plan, tables, 'strings');
+  if (!has) return [];
   const table = localeTablePath(plan.defaultLocale);
   return uses
-    .filter(use => !primary[use.key] && !fallback?.[use.key])
+    .filter(use => !has(use.key))
     .map(use =>
       diagnostic({
         code: 'E_LOCALE_KEY',
@@ -321,8 +387,112 @@ export const checkLabelKeys = (
         nodeId: use.nodeId,
         path: use.path,
         line: use.line,
-        message: `labelKey "${use.key}" has no text in ${table}${plan.fallbackLocale !== plan.defaultLocale ? ` nor in ${localeTablePath(plan.fallbackLocale)}` : ''}: the node shows "${use.key}" on screen.`,
+        message: `labelKey "${use.key}" has no text in ${tablesNamed(plan)}: the node shows "${use.key}" on screen.`,
         fix: `add "${use.key}": "<text>" to "strings" of ${table} (and the other locales)`,
       })
     );
+};
+
+/** A sprite key a scene sets: `Sprite2D.textureKey`, a `Button2D` state's key (collected by level 1). */
+export interface SpriteKeyUse {
+  readonly file: string;
+  readonly key: string;
+  /** How the scene names it: `textureKey`, `stateTextureKeys.hover`, `textureHoverKey`. */
+  readonly property: string;
+  /** The node has its own texture to show when the key resolves to nothing. */
+  readonly hasOwnTexture: boolean;
+  readonly nodeId?: string;
+  readonly path: string;
+  readonly line?: number;
+}
+
+/**
+ * A sprite key no `sprites` entry of the default (or fallback) table has: `trSprite` gives null and
+ * the node keeps its own texture (`Sprite2D.getEffectiveTexturePath`) — the same art in every
+ * locale, a warning; a `Sprite2D` with no texture of its own draws nothing, an error.
+ */
+export const checkSpriteKeys = (
+  plan: LocalizationPlan,
+  tables: LoadedLocales,
+  uses: readonly SpriteKeyUse[]
+): Diagnostic[] => {
+  const has = lookup(plan, tables, 'sprites');
+  if (!has) return [];
+  const table = localeTablePath(plan.defaultLocale);
+  return uses
+    .filter(use => !has(use.key))
+    .map(use =>
+      diagnostic({
+        code: use.hasOwnTexture ? 'W_LOCALE_SPRITE_KEY' : 'E_LOCALE_SPRITE_KEY',
+        file: use.file,
+        nodeId: use.nodeId,
+        path: use.path,
+        line: use.line,
+        message: `${use.property} "${use.key}" has no image in "sprites" of ${tablesNamed(plan)}: ${use.hasOwnTexture ? 'the node shows its own texture in every locale' : 'the node has no texture of its own and draws nothing'}.`,
+        fix: `add "${use.key}": "res://sprites/…" to "sprites" of ${table} (and the other locales)`,
+      })
+    );
+};
+
+/** Script files `checkScriptKeys` reads (`.d.ts` excluded). */
+const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/**
+ * Keys a project script passes to the localization API as a string literal
+ * (`scanScriptLocalizationKeys`, the editor's Scan uses the same): `tr` / `setTextKey` with no
+ * text in the default (or fallback) table show the key on screen (`E_LOCALE_SCRIPT_KEY`), and so
+ * does `trPlural` for every count when neither `<key>.other` nor `<key>` has one (its last two
+ * steps); a `trSprite` key with no image gives the script null (`W_LOCALE_SPRITE_KEY`). A key the
+ * script computes is not a static key and is not checked.
+ */
+export const checkScriptKeys = (
+  project: ProjectFiles,
+  plan: LocalizationPlan,
+  tables: LoadedLocales
+): Diagnostic[] => {
+  const hasText = lookup(plan, tables, 'strings');
+  const hasSprite = lookup(plan, tables, 'sprites');
+  if (!hasText || !hasSprite) return [];
+  const table = localeTablePath(plan.defaultLocale);
+  const out: Diagnostic[] = [];
+  for (const file of project.files) {
+    if (!SCRIPT_FILE.test(file) || file.endsWith('.d.ts')) continue;
+    let text: string;
+    try {
+      text = project.readText(file);
+    } catch {
+      continue;
+    }
+    for (const { fn, key, line } of scanScriptLocalizationKeys(text)) {
+      const call = `${fn}('${key}')`;
+      if (fn === 'trSprite') {
+        if (hasSprite(key)) continue;
+        out.push(
+          diagnostic({
+            code: 'W_LOCALE_SPRITE_KEY',
+            file,
+            line,
+            message: `${call}: "${key}" has no image in "sprites" of ${tablesNamed(plan)}, so the script gets null.`,
+            fix: `add "${key}": "res://sprites/…" to "sprites" of ${table} (and the other locales)`,
+          })
+        );
+        continue;
+      }
+      if (fn === 'trPlural' ? hasText(`${key}.other`) || hasText(key) : hasText(key)) continue;
+      const wanted = fn === 'trPlural' ? `${key}.other` : key;
+      out.push(
+        diagnostic({
+          code: 'E_LOCALE_SCRIPT_KEY',
+          file,
+          line,
+          message:
+            fn === 'trPlural'
+              ? `${call}: neither "${key}.other" nor "${key}" has text in ${tablesNamed(plan)}: a count with no "${key}.<one|few|many>" of its own shows "${key}" on screen.`
+              : `${call}: "${key}" has no text in ${tablesNamed(plan)}: the game shows "${key}" on screen.`,
+          fix: `add "${wanted}": "<text>" to "strings" of ${table} (and the other locales)`,
+        })
+      );
+    }
+  }
+  return out;
 };

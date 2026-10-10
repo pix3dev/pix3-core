@@ -45,6 +45,7 @@ export * from './core/localization/localization-types';
 export * from './core/localization/LocalizationService';
 export * from './core/localization/active-localization';
 export * from './core/localization/apply-locale-to-tree';
+export * from './core/localization/script-keys';
 export * from './core/texture-region';
 export * from './core/atlas-frame-map';
 export * from './core/install-atlas-manifest';

@@ -113,6 +113,9 @@ from the two margins, so leave it out (a `Checkbox2D`'s `size` / `Joystick2D`'s 
 side is the stretched span). A centred axis has no margin: `position` places it, as
 for any node. A file with the anchors but **no margins** still loads: the margins are read off
 the rect, and the editor rewrites the node in the margin form the first time it saves the file.
+`pix3 tree <scene>` prints the margins and the rect they give at the design size —
+`pos=(-400,900) size=200x60 layout=left/top(left=40,top=30)` — so to move such a node, change
+its margin, not its `position`.
 HUD widgets anchor to screen edges; full-screen backgrounds and roots use `stretch` on both
 axes (a root's reference is `viewportBaseSize`, so a root keeps its full rect, no margins).
 

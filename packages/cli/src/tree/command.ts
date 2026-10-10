@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import { scanUserScriptIds } from './scripts.ts';
 import {
   buildTree,
@@ -29,22 +30,6 @@ import {
  * node classes from the smoke bundle to leave out properties that equal the type's default.
  * Exit: 0 = ok, 1 = a scene does not parse, 2 = bad arguments / no such file.
  */
-
-export const TREE_USAGE = `Usage: pix3 tree [scene] [--depth N] [--types A,B] [--props] [--json] [--project <dir>]
-
-  One line per node — type#id "name", position, size, anchor layout, components, prefab
-  instances (↳ instance res://… (N overrides, M properties)) — indented by depth. Read this instead of the
-  whole .pix3scene when you need to find your way around a scene.
-
-  scene          .pix3scene (res://, project-relative or a path). Without one: every scene and
-                 prefab in the project with node counts, node types and components.
-  --depth N      stop N levels below the roots (0 = roots only); cut subtrees show "… +K below"
-  --types A,B    only nodes of these types (or carrying these components; \`instance\` = prefab
-                 instances), with their ancestors as "·" context lines
-  --props        also print each node's properties that differ from the type's defaults
-  --json         the same as nested JSON
-  --project dir  project folder (default: nearest folder with pix3project.yaml, else cwd)
-`;
 
 export interface TreeIo {
   readonly cwd: string;
@@ -166,6 +151,12 @@ const readManifest = (root: string): ManifestInfo | null => {
   }
 };
 
+/** `viewportBaseSize` — what a root's anchor margins lay out against. */
+const readViewport = (root: string): { width: number; height: number } | undefined => {
+  const [width, height] = (readManifest(root)?.viewport ?? '').split('x').map(Number);
+  return width > 0 && height > 0 ? { width, height } : undefined;
+};
+
 const overview = (root: string, args: TreeArgs, io: TreeIo): number => {
   const project = new ProjectFiles(root);
   const manifest = readManifest(root);
@@ -217,11 +208,11 @@ const overview = (root: string, args: TreeArgs, io: TreeIo): number => {
 export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<number> => {
   const args = parseTreeArgs(argv);
   if ('error' in args) {
-    io.stderr(`pix3 tree: ${args.error}\n\n${TREE_USAGE}`);
+    io.stderr(`pix3 tree: ${args.error}\n\n${COMMAND_USAGE.tree}`);
     return 2;
   }
   if (args.help) {
-    io.stdout(TREE_USAGE);
+    io.stdout(COMMAND_USAGE.tree);
     return 0;
   }
   const root = args.project
@@ -254,6 +245,7 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     }
   }
   const nodes = buildTree(scene, {
+    viewport: readViewport(root),
     depth: args.depth,
     types: args.types,
     props: args.props,

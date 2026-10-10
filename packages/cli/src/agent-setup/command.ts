@@ -13,6 +13,7 @@ import {
 } from '../editor/paths.ts';
 import { findCdpForward, readRemoteCdpToken } from '../editor/remote.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import {
   AGENT_TARGETS,
   CHROME_DEVTOOLS_MCP_VERSION,
@@ -93,9 +94,13 @@ export const runAgentSetupCli = async (
   argv: readonly string[],
   io: AgentSetupIo
 ): Promise<number> => {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    io.stdout(COMMAND_USAGE['agent-setup']);
+    return 0;
+  }
   const parsed = parseAgentSetupArgs(argv);
   if ('error' in parsed) {
-    io.stderr(`pix3 agent-setup: ${parsed.error}\n`);
+    io.stderr(`pix3 agent-setup: ${parsed.error}\n\n${COMMAND_USAGE['agent-setup']}`);
     return 1;
   }
   const env = io.env ?? process.env;

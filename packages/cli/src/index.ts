@@ -3,7 +3,7 @@ import { relative, resolve } from 'node:path';
 
 import { createProject } from './new-project.ts';
 import { listTemplates, oneLine, resolveTemplate } from './templates.ts';
-import { USAGE } from './usage.ts';
+import { COMMAND_USAGE, isCommandName, USAGE, type CommandName } from './usage.ts';
 import { CLI_VERSION } from './version.ts';
 
 /**
@@ -56,8 +56,12 @@ const printTemplateList = (): void => {
   process.stdout.write('\nCreate one:  pix3 new <id> [dir]   (or: npm create pix3)\n');
 };
 
-const runNew = async (args: ParsedArgs): Promise<number> => {
-  const [, query, dirArg] = args.positionals;
+const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number> => {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(COMMAND_USAGE.new);
+    return 0;
+  }
+  const [query, dirArg] = args.positionals;
   if (!query) {
     printTemplateList();
     return 0;
@@ -99,111 +103,121 @@ const runNew = async (args: ParsedArgs): Promise<number> => {
   return 0;
 };
 
-const main = async (): Promise<number> => {
-  const args = parseArgs(process.argv.slice(2));
-  const command = args.positionals[0];
-  if (args.flags.has('version')) {
-    process.stdout.write(`${CLI_VERSION}\n`);
-    return 0;
-  }
-  if (!command || args.flags.has('help') || command === 'help') {
-    process.stdout.write(USAGE);
-    return command || args.flags.has('help') ? 0 : 1;
-  }
+/**
+ * Run one command with the arguments after its name. Every command answers `--help` / `-h` with its
+ * entry of {@link COMMAND_USAGE} (`new` and `kit` here, the others in their own parsers).
+ */
+const dispatch = async (
+  command: CommandName | '__chrome-owner',
+  argv: readonly string[]
+): Promise<number> => {
   switch (command) {
     case 'new':
-      return runNew(args);
+      return runNew(parseArgs(argv), argv);
     case 'check': // own argument parsing; validator, TypeScript and types load lazily
-      return (await import('./check/check.ts')).runCheck(
-        process.argv.slice(process.argv.indexOf('check') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
-    case 'kit':
+      return (await import('./check/check.ts')).runCheck(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
+    case 'kit': {
+      if (argv.includes('--help') || argv.includes('-h')) {
+        process.stdout.write(COMMAND_USAGE.kit);
+        return 0;
+      }
+      const args = parseArgs(argv);
       return (await import('./kit/command.ts')).runKitCli({
         cwd: process.cwd(),
         projectDir: stringFlag(args, 'project'),
         update: args.flags.has('update'),
         migrate: args.flags.has('migrate'),
       });
+    }
     case 'editor': // own argument parsing; finds or starts the dev server, opens Chrome
-      return (await import('./editor/command.ts')).runEditorCli(
-        process.argv.slice(process.argv.indexOf('editor') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./editor/command.ts')).runEditorCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case '__chrome-owner': // hidden: the detached process `pix3 editor` starts (Chrome + proxy)
-      return (await import('./editor/chrome-owner.ts')).runChromeOwner(
-        process.argv.slice(process.argv.indexOf('__chrome-owner') + 1)
-      );
+      return (await import('./editor/chrome-owner.ts')).runChromeOwner(argv);
     case 'agent-setup': // own argument parsing; writes the project's MCP config files
-      return (await import('./agent-setup/command.ts')).runAgentSetupCli(
-        process.argv.slice(process.argv.indexOf('agent-setup') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./agent-setup/command.ts')).runAgentSetupCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case 'smoke': // own argument parsing; the game runs in a worker from the smoke bundle
-      return (await import('./smoke/command.ts')).runSmokeCli(
-        process.argv.slice(process.argv.indexOf('smoke') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./smoke/command.ts')).runSmokeCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case 'tree': // own argument parsing; plain YAML (the runtime loads only for --props)
-      return (await import('./tree/command.ts')).runTreeCli(
-        process.argv.slice(process.argv.indexOf('tree') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./tree/command.ts')).runTreeCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case 'validate': // own argument parsing (`--json` takes no value); runtime loads lazily
-      return (await import('./validate/entry.ts')).runValidateCli(
-        process.argv.slice(process.argv.indexOf('validate') + 1)
-      );
+      return (await import('./validate/entry.ts')).runValidateCli(argv);
     case 'character-compile': // own argument parsing; plain Node (PNG headers, yaml)
-      return (await import('./character/command.ts')).runCharacterCompileCli(
-        process.argv.slice(process.argv.indexOf('character-compile') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./character/command.ts')).runCharacterCompileCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case 'gap': // own argument parsing; appends to .pix3/gaps.jsonl
-      return (await import('./gap/command.ts')).runGapCli(
-        process.argv.slice(process.argv.indexOf('gap') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
+      return (await import('./gap/command.ts')).runGapCli(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
     case 'sfx': // own argument parsing; offline synth, no dependencies
-      return (await import('./sfx/command.ts')).runSfx(
-        process.argv.slice(process.argv.indexOf('sfx') + 1),
-        {
-          cwd: process.cwd(),
-          stdout: text => process.stdout.write(text),
-          stderr: text => process.stderr.write(text),
-        }
-      );
-    default:
-      process.stderr.write(`pix3: unknown command "${command}".\n\n${USAGE}`);
-      return 1;
+      return (await import('./sfx/command.ts')).runSfx(argv, {
+        cwd: process.cwd(),
+        stdout: text => process.stdout.write(text),
+        stderr: text => process.stderr.write(text),
+      });
   }
+};
+
+const main = async (): Promise<number> => {
+  const all = process.argv.slice(2);
+  const args = parseArgs(all);
+  const command = args.positionals[0];
+  if (args.flags.has('version')) {
+    process.stdout.write(`${CLI_VERSION}\n`);
+    return 0;
+  }
+  // `pix3 help [command]`, `pix3 --help [command]`
+  const help = args.flags.get('help');
+  const topic =
+    command === 'help'
+      ? args.positionals[1]
+      : command === undefined && typeof help === 'string'
+        ? help
+        : undefined;
+  if (command === 'help' || (command === undefined && help !== undefined)) {
+    if (topic === undefined) {
+      process.stdout.write(USAGE);
+      return 0;
+    }
+    if (!isCommandName(topic)) {
+      process.stderr.write(`pix3: unknown command "${topic}".\n\n${USAGE}`);
+      return 1;
+    }
+    return dispatch(topic, ['--help']);
+  }
+  if (!command) {
+    process.stdout.write(USAGE);
+    return 1;
+  }
+  if (!isCommandName(command) && command !== '__chrome-owner') {
+    process.stderr.write(`pix3: unknown command "${command}".\n\n${USAGE}`);
+    return 1;
+  }
+  return dispatch(command, all.slice(all.indexOf(command) + 1));
 };
 
 main().then(

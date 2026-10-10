@@ -1,3 +1,5 @@
+import { COMMAND_USAGE } from '../usage.ts';
+
 /**
  * What `pix3 validate` reports: one {@link Diagnostic} per problem, each with a stable `code`.
  *
@@ -165,6 +167,30 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a labelKey the default (and fallback) locale has no text for — the key shows on screen',
   },
+  E_LOCALE_SCRIPT_KEY: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a literal key a script passes to tr()/setTextKey()/trPlural() that the default (and fallback) locale has no text for — the key shows on screen',
+  },
+  E_LOCALE_SPRITE_KEY: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a Sprite2D textureKey no default (or fallback) sprites entry has, on a sprite with no texture of its own — it draws nothing',
+  },
+  W_LOCALE_SPRITE_KEY: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      "a textureKey / stateTextureKeys / trSprite() key no default (or fallback) sprites entry has — the node's own texture shows in every locale, trSprite gives null",
+  },
+  E_MISSING_LOCALE_SPRITE: {
+    severity: 'error',
+    level: 1,
+    summary:
+      "an image a locale table's sprites names does not exist (its .svg ones get the E_SVG_* checks too)",
+  },
   E_AUTOLOAD: {
     severity: 'error',
     level: 1,
@@ -208,6 +234,12 @@ type StaticCode = keyof typeof DIAGNOSTIC_CODES;
 export type RenderabilityCode = `W_RENDERABILITY_${string}`;
 
 export type DiagnosticCode = Exclude<StaticCode, 'W_RENDERABILITY'> | RenderabilityCode;
+
+/** `pix3 validate --help`: the usage, then every code with its level and summary. */
+export const validateHelp = (): string =>
+  `${COMMAND_USAGE.validate}\nCodes:\n${Object.entries(DIAGNOSTIC_CODES)
+    .map(([code, info]) => `  ${code.padEnd(26)} L${info.level}  ${info.summary}`)
+    .join('\n')}\n`;
 
 export const severityOf = (code: DiagnosticCode): Severity =>
   code.startsWith('W_') ? 'warning' : 'error';

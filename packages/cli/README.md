@@ -21,7 +21,14 @@ pix3 character-compile <spec> [--dry-run] [--force] [--json] [--project <dir>]
                                               a 2D character (.pix3anim + prefab) from frame PNGs
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
                                               synthesize a sound effect to WAV, offline
+pix3 gap "<what was missing>" [--kind …] [--list] record what the agent had to work around
+pix3 help [command]                           this overview, or one command's usage
 ```
+
+`pix3 <command> --help` (or `-h`, or `pix3 help <command>`) prints that command's own usage —
+every text lives in `src/usage.ts` (`USAGE`, `COMMAND_USAGE`), and `bin-bundle.spec` holds every
+command the entry dispatches to an entry there, answered by the bundled bin. `validate --help`
+adds its codes, `check --help` the ones it adds.
 
 `pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
 (package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore)
@@ -130,16 +137,20 @@ a sized SVG auto-sizes the sprite to its `width`×`height`; a viewBox-only one t
 without `xmlns`, or any SVG whose Blob type is not `image/svg+xml`, fails to load (browsers do
 not sniff SVG).
 
-### `.pix3anim` frames and locale tables
+### `.pix3anim` frames, locale tables and keys
 
 Level 1 also follows what a scene reaches through another file. Every `.pix3anim` (all of them on
 a whole-project run, else those the validated scenes name) must be a JSON object, and every image
 it names — each frame's `texturePath`, the spritesheet's top-level one — must exist; an `.svg`
 frame gets the sprite rules above (`E_SVG_*`), reported on the `.pix3anim` with the frame's path.
+An `AnimatedSprite3D` names its frames itself (`frames:` — `res://` paths, bare paths or
+`{ url }`): each must exist (`E_MISSING_RESOURCE`, the SVG rules on an `.svg`), and an entry that
+is not a texture is `E_PROPERTY_TYPE` (a blank frame).
 The locales are the ones the plugin ships: the `localization:` block of `pix3project.yaml`, else
 every `locales/*.json` (`en` the default when there is one). Severity is what the player would
 see: the default or fallback locale's table not loading means every `labelKey` shows its key
-(error); another locale's means its texts fall back (warning).
+(error); another locale's means its texts fall back (warning). A key is looked up the way
+`LocalizationService` does — the default table, then the fallback's, `""` counting as none.
 
 | Code | Severity | When |
 | --- | --- | --- |
@@ -148,11 +159,14 @@ see: the default or fallback locale's table not loading means every `labelKey` s
 | `E_LOCALE_MISSING` / `W_LOCALE_MISSING` | error / warning | a declared locale has no `locales/<id>.json` (default or fallback / another); on `pix3project.yaml` at its line |
 | `E_LOCALE_JSON` / `W_LOCALE_JSON` | error / warning | the table is not JSON, not an object, or `strings` / `sprites` is not a map |
 | `E_LOCALE_VALUE` / `W_LOCALE_VALUE` | error / warning | a `strings` / `sprites` value is not a string (the runtime drops it; nested keys are the usual cause) |
-| `E_LOCALE_KEY` | error | a `labelKey` (on a node or an instance) with no text in the default locale nor the fallback (`""` counts as none) — the node shows the key |
+| `E_MISSING_LOCALE_SPRITE` | error | an image a table's `sprites` names does not exist — in any locale: the table wins over a node's own texture, so its keyed nodes draw nothing in that locale; an `.svg` gets `E_SVG_*`, on the table at `sprites.<key>` |
+| `E_LOCALE_KEY` | error | a `labelKey` (on a node or an instance) with no text — the node shows the key |
+| `E_LOCALE_SCRIPT_KEY` | error | a key a script passes as a string literal to `tr` / `setTextKey` / `trPlural` with no text — the game shows the key (`trPlural`: neither `<key>.other` nor `<key>`, its last two steps). Every `.ts`/`.js` of the project but `.d.ts`; the same scan as the editor's Localization Scan (`scanScriptLocalizationKeys` in the runtime). A computed key — a variable, an interpolated template — is skipped |
+| `E_LOCALE_SPRITE_KEY` / `W_LOCALE_SPRITE_KEY` | error / warning | a `Sprite2D` `textureKey`, a `Button2D` `stateTextureKeys.<state>` (`texture<State>Key` on an instance) or a script's `trSprite('…')` with no `sprites` entry: an error for a `Sprite2D` with no `texture` of its own (it draws nothing), a warning otherwise (its own texture in every locale; a button keeps its skin; `trSprite` returns null) |
 
-The tables are checked on whole-project runs (as `W_UNUSED_ASSET`); `labelKey`s on every run.
-Not checked: keys a script passes to `tr()`, `textureKey` / `stateTextureKeys` against `sprites`,
-and the files a table's `sprites` name.
+The tables, their images and the scripts' keys are checked on whole-project runs (as
+`W_UNUSED_ASSET`); the keys a scene sets on every run. Nothing is said about keys when the project
+has no tables or the default one does not load (that is its own error).
 
 ### Autoloads
 
@@ -327,11 +341,31 @@ nodes of those types (or carrying those components; `instance` = prefab instance
 ancestors as `·` context lines; `--props` adds, under each node, the properties that differ from
 the node type's defaults (read from a bare instance of the runtime class, through the disk-format
 table — the one step that loads the runtime bundle); `--json` gives the same as nested
-`{ id, type, name, depth, position?, size?, layout?, hidden?, text?, groups?, components,
-instance?: { path, rootType?, rootName?, overrides, properties }, props?, children }`. On an instance
+`{ id, type, name, depth, position?, size?, layout?, margins?, resolved?, hidden?, text?, groups?,
+components, instance?: { path, rootType?, rootName?, overrides, properties }, props?, children }`.
+On an instance
 `overrides` counts every `overrides.byLocalId.*.properties` key (edits to nodes inside the prefab)
 and `properties` the instance node's own `properties` keys (applied to the prefab root); the line
 prints `(2 overrides, 1 property)`, or `(no overrides)` when both are 0.
+
+A node anchored in the margin form (W21: `layout: { enabled, horizontalAlign, verticalAlign,
+left?, right?, top?, bottom? }`, every side the alignment keeps written) holds `0` in the file for
+the position component of an anchored axis and no `width`/`height` for a stretched one — the
+margins are the rect. The line shows the margins beside the layout and, as `pos` / `size`, the
+rect they give at the design size (the parent's size; `viewportBaseSize` for a root), the way
+`Node2D`'s layout pass computes it; `?` where the file does not say enough (a parent or the node
+without a size in the file):
+
+```text
+Group2D#hud size=1080x1920 layout=stretch/stretch(left=0,right=0,top=0,bottom=0)
+  Group2D#bar pos=(0,-920) size=1000x40 layout=stretch/bottom(left=40,right=40,bottom=20)
+    Group2D#knob pos=(480,5) size=20x20 layout=right/none(right=10)
+  Sprite2D#unsized pos=(?,70) layout=left/none(left=10)
+```
+
+`--json` keeps `position` / `size` as the file has them and adds `margins` and
+`resolved: { position: [x, y], size: [w, h] }` (`null` for `?`). A pre-W21 anchor (no margins in
+the file) prints its file position as before.
 
 `pix3 tree` with no scene is the project overview: manifest facts, the `user:` scripts, and every
 scene/prefab/overlay with its node count, node types, components and instances (entry scene
