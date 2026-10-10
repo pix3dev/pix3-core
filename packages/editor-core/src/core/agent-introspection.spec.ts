@@ -1,9 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { NodeBase } from '@pix3/runtime';
 import {
   clearErrors,
-  clearScriptBuildErrors,
-  clearScriptDiagnosticErrors,
   componentToDTO,
   errors,
   installErrorCapture,
@@ -126,75 +124,5 @@ describe('errors(since)', () => {
     expect(recent[0]).toContain('after-the-cursor');
     expect(errors()).toHaveLength(2);
     clearErrors();
-  });
-});
-
-describe('clearScriptBuildErrors', () => {
-  beforeEach(() => {
-    clearErrors();
-  });
-
-  it('retires build failures in the shape the loader logs them, keeping runtime and type errors', () => {
-    installErrorCapture();
-    console.error(
-      '[Pix3 ERROR] Failed to compile scripts Error: scripts/HudBehavior.ts:12:7: Expected ";" but found "const"'
-    );
-    console.error(
-      '[Pix3 ERROR] Script build did not finish within 60 s and was abandoned; it runs again on the next change or compile.'
-    );
-    console.error(
-      "[Pix3 ERROR] scripts/TicTacToe.ts:87:9 — Type 'unknown' is not assignable to type 'string'. (ts2322)"
-    );
-    console.error('[Pix3 ERROR] TypeError: btn.setText is not a function');
-
-    clearScriptBuildErrors();
-
-    const remaining = errors().map(entry => entry.message);
-    expect(remaining).toHaveLength(2);
-    expect(remaining[0]).toContain('ts2322');
-    expect(remaining[1]).toContain('btn.setText');
-  });
-});
-
-describe('clearScriptDiagnosticErrors', () => {
-  beforeEach(() => {
-    clearErrors();
-  });
-
-  it('retires stale script diagnostics but keeps real runtime errors', () => {
-    installErrorCapture();
-    console.error('scripts/TouchRules.ts:165:20 — Argument of type "number" is not assignable.');
-    console.error('TypeError: Cannot read properties of null (reading "position")');
-
-    clearScriptDiagnosticErrors();
-
-    const remaining = errors().map(entry => entry.message);
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0]).toContain('Cannot read properties of null');
-  });
-
-  it('retires diagnostics in the shape the Logger actually emits', () => {
-    installErrorCapture();
-    // Verbatim from a live session: the Logger prefixes the level and appends the diag object, so
-    // a start-anchored pattern missed every real diagnostic while this test's bare form passed.
-    console.error(
-      "[Pix3 ERROR] scripts/TicTacToe.ts:87:9 — Type 'unknown' is not assignable to type 'string'. (ts2322) [object Object]"
-    );
-    console.error('[Pix3 ERROR] TypeError: btn.setText is not a function');
-
-    clearScriptDiagnosticErrors();
-
-    const remaining = errors().map(entry => entry.message);
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0]).toContain('btn.setText is not a function');
-  });
-
-  it('keeps a runtime error whose stack merely mentions a script path', () => {
-    installErrorCapture();
-    console.error('TypeError: undefined is not an object\n    at onUpdate (scripts/Foo.ts:12:3)');
-
-    clearScriptDiagnosticErrors();
-
-    expect(errors()).toHaveLength(1);
   });
 });

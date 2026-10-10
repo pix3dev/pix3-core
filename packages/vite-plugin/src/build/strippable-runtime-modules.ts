@@ -51,6 +51,8 @@ export interface StrippableRuntimeModule {
  *   and `ScriptRegistry.createComponent` reports the throw.
  * - `core/SceneSaver` — never constructed by a player (see `SceneManager`'s optional saver), so it
  *   tree-shakes out with everything it imports.
+ *
+ * @internal The import-graph guard (`strippable-runtime-modules.spec.ts`) reads it.
  */
 export const NEUTRALISED_IMPORTERS = [
   'core/SceneLoader',

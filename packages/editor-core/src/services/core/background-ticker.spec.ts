@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BackgroundTicker,
-  keepaliveInterval,
   keepaliveTimer,
   setTickWorkerFactory,
 } from '@/services/core/background-ticker';
@@ -128,7 +127,7 @@ describe('BackgroundTicker', () => {
   });
 });
 
-describe('keepaliveTimer / keepaliveInterval', () => {
+describe('keepaliveTimer', () => {
   it('is a plain setTimeout while keepalive is off', () => {
     vi.useFakeTimers();
     const callback = vi.fn();
@@ -194,17 +193,5 @@ describe('keepaliveTimer / keepaliveInterval', () => {
     keepaliveTimer(callback, 100);
     vi.advanceTimersByTime(100);
     expect(callback).toHaveBeenCalledTimes(1);
-  });
-
-  it('keepaliveInterval repeats until cancelled', () => {
-    setEditorKeepAlive(true);
-    const callback = vi.fn();
-    const cancel = keepaliveInterval(callback, 1_000);
-    worker.fireAll();
-    worker.fireAll();
-    worker.fireAll();
-    expect(callback).toHaveBeenCalledTimes(3);
-    cancel();
-    expect(worker.fireAll()).toBe(0);
   });
 });

@@ -9,7 +9,7 @@
  * raw document state. With no agent involved nothing changes.
  *
  * Callers that genuinely need the raw state (is the human looking?) keep using
- * {@link isDocumentActive} / {@link isDocumentVisible}.
+ * {@link isDocumentActive}.
  */
 
 export const isDocumentActive = (documentRef: Document): boolean => {
@@ -18,17 +18,6 @@ export const isDocumentActive = (documentRef: Document): boolean => {
   const hasFocus = typeof documentRef.hasFocus === 'function' ? documentRef.hasFocus() : true;
 
   return isVisible && hasFocus;
-};
-
-/**
- * Visible on screen, focused or not. The external-change watcher polls on this rather than
- * {@link isDocumentActive}: an editor window beside the agent's terminal is visible but unfocused,
- * and that is exactly when the agent's edits must show up (`.plans/external-agent-authoring.md`
- * §5 C1).
- */
-export const isDocumentVisible = (documentRef: Document): boolean => {
-  const visibilityState = documentRef.visibilityState;
-  return visibilityState === undefined || visibilityState === 'visible';
 };
 
 /** True when the tab is hidden (no rAF; timers throttled) — raw, keepalive does not change it. */

@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createDefaultExportSettings,
   createDefaultProjectManifest,
   createDefaultQualitySettings,
   createProjectId,
   getProjectId,
   normalizeProjectManifest,
-  resolveExportSettings,
   withProjectId,
 } from './ProjectManifest';
 
@@ -38,21 +36,6 @@ describe('ProjectManifest', () => {
         export: { pruneUnusedAssets: false, includeGlobs: [], excludeGlobs: [] },
       }).export
     ).toBeUndefined();
-  });
-
-  it('resolves export settings defensively for partial or absent manifests', () => {
-    const empty = createDefaultExportSettings();
-
-    expect(resolveExportSettings(null)).toEqual(empty);
-    expect(resolveExportSettings({})).toEqual(empty);
-    // A manifest straight off disk has not been normalized yet.
-    expect(resolveExportSettings({ export: { excludeGlobs: 'nope' } })).toEqual(empty);
-    expect(resolveExportSettings({ export: { excludeGlobs: ['scratch/**'] } })).toEqual({
-      ...empty,
-      excludeGlobs: ['scratch/**'],
-    });
-    // Pruning must never be inferred from a truthy-ish value.
-    expect(resolveExportSettings({ export: { pruneUnusedAssets: 'yes' } })).toEqual(empty);
   });
 
   it('normalizes default export scene path from resource path input', () => {

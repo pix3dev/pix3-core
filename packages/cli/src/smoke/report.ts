@@ -135,7 +135,10 @@ export interface SmokeRunSet {
   readonly runs: readonly SmokeOutcome[];
 }
 
-/** Every code `pix3 smoke` can print — the kit drift spec holds the kit's mentions to this list. */
+/**
+ * Every code `pix3 smoke` can print — the kit drift spec holds the kit's mentions to this list.
+ * @internal Read by `kit.spec.ts` only (knip --production skips it).
+ */
 export const SMOKE_CODES: Readonly<
   Record<SmokeErrorCode | SmokeWarningCode | SmokeFailureCode, 'error' | 'warning' | 'failure'>
 > = {

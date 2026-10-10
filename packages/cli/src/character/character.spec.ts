@@ -7,10 +7,6 @@ import { normalizeAnimationResource, type AnimationResource } from '@pix3/runtim
 import { parse } from 'yaml';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import {
-  buildAnimationFrameResourcePath,
-  sanitizeFrameFilePrefix,
-} from '../../../editor-core/src/features/scene/animation-asset-utils.ts';
 import { createProject } from '../new-project.ts';
 import { listTemplates } from '../templates.ts';
 import { USAGE } from '../usage.ts';
@@ -241,18 +237,17 @@ describe('character-compile output vs the runtime and the editor', () => {
     expect(typed.clips[0].frames[0].anchor).toEqual({ x: 0.5, y: 0.9 });
   });
 
-  it('names frame files the way the editor does (managed sprite folder)', () => {
-    for (const clip of ['sword.idle', 'Bow Attack!', 'die', '...', 'a-b_c']) {
-      expect(clipFilePrefix(clip)).toBe(sanitizeFrameFilePrefix(clip));
-    }
+  it('names frame files by the managed sprite folder convention: <folder>/<clip>_<nnnn>.png', () => {
+    // The convention the kit documents (pix3anim.md); the editor no longer creates frames.
+    expect(
+      ['sword.idle', 'Bow Attack!', 'die', '...', 'a-b_c'].map(clip => clipFilePrefix(clip))
+    ).toEqual(['sword_idle', 'bow_attack', 'die', 'frame', 'a_b_c']);
     const out = compileCharacter(GOBLIN);
+    const folder = out.animationPath.slice(0, out.animationPath.lastIndexOf('/'));
     out.animation.clips.forEach(clip => {
       clip.frames.forEach((frame, index) => {
         expect(frame.texturePath).toBe(
-          buildAnimationFrameResourcePath(`res://${out.animationPath}`, index + 1, {
-            clipName: clip.name,
-            extension: 'png',
-          })
+          `res://${folder}/${clipFilePrefix(clip.name)}_${String(index + 1).padStart(4, '0')}.png`
         );
       });
     });

@@ -1,6 +1,13 @@
 // `npm run knip`: unused files, exports, dependencies across the workspaces. Entry points are what
 // a package publishes or a script runs; knip's vitest/vite/eslint/typescript plugins add the specs,
 // configs and setup files on their own. Every ignore below says why knip cannot see the use.
+//
+// `npm run knip:prod` (`knip --production`): the same graph without specs, so code that only a
+// spec keeps alive is reported too. A pattern ending in `!` is a production entry / project file;
+// `!pattern!` takes a file out of the production project: test-only infrastructure (fakes,
+// harnesses, fixtures a spec loads), each named below with why. An export that only specs use
+// on purpose (a test seam, a table the kit's drift spec reads) carries `@internal` in its JSDoc,
+// which production mode skips.
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // An export the declaring file uses itself is API shape, not dead code.
@@ -20,34 +27,62 @@
       // package.json `exports` (`.`, `./testing`, `./node`) are found from the manifest. The wire
       // codec's barrel is its own surface: free-standing, pinned to the pix3-rooms protocol vectors
       // and kept whole for both directions (net/protocol/index.ts says why it is not re-exported).
-      "entry": ["src/net/protocol/index.ts"],
-      "project": ["src/**/*.ts"]
+      "entry": ["src/net/protocol/index.ts!"],
+      "project": [
+        "src/**/*.ts!",
+        // the scene corpus the loader / saver / patch / validate / smoke goldens run over
+        "!src/node/scene-corpus.ts!"
+      ]
     },
     "packages/cli": {
       "entry": [
-        "scripts/*.mjs",
+        "scripts/*.mjs!",
+        // The bin's source (`scripts/build-bin.mjs` bundles it into `dist/index.js`). A brace
+        // pattern: default mode reaches `src/index.ts` through the `start` script and calls a plain
+        // `src/index.ts!` redundant, production mode does not reach it without one.
+        "src/{index,usage}.ts!",
         // esbuild entry points named by path in smoke/bundle.ts and validate/bundle.ts
-        "src/smoke/worker.ts",
-        "src/tree/defaults.ts",
-        "src/validate/bundle-main.ts",
-        "src/{smoke,validate}/bundle-entries/*.ts"
+        "src/smoke/worker.ts!",
+        "src/tree/defaults.ts!",
+        "src/validate/bundle-main.ts!",
+        "src/{smoke,validate}/bundle-entries/*.ts!"
       ],
-      "project": ["src/**/*.ts", "scripts/*.mjs"]
+      "project": [
+        "src/**/*.ts!",
+        "scripts/*.mjs!",
+        // the in-memory Chrome the editor / proxy specs drive over a pipe
+        "!src/editor/fake-chrome.ts!",
+        // the 1.x tool names the kit's drift spec keeps out of the kit
+        "!src/kit/retired-editor-tools.ts!"
+      ]
     },
     "packages/vite-plugin": {
-      "entry": ["src/index.ts", "player/index.ts"],
-      "project": ["src/**/*.ts", "player/**/*.ts"]
+      // `src/client/index.ts`: the editor page's client, served by path (`/@fs/…`, CLIENT_ENTRY).
+      "entry": ["src/index.ts!", "src/client/index.ts!", "player/index.ts!"],
+      "project": [
+        "src/**/*.ts!",
+        "player/**/*.ts!",
+        // the build / plugin specs' project fixtures and dev-server harness
+        "!src/test-support/**!"
+      ]
     },
     "packages/editor-core": {
-      "entry": ["scripts/*.mjs"],
-      "project": ["src/**/*.ts", "scripts/*.mjs"],
+      "entry": ["scripts/*.mjs!"],
+      "project": [
+        "src/**/*.ts!",
+        "scripts/*.mjs!",
+        // the in-memory EditorHost, storage and ticker fakes the specs mount the editor on
+        "!src/host/testing/**!",
+        "!src/**/*.test-helpers.ts!",
+        "!src/**/*.spec-helper.ts!"
+      ],
       // golden-layout's CJS `main` (what Node-side vitest resolves) requires tslib without
       // declaring it.
       "ignoreDependencies": ["tslib"]
     },
     "packages/create-pix3": {
-      "entry": ["src/create.js"],
-      "project": ["src/**/*.{js,ts}"]
+      "entry": ["src/create.js!"],
+      "project": ["src/**/*.{js,ts}!"]
     }
   }
 }

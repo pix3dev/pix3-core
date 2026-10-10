@@ -34,7 +34,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { compileCharacter } from './character/compiler.ts';
 import { CHECK_CODES, checkProject } from './check/check.ts';
 import { extractCoreComponents, type RuntimeLike } from './kit/core-components.ts';
-import { generateKit, type CoreComponentInfo, type KitManifestFile } from './kit/generate.ts';
+import { generateKit, type KitManifestFile } from './kit/generate.ts';
+import type { CoreComponentInfo } from './kit/kit-format.ts';
 import { RETIRED_EDITOR_TOOL_NAMES } from './kit/retired-editor-tools.ts';
 import {
   AGENTS_ALT_FILE,

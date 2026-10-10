@@ -595,8 +595,9 @@ export function protocolJson(value: unknown): Json {
 
 /**
  * The storage seam. Narrow on purpose: the service must not depend on
- * `ProjectStorageService` (see `ProjectTraceStore`), and a spec fakes three
- * methods instead of a project.
+ * `ProjectStorageService`, and a spec fakes three methods instead of a project. No
+ * project-file backend is wired in 2.x (the 1.x `ProjectReportStore` went with the
+ * knip --production sweep): `GameTestService.setProtocolStore` has no caller.
  */
 export interface RunProtocolStore {
   /** File NAMES (not paths) already stored, sorted ascending. */

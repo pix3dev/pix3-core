@@ -22,7 +22,8 @@
     "format:check": "prettier --check \"packages/{runtime,cli,vite-plugin,editor-core}/src/**/*.ts\" \"packages/vite-plugin/player/**/*.ts\"",
     "test:corpus": "node scripts/test-corpus.mjs",
     "version:sync": "node scripts/sync-version.mjs",
-    "knip": "knip"
+    "knip": "knip",
+    "knip:prod": "knip --production"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

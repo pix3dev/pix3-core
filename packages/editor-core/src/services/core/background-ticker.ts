@@ -19,7 +19,7 @@ import {
  *   is hidden and keepalive is on. A pending frame moves between the two when visibility or
  *   keepalive changes, so a loop never stalls on a rAF that will not come. The callback gets a
  *   `performance.now()`-style timestamp either way, so `dt` means the same thing.
- * - {@link keepaliveTimer} / {@link keepaliveInterval}: `setTimeout` / `setInterval` that use the
+ * - {@link keepaliveTimer}: a `setTimeout` that uses the
  *   worker while keepalive is on (reconnect backoff, pings, autosave debounce, file polling).
  */
 
@@ -131,7 +131,10 @@ class WorkerClock {
 
 let clock = new WorkerClock(createInlineWorker);
 
-/** Tests: swap the worker (a fake), or `null` to restore the inline one. Drops pending timers. */
+/**
+ * Tests: swap the worker (a fake), or `null` to restore the inline one. Drops pending timers.
+ * @internal A test seam: only specs call it.
+ */
 export const setTickWorkerFactory = (factory: TickWorkerFactory | null): void => {
   clock.terminate();
   clock = new WorkerClock(factory ?? createInlineWorker);
@@ -182,24 +185,6 @@ export const keepaliveTimer = (callback: () => void, ms: number): (() => void) =
     settled = true;
     unsubscribe();
     cancelInner();
-  };
-};
-
-/** `setInterval` built on {@link keepaliveTimer}: each period re-decides worker vs. timer. */
-export const keepaliveInterval = (callback: () => void, ms: number): (() => void) => {
-  let cancel: (() => void) | null = null;
-  let stopped = false;
-  const arm = (): void => {
-    cancel = keepaliveTimer(() => {
-      if (stopped) return;
-      arm();
-      callback();
-    }, ms);
-  };
-  arm();
-  return () => {
-    stopped = true;
-    cancel?.();
   };
 };
 

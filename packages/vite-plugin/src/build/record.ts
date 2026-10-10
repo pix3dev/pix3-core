@@ -33,17 +33,6 @@ export const writeBuildRecord = (root: string, record: BuildRecord): void => {
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
 };
 
-export const readBuildRecord = (root: string): BuildRecord | null => {
-  try {
-    const parsed = JSON.parse(readFileSync(buildRecordPath(root), 'utf8')) as Partial<BuildRecord>;
-    return typeof parsed.path === 'string' && typeof parsed.sha256 === 'string'
-      ? (parsed as BuildRecord)
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 export const fileDigest = (path: string): { bytes: number; sha256: string } => ({
   bytes: statSync(path).size,
   sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),

@@ -4,8 +4,6 @@ import {
   ASSET_CATEGORIES,
   ASSET_CATEGORY_BY_ID,
   categorizeAssetPath,
-  defaultAssetFolder,
-  ensureAssetTypeFolder,
   getAssetPathExtension,
 } from './asset-categories';
 
@@ -53,25 +51,5 @@ describe('asset-categories', () => {
       expect(definition.label.length).toBeGreaterThan(0);
       expect(definition.icon.length).toBeGreaterThan(0);
     }
-  });
-
-  it('maps assets to their root folder in the flat project layout', () => {
-    expect(defaultAssetFolder('car.png')).toBe('sprites');
-    expect(defaultAssetFolder('robot.glb')).toBe('models');
-    expect(defaultAssetFolder('theme.mp3')).toBe('audio');
-    expect(defaultAssetFolder('main.pix3scene')).toBe('scenes');
-    expect(defaultAssetFolder('Inter.woff2')).toBe('fonts');
-    // Spine exports stay together instead of splitting by extension.
-    expect(defaultAssetFolder('hero.atlas')).toBe('spine');
-    expect(defaultAssetFolder('hero.skel')).toBe('spine');
-    expect(defaultAssetFolder('archive.zip')).toBeNull();
-  });
-
-  it('prefixes bare new-asset names with their type folder, keeping authored folders', () => {
-    expect(ensureAssetTypeFolder('car.png')).toBe('sprites/car.png');
-    expect(ensureAssetTypeFolder('./car.png')).toBe('sprites/car.png');
-    expect(ensureAssetTypeFolder('sprites/ui/car.png')).toBe('sprites/ui/car.png');
-    expect(ensureAssetTypeFolder('generated\\car.png')).toBe('generated/car.png');
-    expect(ensureAssetTypeFolder('archive.zip')).toBe('archive.zip');
   });
 });
