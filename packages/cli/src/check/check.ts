@@ -14,6 +14,7 @@ import {
 } from '../types/project-types.ts';
 import type { BundledDiagnostic, BundledValidateReport } from '../validate/entry.ts';
 import { CLI_VERSION } from '../version.ts';
+import { scanEditorChain, type EditorChainIssueKind } from './editor-chain.ts';
 import { runTypecheck, type TypecheckResult } from './typecheck.ts';
 import {
   resolveTypeScript,
@@ -78,11 +79,48 @@ export const CHECK_CODES = {
     severity: 'warning',
     summary: 'the agent kit in this project was written by another CLI version',
   },
+  W_EDITOR_HMR_API: {
+    severity: 'warning',
+    summary:
+      'import.meta.hot in a module the editor runs (a script, a bot policy or what they import): Vite puts its HMR client on the editor page, and a full-reload of the game reloads the editor',
+  },
+  W_EDITOR_CSS_IMPORT: {
+    severity: 'warning',
+    summary:
+      'a stylesheet imported by a module the editor runs: Vite puts its HMR client on the editor page',
+  },
+  W_EDITOR_DYNAMIC_IMPORT: {
+    severity: 'warning',
+    summary:
+      'a non-literal import() in a module the editor runs: Vite wraps it with a helper from its HMR client, which then loads on the editor page',
+  },
 } as const;
 
 export type CheckCode = keyof typeof CHECK_CODES;
 
 export type CheckDiagnostic = Omit<BundledDiagnostic, 'code'> & { readonly code: string };
+
+/** Contract B (plan §B.2): what each construct is, and how to write it instead. */
+const EDITOR_CHAIN_CODES: Record<
+  EditorChainIssueKind,
+  { readonly code: CheckCode; readonly what: string; readonly fix: string }
+> = {
+  'import-meta-hot': {
+    code: 'W_EDITOR_HMR_API',
+    what: '`import.meta.hot`',
+    fix: 'remove it: the editor re-imports scripts on pix3_sync, a script needs no HMR code (put HMR handling in src/main.ts if the game wants it)',
+  },
+  'css-import': {
+    code: 'W_EDITOR_CSS_IMPORT',
+    what: 'a stylesheet import',
+    fix: "import the stylesheet from the game's entry (src/main.ts), or as a string with `?inline`",
+  },
+  'dynamic-import': {
+    code: 'W_EDITOR_DYNAMIC_IMPORT',
+    what: 'a non-literal `import()`',
+    fix: "use a plain string, import('./levels/one.ts'), a static import, or import.meta.glob for a table of modules",
+  },
+};
 
 /** How many of the newest merge-log lines `check` reports. */
 export const MERGE_LOG_TAIL = 10;
@@ -535,6 +573,23 @@ export const checkProject = async (
     );
   }
 
+  // --- contract B: what would put /@vite/client on the editor page ----------------------------
+  const chain = scanEditorChain(projectRoot);
+  for (const issue of chain.issues) {
+    const kind = EDITOR_CHAIN_CODES[issue.kind];
+    diagnostics.push(
+      diag(kind.code, {
+        file: issue.file,
+        line: issue.line,
+        message:
+          `${kind.what} in a module the editor runs${issue.via !== issue.file ? ` (imported from ${issue.via})` : ''}: ` +
+          `\`${issue.text}\`. Vite then loads /@vite/client into the editor page, and the game's ` +
+          'full-reload reaches the editor (unsaved edits are lost).',
+        fix: kind.fix,
+      })
+    );
+  }
+
   // --- files and their hashes -----------------------------------------------------------------
   const files = new Map<string, string>();
   for (const file of validated.files) files.set(file.file, file.sha256);
@@ -542,6 +597,9 @@ export const checkProject = async (
     if (file.startsWith('/') || /^[A-Za-z]:/.test(file)) continue; // outside the project
     const absolute = join(projectRoot, file);
     if (!files.has(file) && existsSync(absolute)) files.set(file, sha256File(absolute));
+  }
+  for (const file of chain.files) {
+    if (!files.has(file)) files.set(file, sha256File(join(projectRoot, file)));
   }
 
   const all = [...validated.diagnostics, ...[...diagnostics].sort(compare)];
