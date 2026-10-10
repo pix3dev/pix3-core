@@ -146,9 +146,6 @@ export class EditorSettingsDialog extends ComponentBase {
   @state()
   private aiKeyMessage: string | null = null;
 
-  @state()
-  private defaultSaveMaxSize = 0;
-
   connectedCallback(): void {
     super.connectedCallback();
     this.activeSection = this.editorSettingsService.getInitialTab();
@@ -160,7 +157,6 @@ export class EditorSettingsDialog extends ComponentBase {
     const prefs = this.aiImageSettings.getPreferences();
     this.aiProviderId = prefs.selectedProviderId || this.imageProviders.getDefault()?.id || '';
     this.aiModelId = this.aiImageSettings.getSelectedModelId(this.aiProviderId) ?? '';
-    this.defaultSaveMaxSize = prefs.defaultSaveMaxSize;
     void this.refreshAiKeyStatus();
   }
 
@@ -473,7 +469,6 @@ export class EditorSettingsDialog extends ComponentBase {
     const models = provider?.models ?? [];
     const activeModel = provider?.getModel(this.aiModelId);
     const helpUrl = provider?.apiKeyHelpUrl;
-    const ownsKey = provider?.requiresApiKey !== false;
 
     return html`
       <div class="settings-field">
@@ -502,36 +497,13 @@ export class EditorSettingsDialog extends ComponentBase {
                 </option>`
             )}
           </select>
-          ${ownsKey
-            ? this.renderKeyToggle(
-                'image',
-                this.aiKeyConfigured,
-                `${provider?.label ?? 'Provider'} API key`
-              )
-            : null}
+          ${this.renderKeyToggle(
+            'image',
+            this.aiKeyConfigured,
+            `${provider?.label ?? 'Provider'} API key`
+          )}
         </div>
-        ${ownsKey
-          ? this.renderKeyPanel('image', this.renderImageKeyBody(helpUrl))
-          : html`<div class="field-note">This provider needs no API key.</div>`}
-      </div>
-
-      <div class="settings-field">
-        <div class="field-head">
-          <span class="field-title">Default save size (downscale)</span>
-          ${this.renderInfo('image-save-size')}
-        </div>
-        ${this.renderNote(
-          'image-save-size',
-          'Downscales the longest edge when saving a generated image into the project (never upscales). Game elements rarely need the full 1K/2K generation. Overridable per save in the Generate panel.'
-        )}
-        <select aria-label="Default save size" @change=${this.onDefaultSaveSizeChange}>
-          <option value="0" ?selected=${this.defaultSaveMaxSize === 0}>Original size</option>
-          <option value="1024" ?selected=${this.defaultSaveMaxSize === 1024}>≤ 1024 px</option>
-          <option value="512" ?selected=${this.defaultSaveMaxSize === 512}>≤ 512 px</option>
-          <option value="256" ?selected=${this.defaultSaveMaxSize === 256}>≤ 256 px</option>
-          <option value="128" ?selected=${this.defaultSaveMaxSize === 128}>≤ 128 px</option>
-          <option value="64" ?selected=${this.defaultSaveMaxSize === 64}>≤ 64 px</option>
-        </select>
+        ${this.renderKeyPanel('image', this.renderImageKeyBody(helpUrl))}
       </div>
     `;
   }
@@ -578,11 +550,6 @@ export class EditorSettingsDialog extends ComponentBase {
     `;
   }
 
-  private onDefaultSaveSizeChange(e: Event): void {
-    this.defaultSaveMaxSize = Number((e.target as HTMLSelectElement).value) || 0;
-    this.aiImageSettings.updatePreferences({ defaultSaveMaxSize: this.defaultSaveMaxSize });
-  }
-
   private async refreshAiKeyStatus(): Promise<void> {
     const provider = this.imageProviders.get(this.aiProviderId);
     if (!provider) {
@@ -590,10 +557,7 @@ export class EditorSettingsDialog extends ComponentBase {
       return;
     }
     try {
-      this.aiKeyConfigured =
-        provider.requiresApiKey === false
-          ? ((await provider.isAvailable?.()) ?? true)
-          : await this.aiImageSettings.hasApiKey(this.aiProviderId);
+      this.aiKeyConfigured = await this.aiImageSettings.hasApiKey(this.aiProviderId);
     } catch {
       this.aiKeyConfigured = false;
     }

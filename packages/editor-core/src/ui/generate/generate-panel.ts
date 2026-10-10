@@ -7,20 +7,14 @@ import {
   modelPickerLabel,
   type AspectRatio,
 } from '@/services/image-gen/ImageGenTypes';
-import { MAX_SPRITE_SIZE, MIN_SPRITE_SIZE, clampSpriteSize } from '@/services/image-gen/svg-render';
 import {
   GenerationHistoryService,
   type GenerationRecord,
 } from '@/services/image-gen/GenerationHistoryService';
-import {
-  ImageEditTargetService,
-  type ImageEditTargetSnapshot,
-} from '@/services/image-gen/ImageEditTargetService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { EditorSettingsService } from '@/services/editor/EditorSettingsService';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { getDroppedAssetResourcePath, hasAssetDragData } from '@/ui/shared/asset-drag-drop';
-import { setGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import './generate-panel.ts.css';
 
 interface ReferenceItem {
@@ -31,14 +25,7 @@ interface ReferenceItem {
   label: string;
 }
 
-/** Default exact output size (px) for providers that take one. */
-const DEFAULT_EXACT_SIZE = 128;
-
-/**
- * A generated image with nowhere to go: no editor is bound (or the bound canvas
- * stands in for a frame it cannot write back to yet), so the panel keeps it and
- * offers to save it into the project.
- */
+/** The image on screen after a Generate (or a history click), with its save-into-project block. */
 interface PendingResult {
   blob: Blob;
   mimeType: string;
@@ -46,19 +33,14 @@ interface PendingResult {
   prompt: string;
   width?: number;
   height?: number;
-  /** Vector source, for results a vector provider authored — shown, copyable, and re-sent on edit. */
-  svgSource?: string;
 }
 
 /**
  * The dockable "Generate" panel (§9.8): references, prompt, provider/model + key
  * popover, the Generate button and the generation history. None of it is
  * per-editor-tab state: the history, the API key and the selected model outlive
- * any one document.
- *
- * With an image editor registered through {@link ImageEditTargetService} a
- * generation lands on that editor's canvas; with none (the 2.x default — the 1.x
- * Sprite Editor is gone) it lands in this panel's own result block.
+ * any one document. A generation lands in this panel's result block, which saves
+ * it into the project; a history thumbnail brings a past generation back there.
  */
 @customElement('pix3-generate-panel')
 export class GeneratePanel extends ComponentBase {
@@ -70,9 +52,6 @@ export class GeneratePanel extends ComponentBase {
 
   @inject(GenerationHistoryService)
   private readonly history!: GenerationHistoryService;
-
-  @inject(ImageEditTargetService)
-  private readonly imageEditTargets!: ImageEditTargetService;
 
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
@@ -90,14 +69,6 @@ export class GeneratePanel extends ComponentBase {
   @state() private imageSize = '1K';
   @state() private quality = '';
   @state() private transparentBackground = false;
-  /** Exact output size, used instead of aspect/size for providers that honour one. */
-  @state() private outputWidth = DEFAULT_EXACT_SIZE;
-  @state() private outputHeight = DEFAULT_EXACT_SIZE;
-  @state() private lockRatio = true;
-  /**
-   * "Ready to generate", not literally "a key is stored" — a provider that borrows the agent's LLM
-   * credentials (`requiresApiKey: false`) reports readiness instead, and never shows a key prompt.
-   */
   @state() private keyConfigured = false;
   @state() private references: ReferenceItem[] = [];
   @state() private generating = false;
@@ -108,23 +79,16 @@ export class GeneratePanel extends ComponentBase {
   @state() private apiKeyBusy = false;
   @state() private apiKeyMessage: string | null = null;
   @state() private isDragActive = false;
-  /** Snapshot of the editor this panel is bound to, or null when none is active. */
-  @state() private targetSnapshot: ImageEditTargetSnapshot | null = null;
   @state() private result: PendingResult | null = null;
   @state() private saveName = '';
   @state() private saveMessage: string | null = null;
   @state() private saveError: string | null = null;
-  @state() private sourceViewerOpen = false;
-  @state() private sourceCopied = false;
-  /** Whether the next Generate edits the current result's SVG source instead of drawing afresh. */
-  @state() private editSource = false;
 
   private readonly ownedUrls = new Set<string>();
   private readonly historyUrls = new Map<string, string>();
   private abortController: AbortController | null = null;
   private disposeHistorySubscription?: () => void;
   private disposeAiSettingsSubscription?: () => void;
-  private disposeTargetSubscription?: () => void;
   private pasteHandler?: (event: ClipboardEvent) => void;
 
   private readonly onDocPointerDown = (event: PointerEvent): void => {
@@ -147,9 +111,6 @@ export class GeneratePanel extends ComponentBase {
     super.connectedCallback();
     this.disposeHistorySubscription = this.history.subscribe(() => void this.reloadHistory());
     this.disposeAiSettingsSubscription = this.aiSettings.subscribe(() => this.loadPreferences());
-    this.disposeTargetSubscription = this.imageEditTargets.subscribe(snapshot => {
-      this.targetSnapshot = snapshot.targetSnapshot;
-    });
     this.pasteHandler = (event: ClipboardEvent) => this.onPaste(event);
     this.addEventListener('paste', this.pasteHandler);
     window.addEventListener('pointerdown', this.onDocPointerDown, true);
@@ -165,8 +126,6 @@ export class GeneratePanel extends ComponentBase {
     this.disposeHistorySubscription = undefined;
     this.disposeAiSettingsSubscription?.();
     this.disposeAiSettingsSubscription = undefined;
-    this.disposeTargetSubscription?.();
-    this.disposeTargetSubscription = undefined;
     if (this.pasteHandler) {
       this.removeEventListener('paste', this.pasteHandler);
       this.pasteHandler = undefined;
@@ -219,21 +178,7 @@ export class GeneratePanel extends ComponentBase {
         : (qualities.find(q => q === 'medium') ?? qualities[0] ?? '');
     this.transparentBackground =
       Boolean(model?.capabilities.supportsTransparency) && prefs.transparentBackground;
-    this.outputWidth = clampSpriteSize(prefs.defaultExactWidth, DEFAULT_EXACT_SIZE);
-    this.outputHeight = clampSpriteSize(prefs.defaultExactHeight, DEFAULT_EXACT_SIZE);
     void this.refreshKeyStatus();
-  }
-
-  /** True when the selected provider owns an API key (raster providers) rather than borrowing one. */
-  private get keyRequired(): boolean {
-    return this.providers.get(this.providerId)?.requiresApiKey !== false;
-  }
-
-  /** True when the selected model takes exact pixel dimensions instead of an aspect ratio. */
-  private get exactSize(): boolean {
-    return Boolean(
-      this.providers.get(this.providerId)?.getModel(this.modelId)?.capabilities.supportsExactSize
-    );
   }
 
   private async refreshKeyStatus(): Promise<void> {
@@ -243,60 +188,10 @@ export class GeneratePanel extends ComponentBase {
       return;
     }
     try {
-      // For a provider with no key of its own, "is a key stored?" is the wrong question — it would
-      // answer no forever and gate off a lane the user already configured in Agent settings.
-      this.keyConfigured =
-        provider.requiresApiKey === false
-          ? ((await provider.isAvailable?.()) ?? true)
-          : await this.aiSettings.hasApiKey(this.providerId);
+      this.keyConfigured = await this.aiSettings.hasApiKey(this.providerId);
     } catch {
       this.keyConfigured = false;
     }
-  }
-
-  // -- target binding --------------------------------------------------------
-
-  /**
-   * Whether a generated image can be pushed straight onto the bound editor's
-   * canvas. A frame-bound canvas only takes one when it says it can write it back
-   * into the frame (§9.5); otherwise the result falls through to this panel's own
-   * save block rather than being dropped on the next frame click.
-   */
-  private get canApplyToTarget(): boolean {
-    const snapshot = this.targetSnapshot;
-    if (!snapshot) {
-      return false;
-    }
-    return !snapshot.boundFrameTexturePath || snapshot.acceptsFrameWriteBack;
-  }
-
-  /**
-   * Whether a stored generation can be pasted straight into the frame the bound
-   * editor has selected (§9.11.5). Stricter than {@link canApplyToTarget}: a plain
-   * image canvas already takes history entries through the thumbnail itself, so
-   * the extra action only earns its place when there *is* a frame behind it.
-   */
-  private get canApplyToFrame(): boolean {
-    return this.canApplyToTarget && Boolean(this.targetSnapshot?.boundFrameTexturePath);
-  }
-
-  /** Hand `image` to the bound editor, or keep it here when there is nowhere to put it. */
-  private deliver(image: PendingResult): void {
-    if (
-      this.canApplyToTarget &&
-      this.imageEditTargets.applyGeneratedImage({
-        blob: image.blob,
-        mimeType: image.mimeType,
-        prompt: image.prompt,
-        width: image.width,
-        height: image.height,
-      })
-    ) {
-      this.setResult(null);
-      return;
-    }
-    this.setResult(image);
-    this.saveName = deriveSaveName(image.prompt, image.mimeType);
   }
 
   // -- rendering -------------------------------------------------------------
@@ -314,8 +209,8 @@ export class GeneratePanel extends ComponentBase {
       >
         ${this.renderHead()}
         <div class="gp-body">
-          ${this.renderReferences(maxReferences)} ${this.renderSizeRow()} ${this.renderPromptBar()}
-          ${this.renderResult()} ${this.renderHistory()}
+          ${this.renderReferences(maxReferences)} ${this.renderPromptBar()} ${this.renderResult()}
+          ${this.renderHistory()}
         </div>
         ${this.isDragActive
           ? html`<div class="gp-drop-overlay">Drop image to add as reference</div>`
@@ -325,15 +220,6 @@ export class GeneratePanel extends ComponentBase {
   }
 
   private renderHead() {
-    const snapshot = this.targetSnapshot;
-    const destination = !snapshot
-      ? 'No image editor open — results are saved from here.'
-      : this.canApplyToTarget
-        ? snapshot.boundFrameTexturePath
-          ? `Results go into the selected frame of ${snapshot.label}`
-          : `Results go to ${snapshot.label}`
-        : `${snapshot.label} cannot take a generated frame right now — results stay here.`;
-
     return html`
       <header class="gp-head">
         <span class="gp-head-title">
@@ -349,9 +235,6 @@ export class GeneratePanel extends ComponentBase {
         >
           ${this.icons.getIcon('settings', IconSize.SMALL)}
         </button>
-        <div class="gp-target ${snapshot ? 'is-bound' : ''}" title=${destination}>
-          ${destination}
-        </div>
       </header>
     `;
   }
@@ -390,71 +273,6 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  /**
-   * Exact W×H, for providers that can actually deliver it. It sits in the panel body rather than
-   * behind the settings popover because it is the *point* of such a provider — "96×32 and I get
-   * 96×32" is the reason to pick it over a raster model, and a control nobody finds is a promise
-   * nobody collects.
-   */
-  private renderSizeRow() {
-    if (!this.exactSize) {
-      return null;
-    }
-    return html`
-      <div class="gp-size-row">
-        <span class="gp-field-label">Size</span>
-        <input
-          class="gp-size-input"
-          type="number"
-          min=${MIN_SPRITE_SIZE}
-          max=${MAX_SPRITE_SIZE}
-          step="1"
-          aria-label="Output width in pixels"
-          .value=${String(this.outputWidth)}
-          @change=${this.onWidthChange}
-        />
-        <span class="gp-size-times">×</span>
-        <input
-          class="gp-size-input"
-          type="number"
-          min=${MIN_SPRITE_SIZE}
-          max=${MAX_SPRITE_SIZE}
-          step="1"
-          aria-label="Output height in pixels"
-          .value=${String(this.outputHeight)}
-          @change=${this.onHeightChange}
-        />
-        <button
-          class="gp-size-lock ${this.lockRatio ? 'is-locked' : ''}"
-          type="button"
-          title=${this.lockRatio
-            ? 'Square: height follows width'
-            : 'Width and height are independent'}
-          aria-label="Lock output aspect ratio"
-          aria-pressed=${this.lockRatio ? 'true' : 'false'}
-          @click=${this.onToggleLockRatio}
-        >
-          ${this.icons.getIcon(this.lockRatio ? 'lock' : 'unlock', 12)}
-        </button>
-        <div class="gp-spacer"></div>
-        ${SIZE_PRESETS.map(
-          preset => html`
-            <button
-              class="gp-size-preset ${this.outputWidth === preset && this.outputHeight === preset
-                ? 'is-active'
-                : ''}"
-              type="button"
-              title=${`${preset}×${preset}`}
-              @click=${() => this.applySizePreset(preset)}
-            >
-              ${preset}
-            </button>
-          `
-        )}
-      </div>
-    `;
-  }
-
   private renderPromptBar() {
     const provider = this.providers.get(this.providerId);
     const model = provider?.getModel(this.modelId);
@@ -479,17 +297,13 @@ export class GeneratePanel extends ComponentBase {
             <div class="gp-key-wrap">
               <button
                 class="gp-key-button ${this.keyConfigured ? 'is-connected' : ''}"
-                title=${!this.keyRequired
-                  ? 'Quick settings — this provider uses the agent’s LLM, no key needed'
-                  : this.keyConfigured
-                    ? 'API key connected — quick settings'
-                    : 'Connect API key & quick settings'}
-                aria-label=${this.keyRequired
-                  ? 'API key and quick settings'
-                  : 'Quick generation settings'}
+                title=${this.keyConfigured
+                  ? 'API key connected — quick settings'
+                  : 'Connect API key & quick settings'}
+                aria-label="API key and quick settings"
                 @click=${this.toggleApiKeyPopover}
               >
-                ${this.icons.getIcon(this.keyRequired ? 'key' : 'sliders', IconSize.SMALL)}
+                ${this.icons.getIcon('key', IconSize.SMALL)}
               </button>
               ${this.apiKeyPopoverOpen ? this.renderKeyPopover(provider) : null}
             </div>
@@ -563,18 +377,6 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  /** For a provider with no key of its own: nothing to enter, just its readiness. */
-  private renderBorrowedCredentialRow() {
-    return html`
-      <div class="gp-key-status-row">
-        <span class="gp-field-label">Model access</span>
-        <span class="gp-key-status ${this.keyConfigured ? 'is-set' : 'is-unset'}">
-          ${this.keyConfigured ? 'Ready' : 'Not available'}
-        </span>
-      </div>
-    `;
-  }
-
   private renderKeyPopover(provider: ReturnType<ImageGenProviderRegistry['get']>) {
     const providers = this.providers.list();
     const caps = provider?.getModel(this.modelId)?.capabilities;
@@ -595,22 +397,20 @@ export class GeneratePanel extends ComponentBase {
           </select>
         </label>
 
-        ${this.keyRequired ? this.renderKeyRows(helpUrl) : this.renderBorrowedCredentialRow()}
+        ${this.renderKeyRows(helpUrl)}
 
         <div class="gp-field-row">
-          ${caps?.supportsExactSize
-            ? null
-            : html`<label class="gp-field">
-                <span class="gp-field-label">Aspect</span>
-                <select @change=${this.onAspectChange}>
-                  ${(caps?.aspectRatios ?? ['Auto']).map(
-                    ratio =>
-                      html`<option value=${ratio} ?selected=${ratio === this.aspectRatio}>
-                        ${ratio}
-                      </option>`
-                  )}
-                </select>
-              </label>`}
+          <label class="gp-field">
+            <span class="gp-field-label">Aspect</span>
+            <select @change=${this.onAspectChange}>
+              ${(caps?.aspectRatios ?? ['Auto']).map(
+                ratio =>
+                  html`<option value=${ratio} ?selected=${ratio === this.aspectRatio}>
+                    ${ratio}
+                  </option>`
+              )}
+            </select>
+          </label>
           ${caps && caps.imageSizes.length > 0
             ? html`<label class="gp-field">
                 <span class="gp-field-label">Size</span>
@@ -652,10 +452,7 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  /**
-   * The standalone ending: with no canvas to push to, the result gets the Asset
-   * Generator's own actions rather than being lost between two panels.
-   */
+  /** The result block: name it and save it into the project. */
   private renderResult() {
     const result = this.result;
     if (!result) {
@@ -667,22 +464,12 @@ export class GeneratePanel extends ComponentBase {
         <div class="gp-result-row">
           <img class="gp-result-thumb" src=${result.objectUrl} alt="Generated image" />
           <div class="gp-result-meta">
-            <span class="gp-field-label">
-              Result
-              ${result.svgSource
-                ? html`<span
-                    class="gp-badge"
-                    title="Baked from vector source — real alpha, exact size"
-                    >SVG</span
-                  >`
-                : null}
-            </span>
+            <span class="gp-field-label">Result</span>
             <span class="gp-hint">
               ${result.width && result.height ? `${result.width}×${result.height}` : 'Ready'}
             </span>
           </div>
         </div>
-        ${this.renderSourceViewer(result)}
         <input
           class="gp-result-name"
           type="text"
@@ -707,61 +494,15 @@ export class GeneratePanel extends ComponentBase {
     `;
   }
 
-  /**
-   * The vector source behind a baked result, read-only with a copy button. It earns its place
-   * because this asset *is* code: seeing it is how a user learns the sprite can be edited by asking
-   * for a change instead of re-rolling, and copying it is the escape hatch into a real vector editor.
-   */
-  private renderSourceViewer(result: PendingResult) {
-    const source = result.svgSource;
-    if (!source) {
-      return null;
-    }
-    return html`
-      <div class="gp-source">
-        <label class="gp-toggle-field">
-          <input type="checkbox" .checked=${this.editSource} @change=${this.onEditSourceChange} />
-          <span>Edit this SVG on the next Generate (instead of drawing a new one)</span>
-        </label>
-        <div class="gp-source-head">
-          <button
-            class="gp-source-toggle"
-            type="button"
-            aria-expanded=${this.sourceViewerOpen ? 'true' : 'false'}
-            @click=${this.onToggleSourceViewer}
-          >
-            ${this.icons.getIcon(this.sourceViewerOpen ? 'chevron-down' : 'chevron-right', 12)}
-            <span>SVG source (${source.length} chars)</span>
-          </button>
-          <button
-            class="gp-link-button"
-            type="button"
-            @click=${() => void this.onCopySource(source)}
-          >
-            ${this.sourceCopied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        ${this.sourceViewerOpen
-          ? html`<pre class="gp-source-code" tabindex="0">${source}</pre>`
-          : null}
-      </div>
-    `;
-  }
-
   private renderHistory() {
     if (this.historyRecords.length === 0) {
       return null;
     }
-    const applyLabel = this.canApplyToTarget ? 'Apply to canvas' : 'Use this image';
-    const canApplyToFrame = this.canApplyToFrame;
-    const frameApplyLabel = canApplyToFrame
-      ? 'Apply to current frame'
-      : 'No frame is bound — open an image editor on a frame first';
+    const applyLabel = 'Use this image';
     return html`
       <footer class="gp-history">
         <div class="gp-history-head">
           <span class="gp-field-label">History (${this.historyRecords.length})</span>
-          <span class="gp-history-hint">Drag a thumbnail to the Asset Browser to save it.</span>
           <button class="gp-link-button" @click=${this.onClearHistory}>Clear</button>
         </div>
         <div class="gp-history-strip">
@@ -771,22 +512,11 @@ export class GeneratePanel extends ComponentBase {
               <div class="gp-history-card" title=${record.prompt}>
                 <button
                   class="gp-history-thumb"
-                  draggable="true"
                   title=${applyLabel}
                   aria-label=${`${applyLabel}: ${record.prompt}`}
                   @click=${() => this.useHistoryRecord(record)}
-                  @dragstart=${(event: DragEvent) => this.onHistoryDragStart(event, record)}
                 >
-                  ${url ? html`<img src=${url} alt=${record.prompt} draggable="false" />` : null}
-                </button>
-                <button
-                  class="gp-history-apply"
-                  title=${frameApplyLabel}
-                  aria-label=${`${frameApplyLabel}: ${record.prompt}`}
-                  ?disabled=${!canApplyToFrame}
-                  @click=${() => void this.applyHistoryRecordToFrame(record)}
-                >
-                  ${this.icons.getIcon('check', 12)}
+                  ${url ? html`<img src=${url} alt=${record.prompt} />` : null}
                 </button>
                 <button
                   class="gp-history-delete"
@@ -829,51 +559,6 @@ export class GeneratePanel extends ComponentBase {
     this.apiKeyPopoverOpen = false;
     void this.editorSettings.showSettings('images');
   };
-
-  private onWidthChange(event: Event): void {
-    const value = clampSpriteSize(
-      Number((event.target as HTMLInputElement).value),
-      this.outputWidth
-    );
-    this.outputWidth = value;
-    if (this.lockRatio) {
-      this.outputHeight = value;
-    }
-    this.persistOutputSize();
-  }
-
-  private onHeightChange(event: Event): void {
-    const value = clampSpriteSize(
-      Number((event.target as HTMLInputElement).value),
-      this.outputHeight
-    );
-    this.outputHeight = value;
-    if (this.lockRatio) {
-      this.outputWidth = value;
-    }
-    this.persistOutputSize();
-  }
-
-  private onToggleLockRatio(): void {
-    this.lockRatio = !this.lockRatio;
-    if (this.lockRatio && this.outputHeight !== this.outputWidth) {
-      this.outputHeight = this.outputWidth;
-      this.persistOutputSize();
-    }
-  }
-
-  private applySizePreset(size: number): void {
-    this.outputWidth = size;
-    this.outputHeight = size;
-    this.persistOutputSize();
-  }
-
-  private persistOutputSize(): void {
-    this.aiSettings.updatePreferences({
-      defaultExactWidth: this.outputWidth,
-      defaultExactHeight: this.outputHeight,
-    });
-  }
 
   private onProviderChange(event: Event): void {
     const providerId = (event.target as HTMLSelectElement).value;
@@ -955,26 +640,6 @@ export class GeneratePanel extends ComponentBase {
   private onTransparentChange(event: Event): void {
     this.transparentBackground = (event.target as HTMLInputElement).checked;
     this.aiSettings.updatePreferences({ transparentBackground: this.transparentBackground });
-  }
-
-  private onToggleSourceViewer(): void {
-    this.sourceViewerOpen = !this.sourceViewerOpen;
-  }
-
-  private onEditSourceChange(event: Event): void {
-    this.editSource = (event.target as HTMLInputElement).checked;
-  }
-
-  private async onCopySource(source: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(source);
-      this.sourceCopied = true;
-      window.setTimeout(() => {
-        this.sourceCopied = false;
-      }, 1500);
-    } catch (error) {
-      this.saveError = `Could not copy the SVG source: ${describeError(error)}`;
-    }
   }
 
   private onSaveNameInput(event: Event): void {
@@ -1098,10 +763,8 @@ export class GeneratePanel extends ComponentBase {
     this.abortController = new AbortController();
 
     try {
-      // A provider without a key of its own (`requiresApiKey: false`) is never asked for one.
-      const keyRequired = provider.requiresApiKey !== false;
-      const apiKey = keyRequired ? await this.aiSettings.getApiKey(this.providerId) : '';
-      if (keyRequired && !apiKey) {
+      const apiKey = await this.aiSettings.getApiKey(this.providerId);
+      if (!apiKey) {
         this.keyConfigured = false;
         this.generateError = 'No API key configured for this provider.';
         return;
@@ -1126,20 +789,9 @@ export class GeneratePanel extends ComponentBase {
           quality: caps.qualities?.includes(this.quality) ? this.quality : undefined,
           background:
             caps.supportsTransparency && this.transparentBackground ? 'transparent' : undefined,
-          ...(caps.supportsExactSize
-            ? {
-                width: this.outputWidth,
-                height: this.outputHeight,
-                // With "Edit this SVG" armed, the next Generate is a source edit rather than a
-                // fresh draw: "make the outline thicker" keeps everything it did not ask to
-                // change, which a re-roll cannot promise. Opt-in, because a new prompt typed over
-                // an old result is much more often a new sprite than an edit of that one.
-                svgSource: this.editSource ? this.result?.svgSource : undefined,
-              }
-            : {}),
           signal: this.abortController.signal,
         },
-        { apiKey: apiKey ?? '', modelId: this.modelId }
+        { apiKey, modelId: this.modelId }
       );
 
       const image = result.images[0];
@@ -1158,7 +810,6 @@ export class GeneratePanel extends ComponentBase {
         prompt: this.prompt.trim(),
         width: size?.width,
         height: size?.height,
-        svgSource: image.svgSource,
       });
 
       await this.history.add({
@@ -1171,7 +822,6 @@ export class GeneratePanel extends ComponentBase {
         blob,
         width: size?.width,
         height: size?.height,
-        svgSource: image.svgSource,
       });
     } catch (error) {
       this.generateError = describeError(error);
@@ -1232,8 +882,7 @@ export class GeneratePanel extends ComponentBase {
   private async reloadHistory(): Promise<void> {
     let records: GenerationRecord[] = [];
     try {
-      // Images only: the store is shared with generated prototype sounds, which have no thumbnail.
-      records = await this.history.list(200, 'image');
+      records = await this.history.list(200);
     } catch (error) {
       console.warn('[GeneratePanel] Failed to load history', error);
     }
@@ -1256,7 +905,7 @@ export class GeneratePanel extends ComponentBase {
     this.historyRecords = [...records];
   }
 
-  /** Apply a stored generation to the bound canvas, or bring it back as the result. */
+  /** Bring a stored generation back as the result (and its prompt and settings). */
   private useHistoryRecord(record: GenerationRecord): void {
     this.prompt = record.prompt;
     if (record.aspectRatio) {
@@ -1272,54 +921,7 @@ export class GeneratePanel extends ComponentBase {
       prompt: record.prompt,
       width: record.width,
       height: record.height,
-      svgSource: record.svgSource,
     });
-  }
-
-  /**
-   * Paste a stored generation into the bound editor's selected frame (§9.11.5).
-   * Deliberately the very same `applyGeneratedImage` call the fresh-generation
-   * path makes, so a size mismatch opens the Sprite Editor's place mode here too
-   * without this action knowing anything about it. Unlike the thumbnail click it
-   * does not adopt the record's prompt/aspect ratio: this is a paste, not a
-   * "continue from here".
-   */
-  private async applyHistoryRecordToFrame(record: GenerationRecord): Promise<void> {
-    if (!this.canApplyToFrame) {
-      return;
-    }
-
-    // Re-read through the service so the freshest stored copy is what lands in
-    // the frame; the strip's own record still carries the blob, so a failed or
-    // missing read is not a reason to drop the paste.
-    let stored: GenerationRecord | undefined;
-    try {
-      stored = await this.history.get(record.id);
-    } catch (error) {
-      console.warn('[GeneratePanel] Failed to read the generation to apply', error);
-    }
-    const source = stored ?? record;
-
-    // Awaiting the read gave the user time to click elsewhere.
-    if (!this.canApplyToFrame) {
-      return;
-    }
-
-    this.imageEditTargets.applyGeneratedImage({
-      blob: source.blob,
-      mimeType: source.mimeType,
-      prompt: source.prompt,
-      width: source.width,
-      height: source.height,
-    });
-  }
-
-  private onHistoryDragStart(event: DragEvent, record: GenerationRecord): void {
-    if (!event.dataTransfer) {
-      return;
-    }
-    const suggestedName = ensureImageExt(slugify(record.prompt) || 'generated', record.mimeType);
-    setGenerationDragData(event.dataTransfer, { id: record.id, suggestedName });
   }
 
   private async deleteHistoryRecord(id: string): Promise<void> {
@@ -1333,16 +935,18 @@ export class GeneratePanel extends ComponentBase {
 
   // -- helpers ---------------------------------------------------------------
 
+  /** Put `image` on screen as the result, with a save name derived from its prompt. */
+  private deliver(image: PendingResult): void {
+    this.setResult(image);
+    this.saveName = deriveSaveName(image.prompt, image.mimeType);
+  }
+
   private setResult(next: PendingResult | null): void {
     const previous = this.result;
     this.result = next;
     if (previous && previous.objectUrl !== next?.objectUrl) {
       this.revokeUrl(previous.objectUrl);
     }
-    // Source-bound UI belongs to whichever result is on screen; a new one starts fresh.
-    this.sourceViewerOpen = false;
-    this.sourceCopied = false;
-    this.editSource = false;
     if (!next) {
       this.saveMessage = null;
       this.saveError = null;
@@ -1374,9 +978,6 @@ export class GeneratePanel extends ComponentBase {
 }
 
 // -- module-level utilities --------------------------------------------------
-
-/** One-click sizes for exact-size providers — the powers of two game sprites actually ship at. */
-const SIZE_PRESETS: readonly number[] = [64, 128, 256, 512];
 
 const hasFiles = (dataTransfer: DataTransfer): boolean =>
   Array.from(dataTransfer.types ?? []).includes('Files');

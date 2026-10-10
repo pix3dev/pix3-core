@@ -34,25 +34,6 @@ pix3-generate-panel .gp-head-title {
   color: var(--accent);
 }
 
-/*
- * Which editor the results land on. The prompt -> result loop now spans two
- * panels (§9.8), so the destination has to be readable without looking away.
- */
-pix3-generate-panel .gp-target {
-  flex: 1 1 100%;
-  min-width: 0;
-  font-size: 0.72rem;
-  line-height: 1.3;
-  color: var(--fg-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-pix3-generate-panel .gp-target.is-bound {
-  color: var(--accent);
-}
-
 pix3-generate-panel .gp-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -181,55 +162,6 @@ pix3-generate-panel .gp-success {
 
 pix3-generate-panel .gp-spacer {
   flex: 1 1 auto;
-}
-
-/* Exact output size (providers with supportsExactSize) ------------------- */
-pix3-generate-panel .gp-size-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-pix3-generate-panel .gp-size-input {
-  width: 4.5rem;
-  box-sizing: border-box;
-}
-
-pix3-generate-panel .gp-size-times {
-  color: var(--fg-3);
-  font-size: 0.8rem;
-}
-
-pix3-generate-panel .gp-size-lock,
-pix3-generate-panel .gp-size-preset {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.2rem 0.4rem;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--fg-2);
-  cursor: pointer;
-  font-size: 0.75rem;
-  line-height: 1;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease;
-}
-
-pix3-generate-panel .gp-size-lock:hover,
-pix3-generate-panel .gp-size-preset:hover {
-  background: var(--bg-2);
-  color: var(--fg-0);
-}
-
-pix3-generate-panel .gp-size-lock.is-locked,
-pix3-generate-panel .gp-size-preset.is-active {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* References ------------------------------------------------------------- */
@@ -501,65 +433,6 @@ pix3-generate-panel .gp-result-meta {
   min-width: 0;
 }
 
-pix3-generate-panel .gp-badge {
-  display: inline-block;
-  margin-left: 0.35rem;
-  padding: 0.05rem 0.3rem;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-1);
-  color: var(--accent);
-  font-size: 0.65rem;
-  letter-spacing: 0.04em;
-  vertical-align: middle;
-}
-
-/* Vector source viewer --------------------------------------------------- */
-pix3-generate-panel .gp-source {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-pix3-generate-panel .gp-source-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-pix3-generate-panel .gp-source-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--fg-2);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-}
-
-pix3-generate-panel .gp-source-toggle:hover {
-  color: var(--fg-0);
-}
-
-pix3-generate-panel .gp-source-code {
-  margin: 0;
-  max-height: 14rem;
-  overflow: auto;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-1);
-  background: var(--bg-1);
-  color: var(--fg-1);
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 pix3-generate-panel .gp-result-name {
   width: 100%;
   box-sizing: border-box;
@@ -584,15 +457,6 @@ pix3-generate-panel .gp-history-head {
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.4rem;
-}
-
-pix3-generate-panel .gp-history-hint {
-  flex: 1 1 auto;
-  font-size: 0.72rem;
-  color: var(--fg-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 pix3-generate-panel .gp-history-strip {
@@ -627,30 +491,6 @@ pix3-generate-panel .gp-history-thumb img {
   height: 100%;
   object-fit: cover;
   display: block;
-}
-
-pix3-generate-panel .gp-history-apply {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg-0);
-  line-height: 1;
-  cursor: pointer;
-}
-
-pix3-generate-panel .gp-history-apply:disabled {
-  background: oklch(0 0 0 / 0.55);
-  color: var(--fg-3);
-  cursor: default;
 }
 
 pix3-generate-panel .gp-history-delete {

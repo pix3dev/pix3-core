@@ -16,10 +16,8 @@ import {
   ASSET_PATH_MIME,
   ASSET_RESOURCE_LIST_MIME,
   ASSET_RESOURCE_MIME,
-  hasGenerationDragData,
   toProjectResourcePath,
 } from '@/ui/shared/asset-drag-drop';
-import { GeneratedAssetDropService } from '@/services/image-gen/GeneratedAssetDropService';
 import { DropdownPortal } from '@/ui/shared/dropdown-portal';
 import { appState } from '@/state';
 import { subscribe } from 'valtio/vanilla';
@@ -50,9 +48,6 @@ export class AssetsContent extends ComponentBase {
   @inject(IconService)
   private readonly iconService!: IconService;
 
-  @inject(GeneratedAssetDropService)
-  private readonly generatedAssetDropService!: GeneratedAssetDropService;
-
   @inject(ProjectService)
   private readonly projectService!: ProjectService;
 
@@ -81,9 +76,6 @@ export class AssetsContent extends ComponentBase {
 
   @state()
   private thumbnailSize = DEFAULT_THUMBNAIL_SIZE;
-
-  @state()
-  private isGenerationDropActive = false;
 
   /** Path of the audio asset currently previewing (null = none). */
   @state()
@@ -280,19 +272,7 @@ export class AssetsContent extends ComponentBase {
   protected render() {
     return html`
       ${this.renderHeader()}
-      <div
-        class="preview-root ${this.isGenerationDropActive ? 'is-generation-drop' : ''}"
-        @dragover=${this.onGenerationDragOver}
-        @dragleave=${this.onGenerationDragLeave}
-        @drop=${this.onGenerationDrop}
-      >
-        ${this.isGenerationDropActive
-          ? html`<div class="generation-drop-overlay">
-              Drop to save into ${this.snapshot.displayPath}
-            </div>`
-          : null}
-        ${this.renderBody()}
-      </div>
+      <div class="preview-root">${this.renderBody()}</div>
       ${this.renderContextMenu()}
     `;
   }
@@ -1029,37 +1009,6 @@ export class AssetsContent extends ComponentBase {
     }
     // The browser snapshots the element synchronously, so it can go away right after.
     requestAnimationFrame(() => chip.remove());
-  }
-
-  private onGenerationDragOver(event: DragEvent): void {
-    if (!hasGenerationDragData(event.dataTransfer)) {
-      return;
-    }
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'copy';
-    }
-    this.isGenerationDropActive = true;
-  }
-
-  private onGenerationDragLeave(event: DragEvent): void {
-    const related = event.relatedTarget as Node | null;
-    if (related && this.contains(related)) {
-      return;
-    }
-    this.isGenerationDropActive = false;
-  }
-
-  private async onGenerationDrop(event: DragEvent): Promise<void> {
-    // A generation entry saves into the current folder; the write signal refreshes the preview.
-    if (!hasGenerationDragData(event.dataTransfer)) {
-      return;
-    }
-    event.preventDefault();
-    this.isGenerationDropActive = false;
-    const targetDirectory = this.snapshot.selectedFolderPath ?? '.';
-    await this.generatedAssetDropService.handleDrop(event.dataTransfer, targetDirectory);
-    // The preview refreshes automatically once the write signals a directory change.
   }
 
   private updateSelectionFromClick(event: MouseEvent, item: AssetPreviewItem): void {

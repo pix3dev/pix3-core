@@ -2,11 +2,7 @@ import { inject, injectable } from '@/fw/di';
 import { SecretStorageService } from '@/services/core/SecretStorageService';
 import { ImageGenProviderRegistry } from '@/services/image-gen/ImageGenProviderRegistry';
 import type { AspectRatio, ImageGenProvider } from '@/services/image-gen/ImageGenTypes';
-import { clampSpriteSize } from '@/services/image-gen/svg-render';
 import { appState } from '@/state';
-
-/** Default exact output size (px) for providers that honour one. */
-const DEFAULT_EXACT_SIZE = 128;
 
 export interface AiImagePreferences {
   selectedProviderId: string;
@@ -14,22 +10,10 @@ export interface AiImagePreferences {
   modelByProvider: Record<string, string>;
   defaultAspectRatio: AspectRatio;
   defaultImageSize: string;
-  /**
-   * Exact output size (px) for providers that honour one (`supportsExactSize`). Persisted because
-   * Golden Layout destroys and recreates the Generate panel on every dock/undock, and a sprite size
-   * the user typed is a setting, not transient panel state.
-   */
-  defaultExactWidth: number;
-  defaultExactHeight: number;
   /** Provider-specific quality tier (e.g. OpenAI 'low' | 'medium' | 'high'); '' = provider default. */
   defaultQuality: string;
   /** Request a transparent alpha channel from providers that support it (e.g. OpenAI GPT Image). */
   transparentBackground: boolean;
-  /**
-   * Default longest-edge cap (px) applied when saving into the project — game elements rarely need
-   * the full 1K/2K generation. `0` = keep the original size. Downscale-only (never upscales).
-   */
-  defaultSaveMaxSize: number;
 }
 
 const STORAGE_KEY = 'pix3.aiImageSettings:v1';
@@ -160,11 +144,8 @@ export class AiImageSettingsService {
       modelByProvider: {},
       defaultAspectRatio: 'Auto',
       defaultImageSize: '1K',
-      defaultExactWidth: DEFAULT_EXACT_SIZE,
-      defaultExactHeight: DEFAULT_EXACT_SIZE,
       defaultQuality: '',
       transparentBackground: false,
-      defaultSaveMaxSize: 0,
     };
   }
 
@@ -196,14 +177,6 @@ export class AiImageSettingsService {
           typeof parsed.defaultImageSize === 'string'
             ? parsed.defaultImageSize
             : defaults.defaultImageSize,
-        defaultExactWidth: clampSpriteSize(
-          Number(parsed.defaultExactWidth),
-          defaults.defaultExactWidth
-        ),
-        defaultExactHeight: clampSpriteSize(
-          Number(parsed.defaultExactHeight),
-          defaults.defaultExactHeight
-        ),
         defaultQuality:
           typeof parsed.defaultQuality === 'string'
             ? parsed.defaultQuality
@@ -212,12 +185,6 @@ export class AiImageSettingsService {
           typeof parsed.transparentBackground === 'boolean'
             ? parsed.transparentBackground
             : defaults.transparentBackground,
-        defaultSaveMaxSize:
-          typeof parsed.defaultSaveMaxSize === 'number' &&
-          Number.isFinite(parsed.defaultSaveMaxSize) &&
-          parsed.defaultSaveMaxSize >= 0
-            ? Math.round(parsed.defaultSaveMaxSize)
-            : defaults.defaultSaveMaxSize,
       };
     } catch {
       return defaults;

@@ -16,10 +16,6 @@ import {
   type AssetImportDialogInstance,
 } from '@/services/assets/AssetImportDialogService';
 import {
-  SaveGeneratedAssetDialogService,
-  type SaveGeneratedAssetDialogInstance,
-} from '@/services/image-gen/SaveGeneratedAssetDialogService';
-import {
   BehaviorPickerService,
   type ComponentPickerInstance,
 } from '@/services/editor/BehaviorPickerService';
@@ -96,7 +92,6 @@ import './shared/pix3-host-banner';
 import './shared/pix3-editor-settings-dialog';
 import './shared/pix3-animation-auto-slice-dialog';
 import './shared/pix3-asset-import-dialog';
-import './shared/pix3-save-asset-dialog';
 import './shared/pix3-node-type-picker';
 import './shared/pix3-status-bar';
 import './shared/pix3-lightbox';
@@ -162,9 +157,6 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(AssetImportDialogService)
   private readonly assetImportDialogService!: AssetImportDialogService;
 
-  @inject(SaveGeneratedAssetDialogService)
-  private readonly saveGeneratedAssetDialogService!: SaveGeneratedAssetDialogService;
-
   @inject(EditorSettingsService)
   private readonly editorSettingsService!: EditorSettingsService;
 
@@ -188,7 +180,6 @@ export class Pix3EditorShell extends ComponentBase {
   @state() private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
   @state() private activeAnimationAutoSliceDialog: AnimationAutoSliceDialogInstance | null = null;
   @state() private activeAssetImportDialog: AssetImportDialogInstance | null = null;
-  @state() private activeSaveGeneratedAssetDialog: SaveGeneratedAssetDialogInstance | null = null;
   @state() private activeNodeTypePicker: NodeTypePickerInstance | null = null;
 
   @property({ type: Boolean, reflect: true, attribute: 'shell-ready' })
@@ -217,9 +208,6 @@ export class Pix3EditorShell extends ComponentBase {
       }),
       this.assetImportDialogService.subscribe(dialog => {
         this.activeAssetImportDialog = dialog;
-      }),
-      this.saveGeneratedAssetDialogService.subscribe(dialog => {
-        this.activeSaveGeneratedAssetDialog = dialog;
       }),
       this.nodeTypePickerService.subscribe(picker => {
         this.activeNodeTypePicker = picker;
@@ -408,8 +396,7 @@ export class Pix3EditorShell extends ComponentBase {
         <pix3-host-banner></pix3-host-banner>
         ${this.renderDialogHost()} ${this.renderPickerHost()} ${this.renderEffectPickerHost()}
         ${this.renderEditorSettingsHost()} ${this.renderAnimationAutoSliceHost()}
-        ${this.renderAssetImportHost()} ${this.renderSaveGeneratedAssetHost()}
-        ${this.renderNodeTypePickerHost()}
+        ${this.renderAssetImportHost()} ${this.renderNodeTypePickerHost()}
       </div>
     `;
   }
@@ -628,39 +615,6 @@ export class Pix3EditorShell extends ComponentBase {
           .dialogId=${dialog.id}
           .targetDirectory=${dialog.params.targetDirectory}
         ></pix3-asset-import-dialog>
-      </div>
-    `;
-  }
-
-  private renderSaveGeneratedAssetHost() {
-    const dialog = this.activeSaveGeneratedAssetDialog;
-    if (!dialog) {
-      return null;
-    }
-    const { id, params } = dialog;
-    return html`
-      <div
-        class="save-asset-host"
-        @save-asset-confirmed=${(event: CustomEvent<{ dialogId?: string; fileName?: string }>) => {
-          const { dialogId, fileName } = event.detail;
-          if (typeof dialogId === 'string' && typeof fileName === 'string' && fileName) {
-            this.saveGeneratedAssetDialogService.confirm(dialogId, { fileName });
-          }
-        }}
-        @save-asset-cancelled=${(event: CustomEvent<{ dialogId?: string }>) => {
-          if (typeof event.detail.dialogId === 'string') {
-            this.saveGeneratedAssetDialogService.cancel(event.detail.dialogId);
-          }
-        }}
-      >
-        <pix3-save-asset-dialog
-          .dialogId=${id}
-          .suggestedName=${params.suggestedName}
-          .targetDirectory=${params.targetDirectory}
-          .previewUrl=${params.previewUrl}
-          .width=${params.width ?? 0}
-          .height=${params.height ?? 0}
-        ></pix3-save-asset-dialog>
       </div>
     `;
   }

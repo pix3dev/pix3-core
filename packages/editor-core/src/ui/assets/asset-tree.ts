@@ -6,9 +6,7 @@ import { AssetsPreviewService } from '@/services/assets/AssetsPreviewService';
 import { ProjectService } from '@/services/project/ProjectService';
 import { AssetImportService } from '@/services/assets/AssetImportService';
 import { IconService } from '@/services/editor/IconService';
-import { GeneratedAssetDropService } from '@/services/image-gen/GeneratedAssetDropService';
 import { computeDirectoryStats } from '@/services/assets/asset-folder-stats';
-import { hasGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import { appState, type AssetBrowserViewMode } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import { ASSET_CATEGORY_BY_ID, type AssetCategoryId } from '@/core/asset-categories';
@@ -32,8 +30,6 @@ export class AssetTree extends ComponentBase {
   private readonly iconService!: IconService;
   @inject(AssetsPreviewService)
   private readonly assetsPreviewService!: AssetsPreviewService;
-  @inject(GeneratedAssetDropService)
-  private readonly generatedAssetDropService!: GeneratedAssetDropService;
   // Parent will handle actions via 'asset-activate' event
 
   // root path to show, defaults to project root
@@ -988,10 +984,6 @@ export class AssetTree extends ComponentBase {
     if (isReadOnlyTab()) {
       return;
     }
-    if (hasGenerationDragData(dataTransfer)) {
-      await this.generatedAssetDropService.handleDrop(dataTransfer, targetDirectory);
-      return;
-    }
     const files = Array.from(dataTransfer.files ?? []);
     if (files.length === 0) {
       return;
@@ -1068,14 +1060,11 @@ export class AssetTree extends ComponentBase {
   }
 }
 
-/** OS files or a generated image: the only drops a folder row accepts. */
+/** OS files: the only drop a folder row accepts. */
 function isAcceptedDrop(event: DragEvent): boolean {
   const transfer = event.dataTransfer;
   if (!transfer) {
     return false;
-  }
-  if (hasGenerationDragData(transfer)) {
-    return true;
   }
   return Array.from(transfer.items ?? []).some(item => item.kind === 'file');
 }

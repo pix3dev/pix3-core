@@ -35,7 +35,7 @@ import { SpineSkeleton2D } from '@pix3/runtime';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { Polygon2DEditController } from '@/services/viewport/Polygon2DEditController';
 import { boxPolygon, serializePolygonConfig } from '@pix3/runtime';
-import { readAlphaMask } from '@/core/image-ops';
+import { readAlphaMask } from '@/core/alpha-mask';
 import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';

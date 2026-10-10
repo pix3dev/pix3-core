@@ -10,7 +10,6 @@ import { AssetsPreviewService } from '@/services/assets/AssetsPreviewService';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { AssetImportDialogService } from '@/services/assets/AssetImportDialogService';
 import { ProjectService } from '@/services/project/ProjectService';
-import { hasGenerationDragData } from '@/ui/shared/asset-drag-drop';
 import type { AssetTree } from './asset-tree';
 
 import '../shared/pix3-panel';
@@ -285,15 +284,13 @@ export class AssetsPanel extends ComponentBase {
     this.projectService.saveAssetBrowserState({ treePaneWidth: this.treePaneWidth });
   };
 
-  // ── Drop target for the root row (OS files, a generated image) ───────────
+  // ── Drop target for the root row (OS files) ──────────────────────────────
   private onRootDragOver = (event: DragEvent) => {
     const transfer = event.dataTransfer;
     if (isReadOnlyTab() || !transfer) {
       return;
     }
-    const accepted =
-      hasGenerationDragData(transfer) ||
-      Array.from(transfer.items ?? []).some(item => item.kind === 'file');
+    const accepted = Array.from(transfer.items ?? []).some(item => item.kind === 'file');
     if (!accepted) {
       return;
     }

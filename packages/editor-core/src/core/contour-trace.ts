@@ -4,7 +4,7 @@
  *
  * Pure functions, no DOM, no canvas. The host
  * decodes the frame's pixels into a boolean mask (`readAlphaMask` in
- * `@/core/image-ops`) and hands it over, so the tracing math is
+ * `@/core/alpha-mask`) and hands it over, so the tracing math is
  * testable without mounting a component or decoding an image.
  *
  * **Coordinate contract.** Vertices are *pixel-corner* coordinates: pixel `(x, y)`
