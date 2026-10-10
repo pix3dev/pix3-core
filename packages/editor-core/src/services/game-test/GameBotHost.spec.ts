@@ -44,7 +44,7 @@ describe('GameBotHost.load — refusals', () => {
     const result = await buildHost(storeWith({ dodge: policyModule() })).load('chase');
     expect('error' in result && result.error).toContain(`${BOT_DIRECTORY}/chase.ts`);
     expect('error' in result && result.error).toContain('Stored policies: dodge');
-    expect('error' in result && result.error).toContain('fs_write');
+    expect('error' in result && result.error).toContain('pix3_sync');
   });
 
   it('refuses a text-only policy the dev server has not loaded', async () => {
