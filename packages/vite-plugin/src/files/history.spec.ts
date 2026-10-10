@@ -19,6 +19,7 @@ import { sleep, startProject, type TestProject } from '../test-support/harness.t
 import {
   HISTORY_MAX_AGE_MS,
   HISTORY_MAX_VERSIONS,
+  isJournaledPath,
   VersionJournal,
   type HistoryEntry,
 } from './history.ts';
@@ -32,6 +33,26 @@ const V1 = 'root:\n  - id: a\n    type: Group2D\n';
 const V2 = 'root:\n  - id: a\n    type: Group2D\n    name: two\n';
 const V3 = 'root:\n  - id: a\n    type: Group2D\n    name: three\n';
 const SCENE = 'scenes/a.pix3scene';
+
+describe('isJournaledPath', () => {
+  it('scenes, prefabs, the project file and locale tables; nothing else', () => {
+    for (const path of [
+      'pix3project.yaml',
+      'scenes/a.pix3scene',
+      'p/b.prefab',
+      'locales/en.json',
+      'res/locales/de.json',
+    ])
+      expect(isJournaledPath(path), path).toBe(true);
+    for (const path of [
+      'package.json',
+      'locales/en/extra.json',
+      'src/locales.json',
+      'scripts/a.ts',
+    ])
+      expect(isJournaledPath(path), path).toBe(false);
+  });
+});
 
 describe('version journal routes (dev server)', () => {
   let project: TestProject | null = null;

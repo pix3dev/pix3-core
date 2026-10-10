@@ -44,11 +44,16 @@ const AUTHORS: ReadonlySet<string> = new Set(['editor', 'external', 'restore', '
 const ID_PATTERN = /^\d{13}-[0-9a-f]{8}(?:-\d{1,4})?$/;
 const INDEX = 'index.jsonl';
 
-/** Only scene-format files and the project file are journaled (plan §C.4: the History panel). */
+/**
+ * Only scene-format files, locale tables (`locales/<id>.json`, written by the editor's
+ * Localization panel with the same merge) and the project file are journaled (plan §C.4: the
+ * History panel).
+ */
 export const isJournaledPath = (wirePath: string): boolean =>
   wirePath === 'pix3project.yaml' ||
   wirePath.endsWith('.pix3scene') ||
-  wirePath.endsWith('.prefab');
+  wirePath.endsWith('.prefab') ||
+  /(?:^|\/)locales\/[^/]+\.json$/.test(wirePath);
 
 const isEntry = (value: unknown): value is HistoryEntry => {
   if (!value || typeof value !== 'object') return false;

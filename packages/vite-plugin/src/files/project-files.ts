@@ -1144,7 +1144,7 @@ export class ProjectFiles {
       throw new HttpError(
         400,
         'not_journaled',
-        `${wirePath} is not a scene, prefab or project file.`
+        `${wirePath} is not a scene, prefab, locale table or project file.`
       );
     }
     if (typeof body.text !== 'string')
