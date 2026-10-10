@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,6 +95,8 @@ import {
 import { ProjectFiles } from './files/project-files.ts';
 import { EditorSocket } from './server/editor-socket.ts';
 import { RequestGuard } from './server/guard.ts';
+import { defaultPix3Home, IMAGE_PROVIDERS, ImageKeyStore } from './server/image-keys.ts';
+import { DEFAULT_UPSTREAMS, ImageProxy, UPSTREAM_ENV } from './server/image-proxy.ts';
 import { createRouter } from './server/router.ts';
 import { SyncBarrier } from './sync/barrier.ts';
 import {
@@ -136,6 +139,16 @@ export interface Pix3Options {
   readonly entryScene?: string;
   /** Answer `/__pix3/*` for non-loopback peers too (a dev server started with `--host`). */
   readonly allowRemote?: boolean;
+  /**
+   * The image-generation proxy (plan §B.1). `home` replaces `~/.pix3` as the place of
+   * `keys.json` (default `PIX3_HOME`, else `~/.pix3`); `upstreams` replace the providers' API
+   * origins (default `PIX3_PROXY_GEMINI_URL` / `PIX3_PROXY_OPENAI_URL`, else the real ones) — a
+   * local mock in a test.
+   */
+  readonly imageGen?: {
+    readonly home?: string;
+    readonly upstreams?: { readonly gemini?: string; readonly openai?: string };
+  };
 }
 
 /** Bare specifier of the player entry a project's `src/main.ts` imports. */
@@ -596,6 +609,23 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         allowRemote: settings.allowRemote,
         allowedHosts: () => devServer.config.server.allowedHosts ?? [],
       });
+      const imageProxy = new ImageProxy({
+        keys: new ImageKeyStore({
+          home: options.imageGen?.home ?? defaultPix3Home(),
+          projectRoot,
+        }),
+        upstreams: Object.fromEntries(
+          IMAGE_PROVIDERS.map(provider => [
+            provider,
+            options.imageGen?.upstreams?.[provider] ||
+              process.env[UPSTREAM_ENV[provider]] ||
+              DEFAULT_UPSTREAMS[provider],
+          ])
+        ) as Record<(typeof IMAGE_PROVIDERS)[number], string>,
+        log,
+      });
+      // Handed to the editor page on a top-level navigation only (`editorSessionFor`).
+      const sessionToken = randomBytes(32).toString('base64url');
       const projectFiles = new ProjectFiles({
         root: projectRoot,
         log,
@@ -675,13 +705,18 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
             versions,
             build: settings.build,
           }),
-          editorPage: () =>
+          editorPage: session =>
             gate
               ? { status: 409, html: versionGatePageHtml(gate) }
               : {
                   status: 200,
-                  html: editorPageHtml(base, { css: editorCss !== null && existsSync(editorCss) }),
+                  html: editorPageHtml(base, {
+                    css: editorCss !== null && existsSync(editorCss),
+                    session,
+                  }),
                 },
+          sessionToken,
+          imageProxy,
           editorCss: () => (editorCss && existsSync(editorCss) ? readFileSync(editorCss) : null),
         })
       );

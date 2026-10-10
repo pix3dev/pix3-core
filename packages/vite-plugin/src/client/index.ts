@@ -128,6 +128,38 @@ export interface HostHistory {
   restore(path: string, id: string, options?: { ifMatch?: string }): Promise<HostWriteResult>;
 }
 
+export type HostImageProvider = 'gemini' | 'openai';
+
+export interface HostImageKeyStatus {
+  readonly set: boolean;
+  /** The key's last four characters (keys of 12+ characters only). */
+  readonly last4?: string;
+}
+
+/** Image-generation keys and the proxy that uses them (plan §B.1); the page never sees a key. */
+export interface HostImageGen {
+  keys(): Promise<Record<HostImageProvider, HostImageKeyStatus>>;
+  /** Store (`null` / `''` removes) a key on the dev server's machine; answers its status only. */
+  setKey(
+    provider: HostImageProvider,
+    key: string | null
+  ): Promise<HostImageKeyStatus & { readonly where: 'home' | 'project' }>;
+  /** `fetch` of `/__pix3/api/proxy/<provider>/<path>`; the plugin adds the key. */
+  fetch(provider: HostImageProvider, path: string, init?: RequestInit): Promise<Response>;
+}
+
+/**
+ * The editor session token the page was served with (`<meta name="pix3-session">`), read once
+ * and removed from the DOM. Only a top-level navigation of the editor page carries one.
+ */
+const takeSessionToken = (): string | null => {
+  if (typeof document === 'undefined') return null;
+  const meta = document.querySelector('meta[name="pix3-session"]');
+  const token = meta?.getAttribute('content') ?? null;
+  meta?.remove();
+  return token;
+};
+
 export interface HostClaim {
   readonly writerId: string;
   readonly seq: number;
@@ -201,7 +233,9 @@ export class EditorHostConnection {
   };
   /** The version journal `.pix3/history/` (plan §C.4). */
   readonly history: HostHistory;
+  readonly imageGen: HostImageGen;
 
+  readonly #session = takeSessionToken();
   private roots: ScriptRoots;
   private handlers: HostSyncHandlers = {};
   private socket: WebSocket | null = null;
@@ -248,6 +282,7 @@ export class EditorHostConnection {
       claim: () => this.claim(),
       onChange: listener => subscribe(this.writerListeners, listener),
     };
+    this.imageGen = this.imageGenApi();
     this.history = {
       list: async path => {
         const response = await this.call(`history?path=${encodeURIComponent(path)}`);
@@ -277,6 +312,42 @@ export class EditorHostConnection {
             ? { 'If-Match': options.ifMatch === '*' ? '*' : `"${options.ifMatch}"` }
             : {}
         ),
+    };
+  }
+
+  /** `/__pix3/api/<route>` for the editor-only routes: the session token on every method. */
+  private sessionCall(route: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    headers.set('X-Pix3', '1');
+    if (this.#session) headers.set('X-Pix3-Session', this.#session);
+    return fetch(`${this.base}__pix3/api/${route}`, { ...init, headers });
+  }
+
+  private imageGenApi(): HostImageGen {
+    const json = async <T>(response: Response): Promise<T> => {
+      if (!response.ok) throw await failureOf(response);
+      return (await response.json()) as T;
+    };
+    return {
+      keys: async () =>
+        (
+          await json<{ keys: Record<HostImageProvider, HostImageKeyStatus> }>(
+            await this.sessionCall('keys')
+          )
+        ).keys,
+      setKey: async (provider, key) =>
+        json(
+          await this.sessionCall('keys', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, key }),
+          })
+        ),
+      fetch: (provider, path, init = {}) =>
+        this.sessionCall(`proxy/${provider}/${path.replace(/^\/+/, '')}`, {
+          ...init,
+          method: init.method ?? 'POST',
+        }),
     };
   }
 

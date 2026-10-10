@@ -22,10 +22,11 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const DEFAULT_MAX_JSON_BYTES = 1024 * 1024;
 
-export const readBody = (
+/** The request body as bytes, refused past `maxBytes`. */
+export const readBytes = (
   req: IncomingMessage,
   maxBytes: number = DEFAULT_MAX_JSON_BYTES
-): Promise<string> =>
+): Promise<Buffer> =>
   new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -38,9 +39,14 @@ export const readBody = (
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+
+export const readBody = async (
+  req: IncomingMessage,
+  maxBytes: number = DEFAULT_MAX_JSON_BYTES
+): Promise<string> => (await readBytes(req, maxBytes)).toString('utf8');
 
 export const readJson = async (
   req: IncomingMessage,
