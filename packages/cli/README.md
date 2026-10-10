@@ -322,11 +322,31 @@ nodes of those types (or carrying those components; `instance` = prefab instance
 ancestors as `·` context lines; `--props` adds, under each node, the properties that differ from
 the node type's defaults (read from a bare instance of the runtime class, through the disk-format
 table — the one step that loads the runtime bundle); `--json` gives the same as nested
-`{ id, type, name, depth, position?, size?, layout?, hidden?, text?, groups?, components,
-instance?: { path, rootType?, rootName?, overrides, properties }, props?, children }`. On an instance
+`{ id, type, name, depth, position?, size?, layout?, margins?, resolved?, hidden?, text?, groups?,
+components, instance?: { path, rootType?, rootName?, overrides, properties }, props?, children }`.
+On an instance
 `overrides` counts every `overrides.byLocalId.*.properties` key (edits to nodes inside the prefab)
 and `properties` the instance node's own `properties` keys (applied to the prefab root); the line
 prints `(2 overrides, 1 property)`, or `(no overrides)` when both are 0.
+
+A node anchored in the margin form (W21: `layout: { enabled, horizontalAlign, verticalAlign,
+left?, right?, top?, bottom? }`, every side the alignment keeps written) holds `0` in the file for
+the position component of an anchored axis and no `width`/`height` for a stretched one — the
+margins are the rect. The line shows the margins beside the layout and, as `pos` / `size`, the
+rect they give at the design size (the parent's size; `viewportBaseSize` for a root), the way
+`Node2D`'s layout pass computes it; `?` where the file does not say enough (a parent or the node
+without a size in the file):
+
+```text
+Group2D#hud size=1080x1920 layout=stretch/stretch(left=0,right=0,top=0,bottom=0)
+  Group2D#bar pos=(0,-920) size=1000x40 layout=stretch/bottom(left=40,right=40,bottom=20)
+    Group2D#knob pos=(480,5) size=20x20 layout=right/none(right=10)
+  Sprite2D#unsized pos=(?,70) layout=left/none(left=10)
+```
+
+`--json` keeps `position` / `size` as the file has them and adds `margins` and
+`resolved: { position: [x, y], size: [w, h] }` (`null` for `?`). A pre-W21 anchor (no margins in
+the file) prints its file position as before.
 
 `pix3 tree` with no scene is the project overview: manifest facts, the `user:` scripts, and every
 scene/prefab/overlay with its node count, node types, components and instances (entry scene

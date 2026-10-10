@@ -12,6 +12,13 @@ import { listTemplates } from '../templates.ts';
 const CORPUS_ROOT = fileURLToPath(
   new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
 );
+import { Node2D, SceneLoader, ScriptRegistry } from '@pix3/runtime';
+import {
+  DiskResourceManager,
+  installCanvasOnlyDocument,
+  NodeAssetLoader,
+} from '@pix3/runtime/node';
+
 import { runTreeCli } from './command.ts';
 import type { TreeNode } from './tree.ts';
 
@@ -229,5 +236,114 @@ root:
     write('scenes/broken.pix3scene', 'root: [\n');
     expect((await run(dir, ['scenes/broken.pix3scene'])).code).toBe(1);
     expect((await run(dir, ['--depth', '-1'])).code).toBe(2);
+  });
+});
+
+describe('pix3 tree on anchor margins (W21)', () => {
+  const dir = join(scratch, 'margins');
+  const SCENE = [
+    'version: 1.0.0',
+    'root:',
+    '  - id: hud',
+    '    type: Group2D',
+    '    properties:',
+    '      width: 500',
+    '      height: 500',
+    '      layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }',
+    '      transform: { position: [0, 0] }',
+    '    children:',
+    '      - id: title',
+    '        type: Group2D',
+    '        properties:',
+    '          width: 200',
+    '          height: 60',
+    '          layout: { enabled: true, horizontalAlign: left, verticalAlign: top, left: 40, top: 30 }',
+    '          transform: { position: [0, 0] }',
+    '      - id: bar',
+    '        type: Group2D',
+    '        properties:',
+    '          height: 40',
+    '          layout: { enabled: true, horizontalAlign: stretch, verticalAlign: bottom, left: 40, right: 40, bottom: 20 }',
+    '          transform: { position: [0, 0] }',
+    '        children:',
+    '          - id: knob',
+    '            type: Group2D',
+    '            properties:',
+    '              width: 20',
+    '              height: 20',
+    '              layout: { enabled: true, horizontalAlign: right, right: 10 }',
+    '              transform: { position: [0, 5] }',
+    '      - id: legacy',
+    '        type: Group2D',
+    '        properties:',
+    '          width: 100',
+    '          height: 50',
+    '          layout: { enabled: true, horizontalAlign: right, verticalAlign: top }',
+    '          transform: { position: [400, 900] }',
+    '      - id: unsized',
+    '        type: Sprite2D',
+    '        properties:',
+    '          layout: { enabled: true, horizontalAlign: left, left: 10 }',
+    '          transform: { position: [0, 70] }',
+    '',
+  ].join('\n');
+
+  beforeAll(() => {
+    mkdirSync(join(dir, 'scenes'), { recursive: true });
+    writeFileSync(
+      join(dir, 'pix3project.yaml'),
+      'version: 1.0.0\nprojectType: 2d\nviewportBaseSize: { width: 1080, height: 1920 }\n'
+    );
+    writeFileSync(join(dir, 'scenes', 'hud.pix3scene'), SCENE);
+  });
+
+  it('prints the margins and the rect they give, not the 0 the file holds; a legacy anchor as before', async () => {
+    const { code, out } = await run(dir, ['scenes/hud.pix3scene']);
+    expect(code).toBe(0);
+    expect(out.split('\n')).toEqual([
+      'scenes/hud.pix3scene — 6 nodes',
+      'Group2D#hud size=1080x1920 layout=stretch/stretch(left=0,right=0,top=0,bottom=0)',
+      '  Group2D#title pos=(-400,900) size=200x60 layout=left/top(left=40,top=30)',
+      '  Group2D#bar pos=(0,-920) size=1000x40 layout=stretch/bottom(left=40,right=40,bottom=20)',
+      '    Group2D#knob pos=(480,5) size=20x20 layout=right/none(right=10)',
+      '  Group2D#legacy pos=(400,900) size=100x50 layout=right/top',
+      '  Sprite2D#unsized pos=(?,70) layout=left/none(left=10)',
+      '',
+    ]);
+  });
+
+  it('--json keeps the file position and adds the margins and the resolved rect — the runtime lays it out the same', async () => {
+    const { out } = await run(dir, ['scenes/hud.pix3scene', '--json']);
+    const nodes = flatten((JSON.parse(out) as { nodes: TreeNode[] }).nodes);
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    expect(byId.get('bar')).toMatchObject({
+      position: [0, 0],
+      margins: { left: 40, right: 40, bottom: 20 },
+      resolved: { position: [0, -920], size: [1000, 40] },
+    });
+    expect(byId.get('unsized')?.resolved).toEqual({ position: [null, 70], size: [null, null] });
+    expect(byId.get('legacy')?.resolved).toBeUndefined();
+
+    // Independent: the real loader and Node2D's layout pass at the design size.
+    const disk = new DiskResourceManager(dir);
+    const loader = new SceneLoader(new NodeAssetLoader(disk), new ScriptRegistry(), disk);
+    const uninstall = installCanvasOnlyDocument();
+    try {
+      const graph = await loader.parseScene(SCENE, { filePath: 'res://scenes/hud.pix3scene' });
+      const design = { width: 1080, height: 1920 };
+      for (const root of graph.rootNodes) {
+        if (root instanceof Node2D) root.applyAnchoredLayoutRecursive(design, design);
+      }
+      for (const id of ['hud', 'title', 'bar', 'knob']) {
+        const node = graph.nodeMap.get(id) as Node2D;
+        const size = node.getCurrentLayoutSize();
+        expect([id, byId.get(id)?.resolved]).toEqual([
+          id,
+          { position: [node.position.x, node.position.y], size: [size.width, size.height] },
+        ]);
+      }
+    } finally {
+      uninstall();
+    }
   });
 });

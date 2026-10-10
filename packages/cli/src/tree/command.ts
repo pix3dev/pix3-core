@@ -34,7 +34,10 @@ export const TREE_USAGE = `Usage: pix3 tree [scene] [--depth N] [--types A,B] [-
 
   One line per node — type#id "name", position, size, anchor layout, components, prefab
   instances (↳ instance res://… (N overrides, M properties)) — indented by depth. Read this instead of the
-  whole .pix3scene when you need to find your way around a scene.
+  whole .pix3scene when you need to find your way around a scene. A node anchored by margins
+  (layout: left/right/top/bottom) shows them — layout=left/top(left=40,top=30) — and the pos and
+  size they give at the design size (the parent's size, viewportBaseSize for a root; ? where the
+  file does not say enough), not the 0 its file holds on that axis.
 
   scene          .pix3scene (res://, project-relative or a path). Without one: every scene and
                  prefab in the project with node counts, node types and components.
@@ -166,6 +169,12 @@ const readManifest = (root: string): ManifestInfo | null => {
   }
 };
 
+/** `viewportBaseSize` — what a root's anchor margins lay out against. */
+const readViewport = (root: string): { width: number; height: number } | undefined => {
+  const [width, height] = (readManifest(root)?.viewport ?? '').split('x').map(Number);
+  return width > 0 && height > 0 ? { width, height } : undefined;
+};
+
 const overview = (root: string, args: TreeArgs, io: TreeIo): number => {
   const project = new ProjectFiles(root);
   const manifest = readManifest(root);
@@ -254,6 +263,7 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     }
   }
   const nodes = buildTree(scene, {
+    viewport: readViewport(root),
     depth: args.depth,
     types: args.types,
     props: args.props,

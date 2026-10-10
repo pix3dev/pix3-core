@@ -34,10 +34,26 @@ export interface TreeNode {
   readonly type: string | null;
   readonly name?: string;
   readonly depth: number;
+  /** `transform.position` as the file has it (an axis in margin form holds `0` there). */
   readonly position?: readonly number[];
   readonly size?: readonly [number, number];
   /** `horizontalAlign/verticalAlign`, only when `layout.enabled`. */
   readonly layout?: string;
+  /**
+   * The margins of the axes the file anchors in margin form (W21: `layout.left/right/top/bottom`,
+   * every side the alignment keeps is written) — on those axes the position component in the file
+   * is `0` and a stretched size is left out; the margins are the rect.
+   */
+  readonly margins?: Readonly<Partial<Record<MarginSide, number>>>;
+  /**
+   * The rect the layout gives the node at the design size (the parent's size, `viewportBaseSize`
+   * for a root): `null` on a margin axis whose parent size or own size the file does not say. Only
+   * on a node with {@link margins}.
+   */
+  readonly resolved?: {
+    readonly position: readonly [number | null, number | null];
+    readonly size: readonly [number | null, number | null];
+  };
   /** `properties.visible: false` (hidden in the editor). */
   readonly hidden?: boolean;
   /** Caption of a label/button (`properties.label`). */
@@ -58,6 +74,8 @@ export interface TreeNode {
 export type TypeDefaults = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 
 export interface TreeOptions {
+  /** `viewportBaseSize`: the reference of a root's margins. */
+  readonly viewport?: { readonly width: number; readonly height: number };
   readonly depth?: number;
   readonly types?: readonly string[];
   readonly props?: boolean;
@@ -154,6 +172,7 @@ const nonDefaultProps = (
   properties: Record<string, unknown>,
   defaults: Readonly<Record<string, unknown>> | undefined,
   layoutShown: boolean,
+  marginsShown: readonly string[],
   hiddenShown: boolean
 ): Record<string, unknown> => {
   const out: Record<string, unknown> = {};
@@ -163,7 +182,8 @@ const nonDefaultProps = (
       layoutShown &&
       (path === 'layout.enabled' ||
         path === 'layout.horizontalAlign' ||
-        path === 'layout.verticalAlign')
+        path === 'layout.verticalAlign' ||
+        marginsShown.includes(path.slice('layout.'.length)))
     )
       continue;
     if (hiddenShown && path === 'visible') continue;
@@ -228,6 +248,65 @@ const countDescendants = (definition: Record<string, unknown>): number => {
   );
 };
 
+// --- Anchor margins (W21) ------------------------------------------------------------------------
+
+type MarginSide = 'left' | 'right' | 'top' | 'bottom';
+type Size = readonly [number | null, number | null];
+
+/**
+ * One axis as `Node2D` lays it out (`layoutAxisMode`, `resolveAxisLayout`): x keeps `left` (lo) /
+ * `right` (hi), y — up — keeps `bottom` (lo) / `top` (hi); `stretch` keeps both, `center` none.
+ */
+const AXES = [
+  { index: 0, align: 'horizontalAlign', lo: 'left', hi: 'right' },
+  { index: 1, align: 'verticalAlign', lo: 'bottom', hi: 'top' },
+] as const;
+
+const axisMode = (align: unknown, lo: MarginSide, hi: MarginSide): 'lo' | 'hi' | 'both' | null =>
+  align === lo ? 'lo' : align === hi ? 'hi' : align === 'stretch' ? 'both' : null;
+
+interface MarginLayout {
+  readonly margins: Partial<Record<MarginSide, number>>;
+  /** Per axis: the mode when the file carries every margin it needs (margin form), else null. */
+  readonly modes: readonly ['lo' | 'hi' | 'both' | null, 'lo' | 'hi' | 'both' | null];
+}
+
+/** The margin-form axes of a `layout:` block (a legacy block, without margins, has none). */
+const marginLayout = (layout: Record<string, unknown> | null): MarginLayout | null => {
+  if (!layout || layout.enabled !== true) return null;
+  const margins: Partial<Record<MarginSide, number>> = {};
+  const modes = AXES.map(axis => {
+    const mode = axisMode(layout[axis.align], axis.lo, axis.hi);
+    if (!mode) return null;
+    const sides = mode === 'lo' ? [axis.lo] : mode === 'hi' ? [axis.hi] : [axis.lo, axis.hi];
+    if (!sides.every(side => typeof layout[side] === 'number')) return null;
+    for (const side of sides) margins[side] = layout[side] as number;
+    return mode;
+  }) as unknown as MarginLayout['modes'];
+  return modes.some(Boolean) ? { margins, modes } : null;
+};
+
+/** Centre and size on one margin axis against the parent's size (`Node2D.resolveAxisLayout`). */
+const resolveAxis = (
+  mode: 'lo' | 'hi' | 'both',
+  lo: number,
+  hi: number,
+  size: number | null,
+  reference: number | null
+): { center: number | null; size: number | null } => {
+  if (reference === null) return { center: null, size: mode === 'both' ? null : size };
+  if (mode === 'both') {
+    const loEdge = -reference / 2 + lo;
+    const hiEdge = reference / 2 - hi;
+    return { center: (loEdge + hiEdge) / 2, size: Math.max(1, hiEdge - loEdge) };
+  }
+  if (size === null) return { center: null, size };
+  const safe = Math.max(0, size);
+  return mode === 'lo'
+    ? { center: -reference / 2 + lo + safe / 2, size }
+    : { center: reference / 2 - hi - safe / 2, size };
+};
+
 /** Build the tree of one parsed scene. */
 export const buildTree = (
   scene: Record<string, unknown>,
@@ -236,7 +315,7 @@ export const buildTree = (
   const wanted =
     options.types && options.types.length > 0 ? new Set(options.types.map(normalizeType)) : null;
 
-  const build = (definition: unknown, depth: number): TreeNode | null => {
+  const build = (definition: unknown, depth: number, reference: Size): TreeNode | null => {
     if (!isRecord(definition)) return null;
     const properties = isRecord(definition.properties) ? definition.properties : {};
     const instancePath = typeof definition.instance === 'string' ? definition.instance : undefined;
@@ -251,6 +330,28 @@ export const buildTree = (
       layout && layout.enabled === true
         ? `${String(layout.horizontalAlign ?? 'none')}/${String(layout.verticalAlign ?? 'none')}`
         : undefined;
+    const fileSize: Size = [
+      typeof width === 'number' ? width : null,
+      typeof height === 'number' ? height : null,
+    ];
+    const anchored = marginLayout(layout);
+    const resolvedAxes = anchored
+      ? AXES.map(axis => {
+          const mode = anchored.modes[axis.index];
+          if (!mode) {
+            return { center: position?.[axis.index] ?? 0, size: fileSize[axis.index] };
+          }
+          return resolveAxis(
+            mode,
+            anchored.margins[axis.lo] ?? 0,
+            anchored.margins[axis.hi] ?? 0,
+            fileSize[axis.index],
+            reference[axis.index]
+          );
+        })
+      : null;
+    // What the children lay out against: this node's size as the layout gives it.
+    const ownSize: Size = resolvedAxes ? [resolvedAxes[0].size, resolvedAxes[1].size] : fileSize;
     const hidden = properties.visible === false;
     const components: TreeComponent[] = (
       Array.isArray(definition.components) ? definition.components : []
@@ -271,7 +372,7 @@ export const buildTree = (
     const children = atDepthLimit
       ? []
       : childDefinitions
-          .map(child => build(child, depth + 1))
+          .map(child => build(child, depth + 1, ownSize))
           .filter((c): c is TreeNode => c !== null);
     const matches =
       wanted === null ||
@@ -292,6 +393,7 @@ export const buildTree = (
               properties,
               type ? options.defaults?.[type] : undefined,
               layoutText !== undefined,
+              Object.keys(anchored?.margins ?? {}),
               hidden
             )
         : undefined;
@@ -306,6 +408,21 @@ export const buildTree = (
         ? { size: [round(width), round(height)] as const }
         : {}),
       ...(layoutText ? { layout: layoutText } : {}),
+      ...(anchored && resolvedAxes
+        ? {
+            margins: anchored.margins,
+            resolved: {
+              position: [
+                resolvedAxes[0].center === null ? null : round(resolvedAxes[0].center),
+                resolvedAxes[1].center === null ? null : round(resolvedAxes[1].center),
+              ] as const,
+              size: [
+                resolvedAxes[0].size === null ? null : round(resolvedAxes[0].size),
+                resolvedAxes[1].size === null ? null : round(resolvedAxes[1].size),
+              ] as const,
+            },
+          }
+        : {}),
       ...(hidden ? { hidden: true } : {}),
       ...(typeof properties.label === 'string' ? { text: properties.label } : {}),
       ...(groups.length > 0 ? { groups } : {}),
@@ -327,8 +444,11 @@ export const buildTree = (
     };
   };
 
+  const viewport: Size = options.viewport
+    ? [options.viewport.width, options.viewport.height]
+    : [null, null];
   return (scene.root as unknown[])
-    .map(node => build(node, 0))
+    .map(node => build(node, 0, viewport))
     .filter((n): n is TreeNode => n !== null);
 };
 
@@ -351,6 +471,8 @@ export const formatValue = (value: unknown): string => {
   return json.length > 80 ? `${json.slice(0, 79)}…` : json;
 };
 
+const MARGIN_ORDER: readonly MarginSide[] = ['left', 'right', 'top', 'bottom'];
+
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 export const formatNodeLine = (node: TreeNode): string => {
@@ -370,10 +492,27 @@ export const formatNodeLine = (node: TreeNode): string => {
     );
   }
   if (node.text !== undefined) parts.push(`text=${quote(node.text, 28)}`);
-  if (node.position && node.position.some(v => v !== 0))
-    parts.push(`pos=(${node.position.join(',')})`);
-  if (node.size) parts.push(`size=${node.size[0]}x${node.size[1]}`);
-  if (node.layout) parts.push(`layout=${node.layout}`);
+  if (node.resolved) {
+    // Margin form: the file's position (and a stretched size) is not the rect — the margins are.
+    // Shown: the rect they give at the design size, `?` where the file does not say enough.
+    const show = (value: number | null): string => (value === null ? '?' : String(value));
+    const [x, y] = node.resolved.position;
+    if (x !== 0 || y !== 0) parts.push(`pos=(${show(x)},${show(y)})`);
+    const [w, h] = node.resolved.size;
+    if (w !== null || h !== null) parts.push(`size=${show(w)}x${show(h)}`);
+  } else {
+    if (node.position && node.position.some(v => v !== 0))
+      parts.push(`pos=(${node.position.join(',')})`);
+    if (node.size) parts.push(`size=${node.size[0]}x${node.size[1]}`);
+  }
+  if (node.layout) {
+    const margins = node.margins
+      ? MARGIN_ORDER.filter(side => node.margins?.[side] !== undefined)
+          .map(side => `${side}=${round(node.margins?.[side] ?? 0)}`)
+          .join(',')
+      : '';
+    parts.push(`layout=${node.layout}${margins ? `(${margins})` : ''}`);
+  }
   if (node.hidden) parts.push('hidden');
   if (node.groups) parts.push(`groups=[${node.groups.join(',')}]`);
   let line = parts.join(' ');
