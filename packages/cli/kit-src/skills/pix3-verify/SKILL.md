@@ -12,7 +12,7 @@ and tell the human exactly what to press and what they should see.
 ## 1. `pix3 check` after every batch
 
 ```bash
-pix3 check            # validate (both levels) + tsc over the scripts + merge-log + versions
+pix3 check            # validate (both levels) + tsc over the scripts + versions
 pix3 check --json     # the same, machine-readable
 pix3 validate [paths] [--json]   # scenes/prefabs only, no type-check
 pix3 smoke scenes/main.pix3scene # then: run the game headless for 120 frames, report what threw

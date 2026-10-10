@@ -44,7 +44,7 @@ the kit's `pix3-editor` skill.
 ## `pix3 check` — everything an agent should run after a batch of edits
 
 `pix3 check` = `pix3 validate` (both levels) + a TypeScript type-check of the project's scripts +
-the newest `.pix3/merge-log.jsonl` entries + a version check. Exit 0 = no errors (warnings
+a version check. Exit 0 = no errors (warnings
 allowed), 1 = at least one error, 2 = could not run. Files are the truth only once the editor has
 written them: when `.pix3/dev.json` names a live dev server, `check` first asks it to flush the
 editor's unsaved scenes (`POST /__pix3/api/flush`, up to 15 s; `--no-sync` skips it, a dead
@@ -80,14 +80,13 @@ The scan is lexical (`src/check/editor-chain.ts`), bare packages are not followe
   "notes": [],
   "typecheck": { "ok": true, "errors": 0, "tsconfig": ".pix3/tsconfig.check.json", "mode": "pix3-types",
                  "files": 5, "typescript": { "version": "5.8.3", "source": "cache" } },
-  "mergeLog": [{ "at", "file", "event", "…": "the newest 10 lines of .pix3/merge-log.jsonl" }],
   "kit": { "version": "1.6.0", "cliVersion": "1.6.0", "upToDate": true },
   "timingsMs": { "validate": 190, "typecheck": 1180, "total": 1380 }
 }
 ```
 
 `files` holds every scene validated and every script type-checked, hashed over the **raw bytes** —
-the hashes `expect` (barrier tools) and `pix3 ack --sha256` take. `typecheck.errors` counts the
+the hashes `pix3_sync`'s `expect` takes. `typecheck.errors` counts the
 `E_TYPE` / `E_TYPECHECK_UNAVAILABLE` entries of `diagnostics`.
 
 **A compile error hides level 2.** When the scripts do not compile (`E_SCRIPT_COMPILE`), level 2
@@ -95,10 +94,6 @@ skips every scene with `user:` components — their `E_UNKNOWN_CONFIG_KEY` / `E_
 component checks are *missing*, not passed. The report says so: `level2.filesSkippedForScripts`,
 a `SKIPPED: N scene(s) …` note, and the human summary line reads `level 2 hydrated 0 file(s), N
 SKIPPED (scripts do not compile — user: components unchecked)`. Fix the compile error and run again.
-
-**Merge-log notes.** An `ack-unknown` entry (a `pix3 read` / `pix3 ack` of bytes the editor never
-recorded) prints as a `note:` only while its hash is the file's *current* version; one about a
-version the disk no longer holds is history and is not printed (it stays in `mergeLog` of `--json`).
 
 **Which tsconfig.** A project with its **own** root `tsconfig.json` (a Vite project — every
 `npm create pix3` starter — or one the editor's *build from templates* turned into one) is checked with it, as is, against its own

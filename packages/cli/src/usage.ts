@@ -21,8 +21,8 @@ Usage:
                                    token, the P1 --browserUrl launch)
   pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
         [--no-hydrate]             hydration with the real loader (exit 1 on errors)
-  pix3 check [--json]              validate + TypeScript check of the scripts + merge-log +
-        [--no-hydrate] [--offline] version check (exit 1 on errors)
+  pix3 check [--json]              validate + TypeScript check of the scripts + version
+        [--no-hydrate] [--offline] check (exit 1 on errors)
         [--project <dir>]
   pix3 smoke [scene] [--json]      Run the game headless in Node for N frames (no browser):
         [--changed | --all]        script throws with frame + stack, console errors, missing

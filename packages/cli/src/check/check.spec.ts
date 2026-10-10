@@ -32,7 +32,6 @@ import { CLI_VERSION } from '../version.ts';
 import {
   CHECK_CODES,
   checkProject,
-  describeMergeLogEntry,
   formatCheckHuman,
   runCheck,
   type CheckReport,
@@ -41,7 +40,7 @@ import {
 import { PINNED_TYPESCRIPT_VERSION, resolveTypeScript } from './typescript.ts';
 
 /**
- * `pix3 check`: validate + tsc + merge-log + versions. The validator runs from source here (the
+ * `pix3 check`: validate + tsc + versions. The validator runs from source here (the
  * CLI runs its bundle — same function). TypeScript comes from the monorepo (the CLI's sibling
  * install) unless a test says otherwise. `covers every check code` fails when a code is added to
  * `CHECK_CODES` without a test that produces it.
@@ -103,7 +102,6 @@ describe('pix3 check on a fresh recipe (no node_modules anywhere)', () => {
     const scene = report.files.find(f => f.file === 'scenes/main.pix3scene');
     expect(scene?.sha256).toBe(sha256(join(root, 'scenes/main.pix3scene')));
     expect(report.kit).toEqual({ version: CLI_VERSION, cliVersion: CLI_VERSION, upToDate: true });
-    expect(report.mergeLog).toEqual([]);
   }, 60_000);
 
   it('turns a tsc error into E_TYPE with file and line, and exits 1', async () => {
@@ -159,92 +157,6 @@ describe('pix3 check on a fresh recipe (no node_modules anywhere)', () => {
     });
     expect(report.ok).toBe(true);
   }, 60_000);
-});
-
-describe('merge log', () => {
-  it('reports the newest 10 lines and says when the editor kept a human value', async () => {
-    const root = newRecipe();
-    const lines: string[] = [];
-    for (let i = 0; i < 11; i++) {
-      lines.push(
-        JSON.stringify({
-          at: new Date(Date.now() - 60_000).toISOString(),
-          file: 'scenes/main.pix3scene',
-          event: 'reload',
-          hash: `h${i}`,
-          reason: 'no-protected-edits',
-        })
-      );
-    }
-    lines.push(
-      JSON.stringify({
-        at: new Date().toISOString(),
-        file: 'scenes/main.pix3scene',
-        event: 'merge',
-        status: 'conflicts',
-        decisions: [
-          { nodeId: 'hud', path: ['properties', 'labelColor'], label: 'x', kept: 'human' },
-        ],
-        conflicts: [{ id: 'c1', kind: 'property', message: 'kept' }],
-        mergedHash: null,
-        protected: [],
-      }),
-      '{"torn'
-    );
-    writeFileSync(join(root, '.pix3', 'merge-log.jsonl'), `${lines.join('\n')}\n`);
-    const report = await check(root, false);
-    expect(report.mergeLog).toHaveLength(10);
-    expect(report.mergeLog.at(-1)).toMatchObject({ event: 'merge', status: 'conflicts' });
-    const human = formatCheckHuman(report, new Date());
-    expect(human).toContain('the editor KEPT 1 human value(s) over yours');
-    expect(human).toContain('pix3 read scenes/main.pix3scene');
-  }, 60_000);
-
-  it('prints an ignored read confirmation as a note, not as a merge-log line', async () => {
-    const root = newRecipe();
-    const current = sha256(join(root, 'scenes', 'main.pix3scene'));
-    writeFileSync(
-      join(root, '.pix3', 'merge-log.jsonl'),
-      `${JSON.stringify({ at: new Date().toISOString(), file: 'scenes/main.pix3scene', event: 'ack-unknown', hash: current })}\n`
-    );
-    const human = formatCheckHuman(await check(root, false), new Date());
-    expect(human).toMatch(
-      /^note: .*scenes\/main\.pix3scene {2}read confirmation for a version the editor has not recorded — ignored \(harmless/m
-    );
-    expect(human).not.toContain('merge-log (newest');
-    expect(human).not.toContain('never saw');
-  }, 60_000);
-
-  it('drops an ignored read confirmation about a version the file no longer holds', async () => {
-    // Measured on a real project: the same 17-hour-old note on every run, about bytes long gone.
-    const root = newRecipe();
-    writeFileSync(
-      join(root, '.pix3', 'merge-log.jsonl'),
-      `${JSON.stringify({ at: new Date().toISOString(), file: 'scenes/main.pix3scene', event: 'ack-unknown', hash: 'abc' })}\n`
-    );
-    const report = await check(root, false);
-    const human = formatCheckHuman(report, new Date());
-    expect(human).not.toContain('read confirmation');
-    // The JSON tail is the raw log: still there for whoever wants the history.
-    expect(report.mergeLog).toHaveLength(1);
-  }, 60_000);
-
-  it('describes a rejected version', () => {
-    expect(
-      describeMergeLogEntry(
-        {
-          at: '2026-09-26T10:00:00.000Z',
-          file: 'a.pix3scene',
-          event: 'merge',
-          status: 'rejected',
-          problems: ['bad yaml'],
-        },
-        new Date('2026-09-26T10:00:30.000Z')
-      )
-    ).toBe(
-      '30s ago  a.pix3scene  REJECTED your version (bad yaml); the editor kept its own. Fix the file and write it again.'
-    );
-  });
 });
 
 describe('a project with its own tsconfig.json', () => {
@@ -356,9 +268,7 @@ describe('a project with its own tsconfig.json', () => {
     expect(report.typecheck.skipped).toContain('npm install');
     // validate still ran
     expect(report.files.map(f => f.file)).toContain('src/assets/scenes/main.pix3scene');
-    expect(formatCheckHuman(report, new Date())).toContain(
-      'typecheck skipped: dependencies not installed'
-    );
+    expect(formatCheckHuman(report)).toContain('typecheck skipped: dependencies not installed');
   }, 60_000);
 });
 

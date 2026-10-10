@@ -30,8 +30,7 @@ import {
 
 /**
  * `pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]` (plan §5 A): everything
- * `pix3 validate` checks (both levels), plus a TypeScript type-check of the project's scripts, the
- * newest `.pix3/merge-log.jsonl` entries (the editor kept a human's value over the agent's), and
+ * `pix3 validate` checks (both levels), plus a TypeScript type-check of the project's scripts and
  * whether the agent kit and the project's `@pix3/runtime` match this CLI.
  *
  * Diagnostics share one list with validate's: tsc errors become `E_TYPE`. Exit codes as validate:
@@ -44,10 +43,10 @@ import {
 export const CHECK_USAGE = `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
 
   Everything \`pix3 validate\` checks, plus a TypeScript type-check of the project's scripts
-  (tsc --noEmit), the newest .pix3/merge-log.jsonl entries and a version check.
+  (tsc --noEmit) and a version check.
 
   --json         machine-readable report (diagnostics, sha256 of every checked file, typecheck,
-                 mergeLog, kit)
+                 kit)
   --no-hydrate   validate level 1 only (user: component properties not checked)
   --offline      never install TypeScript (fails with the command to run instead)
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
@@ -133,9 +132,6 @@ const EDITOR_CHAIN_CODES: Record<
   },
 };
 
-/** How many of the newest merge-log lines `check` reports. */
-export const MERGE_LOG_TAIL = 10;
-const MERGE_LOG_FILE = '.pix3/merge-log.jsonl';
 /** Human output lists at most this many diagnostics of one code before summarising. */
 const HUMAN_LIMIT_PER_CODE = 40;
 
@@ -164,8 +160,6 @@ export interface CheckReport {
     /** Why tsc did not run at all (null when it ran, or was attempted and failed). */
     readonly skipped: string | null;
   };
-  /** The newest {@link MERGE_LOG_TAIL} lines of `.pix3/merge-log.jsonl`, oldest first. */
-  readonly mergeLog: readonly Record<string, unknown>[];
   readonly kit: {
     readonly version: string | null;
     readonly cliVersion: string;
@@ -190,7 +184,6 @@ export interface CheckIo {
   readonly stderr: (text: string) => void;
   readonly validate?: ValidateFn;
   readonly typescript?: Partial<Omit<ResolveTypeScriptOptions, 'projectRoot' | 'offline'>>;
-  readonly now?: () => Date;
 }
 
 interface CheckArgs {
@@ -268,104 +261,6 @@ export const hasNodeModules = (projectRoot: string): boolean => {
 
 export { installedRuntimeVersion };
 
-export const readMergeLogTail = (
-  projectRoot: string,
-  limit = MERGE_LOG_TAIL
-): Record<string, unknown>[] => {
-  let text: string;
-  try {
-    text = readFileSync(join(projectRoot, MERGE_LOG_FILE), 'utf8');
-  } catch {
-    return [];
-  }
-  const out: Record<string, unknown>[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const parsed = JSON.parse(line) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        out.push(parsed as Record<string, unknown>);
-      }
-    } catch {
-      // a torn last line while the editor appends; skip it
-    }
-  }
-  return out.slice(-limit);
-};
-
-const age = (at: unknown, now: Date): string => {
-  const time = typeof at === 'string' ? Date.parse(at) : Number.NaN;
-  if (!Number.isFinite(time)) return '';
-  const seconds = Math.max(0, Math.round((now.getTime() - time) / 1000));
-  if (seconds < 90) return `${seconds}s ago`;
-  if (seconds < 90 * 60) return `${Math.round(seconds / 60)} min ago`;
-  if (seconds < 36 * 3600) return `${Math.round(seconds / 3600)} h ago`;
-  return `${Math.round(seconds / 86400)} d ago`;
-};
-
-/** Merge-log events the human output prints as notes: nothing for the agent to do. */
-const INFORMATIONAL_EVENTS: ReadonlySet<unknown> = new Set(['ack-unknown']);
-
-/** One line per merge-log entry, in words an agent acts on. */
-export const describeMergeLogEntry = (entry: Record<string, unknown>, now: Date): string => {
-  const file = typeof entry.file === 'string' ? entry.file : '(project)';
-  const when = age(entry.at, now);
-  const prefix = `${when ? `${when}  ` : ''}${file}  `;
-  switch (entry.event) {
-    case 'merge': {
-      const decisions = Array.isArray(entry.decisions) ? entry.decisions : [];
-      const kept = decisions.filter(
-        d => d && typeof d === 'object' && (d as { kept?: unknown }).kept === 'human'
-      ).length;
-      const silent = decisions.filter(
-        d =>
-          d &&
-          typeof d === 'object' &&
-          (d as { kept?: unknown }).kept === 'human-unchanged-by-agent'
-      ).length;
-      const conflicts = Array.isArray(entry.conflicts) ? entry.conflicts.length : 0;
-      if (entry.status === 'rejected') {
-        const problems = Array.isArray(entry.problems) ? entry.problems.join('; ') : '';
-        return `${prefix}REJECTED your version (${problems || 'unreadable'}); the editor kept its own. Fix the file and write it again.`;
-      }
-      const parts: string[] = [];
-      if (kept > 0 || conflicts > 0) {
-        parts.push(
-          `the editor KEPT ${Math.max(kept, conflicts)} human value(s) over yours — \`pix3 read ${file}\`, then write again if yours is still meant`
-        );
-      }
-      if (silent > 0) {
-        parts.push(`${silent} human value(s) kept where your file carried the old value`);
-      }
-      return `${prefix}merged${parts.length ? `: ${parts.join('; ')}` : ' cleanly'}`;
-    }
-    case 'ack-applied':
-      return `${prefix}your read confirmation was applied (released ${Array.isArray(entry.released) ? entry.released.length : 0} protected value(s))`;
-    case 'ack-unknown':
-      return `${prefix}read confirmation for a version the editor has not recorded — ignored (harmless: nothing is protected by it and there is nothing to do; it stops showing once the file changes)`;
-    case 'accept-agent':
-      return `${prefix}the human accepted your version`;
-    case 'keep-mine':
-      return `${prefix}the human kept their version over yours`;
-    case 'restore-version':
-      return `${prefix}the human restored an earlier version`;
-    case 'reload':
-      return `${prefix}reloaded your version`;
-    default:
-      return `${prefix}${String(entry.event ?? 'entry')}`;
-  }
-};
-
-/** An `ack-unknown` entry whose `hash` is not the file's current version any more. */
-const isAboutSupersededVersion = (
-  entry: Record<string, unknown>,
-  currentHashes: ReadonlyMap<string, string>
-): boolean => {
-  if (typeof entry.hash !== 'string' || typeof entry.file !== 'string') return false;
-  const current = currentHashes.get(entry.file);
-  return current !== undefined && current !== entry.hash;
-};
-
 const formatDiagnostic = (d: CheckDiagnostic): string => {
   const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
   const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
@@ -375,7 +270,7 @@ const formatDiagnostic = (d: CheckDiagnostic): string => {
   return text;
 };
 
-export const formatCheckHuman = (report: CheckReport, now: Date): string => {
+export const formatCheckHuman = (report: CheckReport): string => {
   let out = '';
   const perCode = new Map<string, number>();
   let hidden = 0;
@@ -390,21 +285,6 @@ export const formatCheckHuman = (report: CheckReport, now: Date): string => {
   }
   if (hidden > 0) out += `… ${hidden} more (pix3 check --json lists them all)\n`;
   for (const note of report.notes) out += `note: ${note}\n`;
-  // An ignored read confirmation needs no action (the editor simply had no record of that
-  // version), so it is a note, not a line in the list an agent is told to act on — and only while
-  // it is about the file's CURRENT bytes: the log is a ring the entry sits in for a long time, and
-  // one about a version the disk no longer holds is history, not a note to repeat on every run.
-  const currentHashes = new Map(report.files.map(file => [file.file, file.sha256]));
-  const informational = report.mergeLog.filter(
-    entry =>
-      INFORMATIONAL_EVENTS.has(entry.event) && !isAboutSupersededVersion(entry, currentHashes)
-  );
-  const actionable = report.mergeLog.filter(entry => !INFORMATIONAL_EVENTS.has(entry.event));
-  for (const entry of informational) out += `note: ${describeMergeLogEntry(entry, now)}\n`;
-  if (actionable.length > 0) {
-    out += `merge-log (newest ${actionable.length}, .pix3/merge-log.jsonl):\n`;
-    for (const entry of actionable) out += `  ${describeMergeLogEntry(entry, now)}\n`;
-  }
   const tc = report.typecheck;
   const typecheckLine = tc.typescript
     ? `typecheck ${tc.files} file(s) with TypeScript ${tc.typescript.version} (${tc.typescript.source}, ${tc.tsconfig}): ${tc.errors} error(s)`
@@ -636,7 +516,6 @@ export const checkProject = async (
       typescript: resolved ? { version: resolved.version, source: resolved.source } : null,
       skipped,
     },
-    mergeLog: readMergeLogTail(projectRoot),
     kit: { version: kitVersion, cliVersion: CLI_VERSION, upToDate: kitUpToDate },
     timingsMs: { validate: validateMs, typecheck: typecheckMs, total: Date.now() - started },
   };
@@ -675,8 +554,6 @@ export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<nu
     typescript: io.typescript,
     log: line => io.stderr(`${line}\n`),
   });
-  io.stdout(
-    args.json ? formatCheckJson(report) : formatCheckHuman(report, io.now?.() ?? new Date())
-  );
+  io.stdout(args.json ? formatCheckJson(report) : formatCheckHuman(report));
   return report.errorCount > 0 ? 1 : 0;
 };
