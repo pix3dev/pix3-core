@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { UpdateObjectPropertyCommand } from '@/features/properties/UpdateObjectPropertyCommand';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
 import { ServiceContainer } from '@/fw/di';
 import { AgentKeepaliveService, RECENT_CALL_MS } from '@/services/core/AgentKeepaliveService';
@@ -188,6 +189,26 @@ describe('agent bridge', () => {
       ok: true,
       path: 'res://scenes/main.pix3scene',
     });
+  });
+
+  it('reads a node as the inspector and the file have it right after an inspector commit', async () => {
+    const container = ServiceContainer.getInstance();
+    await container
+      .getService<CommandDispatcher>(container.getOrCreateToken(CommandDispatcher))
+      .execute(
+        new UpdateObjectPropertyCommand({ nodeId: 'hero', propertyPath: 'width', value: 321 })
+      );
+
+    const read = await callBridgeTool('pix3_scene', { nodeId: 'hero' });
+    expect(read).toMatchObject({
+      ok: true,
+      node: { properties: { width: 321 } },
+      saved: { properties: { width: 321 } },
+    });
+    const tree = await callBridgeTool('pix3_scene', { maxDepth: 2 });
+    const hero = (tree.scene as { children: Array<{ properties: unknown }> }).children[0];
+    expect(hero.properties).toMatchObject({ width: 321 });
+    expect(await bridge().node('hero')).toMatchObject({ properties: { width: 321 } });
   });
 
   it('syncs through the host and keeps the editor awake for a minute after', async () => {

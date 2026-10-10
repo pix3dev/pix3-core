@@ -6,6 +6,8 @@ import {
   errors,
   installErrorCapture,
   nodeToDTO,
+  safeSerialize,
+  type Json,
   type CapturedError,
   type NodeDTO,
   type NodeSummary,
@@ -141,10 +143,31 @@ const graphOf = (path: string | undefined) => {
   return descriptor && graph ? { descriptor, graph } : null;
 };
 
+/**
+ * Each node as the scene file gets it (W13): the saver's view of the live graph, layout-derived
+ * values masked with the baseline's. The nodes' `properties` bag is only what the YAML said at
+ * load time — an inspector edit lands in a field, so reading the bag answered the old value.
+ */
+const savedNodesOf = (found: NonNullable<ReturnType<typeof graphOf>>) => {
+  const { graph, descriptor } = found;
+  const baseline = service(SceneBaselineService).get(descriptor.filePath);
+  const norm = baseline ? editorNormOfGraph(graph, baseline.norm) : normOfGraph(graph);
+  return indexNodes(norm);
+};
+
+const savedPropertiesOf =
+  (saved: ReturnType<typeof savedNodesOf>) =>
+  (node: NodeBase): Json | undefined => {
+    const def = saved.get(node.nodeId)?.def;
+    return def ? safeSerialize(def.properties ?? {}, 4) : undefined;
+  };
+
 const sceneTree = (
-  graph: NonNullable<ReturnType<typeof graphOf>>['graph'],
+  found: NonNullable<ReturnType<typeof graphOf>>,
   maxDepth: number
 ): NodeDTO & { sceneVersion: string } => {
+  const { graph } = found;
+  const propertiesOf = savedPropertiesOf(savedNodesOf(found));
   const roots = graph.rootNodes.filter((n): n is NodeBase => n instanceof NodeBase);
   return {
     nodeId: '<scene-root>',
@@ -155,7 +178,7 @@ const sceneTree = (
     groups: [],
     componentCount: 0,
     properties: null,
-    children: roots.map(root => nodeToDTO(root, maxDepth - 1)),
+    children: roots.map(root => nodeToDTO(root, maxDepth - 1, propertiesOf)),
     sceneVersion: graph.version,
   };
 };
@@ -171,13 +194,10 @@ const nodeRead = (
   const { graph, descriptor } = found;
   const node = graph.nodeMap.get(nodeId);
   if (!(node instanceof NodeBase)) return refuse('not_found', `No node "${nodeId}" in the scene.`);
-  const dto = nodeToDTO(node, 0);
+  const savedNodes = savedNodesOf(found);
+  const dto = nodeToDTO(node, 0, savedPropertiesOf(savedNodes));
   dto.components = node.components.map((c, i) => componentToDTO(c, i));
-  // What the scene file gets for this node — `properties` above is the loaded YAML bag, which
-  // does not show sizes a texture set or values only the node's fields hold.
-  const baseline = service(SceneBaselineService).get(descriptor.filePath);
-  const norm = baseline ? editorNormOfGraph(graph, baseline.norm) : normOfGraph(graph);
-  const saved = indexNodes(norm).get(nodeId)?.def ?? null;
+  const saved = savedNodes.get(nodeId)?.def ?? null;
   const screen =
     descriptor.id === appState.scenes.activeSceneId
       ? service(ViewportRendererService).projectNodeToClient(node)
@@ -369,7 +389,7 @@ const EXECUTES: Record<string, Execute> = {
       return { ok: true, path, matches: findNodes(found.graph, params.find) };
     }
     const maxDepth = typeof params.maxDepth === 'number' ? params.maxDepth : 3;
-    return { ok: true, path, scene: sceneTree(found.graph, maxDepth), selection: selection() };
+    return { ok: true, path, scene: sceneTree(found, maxDepth), selection: selection() };
   },
 
   async pix3_play(params) {

@@ -107,6 +107,10 @@ export interface NodeDTO {
   transform: TransformDTO;
   groups: string[];
   componentCount: number;
+  /**
+   * The node's `properties:` — what {@link nodeToDTO}'s `propertiesOf` answers (the agent bridge
+   * passes the scene file's view of the live node), else the bag the loader handed the node.
+   */
   properties: Json;
   /** Present when children were expanded (tree view within maxDepth). */
   children?: NodeDTO[];
@@ -147,7 +151,16 @@ function transformOf(node: NodeBase): TransformDTO {
   };
 }
 
-export function nodeToDTO(node: NodeBase, depth: number): NodeDTO {
+/**
+ * `propertiesOf` answers a node's `properties` (return `undefined` to fall back to the loaded
+ * bag). The bag is what the YAML said at load time: an inspector edit lands in the node's fields,
+ * not in it, so a caller that can serialize the live node should pass that view.
+ */
+export function nodeToDTO(
+  node: NodeBase,
+  depth: number,
+  propertiesOf?: (node: NodeBase) => Json | undefined
+): NodeDTO {
   const childNodes = node.children.filter((c): c is NodeBase => c instanceof NodeBase);
   const dto: NodeDTO = {
     nodeId: node.nodeId,
@@ -159,7 +172,7 @@ export function nodeToDTO(node: NodeBase, depth: number): NodeDTO {
     transform: transformOf(node),
     groups: [...node.groups],
     componentCount: node.components.length,
-    properties: safeSerialize(node.properties, 2),
+    properties: propertiesOf?.(node) ?? safeSerialize(node.properties, 2),
   };
   // Surface parked components: a model that cannot see them re-attaches a component the scene
   // already has (measured in Flow eval runs) or concludes the engine dropped its script.
@@ -174,7 +187,7 @@ export function nodeToDTO(node: NodeBase, depth: number): NodeDTO {
   }
   if (childNodes.length === 0) return dto;
   if (depth > 0) {
-    dto.children = childNodes.map(child => nodeToDTO(child, depth - 1));
+    dto.children = childNodes.map(child => nodeToDTO(child, depth - 1, propertiesOf));
   } else {
     dto.childCount = childNodes.length;
   }

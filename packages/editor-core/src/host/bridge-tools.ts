@@ -71,8 +71,9 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
     name: 'pix3_scene',
     description:
-      'Read a scene as the editor holds it: the tree ({nodeId, type, name, children…}) of the ' +
-      'active scene (or `path`), one node with its components and `saved` (the node as the scene ' +
+      'Read a scene as the editor holds it: the tree ({nodeId, type, name, properties, ' +
+      'children…}) of the active scene (or `path`; `properties` = what the file gets, unsaved ' +
+      'inspector edits included), one node with its components and `saved` (the node as the scene ' +
       'file gets it) and `screen` (its origin on the page in CSS px, to click or drag it) with ' +
       '`nodeId`, or the nodes whose name/type contains `find`. Read-only: change scenes by ' +
       'editing the .pix3scene file, then pix3_sync.',
