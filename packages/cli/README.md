@@ -4,8 +4,8 @@ Command line for Pix3:
 
 ```text
 pix3 new [<2d|3d> [dir]] [--name <n>]         create an empty 2D or 3D project (npm create pix3)
-pix3 editor [--project <dir>] [--stop] [--chrome-only] [--no-chrome] [--port <n>] [--cdp-port <n>] [--headless]
-                                              find/start the dev server, open the editor in Chrome for the agent
+pix3 editor [--project <dir>] [--stop] [--stop-chrome] [--chrome-only] [--no-chrome] [--port <n>] [--cdp-port <n>] [--headless]
+                                              find/start the dev server, open the editor in Chrome (CDP behind the token proxy)
 pix3 agent-setup [claude|codex] [--repair] [--cdp-port <n>] [--project <dir>]
                                               write the project's chrome-devtools-mcp config
 pix3 validate [paths…] [--json]               strict scene check
@@ -37,8 +37,8 @@ and the runtime types are prebuilt into the package (`kit/`, `dist/runtime-types
 
 Coding agents drive the open editor tab through Chrome DevTools MCP (`chrome-devtools-mcp`): the
 tab registers its `pix3_*` tools on the page (`packages/editor-core/src/host/bridge-tools.ts`),
-`pix3 editor` puts that tab in a Chrome with remote debugging, `pix3 agent-setup` points the
-agent's MCP config at it. There is no Pix3 MCP server (plan §D.2); the agent-facing procedure is
+`pix3 editor` puts that tab in a Chrome whose DevTools protocol is reachable only through its
+token proxy, `pix3 agent-setup` points the agent's MCP config at the proxy with the token. There is no Pix3 MCP server (plan §D.2); the agent-facing procedure is
 the kit's `pix3-editor` skill.
 
 ## `pix3 check` — everything an agent should run after a batch of edits
@@ -388,7 +388,7 @@ tsconfig.json                     { "extends": "./.pix3/tsconfig.check.json" } �
 
 ## `pix3 editor` — the editor in Chrome, for the agent
 
-Plan §D.3 / §D.4. Idempotent; run it from the project (or `--project <dir>`):
+Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <dir>`):
 
 1. **Dev server.** `.pix3/dev.json` (written by `@pix3/vite-plugin` while Vite listens: `url`,
    `editorUrl`, `port`, `pid`) is probed with `GET <url>__pix3/api/hello`. A live server is
@@ -396,25 +396,45 @@ Plan §D.3 / §D.4. Idempotent; run it from the project (or `--project <dir>`):
    (`process.execPath`, `cwd` = the project, output in `.pix3/dev.log`), and the command waits
    up to 15 s for the new `dev.json`. `--port <n>` passes `--port --strictPort` to Vite.
    `--stop` sends SIGTERM to the recorded pid (and drops a record whose process is gone).
-2. **Chrome.** `PIX3_CHROME` names the binary (a wrapper script works), else the platform's
-   usual place (`google-chrome` / `chromium` on the PATH, `/Applications/Google Chrome.app` via
-   `open -na`, `%ProgramFiles%\Google\Chrome\Application\chrome.exe`). Launched with
-   `--app=<editorUrl> --user-data-dir=~/.pix3/chrome --remote-debugging-port=<port>`, no first
-   run, no default-browser check, and background throttling off
-   (`--disable-background-timer-throttling --disable-renderer-backgrounding
-   --disable-backgrounding-occluded-windows`); a second launch with the same profile opens
-   another app window in the running Chrome (a second project shares Chrome and port).
-   `--headless` opens the URL as a plain tab with `--headless=new` (headless Chrome ignores
-   `--app`). `--no-chrome` stops after the server; under `SSH_CONNECTION` Chrome is not launched
-   (plan §E.3 — the browser is on the machine with the screen; `--chrome-only` there, after the
-   port forward).
-3. **The port (9333).** `GET /json/version` says whether something listens; `/json/list` with a
-   `/__pix3/` page (or the port `~/.pix3/chrome.json` recorded) says it is ours → reused. A
-   foreign DevTools endpoint or any other listener → the next of 9334–9339, with a line per
-   skipped port, the chosen one recorded in `~/.pix3/chrome.json`, and the reminder to run
-   `pix3 agent-setup --repair` (a running Codex / Claude Code session keeps the old
-   `--browserUrl`: new thread). `--cdp-port <n>` moves the preferred port (test harnesses).
-   `PIX3_HOME` relocates `~/.pix3`.
+2. **Chrome, owned.** `PIX3_CHROME` names the binary (a wrapper script works if it `exec`s
+   Chrome: the pipe is fds 3 and 4), else the platform's usual place (`google-chrome` /
+   `chromium` on the PATH, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+   `%ProgramFiles%\Google\Chrome\Application\chrome.exe`). `pix3 editor` starts a **detached
+   Chrome owner** (`pix3 __chrome-owner`, log in `~/.pix3/chrome-owner.log`) and returns once its
+   proxy answers; the owner launches Chrome with `--app=<editorUrl>
+   --user-data-dir=~/.pix3/chrome --remote-debugging-pipe` — **no debugging port** — no first run,
+   no default-browser check, background throttling off (`--disable-background-timer-throttling
+   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`). The owner lives
+   exactly as long as Chrome: Chrome gone → the owner closes every client, removes
+   `~/.pix3/chrome.json` and exits; the owner gone (killed) → the pipe closes and Chrome exits
+   with it. `--stop-chrome` asks the owner to close Chrome. A second project opens another app
+   window in the running Chrome (a short launch of the same profile, no debugging flag; with
+   `--headless`, a new tab through the proxy). `--headless` opens the URL as a plain tab with
+   `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
+   under `SSH_CONNECTION` Chrome is not launched (plan §E.3 — the browser is on the machine with
+   the screen; `--chrome-only` there, after the port forward).
+3. **The token proxy (9333).** The owner serves `ws://127.0.0.1:9333/pix3` (the browser target;
+   `…/pix3/page/<targetId>` for one page) and `GET /json/version`, `/json/list` (`/json`) on
+   loopback. Every request needs `Authorization: Bearer <token>`, the token of
+   `~/.pix3/cdp-token` (32 random bytes, base64url, mode 0600, created once by whichever command
+   needs it first; delete the file to rotate, then `agent-setup --repair` and a new Chrome);
+   a request with an `Origin` (any web page) or a non-loopback `Host` is refused (403), a
+   missing or wrong token is 401 — a WebSocket is refused before the upgrade. Several clients
+   share the pipe (chrome-devtools-mcp, a harness, `pix3 editor` itself): each gets its own root
+   session (`Target.attachToBrowserTarget`, or `attachToTarget {flatten}` for a page), message
+   ids are remapped per client, events go only to the client owning their session, another
+   client's session is "not found", a client that leaves is detached with its child sessions.
+4. **The port.** `/json/version` with our token answering with the proxy's marker = ours →
+   reused (and when the editor tab is open there, nothing is launched). A proxy refusing our
+   token (another user's, another `PIX3_HOME`), a foreign DevTools endpoint or any other listener
+   → the next of 9334–9339, with a line per skipped port, the chosen one recorded in
+   `~/.pix3/chrome.json`, and the reminder to run `pix3 agent-setup --repair` (a running Codex /
+   Claude Code session keeps the old endpoint: new thread). A plain DevTools port with a
+   `/__pix3/` page (or on the recorded port) is the P1 launch (open port, no token): it holds the
+   profile, so `pix3 editor` stops and says to close that Chrome. When the port is the usual one
+   but the project's `.mcp.json` / `.codex/config.toml` entry does not match this port and
+   token, it says to run `pix3 agent-setup --repair`. `--cdp-port <n>` moves the preferred port
+   (test harnesses). `PIX3_HOME` relocates `~/.pix3`.
 
 Keepalive is the editor's: every bridge call keeps its loops running for 60 s, agent play until
 it stops (`AgentKeepaliveService`); the Chrome flags above keep Chrome from throttling the tab.
@@ -429,25 +449,36 @@ Plan §D.6. Writes project-level config, idempotently:
   every other byte of the file kept.
 
 The entry is `npx -y chrome-devtools-mcp@1.10.1 --categoryExperimentalThirdParty=true
---experimentalVision=true --browserUrl=http://127.0.0.1:<port>` (`cmd /c npx …` on Windows;
+--experimentalVision=true --wsEndpoint=ws://127.0.0.1:<port>/pix3
+--wsHeaders={"Authorization":"Bearer <token>"}` (`cmd /c npx …` on Windows;
 `experimentalVision` enables `click_at {x, y}`, the agent's input at the coordinates
-`pix3_scene` returns as `screen`). The version is **pinned**:
+`pix3_scene` returns as `screen`). `--wsEndpoint` / `--wsHeaders` are 1.10.1's own flags
+(`build/src/config/browser-options.js`; `--wsHeaders` is parsed as a JSON object): with
+`--wsEndpoint` puppeteer connects to that WebSocket only, sending the headers on the upgrade, and
+makes no `/json/*` request. The version is **pinned**:
 the third-party tool category is experimental and may move in a minor release, so it changes
 only after the S4 transport run is repeated (`CHROME_DEVTOOLS_MCP_VERSION` in
 `src/agent-setup/config.ts`); the inline fallback (`window.__PIX3_DEBUG__.call`) works on any
-version. The port is `--cdp-port`, else what `~/.pix3/chrome.json` recorded, else 9333.
+version. The port is `--cdp-port`, else what `~/.pix3/chrome.json` recorded, else 9333; the token
+is `~/.pix3/cdp-token` (created here if `pix3 editor` has not run yet).
 
-An entry that already matches is `up to date`; one that differs (another version, another port)
-is reported as drift and exit 1 — `--repair` rewrites it after copying the file to `<file>.bak`.
+The file then holds this machine's token: the command prints the launch with the token masked,
+and says so when git does not ignore the file (the starters' `.gitignore` lists `.mcp.json` and
+`.codex/config.toml`). An entry that already matches is `up to date`; one that differs (another
+version, port or token, or the P1 `--browserUrl` launch, named as such) is reported as drift and
+exit 1 — `--repair` rewrites it after copying the file to `<file>.bak`; that is the migration of
+a P1 project.
 Nothing is done to a sandbox: Codex must be allowed to reach `127.0.0.1` once when it asks.
-The alternative for every project at once is printed (`claude mcp add --scope user …`, or the
-table in `~/.codex/config.toml`).
+The alternative for every project at once is printed (`claude mcp add --scope user …` with the
+token put in, or the table in `~/.codex/config.toml`).
 
-**No proxy yet (plan §D.5).** Port 9333 listens on loopback only; a web page cannot connect
-(Host check, no `--remote-allow-origins`), any local process of the same user can. The
-token-bearing proxy (`pix3 editor` owning Chrome over `--remote-debugging-pipe`, MCP with
-`--wsEndpoint` + `--wsHeaders`) is P2 and mandatory before a stranger test on a corporate laptop
-and before Remote SSH; until then dogfood is local only.
+**The proxy (plan §D.5).** Chrome opens no debugging port; the only way in is the proxy with the
+token, so another local user, a web page or a process that cannot read `~/.pix3/cdp-token`
+cannot drive the editor's Chrome (checked: `../pix3-core-spikes/editor-e2e/gate-p2.mjs`). Same-user
+processes can read the token file — the boundary is the user account, as for any file in the
+home directory. Not yet: Remote SSH (§E.3: the agent on the remote host reaching the local
+Chrome through a forwarded proxy port needs the local token there and `PIX3_PUBLIC_URL` in
+`dev.json`), and Chrome on macOS / Windows is untested (`.plans/agent-bridge.md` debt).
 
 ## The editor bridge — what the tab exposes
 

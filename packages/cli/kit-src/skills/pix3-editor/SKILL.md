@@ -7,16 +7,22 @@ description: How to drive the open Pix3 editor tab through Chrome DevTools MCP (
 # Drive the editor
 
 The human has this project open in the Pix3 editor: a tab at `<dev server>/__pix3/` in a Chrome
-that `pix3 editor` started with remote debugging on port 9333. You reach that tab through the
-`pix3-browser` MCP server (chrome-devtools-mcp). The tab registers its own tools on the page;
-you edit files, the editor follows the disk, and `pix3_sync` is the barrier between the two.
+that `pix3 editor` started. That Chrome has no open debugging port: its DevTools protocol is
+served by `pix3 editor`'s token proxy (`ws://127.0.0.1:9333/pix3`), and you reach the tab through
+the `pix3-browser` MCP server (chrome-devtools-mcp), which `pix3 agent-setup` configured with the
+proxy and its token. The tab registers its own tools on the page; you edit files, the editor
+follows the disk, and `pix3_sync` is the barrier between the two.
 
 ## 1. Find the tab (once per thread, and again after any reload)
 
 1. `.pix3/dev.json` in the project → `editorUrl` (e.g. `http://localhost:5173/__pix3/`).
    No file, or the server does not answer → `npm run editor` (= `npx pix3 editor`: starts the
    dev server and Chrome). No `pix3-browser` server in
-   your MCP list → `npx pix3 agent-setup` once, then start a new thread.
+   your MCP list → `npx pix3 agent-setup` once, then start a new thread. The server cannot
+   connect (`401`, connection refused) or `npm run editor` tells you to run
+   `pix3 agent-setup --repair` → `npm run editor`, then `npx pix3 agent-setup --repair`, then a
+   new thread (a running MCP server keeps the endpoint and token it started with). Never read,
+   print or copy the token (`~/.pix3/cdp-token`, the `--wsHeaders` of the MCP config).
 2. `list_pages` → the page whose URL starts with `editorUrl` → `select_page` with its id.
 3. `list_3p_developer_tools` → the `pix3` group with the seven `pix3_*` tools below. **Call it
    again after every `select_page` and after any page reload** — the registration lives in the

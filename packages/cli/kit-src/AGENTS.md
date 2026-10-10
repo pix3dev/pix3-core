@@ -189,8 +189,9 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
 - `pix3 editor` — find (or start) the project's dev server and open the editor in a Chrome
-  with remote debugging on port 9333; `pix3 agent-setup [claude|codex] [--repair]` — write the
-  project's MCP config (`.mcp.json`, `.codex/config.toml`) for `chrome-devtools-mcp`, once.
+  reachable only through its token proxy on port 9333; `pix3 agent-setup [claude|codex]
+  [--repair]` — write the project's MCP config (`.mcp.json`, `.codex/config.toml`, with this
+  machine's token — never commit them) for `chrome-devtools-mcp`, once.
 - **The editor bridge.** With the editor tab open, the `pix3-browser` MCP server (Chrome
   DevTools) reaches it: `list_pages` → `select_page` → `list_3p_developer_tools` → the
   `pix3_*` tools — sync the editor with the disk, play, step the game with predicates, read the
