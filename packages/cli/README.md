@@ -96,7 +96,7 @@ a `SKIPPED: N scene(s) …` note, and the human summary line reads `level 2 hydr
 SKIPPED (scripts do not compile — user: components unchecked)`. Fix the compile error and run again.
 
 **Which tsconfig.** A project with its **own** root `tsconfig.json` (a Vite project — every
-`npm create pix3` starter — or one the editor's *build from templates* turned into one) is checked with it, as is, against its own
+`npm create pix3` starter) is checked with it, as is, against its own
 `node_modules` (`mode: "project"`); nothing is written into it. Otherwise (`mode: "pix3-types"`)
 `check` uses `.pix3/tsconfig.check.json` against the bundled types in `.pix3/types/`, and first
 (re)writes both when they are missing or from another CLI build.
@@ -202,7 +202,7 @@ clips:
   - { state: die, sequence: die/die }                                   # no variant: clip "die"
 ```
 
-Output, in the managed-sprite-folder layout the editor's Sprite Editor shows as one card:
+Output, in the managed-sprite-folder layout:
 `sprites/<slug>/<slug>.pix3anim` (clips `<variant>.<state>`, every frame with `texturePath`,
 `anchor`, `sourceSize`), the frames copied beside it as `<variant>_<state>_<nnnn>.png`, and
 `scenes/prefabs/<Name>.pix3scene` — an `AnimatedSprite2D` root (`sizeMode: native`) carrying
@@ -217,17 +217,17 @@ engine's image reader). Exit 0 = written or current, 1 = refused, 2 = usage / no
 
 `src/character/character.spec.ts` holds the output to the runtime (`normalizeAnimationResource` of
 the written `.pix3anim` is the identity; the compiler's types are assignable to
-`AnimationResource`), to the editor's frame naming (`buildAnimationFrameResourcePath`), and to
+`AnimationResource`), to the managed folder's frame naming (`<clip>_<nnnn>.png`), and to
 `pix3 validate` on a starter that instances the prefab; `character.headless.spec.ts` boots the
 prefab through the real loader and drives idle → attack → restart → die → variant switch. The
 format itself: the kit's `.claude/skills/pix3-scene-format/pix3anim.md`.
 
 ## `pix3 smoke` — run the game headless
 
-`pix3 smoke [scene]` runs the game in Node — no browser, no editor, no `pix3 serve` — for
+`pix3 smoke [scene]` runs the game in Node — no browser, no editor, no dev server — for
 `--frames N` fixed steps of 1/60 s (default 120) and reports everything that went wrong. It is the
-behavioural check after `pix3 check` when no editor is connected; with the live channel,
-`game_run` is the stronger one (it renders).
+behavioural check after `pix3 check` when no editor is connected; with the editor open,
+`pix3_game_run` is the stronger one (it renders).
 
 What runs: the project's scripts compiled with esbuild (as `validate` level 2 does, but bare
 imports are bundled for real from the project's `node_modules` — Rapier, three addons — and only
@@ -258,11 +258,11 @@ several run, one after another from one bundle, a line each (`src/smoke/select-s
    scripts that reach no scene and widen every run to everything.
 2. Otherwise — no git, nothing changed, a changed scene/script that reaches no top-level scene (a
    helper module, an unused prefab), or a changed `pix3project.yaml` — **every** top-level scene
-   (not instanced by another, not under `prefabs/` / `ui/`), `scenes/main.pix3scene` first (the
-   editor's startup scene, where the game lives), then `defaultExportScenePath`, then by path.
+   (not instanced by another, not under `prefabs/` / `ui/`), `scenes/main.pix3scene` first (where
+   the starters and the 1.x recipes put the game), then `defaultExportScenePath`, then by path.
    `--all` forces this.
 
-It never picks `defaultExportScenePath` alone any more: in every recipe that is the menu, input is
+It never picks `defaultExportScenePath` alone any more: in every 1.x recipe that is the menu, input is
 empty, PLAY is never pressed, and a game whose `onStart` throws used to smoke green.
 
 | Code | |
@@ -327,7 +327,7 @@ marked `*`). Exit 0, 1 when a scene does not parse, 2 for bad arguments or a mis
 
 ## `pix3 kit` — the agent kit
 
-`pix3 kit` installs the agent kit into an existing project (one the editor created, or after a CLI
+`pix3 kit` installs the agent kit into an existing project (one made without it, or after a CLI
 upgrade); `pix3 new` runs the same step. What lands in the project:
 
 | Path | What |
