@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
 import { headerValue, HttpError } from './http.ts';
@@ -117,4 +118,61 @@ export class RequestGuard {
     }
     this.checkSameOrigin(req);
   }
+
+  /**
+   * Routes only the editor page may use, reads included: the image-generation keys and proxy
+   * (plan §B.1). On top of {@link checkMutation}:
+   * - `Sec-Fetch-Site`, when the browser sends it, is `same-origin`;
+   * - `Referer`, when sent, is a page under `editorPrefix` (`<base>__pix3/`) — the game at `/` is
+   *   the same origin, so the origin alone cannot tell the two apart;
+   * - `X-Pix3-Session` is the token the plugin hands only to a top-level navigation of the editor
+   *   page ({@link editorSessionFor}). A `Referer` is the page's to choose within its origin
+   *   (`fetch(url, {referrer})`), the token is not.
+   * Same-origin isolation has limits a header cannot fix (a service worker the game registers on
+   * `/` sees the editor's traffic); the key itself never reaches any page.
+   */
+  checkEditorOnly(req: IncomingMessage, editorPrefix: string, sessionToken: string): void {
+    this.checkMutation(req);
+    const site = headerValue(req, 'sec-fetch-site');
+    if (site !== null && site !== 'same-origin') {
+      throw new HttpError(403, 'forbidden_site', 'Only the editor page may call this route.');
+    }
+    const referer = headerValue(req, 'referer');
+    if (referer !== null) {
+      let path: string;
+      try {
+        path = new URL(referer).pathname;
+      } catch {
+        path = '';
+      }
+      if (!path.startsWith(editorPrefix)) {
+        throw new HttpError(403, 'forbidden_page', 'Only the editor page may call this route.');
+      }
+    }
+    if (!sameSecret(headerValue(req, 'x-pix3-session') ?? '', sessionToken)) {
+      throw new HttpError(
+        403,
+        'bad_session',
+        'Missing or stale editor session: reload the editor tab.'
+      );
+    }
+  }
 }
+
+const sameSecret = (given: string, expected: string): boolean => {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+/**
+ * The session token for an editor-page request, or null when this request must not get it: the
+ * page fetched by script (`Sec-Fetch-Dest: empty`) or framed (`iframe`) — the game at `/` can do
+ * both. Browsers send `Sec-Fetch-*` only to secure origins (https, localhost); without them (a
+ * plain-http LAN address under `allowRemote`, a non-browser client) the token is handed out.
+ */
+export const editorSessionFor = (req: IncomingMessage, token: string): string | null => {
+  const dest = headerValue(req, 'sec-fetch-dest');
+  if (dest === null) return token;
+  return dest === 'document' ? token : null;
+};

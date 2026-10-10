@@ -36,6 +36,11 @@ The layout is **whatever this project has** — do not assume folders. Three rul
 bookkeeping (`dev.json` of the running dev server, the version journal, script types) — read
 `dev.json`, never edit anything there.
 
+**The editor never creates, renames, moves or deletes a file, never edits `pix3project.yaml` and
+never builds — you do.** New scene, rename/move/delete with every reference, a branch turned into
+a prefab, a new flipbook, a locale added or removed, project settings, build options:
+`.claude/skills/pix3-scene-format/project-files.md`.
+
 Example — the layout `npm create pix3` sets up (`pix3 new`); other projects differ:
 
 | Path | What |
@@ -183,7 +188,9 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   unsaved edits first (`--no-sync` skips that).
 - `pix3 validate [paths…]` — scenes only, no type-check.
 - `pix3 smoke [scene] [--frames N] [--json]` — run a scene headless (no browser) and report
-  script throws with frame and stack, `console.error`, missing `res://` files; exit 1 on errors.
+  script throws with frame and stack, `console.error`, missing `res://` files (a warning:
+  read the warnings too); exit 1 on errors. `console.log` output is only in `--json`
+  (`logs.lines`, `"[frame 0] …"`).
   Name the game scene (`pix3 smoke scenes/main.pix3scene`); no scene = the scenes git changes
   reach, else every top-level scene (`--all` forces that).
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
@@ -206,7 +213,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 
 ## Skills (read the one you need, when you need it)
 
-- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays; `.pix3anim` flipbooks and `pix3 character-compile` in `pix3anim.md` beside it
+- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays; `.pix3anim` flipbooks and `pix3 character-compile` in `pix3anim.md` beside it; file and project operations the editor does not do in `project-files.md` beside it
 - `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every node in `reference.md` beside it
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
 - `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback

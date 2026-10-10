@@ -70,6 +70,8 @@ export class GeneratePanel extends ComponentBase {
   @state() private quality = '';
   @state() private transparentBackground = false;
   @state() private keyConfigured = false;
+  /** Last four characters of the dev server's key, when it says (never the key). */
+  @state() private keyLast4: string | null = null;
   @state() private references: ReferenceItem[] = [];
   @state() private generating = false;
   @state() private generateError: string | null = null;
@@ -185,12 +187,16 @@ export class GeneratePanel extends ComponentBase {
     const provider = this.providers.get(this.providerId);
     if (!provider) {
       this.keyConfigured = false;
+      this.keyLast4 = null;
       return;
     }
     try {
-      this.keyConfigured = await this.aiSettings.hasApiKey(this.providerId);
+      const status = await this.aiSettings.keyStatus(this.providerId);
+      this.keyConfigured = status.set;
+      this.keyLast4 = status.last4 ?? null;
     } catch {
       this.keyConfigured = false;
+      this.keyLast4 = null;
     }
   }
 
@@ -336,7 +342,7 @@ export class GeneratePanel extends ComponentBase {
       <div class="gp-key-status-row">
         <span class="gp-field-label">API key</span>
         <span class="gp-key-status ${this.keyConfigured ? 'is-set' : 'is-unset'}">
-          ${this.keyConfigured ? 'Connected' : 'Not set'}
+          ${this.keyConfigured ? `Set${this.keyLast4 ? ` (…${this.keyLast4})` : ''}` : 'Not set'}
         </span>
       </div>
       <div class="gp-key-row">
@@ -344,7 +350,7 @@ export class GeneratePanel extends ComponentBase {
           type="password"
           autocomplete="off"
           aria-label="API key"
-          placeholder=${this.keyConfigured ? '•••••••• stored' : 'Paste API key'}
+          placeholder=${this.keyConfigured ? 'Paste a new key to replace it' : 'Paste API key'}
           .value=${this.apiKeyInput}
           @input=${this.onApiKeyInput}
           @keydown=${this.onKeyInputKeyDown}
@@ -369,8 +375,8 @@ export class GeneratePanel extends ComponentBase {
       <div class="gp-popover-hint">
         ${this.apiKeyMessage
           ? this.apiKeyMessage
-          : html`Stored encrypted in this
-            browser.${helpUrl
+          : html`Kept by the dev server in ~/.pix3/keys.json; this page never sees
+            it.${helpUrl
               ? html` <a href=${helpUrl} target="_blank" rel="noreferrer">Get a key</a>.`
               : ''}`}
       </div>
@@ -594,10 +600,11 @@ export class GeneratePanel extends ComponentBase {
     }
     this.apiKeyBusy = true;
     try {
-      await this.aiSettings.setApiKey(this.providerId, key);
-      this.keyConfigured = true;
+      const status = await this.aiSettings.setApiKey(this.providerId, key);
+      this.keyConfigured = status.set;
+      this.keyLast4 = status.last4 ?? null;
       this.apiKeyInput = '';
-      this.apiKeyMessage = 'API key saved.';
+      this.apiKeyMessage = 'API key saved on the dev server.';
     } catch (error) {
       this.apiKeyMessage = `Failed to save key: ${describeError(error)}`;
     } finally {
@@ -613,6 +620,7 @@ export class GeneratePanel extends ComponentBase {
     try {
       await this.aiSettings.clearApiKey(this.providerId);
       this.keyConfigured = false;
+      this.keyLast4 = null;
       this.apiKeyInput = '';
       this.apiKeyMessage = 'API key removed.';
     } catch (error) {
@@ -763,13 +771,6 @@ export class GeneratePanel extends ComponentBase {
     this.abortController = new AbortController();
 
     try {
-      const apiKey = await this.aiSettings.getApiKey(this.providerId);
-      if (!apiKey) {
-        this.keyConfigured = false;
-        this.generateError = 'No API key configured for this provider.';
-        return;
-      }
-
       const caps = model.capabilities;
       const references = caps.supportsReferenceImages
         ? await Promise.all(
@@ -791,7 +792,7 @@ export class GeneratePanel extends ComponentBase {
             caps.supportsTransparency && this.transparentBackground ? 'transparent' : undefined,
           signal: this.abortController.signal,
         },
-        { apiKey, modelId: this.modelId }
+        { modelId: this.modelId, transport: this.aiSettings.transportFor(provider) }
       );
 
       const image = result.images[0];
@@ -824,6 +825,10 @@ export class GeneratePanel extends ComponentBase {
         height: size?.height,
       });
     } catch (error) {
+      if (error instanceof ImageGenError && error.kind === 'missing-key') {
+        this.keyConfigured = false;
+        this.keyLast4 = null;
+      }
       this.generateError = describeError(error);
     } finally {
       this.generating = false;

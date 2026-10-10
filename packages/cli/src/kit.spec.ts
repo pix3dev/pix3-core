@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -21,8 +22,13 @@ import {
   resolveSceneNodeType,
   type SceneDiskKeyRule,
 } from '@pix3/runtime';
+import {
+  DiskResourceManager,
+  installCanvasOnlyDocument,
+  NodeAssetLoader,
+} from '@pix3/runtime/node';
 import ts from 'typescript';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { compileCharacter } from './character/compiler.ts';
@@ -161,6 +167,7 @@ describe('kit drift', () => {
         'CLAUDE.md',
         '.claude/skills/pix3-scene-format/SKILL.md',
         '.claude/skills/pix3-scene-format/pix3anim.md',
+        '.claude/skills/pix3-scene-format/project-files.md',
         '.claude/skills/pix3-nodes/SKILL.md',
         '.claude/skills/pix3-nodes/reference.md',
         '.claude/skills/pix3-scripts/SKILL.md',
@@ -770,6 +777,237 @@ describe('kit drift', () => {
     expect(checked).toBeGreaterThan(200);
     expect(problems).toEqual([]);
   });
+
+  const PROJECT_FILES = '.claude/skills/pix3-scene-format/project-files.md';
+
+  /** Member names (`?` kept) of the named interfaces of a TS file of this checkout. */
+  const manifestInterfaces = (repoPath: string, ...names: string[]): Map<string, string[]> => {
+    const path = join(repoRootOfCheckout(), repoPath);
+    const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest);
+    const out = new Map<string, string[]>();
+    for (const statement of source.statements) {
+      if (!ts.isInterfaceDeclaration(statement) || !names.includes(statement.name.text)) continue;
+      out.set(
+        statement.name.text,
+        statement.members
+          .filter(ts.isPropertySignature)
+          .map(m => `${m.name.getText(source)}${m.questionToken ? '?' : ''}`)
+      );
+    }
+    for (const name of names) if (!out.has(name)) throw new Error(`${repoPath}: no ${name}`);
+    return out;
+  };
+
+  /** `| \`key\` | what |` rows of one `## ` section: key → the second cell. */
+  const keyTable = (source: string, section: string): Map<string, string> => {
+    const out = new Map<string, string>();
+    for (const line of h2Section(source, section).split('\n')) {
+      const cells = line
+        .split(/(?<!\\)\|/)
+        .slice(1, -1)
+        .map(c => c.trim());
+      const key = /^`(\w+)`$/.exec(cells[0] ?? '');
+      if (key) out.set(key[1], cells[1] ?? '');
+    }
+    return out;
+  };
+
+  it('the pix3project.yaml table is the manifest: every key, its sub-keys and its values', async () => {
+    const editorManifest = 'packages/editor-core/src/core/ProjectManifest.ts';
+    const interfaces = manifestInterfaces(
+      editorManifest,
+      'ProjectManifest',
+      'QualitySettings',
+      'LocalizationSettings',
+      'ProjectFontFace'
+    );
+    const rows = keyTable(text(PROJECT_FILES), '`pix3project.yaml`');
+    // `export` (prune / include / exclude globs) is the 1.x build's; the 2.x build does not read
+    // it (.plans/player-build.md P5), so the kit does not offer it.
+    const strip = (names: readonly string[]) => names.map(n => n.replace(/\?$/, ''));
+    expect([...rows.keys()].sort()).toEqual(
+      strip(interfaces.get('ProjectManifest') ?? [])
+        .filter(n => n !== 'export')
+        .sort()
+    );
+    const braces = (cell: string): string[] =>
+      (/`\[?\{ ([^}]+) \}\]?`/.exec(cell)?.[1] ?? '').split(',').map(part => part.trim());
+    expect(braces(rows.get('quality') ?? '')).toEqual(interfaces.get('QualitySettings'));
+    expect(braces(rows.get('localization') ?? '')).toEqual(interfaces.get('LocalizationSettings'));
+    expect(braces(rows.get('fonts') ?? '')).toEqual(interfaces.get('ProjectFontFace'));
+    const manifest = (await import(join(repoRootOfCheckout(), editorManifest))) as Record<
+      string,
+      readonly string[]
+    >;
+    const values = (cell: string): string[] => [...cell.matchAll(/`([a-z0-9]+)`/g)].map(m => m[1]);
+    expect(values(rows.get('projectType') ?? '')).toEqual([...manifest.PROJECT_TYPES]);
+    expect(values(rows.get('targetPlatform') ?? '')).toEqual([...manifest.TARGET_PLATFORMS]);
+    expect(values(rows.get('textureFiltering') ?? '')).toEqual([
+      ...manifest.TEXTURE_FILTERING_MODES,
+    ]);
+    expect(values(rows.get('ambientOcclusion') ?? '')).toEqual([...manifest.PROJECT_AO_MODES]);
+    // "autoloads run only in the editor's play mode": the player never reads them.
+    const player = readFileSync(
+      join(repoRootOfCheckout(), 'packages/vite-plugin/player/index.ts'),
+      'utf8'
+    );
+    expect(player).not.toMatch(/autoload/i);
+  });
+
+  it("names a node's scene id `nodeId` (three.js owns `id`)", () => {
+    const node = new runtime.NodeBase({ id: 'probe' });
+    expect(node.nodeId).toBe('probe');
+    expect(typeof node.id).toBe('number');
+    for (const file of ['.claude/skills/pix3-scripts/SKILL.md', PROJECT_FILES]) {
+      expect(text(file), file).toContain('`nodeId`');
+    }
+    // The node member lists say `nodeId`, not a bare `id`.
+    for (const [file, content] of texts) {
+      expect(content, file).not.toMatch(/`name`, `id`,/);
+    }
+  });
+
+  it('names only pix3() options the plugin has', () => {
+    const options = (
+      manifestInterfaces('packages/vite-plugin/src/index.ts', 'Pix3Options').get('Pix3Options') ??
+      []
+    ).map(n => n.replace(/\?$/, ''));
+    const named = [...texts.values()].flatMap(content =>
+      [...content.matchAll(/pix3\(\{ (\w+):/g)].map(m => m[1])
+    );
+    expect(named.length).toBeGreaterThan(3);
+    expect(named.filter(name => !options.includes(name))).toEqual([]);
+  });
+
+  it('says which nodes play a .pix3anim: the ones whose schema has animationResourcePath', () => {
+    const playing = KNOWN_SCENE_NODE_TYPES.filter(type => {
+      const format = getSceneNodeDiskFormat(type);
+      return !!format && schemaForType(format).some(p => p.name === 'animationResourcePath');
+    });
+    expect(playing).toEqual(['AnimatedSprite2D']);
+    const intro = text(PIX3ANIM).split('\n## ')[0];
+    expect(intro).toContain('`AnimatedSprite2D`\nplays one');
+    // … and `AnimatedSprite3D` takes its own `frames` list.
+    const sprite3d = getSceneNodeDiskFormat('AnimatedSprite3D');
+    expect(sprite3d).not.toBeNull();
+    if (!sprite3d) return;
+    expect(resolveSceneDiskKey(sprite3d, schemaForType(sprite3d), 'frames').kind).not.toBe(
+      'unknown'
+    );
+    expect(intro).toMatch(/`AnimatedSprite3D` takes\s+its own `frames` list/);
+  });
+
+  it("the recipes' examples load clean in a starter: the extracted prefab twice, the bound flipbook, a locale", async () => {
+    const template = listTemplates().find(t => t.id === '2d');
+    if (!template) throw new Error('2d starter missing');
+    const root = join(scratch, `starter-recipes-${++counter}`);
+    createProject({ template, dir: root });
+    const recipe = h2Section(text(PROJECT_FILES), 'Extract a branch into a prefab');
+    const yamlBlocks = [...recipe.matchAll(/```yaml\n([\s\S]*?)```/g)].map(
+      m => parse(m[1]) as Record<string, unknown>[]
+    );
+    expect(yamlBlocks).toHaveLength(2);
+    const [[branch], [instance]] = yamlBlocks;
+    // Steps 2–3: the branch is the prefab's one root, at the origin, without its layout block.
+    const prefabRoot = structuredClone(branch) as {
+      properties: Record<string, unknown>;
+    } & Record<string, unknown>;
+    expect(prefabRoot.properties.transform).toBeDefined();
+    prefabRoot.properties.transform = { position: [0, 0], scale: [1, 1], rotation: 0 };
+    delete prefabRoot.properties.layout;
+    const prefabPath = /`(scenes\/prefabs\/\w+\.pix3scene)`/.exec(recipe)?.[1] ?? '';
+    expect(instance.instance).toBe(`res://${prefabPath}`);
+    mkdirSync(join(root, 'scenes/prefabs'), { recursive: true });
+    writeFileSync(
+      join(root, ...prefabPath.split('/')),
+      stringify({ version: '1.0.0', root: [prefabRoot] })
+    );
+    // Step 6: a second copy, its inner label overridden as the recipe shows.
+    const override = parse(/`(coin-count: \{[^`]+\})`/.exec(recipe)?.[1] ?? '') as Record<
+      string,
+      unknown
+    >;
+    const second = {
+      ...instance,
+      id: `${String(instance.id)}-2`,
+      properties: { transform: { position: [780, 440] } },
+      overrides: { byLocalId: override },
+    };
+    // The flipbook: the binding block of pix3anim.md, a .pix3anim and one frame.
+    const bind = h2Section(text(PIX3ANIM), 'Create one and bind it');
+    const [sprite] = parse(/```yaml\n([\s\S]*?)```/.exec(bind)?.[1] ?? '') as {
+      properties: { animationResourcePath: string; currentClip: string };
+    }[];
+    const animPath = sprite.properties.animationResourcePath.replace('res://', '');
+    const frame = `${animPath.slice(0, animPath.lastIndexOf('/'))}/${sprite.properties.currentClip}_0001.svg`;
+    mkdirSync(join(root, ...frame.split('/').slice(0, -1)), { recursive: true });
+    writeFileSync(
+      join(root, ...frame.split('/')),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><circle cx="48" cy="48" r="40" fill="#f5c542"/></svg>\n'
+    );
+    writeFileSync(
+      join(root, ...animPath.split('/')),
+      JSON.stringify({
+        version: '1.0.0',
+        texturePath: '',
+        clips: [
+          { name: sprite.properties.currentClip, frames: [{ texturePath: `res://${frame}` }] },
+        ],
+      })
+    );
+    const mainPath = join(root, 'scenes/main.pix3scene');
+    const main = parse(readFileSync(mainPath, 'utf8')) as {
+      root: { children: unknown[] }[];
+    };
+    main.root[0].children.push(instance, second, sprite);
+    writeFileSync(mainPath, stringify(main));
+    // The locale table of the recipe, read the way the runtime reads one.
+    const locales = h2Section(text(PROJECT_FILES), 'Add or remove a locale');
+    const table = /```json\n([\s\S]*?)```/.exec(locales)?.[1] ?? '';
+    const parsedTable = JSON.parse(table) as { $meta: { locale: string } };
+    const localization = new runtime.LocalizationService();
+    localization.configure({ defaultLocale: parsedTable.$meta.locale });
+    localization.attachResources({
+      readText: async () => table,
+    } as unknown as runtime.ResourceManager);
+    await localization.setLocale(parsedTable.$meta.locale);
+    expect(localization.tr('menu.play')).toBe('Spielen');
+    // The script API the recipe lists is the service's.
+    const api =
+      /`this\.scene\.localization`: ([^;]+);/.exec(locales.replace(/\n/g, ' '))?.[1] ?? '';
+    const members = [...api.matchAll(/`(\w+)(?:\(|`)/g)].map(m => m[1]);
+    expect(members.length).toBeGreaterThan(6);
+    for (const member of members) expect(member in localization, member).toBe(true);
+
+    const report = await validateProject({ projectRoot: root, hydrate: true });
+    const problems = report.diagnostics
+      .filter(d => d.severity === 'error')
+      .map(d => `${d.file}: ${d.code} ${d.message}`);
+    expect(report.level2.state).toBe('ran');
+    expect(problems).toEqual([]);
+
+    // Step 4's id rule, by the real loader: the first copy keeps the prefab's inner ids, the
+    // second gets `-1`; each copy's inner node is found by name through its instance.
+    const disk = new DiskResourceManager(root);
+    const registry = new runtime.ScriptRegistry();
+    const uninstall = installCanvasOnlyDocument();
+    try {
+      const loader = new runtime.SceneLoader(new NodeAssetLoader(disk), registry, disk);
+      const graph = await loader.parseScene(readFileSync(mainPath, 'utf8'), {
+        filePath: 'res://scenes/main.pix3scene',
+      });
+      const first = graph.nodeMap.get(String(instance.id));
+      const copy = graph.nodeMap.get(second.id);
+      expect(first?.findById('coin-count')).toBeTruthy();
+      expect(copy?.findById('coin-count')).toBeNull();
+      expect(copy?.findById('coin-count-1')).toBeTruthy();
+      const label = copy?.findByName('Coin Count') as { label?: string } | null;
+      expect(label?.label).toBe('10');
+      expect((first?.findByName('Coin Count') as { label?: string } | null)?.label).toBe('0');
+    } finally {
+      uninstall();
+    }
+  }, 120_000);
 });
 
 // --- pix3 kit behaviour ------------------------------------------------------------------------

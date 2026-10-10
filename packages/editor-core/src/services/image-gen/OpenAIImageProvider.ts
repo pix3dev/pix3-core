@@ -1,5 +1,6 @@
 import {
   ImageGenError,
+  proxyFailure,
   type AspectRatio,
   type Background,
   type GenerateImageParams,
@@ -9,28 +10,13 @@ import {
   type ProviderModel,
   type RequestContext,
 } from './ImageGenTypes';
-import { ServiceContainer } from '@/fw/di';
-import { HostService } from '@/host/HostService';
 
 /**
- * Default API host. OpenAI does NOT send CORS headers, so a browser cannot call `api.openai.com`
- * directly (unlike Gemini). Requests therefore go through the **dev server's proxy** at
- * `${base}__pix3/api/proxy/openai/v1` (plan §5, image-gen row). The proxy is P2 work: until the
- * plugin serves it, the route answers 404 and the request fails with "proxy unavailable". The
- * user's API key is still supplied from the browser as a Bearer token (the proxy is a dumb
- * pass-through), matching how the Gemini key is handled. A `baseUrl` in the {@link RequestContext}
- * overrides it.
+ * API version prefix under the provider's origin (the proxy forwards `v1/images/…`). OpenAI sends
+ * no CORS headers, so a browser could never call it directly anyway; the dev server's proxy adds
+ * the `Authorization` header (plan §B.1).
  */
-const PROXY_PATH = '__pix3/api/proxy/openai/v1';
-
-const defaultBaseUrl = (): string => {
-  const base = HostService.isInstalled()
-    ? ServiceContainer.getInstance().getService<HostService>(
-        ServiceContainer.getInstance().getOrCreateToken(HostService)
-      ).info.base
-    : '/';
-  return `${base.endsWith('/') ? base : `${base}/`}${PROXY_PATH}`;
-};
+const API_VERSION = 'v1';
 
 const ASPECTS: readonly AspectRatio[] = ['Auto', '1:1', '3:4', '4:3', '16:9', '9:16'];
 const QUALITIES: readonly string[] = ['low', 'medium', 'high'];
@@ -55,8 +41,8 @@ const sizeForAspect = (aspect?: AspectRatio): string => {
 };
 
 /**
- * OpenAI GPT Image generation. Text-to-image hits `POST {base}/images/generations` (JSON); when
- * reference images are attached it switches to `POST {base}/images/edits` (multipart/form-data with
+ * OpenAI GPT Image generation. Text-to-image hits `POST v1/images/generations` (JSON); when
+ * reference images are attached it switches to `POST v1/images/edits` (multipart/form-data with
  * `image[]` parts). GPT Image can emit a real alpha channel directly (`background: 'transparent'`,
  * PNG output), so a transparent cutout needs no local background-removal pass. The API returns
  * base64 image bytes (`data[].b64_json`); there is no hosted-URL mode for these models.
@@ -64,7 +50,7 @@ const sizeForAspect = (aspect?: AspectRatio): string => {
  * @see https://developers.openai.com/api/docs/guides/image-generation
  */
 export class OpenAIImageProvider implements ImageGenProvider {
-  readonly id = 'openai';
+  readonly id = 'openai' as const;
   readonly label = 'OpenAI (GPT Image)';
   readonly apiKeySecretId = 'ai-provider:openai:api-key';
   readonly apiKeyHelpUrl = 'https://platform.openai.com/api-keys';
@@ -122,17 +108,10 @@ export class OpenAIImageProvider implements ImageGenProvider {
   }
 
   async generate(params: GenerateImageParams, ctx: RequestContext): Promise<ImageGenResult> {
-    if (!ctx.apiKey) {
-      throw new ImageGenError('missing-key', 'No OpenAI API key configured.');
-    }
     const model = this.getModel(ctx.modelId);
     if (!model) {
       throw new ImageGenError('unknown', `Unknown OpenAI image model "${ctx.modelId}".`);
     }
-
-    const fetchImpl = ctx.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    const usesProxy = ctx.baseUrl === undefined;
-    const baseUrl = (ctx.baseUrl ?? defaultBaseUrl()).replace(/\/$/, '');
 
     const size = sizeForAspect(params.aspectRatio);
     const quality =
@@ -154,9 +133,8 @@ export class OpenAIImageProvider implements ImageGenProvider {
     try {
       response =
         references.length > 0
-          ? await fetchImpl(`${baseUrl}/images/edits`, {
+          ? await ctx.transport(`${API_VERSION}/images/edits`, {
               method: 'POST',
-              headers: { Authorization: `Bearer ${ctx.apiKey}` },
               body: buildEditForm({
                 model: ctx.modelId,
                 prompt: params.prompt,
@@ -169,12 +147,9 @@ export class OpenAIImageProvider implements ImageGenProvider {
               }),
               signal: params.signal,
             })
-          : await fetchImpl(`${baseUrl}/images/generations`, {
+          : await ctx.transport(`${API_VERSION}/images/generations`, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${ctx.apiKey}`,
-              },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(
                 stripUndefined({
                   model: ctx.modelId,
@@ -194,9 +169,7 @@ export class OpenAIImageProvider implements ImageGenProvider {
       }
       throw new ImageGenError(
         'network',
-        usesProxy
-          ? 'OpenAI proxy unavailable: the dev server does not serve /__pix3/api/proxy/openai yet (browsers cannot call api.openai.com directly).'
-          : 'Network error contacting the OpenAI API.',
+        'Network error reaching the dev server. Is it still running?',
         undefined,
         { cause: error }
       );
@@ -219,19 +192,14 @@ export class OpenAIImageProvider implements ImageGenProvider {
       );
     }
 
-    if (!response.ok && usesProxy && response.status === 404) {
-      throw new ImageGenError(
-        'network',
-        'OpenAI proxy unavailable: the dev server does not serve /__pix3/api/proxy/openai yet.',
-        response.status
-      );
-    }
-
     if (!response.ok) {
-      throw new ImageGenError(
-        'http',
-        extractErrorMessage(payload) ?? describeStatus(response.status),
-        response.status
+      throw (
+        proxyFailure(payload, response.status) ??
+        new ImageGenError(
+          'http',
+          extractErrorMessage(payload) ?? describeStatus(response.status),
+          response.status
+        )
       );
     }
 
@@ -341,8 +309,6 @@ const describeStatus = (status: number): string => {
     case 401:
     case 403:
       return 'Your OpenAI API key was rejected. Re-check the key or its permissions.';
-    case 404:
-      return 'OpenAI endpoint not found. In a production build, the /openai-proxy route is likely missing.';
     case 429:
       return 'Rate limit or quota reached. Check your OpenAI billing, then retry.';
     default:

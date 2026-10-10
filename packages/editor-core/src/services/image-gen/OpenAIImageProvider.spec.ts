@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { OpenAIImageProvider } from './OpenAIImageProvider';
 import { ImageGenError } from './ImageGenTypes';
 
-const BASE = 'https://proxy.test/v1';
-
 const okJson = (body: unknown): Response =>
   new Response(JSON.stringify(body), {
     status: 200,
@@ -20,19 +18,20 @@ describe('OpenAIImageProvider', () => {
   const provider = new OpenAIImageProvider();
   const b64 = 'aGVsbG8='; // "hello"
 
-  it('posts text-to-image as JSON to /images/generations with a Bearer key', async () => {
+  it('posts text-to-image as JSON to v1/images/generations through the transport, no key', async () => {
     const fetchImpl = vi.fn(async () => okJson({ data: [{ b64_json: b64 }] }));
 
     const result = await provider.generate(
       { prompt: 'a red cube', aspectRatio: '16:9', quality: 'high', background: 'transparent' },
-      { apiKey: 'sk-test', modelId: 'gpt-image-1.5', baseUrl: BASE, fetchImpl }
+      { modelId: 'gpt-image-1.5', transport: fetchImpl }
     );
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(`${BASE}/images/generations`);
+    expect(url).toBe('v1/images/generations');
     expect(init.method).toBe('POST');
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+    // The dev server's proxy adds the key; the page has none to send.
+    expect(Object.keys(init.headers as Record<string, string>)).toEqual(['Content-Type']);
 
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).toMatchObject({
@@ -53,7 +52,7 @@ describe('OpenAIImageProvider', () => {
 
     await provider.generate(
       { prompt: 'x', aspectRatio: '1:1', background: 'auto' },
-      { apiKey: 'k', modelId: 'gpt-image-1.5', baseUrl: BASE, fetchImpl }
+      { modelId: 'gpt-image-1.5', transport: fetchImpl }
     );
 
     const body = JSON.parse(
@@ -73,13 +72,13 @@ describe('OpenAIImageProvider', () => {
         references: [{ mimeType: 'image/png', data: b64 }],
         background: 'transparent',
       },
-      { apiKey: 'k', modelId: 'gpt-image-1.5', baseUrl: BASE, fetchImpl }
+      { modelId: 'gpt-image-1.5', transport: fetchImpl }
     );
 
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(`${BASE}/images/edits`);
+    expect(url).toBe('v1/images/edits');
     // Must NOT set Content-Type manually — the browser adds the multipart boundary.
-    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+    expect(init.headers).toBeUndefined();
     const form = init.body as FormData;
     expect(form).toBeInstanceOf(FormData);
     expect(form.get('model')).toBe('gpt-image-1.5');
@@ -88,21 +87,23 @@ describe('OpenAIImageProvider', () => {
     expect(form.getAll('image[]').length).toBe(1);
   });
 
-  it('rejects a missing key without hitting the network', async () => {
-    const fetchImpl = vi.fn();
+  it("maps the dev server's no_key refusal to a missing-key error with its message", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'no_key', message: 'No openai API key here.' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
     await expect(
-      provider.generate({ prompt: 'x' }, { apiKey: '', modelId: 'gpt-image-1.5', fetchImpl })
-    ).rejects.toMatchObject({ kind: 'missing-key' });
-    expect(fetchImpl).not.toHaveBeenCalled();
+      provider.generate({ prompt: 'x' }, { modelId: 'gpt-image-1.5', transport: fetchImpl })
+    ).rejects.toMatchObject({ kind: 'missing-key', message: 'No openai API key here.' });
   });
 
   it('maps a 401 to an http ImageGenError carrying the status', async () => {
     const fetchImpl = vi.fn(async () => errJson(401, 'Incorrect API key provided'));
     const error = await provider
-      .generate(
-        { prompt: 'x' },
-        { apiKey: 'bad', modelId: 'gpt-image-1.5', baseUrl: BASE, fetchImpl }
-      )
+      .generate({ prompt: 'x' }, { modelId: 'gpt-image-1.5', transport: fetchImpl })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ImageGenError);
     expect(error).toMatchObject({ kind: 'http', status: 401 });

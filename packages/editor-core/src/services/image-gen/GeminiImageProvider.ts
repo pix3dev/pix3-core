@@ -1,5 +1,6 @@
 import {
   ImageGenError,
+  proxyFailure,
   type AspectRatio,
   type GenerateImageParams,
   type GeneratedImage,
@@ -9,7 +10,8 @@ import {
   type RequestContext,
 } from './ImageGenTypes';
 
-const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+/** API version prefix under the provider's origin (the proxy forwards `v1beta/models/…`). */
+const API_VERSION = 'v1beta';
 
 const ASPECTS: readonly AspectRatio[] = ['Auto', '1:1', '3:4', '4:3', '16:9', '9:16'];
 
@@ -22,16 +24,15 @@ const REFERENCE_PREAMBLE =
 
 /**
  * Google Gemini ("Nano Banana") image generation via the `generateContent` endpoint
- * (`POST /v1beta/models/{model}:generateContent`, header `x-goog-api-key`). Text-to-image and
- * reference-to-image share the endpoint; references are inline base64 image parts. Output size and
- * aspect are requested through `generationConfig.imageConfig`. The API returns base64 image bytes
- * inline (no hosted URL) and allows browser CORS for key-auth, so it is callable directly from the
- * browser. This matches the working Asset Lab "Magic Studio" client.
+ * (`POST /v1beta/models/{model}:generateContent`). Text-to-image and reference-to-image share the
+ * endpoint; references are inline base64 image parts. Output size and aspect are requested through
+ * `generationConfig.imageConfig`. The API returns base64 image bytes inline (no hosted URL). The
+ * call goes through the dev server's proxy, which adds `x-goog-api-key` (plan §B.1).
  *
  * @see https://ai.google.dev/gemini-api/docs/image-generation
  */
 export class GeminiImageProvider implements ImageGenProvider {
-  readonly id = 'gemini';
+  readonly id = 'gemini' as const;
   readonly label = 'Google Gemini (Nano Banana)';
   readonly apiKeySecretId = 'ai-provider:gemini:api-key';
   readonly apiKeyHelpUrl = 'https://aistudio.google.com/apikey';
@@ -119,16 +120,10 @@ export class GeminiImageProvider implements ImageGenProvider {
   }
 
   async generate(params: GenerateImageParams, ctx: RequestContext): Promise<ImageGenResult> {
-    if (!ctx.apiKey) {
-      throw new ImageGenError('missing-key', 'No Gemini API key configured.');
-    }
     const model = this.getModel(ctx.modelId);
     if (!model) {
       throw new ImageGenError('unknown', `Unknown Gemini model "${ctx.modelId}".`);
     }
-
-    const fetchImpl = ctx.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    const baseUrl = (ctx.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
 
     // Build the request parts: reference preamble + labelled inline images, then the prompt.
     const parts: GeminiPart[] = [];
@@ -159,13 +154,11 @@ export class GeminiImageProvider implements ImageGenProvider {
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig },
     };
 
-    const url = `${baseUrl}/models/${ctx.modelId}:generateContent`;
-
     let response: Response;
     try {
-      response = await fetchImpl(url, {
+      response = await ctx.transport(`${API_VERSION}/models/${ctx.modelId}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ctx.apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: params.signal,
       });
@@ -175,7 +168,7 @@ export class GeminiImageProvider implements ImageGenProvider {
       }
       throw new ImageGenError(
         'network',
-        'Network error contacting the Gemini API. Check your connection.',
+        'Network error reaching the dev server. Is it still running?',
         undefined,
         { cause: error }
       );
@@ -199,10 +192,13 @@ export class GeminiImageProvider implements ImageGenProvider {
     }
 
     if (!response.ok) {
-      throw new ImageGenError(
-        'http',
-        extractErrorMessage(payload) ?? describeStatus(response.status),
-        response.status
+      throw (
+        proxyFailure(payload, response.status) ??
+        new ImageGenError(
+          'http',
+          extractErrorMessage(payload) ?? describeStatus(response.status),
+          response.status
+        )
       );
     }
 

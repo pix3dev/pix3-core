@@ -43,6 +43,7 @@ function createPreferences() {
 
 interface PanelStubs {
   generate: ReturnType<typeof vi.fn>;
+  transport: ReturnType<typeof vi.fn>;
   historyAdd: ReturnType<typeof vi.fn>;
   historyList: ReturnType<typeof vi.fn>;
   historyGet: ReturnType<typeof vi.fn>;
@@ -68,6 +69,7 @@ function createPanel(records: GenerationRecord[] = []): {
     apiKeyHelpUrl: undefined,
     generate,
   };
+  const transport = vi.fn();
   const historyAdd = vi.fn().mockResolvedValue(undefined);
   const historyList = vi.fn().mockImplementation(async () => records);
   const historyGet = vi
@@ -84,8 +86,8 @@ function createPanel(records: GenerationRecord[] = []): {
       getPreferences: () => ({ ...preferences }),
       getSelectedProvider: () => provider,
       getSelectedModelId: () => model.id,
-      hasApiKey: vi.fn().mockResolvedValue(true),
-      getApiKey: vi.fn().mockResolvedValue('sk-test'),
+      keyStatus: vi.fn().mockResolvedValue({ set: true, last4: 'abcd' }),
+      transportFor: vi.fn().mockReturnValue(transport),
       subscribe: (listener: () => void) => {
         listener();
         return () => undefined;
@@ -112,6 +114,7 @@ function createPanel(records: GenerationRecord[] = []): {
     panel,
     stubs: {
       generate,
+      transport,
       historyAdd,
       historyList,
       historyGet,
@@ -205,6 +208,11 @@ describe('GeneratePanel', () => {
     await generate(panel, 'A brass gear', stubs);
 
     expect(stubs.generate).toHaveBeenCalledTimes(1);
+    // The provider gets the dev server's proxy, never a key.
+    expect(stubs.generate.mock.calls[0][1]).toEqual({
+      modelId: 'fake-model',
+      transport: stubs.transport,
+    });
     expect(stubs.historyAdd).toHaveBeenCalledTimes(1);
 
     const nameInput = panel.querySelector<HTMLInputElement>('.gp-result-name');

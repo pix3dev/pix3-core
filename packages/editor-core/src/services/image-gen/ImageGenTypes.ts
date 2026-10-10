@@ -92,21 +92,28 @@ export interface ProviderModel {
 export const modelPickerLabel = (model: ProviderModel): string =>
   model.price ? `${model.label} · ${model.price}` : model.label;
 
-/** Per-request context supplied by the caller (key + selected model + optional proxy hooks). */
+/**
+ * How a provider reaches its API: POST `path` (relative to the provider's API origin, e.g.
+ * `v1beta/models/<m>:generateContent`) through the dev server's proxy, which adds the key
+ * (`EditorHost.imageGen.fetch`, plan §B.1). The page never holds a key.
+ */
+export type ImageGenTransport = (path: string, init: RequestInit) => Promise<Response>;
+
+/** Per-request context supplied by the caller. */
 export interface RequestContext {
-  readonly apiKey: string;
   readonly modelId: string;
-  /** Injected fetch (e.g. a proxying fetch); defaults to global fetch. */
-  readonly fetchImpl?: typeof fetch;
-  /** Override host, e.g. a same-origin proxy route for providers that need one. */
-  readonly baseUrl?: string;
+  readonly transport: ImageGenTransport;
 }
 
 export interface ImageGenProvider {
-  readonly id: string;
   readonly label: string;
   readonly models: readonly ProviderModel[];
-  /** SecretStorageService id under which this provider's API key is stored. */
+  /** Matches the dev server's key store and proxy route (`/__pix3/api/proxy/<id>/…`). */
+  readonly id: 'gemini' | 'openai';
+  /**
+   * IndexedDB id the 1.x / early-2.x editor kept this provider's key under in the
+   * browser; read once to move the key to the dev server (`AiImageSettingsService`), then deleted.
+   */
   readonly apiKeySecretId: string;
   /** Where a user obtains an API key (shown in settings). */
   readonly apiKeyHelpUrl?: string;
@@ -135,3 +142,15 @@ export class ImageGenError extends Error {
     this.name = 'ImageGenError';
   }
 }
+
+/**
+ * The dev server's own refusal (`{error: '<code>', message}` — a provider's error body has an
+ * object under `error`), as an {@link ImageGenError}, or null for anything else.
+ */
+export const proxyFailure = (payload: unknown, status: number): ImageGenError | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const body = payload as { error?: unknown; message?: unknown };
+  if (typeof body.error !== 'string') return null;
+  const message = typeof body.message === 'string' ? body.message : `HTTP ${status}`;
+  return new ImageGenError(body.error === 'no_key' ? 'missing-key' : 'http', message, status);
+};

@@ -130,7 +130,8 @@ before children's.
   `node.position = …` throws at runtime.
 - 2D space: design pixels, origin centre, X right, **Y up**. YAML rotation is degrees;
   `rotation.z` is radians.
-- `visible`, `name`, `id`, `children`, `parentNode`, `findById(id)`, `findByName(name)`,
+- `visible`, `name`, `nodeId` (the scene id; `id` is three.js's number), `children`,
+  `parentNode`, `findById(nodeId)`, `findByName(name)`,
   `adoptChild(child)`, `queueFree()` (safe inside `onUpdate`), `getComponent(Class)`,
   `addComponent(c)`, `removeComponent(c)`.
 - 2D node props as fields: `width`, `height`, `opacity`, `zIndex`, `blendMode`. Assigning

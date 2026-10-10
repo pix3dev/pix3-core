@@ -25,12 +25,22 @@ const VITE_CLIENT_PROBE =
 const escapeHtml = (text: string): string =>
   text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 
-export const editorPageHtml = (base: string, options: { css?: boolean } = {}): string =>
+/** The `<meta>` the page client reads (and removes) the editor session token from. */
+export const SESSION_META = 'pix3-session';
+
+export const editorPageHtml = (
+  base: string,
+  options: { css?: boolean; session?: string | null } = {}
+): string =>
   `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />${
+      options.session
+        ? `\n    <meta name="${SESSION_META}" content="${escapeHtml(options.session)}" />`
+        : ''
+    }
     <title>Pix3</title>
     <style>html,body,#pix3-editor{margin:0;height:100%}</style>
     <script>${VITE_CLIENT_PROBE}</script>${
