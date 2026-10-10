@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { parse, stringify } from 'yaml';
+import { stringify } from 'yaml';
 
 import type { TargetPlatform, TemplateInfo } from './templates.ts';
 
@@ -78,23 +78,5 @@ export const findProjectRoot = (start: string): string | null => {
       if (parent === current) return null;
       current = parent;
     }
-  }
-};
-
-/** `metadata.projectId` of the manifest in `projectDir` (top-level `id` accepted as a fallback). */
-export const readProjectId = (projectDir: string): string | null => {
-  try {
-    const parsed = parse(readFileSync(join(projectDir, PROJECT_MANIFEST_FILE), 'utf8')) as unknown;
-    if (!parsed || typeof parsed !== 'object') return null;
-    const record = parsed as Record<string, unknown>;
-    const metadata =
-      record.metadata && typeof record.metadata === 'object'
-        ? (record.metadata as Record<string, unknown>)
-        : {};
-    const fromMetadata = metadata[PROJECT_ID_METADATA_KEY];
-    if (typeof fromMetadata === 'string' && fromMetadata.trim()) return fromMetadata.trim();
-    return typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
-  } catch {
-    return null;
   }
 };

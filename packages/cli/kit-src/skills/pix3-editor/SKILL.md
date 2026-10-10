@@ -24,8 +24,9 @@ follows the disk, and `pix3_sync` is the barrier between the two.
    connect (`401`, connection refused) or `npm run editor` tells you to run
    `pix3 agent-setup --repair` → `npm run editor`, then `npx pix3 agent-setup --repair`, then a
    new thread (a running MCP server keeps the endpoint and token it started with). Never read,
-   print or copy the token (`~/.pix3/cdp-token`, `~/.pix3/remote-cdp-token`, the `--wsHeaders`
-   of the MCP config, `~/.pix3/remote-cdp.json`).
+   print or copy the token (`~/.pix3/cdp-token`, `~/.pix3/remote-cdp-token`,
+   `~/.pix3/cdp-mcp.json`, `~/.pix3/remote-cdp.json`). An MCP config that still carries
+   `--wsHeaders` is an old launch: `npx pix3 agent-setup --repair`.
    **Over SSH** (`npm run editor` answers «SSH session: Chrome is not launched here»): Chrome
    runs on the human's machine. Give the human the lines it printed for their machine — they run
    them, including the one ssh line that copies the token here — then `npx pix3 agent-setup

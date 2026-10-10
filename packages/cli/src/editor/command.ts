@@ -20,7 +20,13 @@ import {
   stopDevServer,
   type DevInfo,
 } from './dev-server.ts';
-import { cdpTokenPath, cdpWsEndpoint, chromeProfileDir, DEFAULT_CDP_PORT } from './paths.ts';
+import {
+  cdpTokenPath,
+  cdpWsEndpoint,
+  chromeProfileDir,
+  DEFAULT_CDP_PORT,
+  localMcpConfigPath,
+} from './paths.ts';
 import {
   describeRemoteSession,
   findCdpForward,
@@ -374,11 +380,22 @@ const openInChrome = async (
         'points at it. A Codex or Claude Code session that is already running keeps the old port — restart it or start a new thread.\n'
     );
   } else if (root) {
-    const stale = checkAgentConfig(root, { port: choice.port, token });
-    if (stale.length) {
+    const configPath = localMcpConfigPath(env);
+    const stale = checkAgentConfig(root, { port: choice.port, token, configPath });
+    const entries = stale.filter(file => file !== configPath);
+    const lines: string[] = [];
+    if (entries.length) {
+      lines.push(
+        `${entries.join(' and ')} ${entries.length > 1 ? 'have' : 'has'} a pix3-browser entry that does not reach this Chrome ` +
+          '(an older launch: another port, another token, the token on its command line)'
+      );
+    }
+    if (stale.includes(configPath)) {
+      lines.push(`${configPath} (what chrome-devtools-mcp reads) holds another port or token`);
+    }
+    if (lines.length) {
       io.stdout(
-        `${stale.join(' and ')} ${stale.length > 1 ? 'have' : 'has'} a pix3-browser entry that does not reach this Chrome ` +
-          '(an older launch, another port or token): run `pix3 agent-setup --repair`, then start a new agent thread.\n'
+        `${lines.join('; ')}: run \`pix3 agent-setup --repair\`, then start a new agent thread.\n`
       );
     }
   }

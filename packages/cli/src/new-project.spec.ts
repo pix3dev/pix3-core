@@ -13,7 +13,7 @@ import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-import { findProjectRoot, readProjectId } from './manifest.ts';
+import { findProjectRoot } from './manifest.ts';
 import { CLI_VERSION } from './version.ts';
 import { createProject, packageNameOf, type PostCreateStep } from './new-project.ts';
 import {
@@ -165,7 +165,7 @@ describe('pix3 new', () => {
         metadata: { projectName: 'My Game!', templateId: id },
         autoloads: [],
       });
-      expect(readProjectId(dir)).toBe(project.projectId);
+      expect((manifest.metadata as Record<string, unknown>).projectId).toBe(project.projectId);
       expect(project.projectId).toMatch(/^[0-9a-f-]{36}$/);
 
       const scene = parse(readFileSync(join(dir, 'scenes/main.pix3scene'), 'utf8')) as {

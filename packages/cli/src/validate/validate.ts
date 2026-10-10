@@ -14,6 +14,13 @@ import {
   type ScriptImportMap,
 } from './level2.ts';
 import { ProjectFiles, readManifestInfo, sha256OfFile } from './project.ts';
+import {
+  ANIMATION_EXTENSION,
+  checkAnimationFile,
+  checkLabelKeys,
+  checkLocaleTables,
+  resolveLocalization,
+} from './resource-files.ts';
 import { scanUserScripts } from './user-scripts.ts';
 
 export interface ValidateOptions {
@@ -161,6 +168,27 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     const references = new Set<string>();
     for (const result of results.values()) for (const ref of result.references) references.add(ref);
     diagnostics.push(...unusedAssets(project, references));
+  }
+
+  // What the scenes reach through other files: the frames of a `.pix3anim` (every one in the
+  // project on a whole-project run, else those the validated scenes name) and the locale tables.
+  const animations = new Set<string>(
+    wholeProject ? project.files.filter(file => file.endsWith(ANIMATION_EXTENSION)) : []
+  );
+  for (const result of results.values()) {
+    for (const ref of result.references) {
+      if (ref.endsWith(ANIMATION_EXTENSION) && project.has(ref)) animations.add(ref);
+    }
+  }
+  for (const file of [...animations].sort()) diagnostics.push(...checkAnimationFile(project, file));
+  const localization = resolveLocalization(project);
+  if (localization) {
+    const tables = checkLocaleTables(project, localization);
+    // The tables themselves on whole-project runs (as W_UNUSED_ASSET); the keys of the scenes
+    // checked on every run.
+    if (wholeProject) diagnostics.push(...tables.diagnostics);
+    const uses = [...results.values()].flatMap(result => result.labelKeys);
+    diagnostics.push(...checkLabelKeys(localization, tables.strings, uses));
   }
 
   const usesUserComponents = [...results.values()].some(result => result.usesUserComponents);

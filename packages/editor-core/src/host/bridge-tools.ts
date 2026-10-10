@@ -165,9 +165,13 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   },
 ];
 
+/** @internal The tool names in table order — the kit's drift spec (`cli/src/kit.spec.ts`) reads it. */
 export const BRIDGE_TOOL_NAMES: readonly string[] = BRIDGE_TOOLS.map(tool => tool.name);
 
-/** Refusal reasons the bridge itself produces (tool answers may carry their own). */
+/**
+ * Refusal reasons the bridge itself produces (tool answers may carry their own).
+ * @internal The kit's drift spec holds the kit's reasons to this list; the code returns literals.
+ */
 export const BRIDGE_REASONS = [
   'unknown_tool',
   'invalid_params',

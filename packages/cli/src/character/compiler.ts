@@ -215,8 +215,9 @@ export function defaultLoopForState(state: string): boolean {
 }
 
 /**
- * A clip name as a file-name prefix — the editor's `sanitizeFrameFilePrefix`
- * (`editor-core/src/features/scene/animation-asset-utils.ts`; the spec compares the two).
+ * A clip name as a file-name prefix: frames are `<clip>_<nnnn>.png` in the managed sprite folder
+ * (the kit's `pix3anim.md`; the 1.x editor's `sanitizeFrameFilePrefix`, gone with its Create
+ * animation).
  */
 export function clipFilePrefix(clipName: string): string {
   const sanitized = clipName

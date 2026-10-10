@@ -370,6 +370,7 @@ export interface ReachabilityStore {
   write(text: string): Promise<void>;
 }
 
+/** @internal The specs' store (a journal without a project); production uses the file store. */
 export class InMemoryReachabilityStore implements ReachabilityStore {
   constructor(private text: string | null = null) {}
 

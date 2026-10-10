@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,9 +14,9 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { CdpProxy } from '../editor/cdp-proxy.ts';
-import { readCdpToken } from '../editor/cdp-token.ts';
+import { ensureCdpToken, readCdpToken } from '../editor/cdp-token.ts';
 import { FakeChrome } from '../editor/fake-chrome.ts';
-import { remoteCdpTokenPath, remoteMcpConfigPath } from '../editor/paths.ts';
+import { localMcpConfigPath, remoteCdpTokenPath, remoteMcpConfigPath } from '../editor/paths.ts';
 import { writeChromeState } from '../editor/chrome-state.ts';
 import { parseAgentSetupArgs, runAgentSetupCli } from './command.ts';
 import {
@@ -27,19 +27,28 @@ import {
   installAgentConfig,
   mcpLaunch,
   renderCodexConfig,
+  writeMcpConfig,
 } from './config.ts';
 
 /**
  * `pix3 agent-setup` (plan §D.6, §D.5): the pinned chrome-devtools-mcp entry for Claude Code
- * (`.mcp.json`) and Codex (`.codex/config.toml`) pointed at the CDP proxy with the token,
- * idempotent, drift reported and fixed only with `--repair` (the P1 `--browserUrl` entry among
- * them), other content of both files kept, the token never printed.
+ * (`.mcp.json`) and Codex (`.codex/config.toml`) naming the 0600 `--config` file under
+ * `~/.pix3/` that holds the proxy's endpoint and token, idempotent, drift reported and fixed
+ * only with `--repair` (the P1 `--browserUrl` entry and the P2 `--wsHeaders` entry among them),
+ * other content of both files kept, the token never printed nor in a project file.
  */
 
 const scratch = mkdtempSync(join(tmpdir(), 'pix3-agent-setup-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const TOKEN = 't'.repeat(43);
-const linux = { platform: 'linux' as const, token: TOKEN };
+const CONFIG = join(scratch, 'home-default', 'cdp-mcp.json');
+const linux = { platform: 'linux' as const, configPath: CONFIG };
+/** The P2 entry (before `--config`): the token on the command line and in the project file. */
+const p2Args = (port: number, token: string) => [
+  ...mcpLaunch(CONFIG, 'linux').args.slice(0, -1),
+  `--wsEndpoint=ws://127.0.0.1:${port}/pix3`,
+  `--wsHeaders={"Authorization":"Bearer ${token}"}`,
+];
 /** Never the real ~/.pix3: the command creates the token there. */
 const HOME_ENV = { PIX3_HOME: join(scratch, 'home-default') };
 
@@ -56,27 +65,42 @@ const actions = (outcomes: ReturnType<typeof installAgentConfig>) =>
   Object.fromEntries(outcomes.map(o => [o.target, o.action]));
 
 describe('the launch', () => {
-  it('is npx with the pinned version, the 3p flag, the proxy and the token; cmd /c on Windows', () => {
-    expect(mcpLaunch(9333, TOKEN, 'linux')).toEqual({
+  it('is npx with the pinned version, the 3p flag and the --config file; cmd /c on Windows', () => {
+    expect(mcpLaunch(CONFIG, 'linux')).toEqual({
       command: 'npx',
       args: [
         '-y',
         `chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}`,
         '--categoryExperimentalThirdParty=true',
         '--experimentalVision=true',
-        '--wsEndpoint=ws://127.0.0.1:9333/pix3',
-        `--wsHeaders={"Authorization":"Bearer ${TOKEN}"}`,
+        `--config=${CONFIG}`,
       ],
     });
-    // chrome-devtools-mcp 1.10.1 parses --wsHeaders as a JSON object.
-    const headers = mcpLaunch(9333, TOKEN, 'linux').args.at(-1) as string;
-    expect(JSON.parse(headers.slice('--wsHeaders='.length))).toEqual({
-      Authorization: `Bearer ${TOKEN}`,
-    });
-    const windows = mcpLaunch(9335, TOKEN, 'win32');
+    const windows = mcpLaunch(CONFIG, 'win32');
     expect(windows.command).toBe('cmd');
     expect(windows.args.slice(0, 3)).toEqual(['/c', 'npx', '-y']);
     expect(CHROME_DEVTOOLS_MCP_VERSION).toBe('1.10.1');
+  });
+
+  it('the --config file: endpoint + token header as 1.10.1 parses them, 0600, rewritten when they move', () => {
+    const path = join(scratch, 'cfg', 'cdp-mcp.json');
+    expect(writeMcpConfig(path, 9333, TOKEN)).toBe('written');
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
+    expect(parsed).toEqual({
+      wsEndpoint: 'ws://127.0.0.1:9333/pix3',
+      wsHeaders: JSON.stringify({ Authorization: `Bearer ${TOKEN}` }),
+    });
+    // chrome-devtools-mcp 1.10.1 parses wsHeaders as a JSON object.
+    expect(JSON.parse(parsed.wsHeaders)).toEqual({ Authorization: `Bearer ${TOKEN}` });
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(writeMcpConfig(path, 9333, TOKEN)).toBe('unchanged');
+    expect(writeMcpConfig(path, 9335, TOKEN)).toBe('updated');
+    expect(readFileSync(path, 'utf8')).toContain('ws://127.0.0.1:9335/pix3');
+    if (process.platform !== 'win32') {
+      chmodSync(path, 0o644);
+      expect(writeMcpConfig(path, 9335, TOKEN)).toBe('unchanged');
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    }
   });
 });
 
@@ -90,8 +114,8 @@ describe('installAgentConfig', () => {
     const claude = JSON.parse(read(root, '.mcp.json')) as {
       mcpServers: Record<string, { command: string; args: string[] }>;
     };
-    expect(claude.mcpServers['pix3-browser']).toEqual(mcpLaunch(9333, TOKEN, 'linux'));
-    expect(read(root, CODEX_CONFIG_FILE)).toBe(codexTable(mcpLaunch(9333, TOKEN, 'linux')));
+    expect(claude.mcpServers['pix3-browser']).toEqual(mcpLaunch(CONFIG, 'linux'));
+    expect(read(root, CODEX_CONFIG_FILE)).toBe(codexTable(mcpLaunch(CONFIG, 'linux')));
     expect(read(root, CODEX_CONFIG_FILE)).toContain('tool_timeout_sec = 300');
     expect(read(root, CODEX_CONFIG_FILE)).toContain('startup_timeout_sec = 20');
     const before = [read(root, '.mcp.json'), read(root, CODEX_CONFIG_FILE)];
@@ -127,7 +151,7 @@ describe('installAgentConfig', () => {
   });
 
   it('replaces our table in the middle of a file and nothing else', () => {
-    const launch = mcpLaunch(9333, TOKEN, 'linux');
+    const launch = mcpLaunch(CONFIG, 'linux');
     const existing =
       'model = "o3"\n\n[mcp_servers.pix3-browser]\ncommand = "old"\nargs = []\n\n[profiles.fast]\nmodel = "o4-mini"\n';
     const rendered = renderCodexConfig(existing, launch);
@@ -139,10 +163,10 @@ describe('installAgentConfig', () => {
   it('reports drift without touching the file; --repair rewrites it with a .bak copy', () => {
     const root = project();
     installAgentConfig(root, linux);
-    // Drift: another version in .mcp.json, another port in the TOML.
+    // Drift: another version in .mcp.json, another config file in the TOML.
     const claudeDrift = read(root, '.mcp.json').replace(CHROME_DEVTOOLS_MCP_VERSION, '1.9.0');
     writeFileSync(join(root, '.mcp.json'), claudeDrift);
-    const codexDrift = read(root, CODEX_CONFIG_FILE).replace('9333', '9339');
+    const codexDrift = read(root, CODEX_CONFIG_FILE).replace('cdp-mcp.json', 'other.json');
     writeFileSync(join(root, CODEX_CONFIG_FILE), codexDrift);
     const report = installAgentConfig(root, linux);
     expect(actions(report)).toEqual({ claude: 'drift', codex: 'drift' });
@@ -155,32 +179,24 @@ describe('installAgentConfig', () => {
     expect(read(root, '.mcp.json.bak')).toBe(claudeDrift);
     expect(read(root, `${CODEX_CONFIG_FILE}.bak`)).toBe(codexDrift);
     expect(read(root, '.mcp.json')).toContain(CHROME_DEVTOOLS_MCP_VERSION);
-    expect(read(root, CODEX_CONFIG_FILE)).toContain('9333');
+    expect(read(root, CODEX_CONFIG_FILE)).toContain('cdp-mcp.json');
     expect(actions(installAgentConfig(root, linux))).toEqual({
       claude: 'unchanged',
       codex: 'unchanged',
     });
   });
 
-  it('a port other than 9333 lands in both files', () => {
-    const root = project();
-    installAgentConfig(root, { ...linux, port: 9335 });
-    expect(read(root, '.mcp.json')).toContain('--wsEndpoint=ws://127.0.0.1:9335/pix3');
-    expect(read(root, CODEX_CONFIG_FILE)).toContain('--wsEndpoint=ws://127.0.0.1:9335/pix3');
-  });
-
   it('a P1 entry (--browserUrl, no token) is drift until --repair migrates it', () => {
     const root = project();
-    const p1 = mcpLaunch(9333, TOKEN, 'linux')
+    const p1 = mcpLaunch(CONFIG, 'linux')
       .args.slice(0, 4)
       .concat('--browserUrl=http://127.0.0.1:9333');
     writeFileSync(
       join(root, '.mcp.json'),
       JSON.stringify({ mcpServers: { 'pix3-browser': { command: 'npx', args: p1 } } })
     );
-    expect(checkAgentConfig(root, { port: 9333, token: TOKEN, platform: 'linux' })).toEqual([
-      '.mcp.json',
-    ]);
+    const check = { port: 9333, token: TOKEN, configPath: CONFIG, platform: 'linux' as const };
+    expect(checkAgentConfig(root, check)).toEqual(['.mcp.json']);
     const report = installAgentConfig(root, { ...linux, targets: ['claude'] });
     expect(report[0]).toMatchObject({
       action: 'drift',
@@ -188,11 +204,47 @@ describe('installAgentConfig', () => {
     });
     installAgentConfig(root, { ...linux, targets: ['claude'], repair: true });
     expect(read(root, '.mcp.json')).not.toContain('--browserUrl');
-    expect(checkAgentConfig(root, { port: 9333, token: TOKEN, platform: 'linux' })).toEqual([]);
-    // Another token (the file was deleted and made anew) is drift too.
-    expect(
-      checkAgentConfig(root, { port: 9333, token: 'u'.repeat(43), platform: 'linux' })
-    ).toEqual(['.mcp.json']);
+    // The entry is right; the --config file it names is missing, then holds another port or
+    // another token (the token file was deleted and made anew): stale until it is rewritten.
+    rmSync(CONFIG, { force: true });
+    expect(checkAgentConfig(root, check)).toEqual([CONFIG]);
+    writeMcpConfig(CONFIG, 9334, TOKEN);
+    expect(checkAgentConfig(root, check)).toEqual([CONFIG]);
+    writeMcpConfig(CONFIG, 9333, 'u'.repeat(43));
+    expect(checkAgentConfig(root, check)).toEqual([CONFIG]);
+    writeMcpConfig(CONFIG, 9333, TOKEN);
+    expect(checkAgentConfig(root, check)).toEqual([]);
+  });
+
+  it('a P2 entry (--wsHeaders: the token on the command line) is drift until --repair migrates it', () => {
+    const root = project();
+    writeFileSync(
+      join(root, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: { 'pix3-browser': { command: 'npx', args: p2Args(9333, TOKEN) } },
+      })
+    );
+    mkdirSync(join(root, '.codex'));
+    writeFileSync(
+      join(root, CODEX_CONFIG_FILE),
+      codexTable({ command: 'npx', args: p2Args(9333, TOKEN) })
+    );
+    writeMcpConfig(CONFIG, 9333, TOKEN);
+    const check = { port: 9333, token: TOKEN, configPath: CONFIG, platform: 'linux' as const };
+    expect(checkAgentConfig(root, check)).toEqual(['.mcp.json', CODEX_CONFIG_FILE]);
+    expect(actions(installAgentConfig(root, linux))).toEqual({ claude: 'drift', codex: 'drift' });
+    expect(actions(installAgentConfig(root, { ...linux, repair: true }))).toEqual({
+      claude: 'repaired',
+      codex: 'repaired',
+    });
+    for (const file of ['.mcp.json', CODEX_CONFIG_FILE]) {
+      expect(read(root, file)).not.toContain(TOKEN);
+      expect(read(root, file)).not.toContain('--wsHeaders');
+      expect(read(root, file)).toContain(`--config=${CONFIG}`);
+      // The .bak keeps what was there — the token too; it is the user's to delete.
+      expect(read(root, `${file}.bak`)).toContain(TOKEN);
+    }
+    expect(checkAgentConfig(root, check)).toEqual([]);
   });
 });
 
@@ -228,33 +280,44 @@ describe('pix3 agent-setup', () => {
     expect(await runAgentSetupCli(['claude'], again.io)).toBe(0);
     expect(again.out()).toContain('up to date');
     expect(again.out()).not.toContain('new thread');
-    writeFileSync(join(root, '.mcp.json'), read(root, '.mcp.json').replace('9333', '9334'));
+    writeFileSync(
+      join(root, '.mcp.json'),
+      read(root, '.mcp.json').replace('cdp-mcp.json', 'other.json')
+    );
     const drift = io(root);
     expect(await runAgentSetupCli(['claude'], drift.io)).toBe(1);
     expect(drift.out()).toContain('--repair');
     const repair = io(root);
     expect(await runAgentSetupCli(['claude', '--repair'], repair.io)).toBe(0);
     expect(repair.out()).toContain('repaired .mcp.json');
-    // The token is in the file, never in what the command prints.
+    // The token is in the 0600 --config file, never in the project nor in what is printed.
     const token = readCdpToken(HOME_ENV) as string;
-    expect(read(root, '.mcp.json')).toContain(`Bearer ${token}`);
+    const config = localMcpConfigPath(HOME_ENV);
+    expect(read(root, '.mcp.json')).toContain(`--config=${config}`);
+    expect(read(root, '.mcp.json')).not.toContain(token);
+    expect(readFileSync(config, 'utf8')).toContain(`Bearer ${token}`);
+    if (process.platform !== 'win32') expect(statSync(config).mode & 0o777).toBe(0o600);
     for (const run of [first, again, drift, repair]) {
       expect(run.out()).not.toContain(token);
     }
-    expect(first.out()).toContain('<token of ~/.pix3/cdp-token>');
   });
 
-  it('warns when git would commit a file that carries the token', async () => {
+  it('names a P2 entry (the token on the command line) as such; --repair migrates it', async () => {
     const root = project();
-    const git = spawnSync('git', ['init', '-q'], { cwd: root });
-    if (git.error || git.status !== 0) return; // no git here
-    const bare = io(root);
-    expect(await runAgentSetupCli(['claude'], bare.io)).toBe(0);
-    expect(bare.out()).toContain("carries this machine's CDP token");
-    writeFileSync(join(root, '.gitignore'), '.mcp.json\n');
-    const ignored = io(root);
-    expect(await runAgentSetupCli(['claude'], ignored.io)).toBe(0);
-    expect(ignored.out()).not.toContain('CDP token and git');
+    const token = ensureCdpToken(HOME_ENV);
+    writeFileSync(
+      join(root, '.mcp.json'),
+      JSON.stringify({
+        mcpServers: { 'pix3-browser': { command: 'npx', args: p2Args(9333, token) } },
+      })
+    );
+    const run = io(root);
+    expect(await runAgentSetupCli(['claude'], run.io)).toBe(1);
+    expect(run.out()).toContain('the CDP token on its command line');
+    const repair = io(root);
+    expect(await runAgentSetupCli(['claude', '--repair'], repair.io)).toBe(0);
+    expect(read(root, '.mcp.json')).not.toContain(token);
+    expect(repair.out()).not.toContain(token);
   });
 
   it('names a P1 entry as such', async () => {
@@ -279,8 +342,17 @@ describe('pix3 agent-setup', () => {
     const run = io(root, env);
     expect(await runAgentSetupCli(['codex'], run.io)).toBe(0);
     expect(run.out()).toContain('ws://127.0.0.1:9337/pix3');
-    expect(run.out()).toContain('the port pix3 editor recorded');
-    expect(read(root, CODEX_CONFIG_FILE)).toContain('--wsEndpoint=ws://127.0.0.1:9337/pix3');
+    expect(run.out()).toContain('the port it recorded');
+    expect(read(root, CODEX_CONFIG_FILE)).toContain(`--config=${localMcpConfigPath(env)}`);
+    expect(readFileSync(localMcpConfigPath(env), 'utf8')).toContain('ws://127.0.0.1:9337/pix3');
+    // pix3 editor moved again: the --config file follows, the project files stay as they are.
+    writeChromeState({ port: 9338, profile: '/p', startedAt: 'now' }, env);
+    const moved = io(root, env);
+    expect(await runAgentSetupCli(['codex'], moved.io)).toBe(0);
+    expect(moved.out()).toContain('updated');
+    expect(moved.out()).toContain('new thread');
+    expect(moved.out()).toContain('is up to date');
+    expect(readFileSync(localMcpConfigPath(env), 'utf8')).toContain('ws://127.0.0.1:9338/pix3');
     const outside = io(scratch, env);
     expect(await runAgentSetupCli([], outside.io)).toBe(2);
     expect(outside.err()).toContain('pix3project.yaml');

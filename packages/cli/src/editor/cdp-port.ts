@@ -1,6 +1,14 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createConnection } from 'node:net';
 
-import { CDP_PORT_RANGE, CDP_PROXY_HEADER, DEFAULT_CDP_PORT } from './paths.ts';
+import { cdpProof } from './cdp-proof.ts';
+import {
+  CDP_CHALLENGE_HEADER,
+  CDP_PORT_RANGE,
+  CDP_PROOF_HEADER,
+  CDP_PROXY_HEADER,
+  DEFAULT_CDP_PORT,
+} from './paths.ts';
 
 /**
  * The check of port 9333 before Chrome is launched (plan §D.4 «Проверка 9333», §D.5): something
@@ -8,8 +16,11 @@ import { CDP_PORT_RANGE, CDP_PROXY_HEADER, DEFAULT_CDP_PORT } from './paths.ts';
  * else's Chrome, proxy or any other process (leave it alone, take the next port), or nothing
  * (launch).
  *
- * "Ours" is decided by what the port says, not by a pid: the proxy answers `/json/version` to our
- * token (`~/.pix3/cdp-token`) with its `Pix3-Cdp-Proxy` marker. A plain DevTools endpoint with a
+ * "Ours" is decided by what the port says, not by a pid: the proxy answers a challenge with the
+ * proof that it knows our token (`~/.pix3/cdp-token`, `cdp-proof.ts`) — the check itself never
+ * sends the token, so neither a squatter on 9333 nor somebody else's DevTools port ever sees it.
+ * Only a port that proved it already knows the token is asked, with it, for its browser and
+ * pages. A plain DevTools endpoint with a
  * Pix3 editor page (`/__pix3/`), or on the port the state file recorded, is the P1 launch
  * (`--remote-debugging-port`, no token): `legacy` — it holds our profile, so a new Chrome cannot
  * start on it, and it is open to every local process; `pix3 editor` asks for it to be closed.
@@ -35,20 +46,23 @@ interface JsonPage {
 type Probe<T> = {
   readonly status: number;
   readonly proxy: boolean;
+  /** The answer's `X-Pix3-Proof`, when the request carried a challenge. */
+  readonly proof: string | null;
   readonly body: T | null;
 } | null;
 
 const getJson = async <T>(
   url: string,
   fetchImpl: typeof fetch,
-  token: string | null
+  headers: Record<string, string>
 ): Promise<Probe<T>> => {
   try {
     const response = await fetchImpl(url, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers,
     });
     const proxy = response.headers.get(CDP_PROXY_HEADER) !== null;
+    const proof = response.headers.get(CDP_PROOF_HEADER);
     let body: T | null = null;
     if (response.ok) {
       try {
@@ -57,7 +71,7 @@ const getJson = async <T>(
         body = null;
       }
     }
-    return { status: response.status, proxy, body };
+    return { status: response.status, proxy, proof, body };
   } catch {
     return null;
   }
@@ -78,13 +92,28 @@ export const inspectCdpPort = async (
   const fetchImpl = options.fetch ?? fetch;
   const token = options.token ?? null;
   const base = `http://127.0.0.1:${port}`;
-  const version = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, token);
-  if (version?.proxy && !version.body) {
+  // The challenge, never the token: an unproven port learns nothing it could reuse.
+  const challenge = randomBytes(24).toString('base64url');
+  const version = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, {
+    [CDP_CHALLENGE_HEADER]: challenge,
+  });
+  if (version && token && proves(version.proof, token, challenge)) {
+    // Ours: it knows the token, so asking with it gives nothing away.
+    const auth = { Authorization: `Bearer ${token}` };
+    const ours = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, auth);
+    const list = await getJson<JsonPage[]>(`${base}/json/list`, fetchImpl, auth);
+    return {
+      kind: 'ours',
+      browser: ours?.body?.Browser ?? 'unknown browser',
+      pages: pageUrls(list),
+    };
+  }
+  if (version?.proxy) {
     return {
       kind: 'foreign',
       browser: null,
       detail:
-        `port ${port} is a Pix3 CDP proxy that refuses this token (HTTP ${version.status}): ` +
+        `port ${port} is a Pix3 CDP proxy that does not know this token (HTTP ${version.status}): ` +
         "another user's, or one started with another PIX3_HOME",
     };
   }
@@ -100,12 +129,9 @@ export const inspectCdpPort = async (
         }
       : { kind: 'free' };
   }
+  // A plain DevTools endpoint: it answered without a token, and gets none.
   const browser = version.body.Browser ?? 'unknown browser';
-  const list = await getJson<JsonPage[]>(`${base}/json/list`, fetchImpl, token);
-  const urls = (Array.isArray(list?.body) ? list.body : [])
-    .filter(p => p.type === 'page' || p.type === undefined)
-    .map(p => p.url ?? '');
-  if (version.proxy) return { kind: 'ours', browser, pages: urls };
+  const urls = pageUrls(await getJson<JsonPage[]>(`${base}/json/list`, fetchImpl, {}));
   if (urls.some(isEditorPageUrl) || options.recordedPort === port) {
     return { kind: 'legacy', browser, pages: urls };
   }
@@ -115,6 +141,18 @@ export const inspectCdpPort = async (
     detail: `port ${port} is a ${browser} that is not Pix3's (${urls.length} page(s), none is /__pix3/)`,
   };
 };
+
+const proves = (proof: string | null, token: string, challenge: string): boolean => {
+  if (!proof) return false;
+  const expected = Buffer.from(cdpProof(token, challenge));
+  const given = Buffer.from(proof);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+};
+
+const pageUrls = (list: Probe<JsonPage[]>): string[] =>
+  (Array.isArray(list?.body) ? list.body : [])
+    .filter(p => p.type === 'page' || p.type === undefined)
+    .map(p => p.url ?? '');
 
 const isListening = (port: number): Promise<boolean> =>
   new Promise(resolve => {

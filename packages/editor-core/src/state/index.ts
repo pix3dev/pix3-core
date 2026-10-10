@@ -13,6 +13,7 @@ export const getAppStateSnapshot = (): AppStateSnapshot => snapshot(appState);
  * Clears the application state back to its default snapshot. Use sparingly—ideally
  * only from bootstrapping flows or test fixtures—so that commands remain the
  * primary mutation mechanism in production code.
+ * @internal Only specs call it (between cases).
  */
 export const resetAppState = (): void => {
   const defaults = createInitialAppState();

@@ -1,18 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Json } from '@/core/agent-introspection';
 import {
   batchSteps,
-  buildRoutineIndexLines,
   InMemoryRoutineStore,
-  isMacroRoutine,
-  parseRoutine,
-  parseRoutineText,
   prepareRoutine,
   ROUTINE_DIRECTORY,
   routineFilePath,
-  routineIndexEntry,
   runRoutine,
   type GameRoutine,
   type RoutineWorld,
@@ -58,144 +51,13 @@ const makeWorld = (overrides: WorldOverrides = {}) => {
   return { world, runInput, dispatchCommand };
 };
 
-// ---------------------------------------------------------------------------
-// Format
-// ---------------------------------------------------------------------------
-
-describe('routine format', () => {
-  it('accepts the canonical shape: game_input steps, a command step, kind-discriminated expectations', () => {
-    const parsed = parseRoutine({
-      name: 'mute',
-      description: 'Mute the music.',
-      scope: 'scenes/menu.pix3scene',
-      note: 'ignored by the runner',
-      uses: ['music-toggle'],
-      steps: [
-        { type: 'command', name: 'open-settings', why: 'the highest channel available' },
-        {
-          type: 'invoke',
-          target: 'music-toggle',
-          interaction: 'setChecked',
-          args: { checked: false },
-        },
-        { type: 'tap', target: 'close-button', holdMs: 700 },
-      ],
-      expect: [
-        { kind: 'nodeProperty', name: 'music-toggle', path: 'checked', op: 'eq', value: false },
-      ],
-    });
-
-    expect('routine' in parsed).toBe(true);
-    if (!('routine' in parsed)) return;
-    expect(parsed.routine.steps.map(step => step.type)).toEqual(['command', 'invoke', 'tap']);
-    expect(parsed.routine.expect[0].kind).toBe('nodeProperty');
-    expect(parsed.routine.note).toBe('ignored by the runner');
-  });
-
-  it('refuses the old `predicate` dialect in expectations, naming `kind`', () => {
-    const parsed = parseRoutine(
-      routine({
-        expect: [
-          { predicate: 'nodeProperty', node: 'x', path: 'checked', op: '==', value: false },
-        ] as never,
-      })
-    );
-    expect('error' in parsed && parsed.error).toMatch(/kind/);
-  });
-
-  it('refuses the `==` operator, which the predicate vocabulary does not have', () => {
-    const parsed = parseRoutine(
-      routine({
-        expect: [
-          { kind: 'nodeProperty', name: 'x', path: 'checked', op: '==', value: false },
-        ] as never,
-      })
-    );
-    expect('error' in parsed && parsed.error).toMatch(/eq/);
-  });
-
-  it('refuses a `channel`/`intent` step — a routine may not call a component method', () => {
-    const parsed = parseRoutine(
-      routine({
-        steps: [
-          { channel: 'intent', node: 'game-root', component: 'user:GameFlow', method: 'finish' },
-        ] as never,
-      })
-    );
-    expect('error' in parsed && parsed.error).toMatch(/step type/);
-    expect('error' in parsed && parsed.error).toMatch(/command/);
-  });
-
-  it('refuses unknown fields on the routine and on a step rather than dropping them', () => {
-    expect(parseRoutine({ ...routine(), assertions: [] })).toEqual({
-      error: expect.stringContaining('unknown field'),
-    });
-    const badStep = parseRoutine(
-      routine({ steps: [{ type: 'tap', target: 'x', pressure: 2 }] as never })
-    );
-    expect('error' in badStep && badStep.error).toMatch(/unknown field\(s\) "pressure"/);
-  });
-
-  it('requires a one-line description, because that is the only part the agent ever sees', () => {
-    const parsed = parseRoutine({ ...routine(), description: '' });
-    expect('error' in parsed && parsed.error).toMatch(/description/);
-  });
-
-  it('requires the pieces a command step and an invoke step cannot work without', () => {
-    const noName = parseRoutine(routine({ steps: [{ type: 'command' }] as never }));
-    expect('error' in noName && noName.error).toMatch(/command step needs "name"/);
-    const noInteraction = parseRoutine(routine({ steps: [{ type: 'invoke', target: 'x' }] }));
-    expect('error' in noInteraction && noInteraction.error).toMatch(/interaction/);
-  });
-
-  it('refuses a `uses` placeholder that names no declared param', () => {
-    const parsed = parseRoutine(routine({ uses: ['Slot{slot}'] }));
-    expect('error' in parsed && parsed.error).toMatch(/\{slot\}/);
-  });
-
-  it('reports unparseable JSON as a sentence', () => {
-    expect(parseRoutineText('{oops')).toEqual({ error: expect.stringContaining('not valid JSON') });
-  });
-
+describe('routine storage', () => {
   it('normalizes a routine name to its project path', () => {
     expect(routineFilePath('buy-item')).toBe(`${ROUTINE_DIRECTORY}/buy-item.json`);
     expect(routineFilePath(`${ROUTINE_DIRECTORY}/buy-item.json`)).toBe(
       `${ROUTINE_DIRECTORY}/buy-item.json`
     );
   });
-});
-
-// ---------------------------------------------------------------------------
-// The 1.x templates' routines load (the anti-drift test, now over the fixture corpus)
-// ---------------------------------------------------------------------------
-
-/**
- * `packages/runtime/fixtures/scene-corpus`, from this file — independent of the cwd vitest runs
- * in. The starters `npm create pix3` ships carry no routines; the recipes that did are kept there
- * as test input (`.plans/templates.md`).
- */
-const TEMPLATES_DIR = resolve(__dirname, '../../../../runtime/fixtures/scene-corpus');
-
-describe('the routines of the fixture corpus load through this loader', () => {
-  const examples = [
-    'minigame-2d/files/design/tests/routines/mute-music.json',
-    'playable-3d/files/design/tests/routines/intro-to-cta.json',
-    'recipe-tapper-2d/files/design/tests/routines/terminal-retry.json',
-  ];
-
-  for (const example of examples) {
-    it(example, () => {
-      const text = readFileSync(join(TEMPLATES_DIR, example), 'utf8');
-      const parsed = parseRoutineText(text);
-      // A template is what an agent copies from. A shipped example the runner cannot
-      // load teaches a format the tools do not speak — which is exactly how the two
-      // examples had drifted into two different dialects before this test existed.
-      expect('error' in parsed ? parsed.error : null).toBeNull();
-      if (!('routine' in parsed)) return;
-      expect(parsed.routine.expect.length).toBeGreaterThan(0);
-      expect(isMacroRoutine(parsed.routine)).toBe(false);
-    });
-  }
 });
 
 // ---------------------------------------------------------------------------
@@ -268,62 +130,6 @@ describe('staleness', () => {
 // ---------------------------------------------------------------------------
 // Index (§5.7.2)
 // ---------------------------------------------------------------------------
-
-describe('routine index', () => {
-  const shop = routine({
-    name: 'buy-item',
-    scope: 'scenes/shop.pix3scene',
-    params: { slot: 'number' },
-    uses: ['ShopButton'],
-    expect: [{ kind: 'frames', n: 1 }],
-  });
-  const menu = routine({
-    name: 'mute-music',
-    description: 'Mute the music.',
-    scope: 'scenes/menu.pix3scene',
-  });
-  const tagged = routine({ name: 'smoke', description: 'Smoke test.', scope: 'ui' });
-
-  it('carries only name, params and description — never the body', () => {
-    const entry = routineIndexEntry(shop);
-    expect(Object.keys(entry).sort()).toEqual(['description', 'macro', 'name', 'params', 'scope']);
-
-    const [line] = buildRoutineIndexLines([shop], { activeScene: 'scenes/shop.pix3scene' });
-    expect(line).toBe(
-      '    - buy-item(slot: number) — Open the shop, buy the item in a slot, close the shop.'
-    );
-    expect(line).not.toContain('ShopButton');
-    expect(line).not.toContain('invoke');
-  });
-
-  it('filters scene-scoped routines by the active scene and keeps tag-scoped ones', () => {
-    const lines = buildRoutineIndexLines([shop, menu, tagged], {
-      activeScene: 'scenes/shop.pix3scene',
-    });
-    expect(lines.join('\n')).toContain('buy-item');
-    expect(lines.join('\n')).not.toContain('mute-music');
-    expect(lines.join('\n')).toContain('smoke');
-  });
-
-  it('matches a scope by file name too, since the same routine is addressed both ways', () => {
-    const lines = buildRoutineIndexLines([menu], { activeScene: 'menu.pix3scene' });
-    expect(lines.join('\n')).toContain('mute-music');
-  });
-
-  it('marks a routine with no expectations as a MACRO', () => {
-    const [line] = buildRoutineIndexLines([menu], { activeScene: 'scenes/menu.pix3scene' });
-    expect(line).toContain('[MACRO');
-  });
-
-  it('caps the number of lines and says how many were left out', () => {
-    const many = Array.from({ length: 5 }, (_, index) =>
-      routine({ name: `r${index}`, description: 'x', expect: [{ kind: 'frames', n: 1 }] })
-    );
-    const lines = buildRoutineIndexLines(many, { maxLines: 2 });
-    expect(lines).toHaveLength(3);
-    expect(lines[2]).toContain('+3 more routines');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Execution

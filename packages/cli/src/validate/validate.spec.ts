@@ -766,6 +766,296 @@ describe('level 1: SVG sprites', () => {
   });
 });
 
+describe('level 1: .pix3anim frames', () => {
+  const X = 'xmlns="http://www.w3.org/2000/svg"';
+  const flipbook = (anim = 'res://sprites/coin/coin.pix3anim'): string =>
+    scene(
+      [
+        '  - id: coin-spin',
+        '    type: AnimatedSprite2D',
+        '    properties:',
+        `      animationResourcePath: ${anim}`,
+        '      currentClip: spin',
+        '      isPlaying: true',
+      ].join('\n') + '\n'
+    );
+  const anim = (frames: string[], sheet = ''): string =>
+    `${JSON.stringify(
+      {
+        version: '1.0.0',
+        texturePath: sheet,
+        clips: [{ name: 'spin', frames: frames.map(texturePath => ({ texturePath })) }],
+      },
+      null,
+      2
+    )}\n`;
+
+  it('frames that exist (PNG, sized SVG, a URL) pass', async () => {
+    const report = await run(
+      {
+        'sprites/coin/spin_0001.png': PNG,
+        'sprites/coin/spin_0002.svg': `<svg ${X} width="8" height="8"/>`,
+        'sprites/coin/coin.pix3anim': anim([
+          'res://sprites/coin/spin_0001.png',
+          'sprites/coin/spin_0002.svg',
+          'https://cdn.example/spin_0003.png',
+        ]),
+        'scenes/a.pix3scene': flipbook(),
+      },
+      { hydrate: false }
+    );
+    expect(codesOf(report)).toEqual([]);
+  });
+
+  it('E_MISSING_FRAME: a frame or the spritesheet that does not exist, with the case hint', async () => {
+    const report = await run(
+      {
+        'sprites/coin/spin_0001.png': PNG,
+        'sprites/coin/coin.pix3anim': anim(
+          [
+            'res://sprites/coin/spin_0001.png',
+            'res://sprites/coin/Spin_0001.png',
+            'res://sprites/coin/spin_0009.png',
+          ],
+          'res://sprites/coin/sheet.png'
+        ),
+        'scenes/a.pix3scene': flipbook(),
+      },
+      { hydrate: false }
+    );
+    const found = find(report, 'E_MISSING_FRAME');
+    expect(found.map(d => [d.file, d.path])).toEqual([
+      ['sprites/coin/coin.pix3anim', 'texturePath'],
+      ['sprites/coin/coin.pix3anim', 'clips[0].frames[1].texturePath'],
+      ['sprites/coin/coin.pix3anim', 'clips[0].frames[2].texturePath'],
+    ]);
+    expect(found[0].message).toContain('the spritesheet');
+    expect(found[1]).toMatchObject({
+      message: expect.stringContaining('clip "spin" frame 2'),
+      fix: 'the file is res://sprites/coin/spin_0001.png (case differs)',
+    });
+    expect(found[2].line).toBeGreaterThan(1);
+    expect(report.errorCount).toBe(3);
+  });
+
+  it('E_SVG_*: an .svg frame passes the sprite rules, once per file per .pix3anim', async () => {
+    const report = await run(
+      {
+        'sprites/coin/a.svg': `<svg width="8" height="8"/>`,
+        'sprites/coin/b.svg': `<svg ${X} viewBox="0 0 8 8"/>`,
+        'sprites/coin/coin.pix3anim': anim([
+          'res://sprites/coin/a.svg',
+          'res://sprites/coin/b.svg',
+          'res://sprites/coin/a.svg',
+        ]),
+        'scenes/a.pix3scene': flipbook(),
+      },
+      { hydrate: false }
+    );
+    expect(report.diagnostics.map(d => [d.code, d.file, d.path])).toEqual([
+      ['E_SVG_INVALID', 'sprites/coin/coin.pix3anim', 'clips[0].frames[0].texturePath'],
+      ['W_SVG_VIEWBOX_ONLY', 'sprites/coin/coin.pix3anim', 'clips[0].frames[1].texturePath'],
+    ]);
+  });
+
+  it('E_ANIM_JSON: not JSON, not an object, clips not a list', async () => {
+    const report = await run(
+      {
+        'sprites/a.pix3anim': '{ "clips": [ }',
+        'sprites/b.pix3anim': '[]',
+        'sprites/c.pix3anim': '{ "clips": { "spin": [] } }',
+        'scenes/a.pix3scene': scene(
+          ['a', 'b', 'c']
+            .map(
+              name =>
+                `  - id: ${name}\n    type: AnimatedSprite2D\n    properties:\n      animationResourcePath: res://sprites/${name}.pix3anim\n`
+            )
+            .join('')
+        ),
+      },
+      { hydrate: false }
+    );
+    expect(find(report, 'E_ANIM_JSON').map(d => [d.file, d.path])).toEqual([
+      ['sprites/a.pix3anim', undefined],
+      ['sprites/b.pix3anim', ''],
+      ['sprites/c.pix3anim', 'clips'],
+    ]);
+  });
+
+  it('a whole-project run checks every .pix3anim; a run on some scenes, the ones they name', async () => {
+    const files = {
+      'sprites/coin/coin.pix3anim': anim(['res://sprites/coin/gone.png']),
+      'sprites/orphan/orphan.pix3anim': anim(['res://sprites/orphan/gone.png']),
+      'scenes/a.pix3scene': flipbook(),
+      'scenes/b.pix3scene': scene('  - id: n\n    type: Node2D\n'),
+    };
+    const whole = await run(files, { hydrate: false });
+    expect(whole.diagnostics.filter(d => d.code === 'E_MISSING_FRAME').map(d => d.file)).toEqual([
+      'sprites/coin/coin.pix3anim',
+      'sprites/orphan/orphan.pix3anim',
+    ]);
+    const some = await run(files, { hydrate: false, files: ['scenes/a.pix3scene'] });
+    expect(some.diagnostics.filter(d => d.code === 'E_MISSING_FRAME').map(d => d.file)).toEqual([
+      'sprites/coin/coin.pix3anim',
+    ]);
+    const none = await run(files, { hydrate: false, files: ['scenes/b.pix3scene'] });
+    expect(codesOf(none)).toEqual([]);
+  });
+});
+
+describe('level 1: locale tables and labelKey', () => {
+  const table = (strings: Record<string, unknown>, sprites: Record<string, unknown> = {}) =>
+    `${JSON.stringify({ $meta: { locale: 'x' }, strings, sprites }, null, 2)}\n`;
+  const labels = (...keys: string[]): string =>
+    scene(
+      keys
+        .map(
+          (key, index) =>
+            `  - id: l${index}\n    type: Label2D\n    properties:\n      label: Text\n      labelKey: ${key}\n`
+        )
+        .join('')
+    );
+  const declared = (block: string): string => `${MANIFEST}localization:\n${block}`;
+
+  it('declared and discovered tables that load, with every key, pass', async () => {
+    const discovered = await run(
+      {
+        'locales/en.json': table({ 'menu.play': 'Play' }),
+        'locales/de.json': table({ 'menu.play': 'Spielen' }),
+        'scenes/a.pix3scene': labels('menu.play'),
+      },
+      { hydrate: false }
+    );
+    expect(codesOf(discovered)).toEqual([]);
+    const withBlock = await run(
+      {
+        'pix3project.yaml': declared('  defaultLocale: en\n  locales: [en, de]\n'),
+        'locales/en.json': table({ 'menu.play': 'Play' }),
+        'locales/de.json': table({ 'menu.play': '' }),
+        'scenes/a.pix3scene': labels('menu.play'),
+      },
+      { hydrate: false }
+    );
+    expect(codesOf(withBlock)).toEqual([]);
+  });
+
+  it('E_LOCALE_MISSING for the default / fallback locale, W_LOCALE_MISSING for another, at its line', async () => {
+    const report = await run(
+      {
+        'pix3project.yaml': declared(
+          '  defaultLocale: en\n  fallbackLocale: fr\n  locales: [en, fr, de]\n'
+        ),
+        'locales/en.json': table({}),
+      },
+      { hydrate: false }
+    );
+    expect(find(report, 'E_LOCALE_MISSING')).toMatchObject([
+      {
+        file: 'pix3project.yaml',
+        path: 'localization.fallbackLocale',
+        line: 8,
+        message: expect.stringContaining('the fallback locale "fr" has no table locales/fr.json'),
+      },
+    ]);
+    expect(find(report, 'W_LOCALE_MISSING')).toMatchObject([
+      { file: 'pix3project.yaml', path: 'localization.locales[2]', severity: 'warning' },
+    ]);
+    const noDefault = await run(
+      { 'pix3project.yaml': declared('  locales: [en]\n') },
+      { hydrate: false }
+    );
+    expect(noDefault.diagnostics.map(d => [d.code, d.path])).toEqual([
+      ['E_LOCALE_MISSING', 'localization.defaultLocale'],
+    ]);
+  });
+
+  it('E_LOCALE_JSON / W_LOCALE_JSON: not JSON, not an object, strings not a map', async () => {
+    const report = await run(
+      {
+        'pix3project.yaml': declared('  defaultLocale: en\n  locales: [en, de, fr]\n'),
+        'locales/en.json': '{ "strings": { "a": "A", } }',
+        'locales/de.json': '"Hallo"',
+        'locales/fr.json': '{ "strings": ["a"] }',
+      },
+      { hydrate: false }
+    );
+    expect(find(report, 'E_LOCALE_JSON').map(d => d.file)).toEqual(['locales/en.json']);
+    expect(find(report, 'W_LOCALE_JSON').map(d => [d.file, d.path])).toEqual([
+      ['locales/de.json', undefined],
+      ['locales/fr.json', 'strings'],
+    ]);
+  });
+
+  it('E_LOCALE_VALUE / W_LOCALE_VALUE: a value the runtime drops (nested keys, numbers)', async () => {
+    const report = await run(
+      {
+        'locales/en.json': table({ menu: { play: 'Play' }, ok: 'OK' }),
+        'locales/de.json': table({ ok: 'OK', count: 3 }, { logo: null }),
+      },
+      { hydrate: false }
+    );
+    expect(find(report, 'E_LOCALE_VALUE')).toMatchObject([
+      {
+        file: 'locales/en.json',
+        path: 'strings.menu',
+        fix: expect.stringContaining('"menu.play"'),
+      },
+    ]);
+    expect(find(report, 'W_LOCALE_VALUE').map(d => d.path)).toEqual([
+      'strings.count',
+      'sprites.logo',
+    ]);
+  });
+
+  it('E_LOCALE_KEY: a labelKey with no text in the default (nor the fallback) locale', async () => {
+    const files = {
+      'pix3project.yaml': declared(
+        '  defaultLocale: en\n  fallbackLocale: de\n  locales: [en, de]\n'
+      ),
+      'locales/en.json': table({ 'menu.play': 'Play', 'menu.blank': '', 'menu.de': '' }),
+      'locales/de.json': table({ 'menu.de': 'Nur Deutsch' }),
+      'prefabs/hud.pix3scene': scene(
+        '  - id: score\n    type: Label2D\n    properties:\n      label: Score\n'
+      ),
+      'scenes/a.pix3scene':
+        labels('menu.play', 'menu.gone', 'menu.blank', 'menu.de') +
+        '  - id: hud\n    instance: res://prefabs/hud.pix3scene\n    properties:\n      labelKey: hud.score\n',
+    };
+    const report = await run(files, { hydrate: false });
+    const found = find(report, 'E_LOCALE_KEY');
+    expect(found.map(d => [d.nodeId, d.path])).toEqual([
+      ['l1', 'root[1].properties.labelKey'],
+      ['l2', 'root[2].properties.labelKey'],
+      ['hud', 'root[4].properties.labelKey'],
+    ]);
+    expect(found[0]).toMatchObject({
+      file: 'scenes/a.pix3scene',
+      line: 12,
+      message: expect.stringContaining('nor in locales/de.json'),
+    });
+    // A run on one scene checks its keys; the tables only on whole-project runs.
+    const some = await run(
+      { ...files, 'locales/de.json': '{' },
+      { hydrate: false, files: ['scenes/a.pix3scene'] }
+    );
+    expect(codesOf(some)).not.toContain('E_LOCALE_JSON');
+    expect(codesOf(some).filter(code => code === 'E_LOCALE_KEY')).toHaveLength(4);
+  });
+
+  it('nothing is said without tables, or when the default table does not load', async () => {
+    const unlocalised = await run(
+      { 'scenes/a.pix3scene': labels('menu.play') },
+      { hydrate: false }
+    );
+    expect(codesOf(unlocalised)).toEqual([]);
+    const broken = await run(
+      { 'locales/en.json': '{', 'scenes/a.pix3scene': labels('menu.play') },
+      { hydrate: false }
+    );
+    expect(codesOf(broken)).toEqual(['E_LOCALE_JSON']);
+  });
+});
+
 describe('fixture coverage', () => {
   it('covers every diagnostic code', () => {
     expect(Object.keys(DIAGNOSTIC_CODES).filter(code => !covered.has(code))).toEqual([]);

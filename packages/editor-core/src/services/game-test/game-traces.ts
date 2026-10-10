@@ -251,10 +251,10 @@ function parseTraceEvent(raw: unknown): { event: TraceEvent } | { error: string 
 /**
  * Where traces are kept.
  *
- * **The file seam.** The production backend writes `design/tests/*.trace.json`
- * into the open project, which means going through the project's file services
- * (`ProjectService` / `FileSystemAPIService`) and their permission handling —
- * deliberately out of this module's scope. Implement `TraceStore` against them
+ * **The file seam.** A file backend would write `design/tests/*.trace.json`
+ * into the open project through the project's file services — deliberately out
+ * of this module's scope (the 1.x `ProjectTraceStore` had no caller in 2.x and
+ * went with the knip --production sweep). Implement `TraceStore` against them
  * and hand it to `GameTestService.setTraceStore()`; nothing else in the record /
  * replay / compare path changes, because none of it knows how a trace is
  * persisted. Until then the default is {@link InMemoryTraceStore}, which keeps

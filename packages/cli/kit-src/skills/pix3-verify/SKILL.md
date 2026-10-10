@@ -57,6 +57,9 @@ Codes and what they usually mean:
 | `E_EMOJI_AS_ART` | A `label`/`text` that is only emoji — use a sprite or `ColorRect2D` |
 | `E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY` | An `.svg` sprite without `xmlns` or without `width`/`height` in px — see the SVG template in `pix3-nodes` |
 | `W_SVG_EXTERNAL_REF` | An `.svg` that links a file, URL or font — it will draw without it; inline it |
+| `E_MISSING_FRAME`, `E_ANIM_JSON` | A `.pix3anim` names a frame (or a spritesheet) that does not exist, or is not a JSON object — fix the path or the file; its `.svg` frames get the `E_SVG_*` checks, reported on the `.pix3anim` |
+| `E_LOCALE_*`, `W_LOCALE_*` | A locale table (`locales/<id>.json`) that is missing, not JSON, or has a non-string value (keys are flat: `"menu.play": "Play"`, never nested) — `E_` for the default or fallback locale (every `labelKey` would show its key), `W_` for another declared locale (its texts fall back) |
+| `E_LOCALE_KEY` | A `labelKey` the default locale (and the fallback) has no text for — the node would show the key; add it to `strings` of the default table and the others |
 | `E_TYPE` | A TypeScript error in a script (`TS2339: Property … does not exist …`) |
 | `E_TYPECHECK_UNAVAILABLE` | TypeScript could not be installed — run the printed command |
 | `E_DEPENDENCIES_MISSING` | A project with its own `tsconfig.json` and no `node_modules` — `npm install`; tsc was skipped |

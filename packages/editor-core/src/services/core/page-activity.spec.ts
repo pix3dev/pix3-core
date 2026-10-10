@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   isDocumentActive,
-  isDocumentVisible,
   isEditorActive,
   isEditorKeepAlive,
   onEditorKeepAliveChange,
@@ -31,7 +30,6 @@ describe('page-activity', () => {
       const d = doc(visibility, focused);
       expect(isEditorActive(d), `${visibility}/${focused}/${keepalive}`).toBe(expected);
       expect(isDocumentActive(d)).toBe(visibility === 'visible' && focused);
-      expect(isDocumentVisible(d)).toBe(visibility === 'visible');
     }
   });
 

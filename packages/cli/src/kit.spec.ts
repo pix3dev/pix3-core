@@ -34,7 +34,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { compileCharacter } from './character/compiler.ts';
 import { CHECK_CODES, checkProject } from './check/check.ts';
 import { extractCoreComponents, type RuntimeLike } from './kit/core-components.ts';
-import { generateKit, type CoreComponentInfo, type KitManifestFile } from './kit/generate.ts';
+import { generateKit, type KitManifestFile } from './kit/generate.ts';
+import type { CoreComponentInfo } from './kit/kit-format.ts';
 import { RETIRED_EDITOR_TOOL_NAMES } from './kit/retired-editor-tools.ts';
 import {
   AGENTS_ALT_FILE,
@@ -428,6 +429,25 @@ describe('kit drift', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it("pix3-verify's code table covers the .pix3anim and locale checks, and no recipe says nothing checks them", () => {
+    const verify = text('.claude/skills/pix3-verify/SKILL.md');
+    const rows = [...verify.matchAll(/^\| ((?:`[EW]_[A-Z0-9_]+\*?`(?:, )?)+) \|/gm)].flatMap(m =>
+      [...m[1].matchAll(/`([EW]_[A-Z0-9_]+\*?)`/g)].map(c => c[1])
+    );
+    const covers = (code: string): boolean =>
+      rows.some(row => (row.endsWith('*') ? code.startsWith(row.slice(0, -1)) : row === code));
+    const resourceCodes = Object.keys(DIAGNOSTIC_CODES).filter(code =>
+      /_(ANIM|FRAME|LOCALE)(_|$)/.test(code)
+    );
+    expect(resourceCodes.length).toBeGreaterThanOrEqual(9);
+    expect(resourceCodes.filter(code => !covers(code))).toEqual([]);
+    const recipes = `${text(PIX3ANIM)}\n${text('.claude/skills/pix3-scene-format/project-files.md')}`;
+    expect(recipes).not.toMatch(
+      /[Nn]othing checks (them|the tables)|not the frames a `\.pix3anim`|does not look inside `\.pix3anim`/
+    );
+    for (const code of ['E_MISSING_FRAME', 'E_ANIM_JSON']) expect(text(PIX3ANIM)).toContain(code);
   });
 
   it('names only core: components that exist', () => {

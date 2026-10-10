@@ -2,6 +2,7 @@ node_modules/
 dist/
 # Pix3 editor + CLI bookkeeping (dev server, version journal, build record)
 .pix3/
-# pix3 agent-setup: the MCP config carries this machine's CDP token (~/.pix3/cdp-token)
+# pix3 agent-setup: the MCP config names a file in this machine's home (~/.pix3/cdp-mcp.json);
+# an older one carried the CDP token itself
 .mcp.json
 .codex/config.toml

@@ -13,7 +13,8 @@ import { CDP_CHALLENGE_HEADER, CDP_PROOF_HEADER, CDP_PROXY_HEADER } from './path
  * the port only when the answer's `X-Pix3-Proof` is `HMAC-SHA256(sha256(token), nonce)` — the
  * proxy answers it on every reply, a 401 included. chrome-devtools-mcp cannot do this (it sends
  * its `--wsHeaders` on connect); for it the guard is `ExitOnForwardFailure` (the README's SSH
- * lines) — recorded in `.plans/agent-bridge.md` (A20–A23).
+ * lines) — recorded in `.plans/agent-bridge.md` (A20–A23). Locally the same rule holds for
+ * `pix3 editor`'s port check (`cdp-port.ts`, A26): no port gets the token before its proof.
  */
 
 const CHALLENGE_SHAPE = /^[A-Za-z0-9_-]{16,128}$/;

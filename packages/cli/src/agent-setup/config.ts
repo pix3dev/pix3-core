@@ -5,17 +5,20 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { cdpWsEndpoint, DEFAULT_CDP_PORT } from '../editor/paths.ts';
+import { cdpWsEndpoint } from '../editor/paths.ts';
 
 /**
  * The one-time agent configuration (plan §D.6): chrome-devtools-mcp as the `pix3-browser` MCP
- * server of Codex and Claude Code, pointed at the CDP proxy `pix3 editor` runs (plan §D.5:
- * `--wsEndpoint=ws://127.0.0.1:<port>/pix3` with `--wsHeaders` carrying the bearer token of
- * `~/.pix3/cdp-token` — the files hold this machine's token, so they belong in `.gitignore`).
+ * server of Codex and Claude Code, pointed at the CDP proxy `pix3 editor` runs (plan §D.5). The
+ * endpoint `ws://127.0.0.1:<port>/pix3` and the bearer token of `~/.pix3/cdp-token` live in
+ * chrome-devtools-mcp's `--config` file under `~/.pix3/` (0600: `cdp-mcp.json` here,
+ * `remote-cdp.json` on a Remote SSH host); the project's files name that file only, so the token
+ * is in no project file and on no command line (`/proc/<pid>/cmdline` is world-readable).
  * Project-level files, so a checkout carries its own setup:
  *
  * - Claude Code: `.mcp.json` → `mcpServers["pix3-browser"]` (other servers kept);
@@ -25,8 +28,9 @@ import { cdpWsEndpoint, DEFAULT_CDP_PORT } from '../editor/paths.ts';
  * The version is pinned (plan §D.1 «Риск экспериментального флага»): the 3p-tool category is
  * experimental and may move in a minor release; `CHROME_DEVTOOLS_MCP_VERSION` moves only after
  * the S4 run is repeated. Idempotent: an entry that already says this is `unchanged`; one that
- * differs (another version, another port) is `drift` and left alone until `--repair`, which
- * rewrites it after saving a `.bak` copy.
+ * differs (another version, another config file, the P1 `--browserUrl` launch, the earlier
+ * `--wsHeaders` launch with the token on the command line) is `drift` and left alone until
+ * `--repair`, which rewrites it after saving a `.bak` copy.
  */
 
 export const CHROME_DEVTOOLS_MCP_VERSION = '1.10.1';
@@ -40,12 +44,9 @@ export const CODEX_STARTUP_TIMEOUT_SEC = 20;
 export type AgentTarget = 'claude' | 'codex';
 export const AGENT_TARGETS: readonly AgentTarget[] = ['claude', 'codex'];
 
-/** chrome-devtools-mcp's `--wsHeaders` value: JSON, as its yargs option parses it. */
+/** chrome-devtools-mcp's `wsHeaders` value: JSON, as its yargs option parses it. */
 export const wsHeaders = (token: string): string =>
   JSON.stringify({ Authorization: `Bearer ${token}` });
-
-/** What a printed launch shows instead of the token (stdout ends up in agent transcripts). */
-export const TOKEN_PLACEHOLDER = '<token of ~/.pix3/cdp-token>';
 
 export interface McpLaunch {
   readonly command: string;
@@ -53,14 +54,14 @@ export interface McpLaunch {
 }
 
 /**
- * How chrome-devtools-mcp is started: `npx -y chrome-devtools-mcp@<pinned> … --wsEndpoint=…
- * --wsHeaders=…`. Both flags are 1.10.1's (`build/src/config/browser-options.js`): with
- * `--wsEndpoint` puppeteer connects to that WebSocket only — no `/json/*` request — and sends
- * the headers on the upgrade.
+ * How chrome-devtools-mcp is started: `npx -y chrome-devtools-mcp@<pinned> …
+ * --config=<~/.pix3/cdp-mcp.json>`. 1.10.1's `config` option (`build/src/config/mcp-options.js`)
+ * reads a JSON object parsed with the same options and coercions as the flags; ours holds
+ * `wsEndpoint` (puppeteer connects to that WebSocket only — no `/json/*` request) and
+ * `wsHeaders` (sent on the upgrade; `build/src/config/browser-options.js`).
  */
 export const mcpLaunch = (
-  port: number = DEFAULT_CDP_PORT,
-  token: string,
+  configPath: string,
   platform: NodeJS.Platform = process.platform
 ): McpLaunch => {
   const npx = [
@@ -71,8 +72,7 @@ export const mcpLaunch = (
     // `click_at {x, y}`: input at the coordinates `pix3_scene` returns as `screen` (the 1.x
     // `game_input` has no bridge counterpart; the page's own input is the honest one).
     '--experimentalVision=true',
-    `--wsEndpoint=${cdpWsEndpoint(port)}`,
-    `--wsHeaders=${wsHeaders(token)}`,
+    `--config=${configPath}`,
   ];
   // Windows: `npx` is a .cmd shim, which a spawned MCP process cannot execute directly.
   return platform === 'win32'
@@ -80,40 +80,35 @@ export const mcpLaunch = (
     : { command: npx[0], args: npx.slice(1) };
 };
 
+const readText = (path: string): string | null =>
+  existsSync(path) ? readFileSync(path, 'utf8') : null;
+
+const mcpConfigText = (port: number, token: string): string =>
+  `${JSON.stringify({ wsEndpoint: cdpWsEndpoint(port), wsHeaders: wsHeaders(token) }, null, 2)}\n`;
+
+export type McpConfigFileAction = 'written' | 'updated' | 'unchanged';
+
 /**
- * The Remote SSH launch (plan §E.3): the endpoint and the token are in chrome-devtools-mcp's
- * `--config` file (`~/.pix3/remote-cdp.json`, 0600, written by `writeRemoteMcpConfig`) — 1.10.1's
- * `config` option (`build/src/config/mcp-options.js`: a JSON object parsed with the same options
- * and coercions as the flags, so `wsHeaders` is the same JSON string). On a shared host the
- * project's `.mcp.json` and every process's command line are readable by other users; that file
- * is not.
+ * chrome-devtools-mcp's `--config` file (`~/.pix3/cdp-mcp.json`, or `remote-cdp.json` for Remote
+ * SSH): ours alone, so rewritten whole when the port or the token moved; mode 0600 (a wider file
+ * is narrowed).
  */
-export const mcpRemoteLaunch = (
-  configPath: string,
-  platform: NodeJS.Platform = process.platform
-): McpLaunch => {
-  const npx = [
-    'npx',
-    '-y',
-    `chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}`,
-    '--categoryExperimentalThirdParty=true',
-    '--experimentalVision=true',
-    `--config=${configPath}`,
-  ];
-  return platform === 'win32'
-    ? { command: 'cmd', args: ['/c', ...npx] }
-    : { command: npx[0], args: npx.slice(1) };
+export const writeMcpConfig = (path: string, port: number, token: string): McpConfigFileAction => {
+  const text = mcpConfigText(port, token);
+  const existing = readText(path);
+  if (existing !== text) {
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp-${process.pid}`;
+    writeFileSync(tmp, text, { mode: 0o600 });
+    renameSync(tmp, path);
+  }
+  if (process.platform !== 'win32' && (statSync(path).mode & 0o077) !== 0) chmodSync(path, 0o600);
+  return existing === null ? 'written' : existing === text ? 'unchanged' : 'updated';
 };
 
-/** `~/.pix3/remote-cdp.json`: what `--config` reads; rewritten whole, mode 0600. */
-export const writeRemoteMcpConfig = (path: string, port: number, token: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const text = `${JSON.stringify({ wsEndpoint: cdpWsEndpoint(port), wsHeaders: wsHeaders(token) }, null, 2)}\n`;
-  const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, text, { mode: 0o600 });
-  renameSync(tmp, path);
-  if (process.platform !== 'win32') chmodSync(path, 0o600);
-};
+/** True when the `--config` file at `path` reaches the proxy on `port` with `token`. */
+export const mcpConfigReaches = (path: string, port: number, token: string): boolean =>
+  readText(path) === mcpConfigText(port, token);
 
 // --- Claude Code: .mcp.json --------------------------------------------------------------------
 
@@ -233,16 +228,11 @@ export interface ConfigOutcome {
 
 export interface InstallAgentConfigOptions {
   readonly targets?: readonly AgentTarget[];
-  readonly port?: number;
-  readonly token: string;
+  /** chrome-devtools-mcp's `--config` file the entries name (`localMcpConfigPath`, …). */
+  readonly configPath: string;
   readonly repair?: boolean;
   readonly platform?: NodeJS.Platform;
-  /** Another launch than the local proxy's (Remote SSH: `mcpRemoteLaunch`). */
-  readonly launch?: McpLaunch;
 }
-
-const readText = (path: string): string | null =>
-  existsSync(path) ? readFileSync(path, 'utf8') : null;
 
 const writeAtomic = (path: string, text: string): void => {
   mkdirSync(dirname(path), { recursive: true });
@@ -267,22 +257,38 @@ const currentAndExpected = (target: AgentTarget, existing: string | null, launch
 /** True when an entry is the P1 launch: `--browserUrl` at an open debugging port, no token. */
 export const isP1Entry = (current: string): boolean => current.includes('--browserUrl=');
 
+/** True when an entry carries the token on its command line (`--wsHeaders`, before `--config`). */
+export const isTokenOnCommandLine = (current: string): boolean => current.includes('--wsHeaders');
+
+/** What a drifted entry is, when it is one of our own earlier launches; '' otherwise. */
+export const describeDrift = (current: string | undefined): string =>
+  !current
+    ? ''
+    : isP1Entry(current)
+      ? ' (the P1 launch: --browserUrl at an open debugging port, no token)'
+      : isTokenOnCommandLine(current)
+        ? ' (an earlier launch with the CDP token on its command line and in this file)'
+        : '';
+
 /**
- * The config files (of `targets`) whose `pix3-browser` entry exists and differs from the launch
- * for this port and token — `pix3 editor` names them. A missing entry is not stale: the project
- * may not use that agent.
+ * What does not reach the proxy on `port` with `token` — `pix3 editor` names it: a project
+ * file (of `targets`) whose `pix3-browser` entry exists and differs from the launch, or the
+ * `--config` file such an entry names when it holds another port or token. A missing entry is
+ * not stale: the project may not use that agent.
  */
 export const checkAgentConfig = (
   root: string,
   options: {
     port: number;
     token: string;
+    configPath: string;
     targets?: readonly AgentTarget[];
     platform?: NodeJS.Platform;
   }
 ): string[] => {
-  const launch = mcpLaunch(options.port, options.token, options.platform);
+  const launch = mcpLaunch(options.configPath, options.platform);
   const stale: string[] = [];
+  let names = false;
   for (const target of options.targets ?? AGENT_TARGETS) {
     const { current, expected } = currentAndExpected(
       target,
@@ -290,6 +296,10 @@ export const checkAgentConfig = (
       launch
     );
     if (current !== null && current !== expected) stale.push(fileOf(target));
+    if (current === expected) names = true;
+  }
+  if (names && !mcpConfigReaches(options.configPath, options.port, options.token)) {
+    stale.push(options.configPath);
   }
   return stale;
 };
@@ -298,8 +308,7 @@ export const installAgentConfig = (
   root: string,
   options: InstallAgentConfigOptions
 ): ConfigOutcome[] => {
-  const launch =
-    options.launch ?? mcpLaunch(options.port ?? DEFAULT_CDP_PORT, options.token, options.platform);
+  const launch = mcpLaunch(options.configPath, options.platform);
   const outcomes: ConfigOutcome[] = [];
   for (const target of options.targets ?? AGENT_TARGETS) {
     const file = fileOf(target);

@@ -8,8 +8,6 @@
  */
 import { describeEmojiAsArt } from '@pix3/runtime';
 
-export { findEmojiArtInSceneYaml, isEmojiOnlyText, isTextProperty } from '@pix3/runtime';
-
 /**
  * The refusal an inspector text field shows for `value` in `propertyName`, or null when the value
  * may be written. Same rule and wording as `E_EMOJI_AS_ART`.

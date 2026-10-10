@@ -82,12 +82,15 @@ describe('single-file bin', () => {
     expect(config.mcpServers['pix3-browser'].args).toContain(
       '--categoryExperimentalThirdParty=true'
     );
-    // The bundled `ws` and the proxy launch: the endpoint and the token header of the bin's home.
+    // The proxy launch: the `--config` file of the bin's home holds the endpoint and the token.
     const token = readFileSync(join(pkg, 'pix3-home', 'cdp-token'), 'utf8').trim();
-    expect(config.mcpServers['pix3-browser'].args.slice(-2)).toEqual([
-      '--wsEndpoint=ws://127.0.0.1:9333/pix3',
-      `--wsHeaders={"Authorization":"Bearer ${token}"}`,
-    ]);
+    const configPath = join(pkg, 'pix3-home', 'cdp-mcp.json');
+    expect(config.mcpServers['pix3-browser'].args.at(-1)).toBe(`--config=${configPath}`);
+    expect(JSON.parse(readFileSync(configPath, 'utf8'))).toEqual({
+      wsEndpoint: 'ws://127.0.0.1:9333/pix3',
+      wsHeaders: JSON.stringify({ Authorization: `Bearer ${token}` }),
+    });
+    expect(readFileSync(join(project, '.mcp.json'), 'utf8')).not.toContain(token);
   });
 
   it('runs the Chrome owner, with ws bundled', () => {

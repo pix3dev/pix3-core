@@ -262,13 +262,6 @@ const normalizeLocalization = (input: unknown): LocalizationSettings | undefined
   };
 };
 
-export const createDefaultExportSettings = (): ExportSettings => ({
-  pruneUnusedAssets: false,
-  extraRootScenePaths: [],
-  includeGlobs: [],
-  excludeGlobs: [],
-});
-
 /** Trim, drop blanks, strip `res://` / `./`, dedupe — for globs and root paths alike. */
 const normalizePathList = (input: unknown): string[] => {
   if (!Array.isArray(input)) {
@@ -307,16 +300,6 @@ const normalizeExportSettings = (input: unknown): ExportSettings | undefined => 
     settings.excludeGlobs.length === 0;
 
   return isInert ? undefined : settings;
-};
-
-/**
- * Effective export settings for a manifest that may be absent, partial, or not
- * yet normalized (state can hold a manifest straight off disk).
- */
-export const resolveExportSettings = (manifest: unknown): ExportSettings => {
-  const record =
-    manifest && typeof manifest === 'object' ? (manifest as Record<string, unknown>) : {};
-  return normalizeExportSettings(record.export) ?? createDefaultExportSettings();
 };
 
 const normalizeDefaultExportScenePath = (input: unknown): string | undefined => {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { describeEmojiAsArt } from '@pix3/runtime';
-
 import {
-  emojiAsArtFieldError,
+  describeEmojiAsArt,
   findEmojiArtInSceneYaml,
   isEmojiOnlyText,
   isTextProperty,
-} from './emoji-as-art';
+} from '@pix3/runtime';
+
+import { emojiAsArtFieldError } from './emoji-as-art';
 
 describe('isEmojiOnlyText', () => {
   it('flags a label that is nothing but a picture', () => {

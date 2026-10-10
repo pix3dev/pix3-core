@@ -166,12 +166,45 @@ describe('the 9333 check', () => {
       // Another user's (or another PIX3_HOME's) proxy: foreign, and said so.
       expect(await inspectCdpPort(port, { token: 'c'.repeat(43) })).toMatchObject({
         kind: 'foreign',
-        detail: expect.stringContaining('Pix3 CDP proxy that refuses this token'),
+        detail: expect.stringContaining('Pix3 CDP proxy that does not know this token'),
       });
       expect(await inspectCdpPort(port)).toMatchObject({ kind: 'foreign' });
     } finally {
       await proxy.close();
     }
+  });
+
+  it('never sends the token to a port that has not proven it knows it', async () => {
+    const token = 'd'.repeat(43);
+    const seen: Array<string | undefined> = [];
+    // A squatter that echoes the proxy's marker and a proof-shaped header, then a plain
+    // DevTools endpoint with a Pix3 page: neither may see an Authorization header.
+    const recording = (headers: Record<string, string>, routes: Record<string, unknown>) =>
+      new Promise<number>(resolve => {
+        const server = createServer((req, res) => {
+          seen.push(req.headers.authorization);
+          const body = routes[req.url ?? ''];
+          res.writeHead(body === undefined ? 401 : 200, {
+            'Content-Type': 'application/json',
+            ...headers,
+          });
+          res.end(body === undefined ? '' : JSON.stringify(body));
+        });
+        servers.push(server);
+        server.listen(0, '127.0.0.1', () => {
+          const address = server.address();
+          resolve(typeof address === 'object' && address ? address.port : 0);
+        });
+      });
+    const squatter = await recording(
+      { 'X-Pix3-Cdp-Proxy': '1', 'X-Pix3-Proof': 'x'.repeat(43) },
+      {}
+    );
+    expect(await inspectCdpPort(squatter, { token })).toMatchObject({ kind: 'foreign' });
+    const p1 = await recording({}, chrome('Chrome/155.0', ['http://localhost:5173/__pix3/']));
+    expect(await inspectCdpPort(p1, { token })).toMatchObject({ kind: 'legacy' });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(header => header === undefined)).toBe(true);
   });
 
   it('a plain DevTools port with a Pix3 editor page or on the recorded port is the P1 launch', async () => {
@@ -410,13 +443,27 @@ describe('pix3 editor', () => {
       });
       expect((await fetch(`http://127.0.0.1:${cdp}/json/version`)).status).toBe(401);
 
-      // Again: nothing launched, the tab is there.
+      // Again: nothing launched, the tab is there. The project's P2 entry (the token on the
+      // command line) is named as one that needs `agent-setup --repair`.
+      writeFileSync(
+        join(first.root, '.mcp.json'),
+        JSON.stringify({
+          mcpServers: {
+            'pix3-browser': {
+              command: 'npx',
+              args: [`--wsEndpoint=ws://127.0.0.1:${cdp}/pix3`, `--wsHeaders=${token}`],
+            },
+          },
+        })
+      );
       const again = io(first.root, env);
       expect(
         await runEditorCli(['--cdp-port', String(cdp), '--headless'], { ...again.io, entry })
       ).toBe(0);
       expect(again.out()).toContain('already behind');
       expect(again.out()).toContain('the editor tab is open there');
+      expect(again.out()).toContain('.mcp.json has a pix3-browser entry that does not reach');
+      expect(again.out()).not.toContain(token);
 
       // A second project: a new tab in the same Chrome, through the proxy.
       const second = await liveProject();

@@ -28,7 +28,7 @@
  *   ({@link INPUT_STEP_FIELDS}), so a new input field cannot appear in one place
  *   and not the other.
  * - **Assertions are exactly the predicate objects of `game-assertions.ts`**,
- *   discriminated by `kind`, parsed by {@link parseAssertions}. There is no second
+ *   discriminated by `kind`, parsed by `parseAssertions` (`game-assertions.ts`). There is no second
  *   copy of those rules here.
  *
  * Two fields are documentation and are ignored by the runner: `why` on a step and
@@ -73,7 +73,6 @@ import {
   assertionsNeedCommands,
   describeAssertion,
   evaluateAssertion,
-  parseAssertions,
   type AssertionBaseline,
   type AssertionFrame,
   type CommandWindow,
@@ -107,10 +106,9 @@ export function routineFilePath(name: string): string {
 }
 
 /**
- * The storage seam, same shape as `TraceStore`: the service holds one of these and
- * the tool layer decides whether it is the open project's files
- * (`ProjectRoutineStore`, next to `ProjectTraceStore` — a missing file, corrupt
- * JSON and a missing directory are already solved there) or memory.
+ * The storage seam, same shape as `TraceStore`: the service holds one of these. In 2.x only
+ * {@link InMemoryRoutineStore} exists — the 1.x project-file backend (`ProjectRoutineStore`) had no
+ * caller left and went with the knip --production sweep.
  */
 export interface RoutineStore {
   /** `null` when there is no such routine — not an error; the caller lists what exists. */
@@ -146,8 +144,6 @@ export class InMemoryRoutineStore implements RoutineStore {
 /** Parameter types a routine may declare. Deliberately the three JSON scalars. */
 export type RoutineParamType = 'number' | 'string' | 'boolean';
 
-export const ROUTINE_PARAM_TYPES: readonly RoutineParamType[] = ['number', 'string', 'boolean'];
-
 /**
  * Dispatch a registered intent through `scene.commands` — the highest channel a
  * step can use, and the reason this step type exists at all: the alternative a
@@ -172,7 +168,7 @@ export interface GameRoutine {
   name: string;
   /** One line — this is what reaches the model's context. */
   description: string;
-  /** Scene path or free tag; filters the index (see {@link buildRoutineIndexLines}). */
+  /** Scene path or free tag (the 1.x prompt index filtered on it). */
   scope?: string;
   params?: Record<string, RoutineParamType>;
   /** Live nodes the routine needs. Checked against the scene BEFORE it runs. */
@@ -189,292 +185,11 @@ export function isMacroRoutine(routine: GameRoutine): boolean {
   return routine.expect.length === 0;
 }
 
-/**
- * Every field an input step may carry, as a map keyed by `keyof GameInputStep`.
- *
- * Typed that way on purpose: adding a field to `GameInputStep` without adding it
- * here is a compile error, so the routine format cannot quietly fall behind the
- * tool it borrows its steps from. (`why` is ours and is listed separately.)
- */
-const INPUT_STEP_FIELDS: Record<keyof GameInputStep, true> = {
-  type: true,
-  target: true,
-  interaction: true,
-  args: true,
-  x: true,
-  y: true,
-  space: true,
-  to: true,
-  code: true,
-  codes: true,
-  ms: true,
-  frames: true,
-  holdMs: true,
-};
-
-const INPUT_STEP_TYPES = ['tap', 'key', 'keys', 'drag', 'hover', 'wait', 'invoke'] as const;
-
-const ALLOWED_STEP_KEYS = new Set<string>([...Object.keys(INPUT_STEP_FIELDS), 'why']);
-
-const ALLOWED_COMMAND_STEP_KEYS = new Set<string>(['type', 'name', 'args', 'why']);
-
-const ALLOWED_ROUTINE_KEYS = new Set<string>([
-  'name',
-  'description',
-  'scope',
-  'params',
-  'uses',
-  'steps',
-  'expect',
-  'note',
-]);
-
-/** Parse a routine file's text. */
-export function parseRoutineText(text: string): { routine: GameRoutine } | { error: string } {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (error) {
-    return { error: `not valid JSON (${error instanceof Error ? error.message : String(error)})` };
-  }
-  return parseRoutine(raw);
-}
-
-/**
- * Validate one routine.
- *
- * Unknown keys are refused rather than ignored. A routine is written by a model
- * from memory of two vocabularies, and the failure mode that costs a whole session
- * is a silently dropped `predicate:`/`channel:` field that made the file *look*
- * like it asserted something.
- */
-export function parseRoutine(raw: unknown): { routine: GameRoutine } | { error: string } {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { error: 'a routine must be a JSON object with {name, description, uses, steps}.' };
-  }
-  const record = raw as Record<string, unknown>;
-
-  const unknown = Object.keys(record).filter(key => !ALLOWED_ROUTINE_KEYS.has(key));
-  if (unknown.length > 0) {
-    return {
-      error: `unknown field(s) ${unknown.map(key => `"${key}"`).join(', ')}. A routine carries exactly: ${[...ALLOWED_ROUTINE_KEYS].join(', ')}.`,
-    };
-  }
-
-  if (typeof record.name !== 'string' || record.name.trim().length === 0) {
-    return { error: 'needs a non-empty "name" (it is how game_run addresses it).' };
-  }
-  if (typeof record.description !== 'string' || record.description.trim().length === 0) {
-    return {
-      error:
-        'needs a one-line "description" — it is the ONLY thing about this routine that reaches the agent\'s context, so a routine without one is unfindable.',
-    };
-  }
-  if (record.scope !== undefined && typeof record.scope !== 'string') {
-    return {
-      error: '"scope" must be a string (a scene path like "scenes/shop.pix3scene", or a tag).',
-    };
-  }
-  if (record.note !== undefined && typeof record.note !== 'string') {
-    return { error: '"note" must be a string (free-form documentation; the runner ignores it).' };
-  }
-
-  const params = parseParams(record.params);
-  if ('error' in params) return { error: params.error };
-
-  const uses = parseUses(record.uses, params.params);
-  if ('error' in uses) return { error: uses.error };
-
-  if (!Array.isArray(record.steps) || record.steps.length === 0) {
-    return { error: '"steps" must be a non-empty array.' };
-  }
-  const steps: RoutineStep[] = [];
-  for (let index = 0; index < record.steps.length; index += 1) {
-    const parsed = parseRoutineStep(record.steps[index]);
-    if ('error' in parsed) return { error: `steps[${index}]: ${parsed.error}` };
-    steps.push(parsed.step);
-  }
-
-  const expect = parseAssertions(record.expect, 'expect');
-  if ('error' in expect) return { error: expect.error };
-
-  return {
-    routine: {
-      name: record.name.trim(),
-      description: record.description.trim(),
-      ...(typeof record.scope === 'string' ? { scope: record.scope } : {}),
-      ...(Object.keys(params.params).length > 0 ? { params: params.params } : {}),
-      uses: uses.uses,
-      steps,
-      expect: expect.assertions,
-      ...(typeof record.note === 'string' ? { note: record.note } : {}),
-    },
-  };
-}
-
-function parseParams(
-  raw: unknown
-): { params: Record<string, RoutineParamType> } | { error: string } {
-  if (raw === undefined || raw === null) return { params: {} };
-  if (typeof raw !== 'object' || Array.isArray(raw)) {
-    return { error: '"params" must be an object of name → type, e.g. {"slot": "number"}.' };
-  }
-  const params: Record<string, RoutineParamType> = {};
-  for (const [name, type] of Object.entries(raw as Record<string, unknown>)) {
-    if (!ROUTINE_PARAM_TYPES.includes(type as RoutineParamType)) {
-      return {
-        error: `params.${name}: type must be one of ${ROUTINE_PARAM_TYPES.join(' | ')} (got ${JSON.stringify(type)}).`,
-      };
-    }
-    params[name] = type as RoutineParamType;
-  }
-  return { params };
-}
-
-function parseUses(
-  raw: unknown,
-  params: Record<string, RoutineParamType>
-): { uses: string[] } | { error: string } {
-  if (raw === undefined || raw === null) return { uses: [] };
-  if (!Array.isArray(raw) || raw.some(entry => typeof entry !== 'string' || entry.length === 0)) {
-    return {
-      error:
-        '"uses" must be an array of live node names/ids the routine needs, e.g. ["ShopButton", "Slot{slot}"]. It is checked against the running scene BEFORE the routine executes, which is what turns a renamed node into ROUTINE STALE instead of a failure halfway through.',
-    };
-  }
-  for (const entry of raw as string[]) {
-    for (const placeholder of placeholdersIn(entry)) {
-      if (!(placeholder in params)) {
-        return {
-          error: `uses "${entry}" references {${placeholder}}, which is not a declared param (declared: ${Object.keys(params).join(', ') || 'none'}).`,
-        };
-      }
-    }
-  }
-  return { uses: [...(raw as string[])] };
-}
-
-/** Validate one step against the two allowed vocabularies. */
-export function parseRoutineStep(raw: unknown): { step: RoutineStep } | { error: string } {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return {
-      error: `must be an object — either a game_input step ({type:'tap', target:'PlayButton'}) or a command step ({type:'command', name:'restart'}).`,
-    };
-  }
-  const record = raw as Record<string, unknown>;
-  const type = record.type;
-
-  if (type === 'command') {
-    const unknown = Object.keys(record).filter(key => !ALLOWED_COMMAND_STEP_KEYS.has(key));
-    if (unknown.length > 0) {
-      return {
-        error: `a command step carries only {type, name, args, why}; unknown field(s) ${unknown.map(key => `"${key}"`).join(', ')}.`,
-      };
-    }
-    if (typeof record.name !== 'string' || record.name.trim().length === 0) {
-      return {
-        error: `a command step needs "name" — the intent as the scene registered it, e.g. {type:'command', name:'finish'}. Get the names from game_controls / the game's debug provider.`,
-      };
-    }
-    if (
-      record.args !== undefined &&
-      (typeof record.args !== 'object' || record.args === null || Array.isArray(record.args))
-    ) {
-      return { error: `a command step's "args" must be an object, e.g. {slot: 2}.` };
-    }
-    if (record.why !== undefined && typeof record.why !== 'string') {
-      return { error: `"why" must be a string (documentation; the runner ignores it).` };
-    }
-    return {
-      step: {
-        type: 'command',
-        name: record.name.trim(),
-        ...(record.args !== undefined ? { args: record.args as Record<string, Json> } : {}),
-        ...(typeof record.why === 'string' ? { why: record.why } : {}),
-      },
-    };
-  }
-
-  if (typeof type !== 'string' || !(INPUT_STEP_TYPES as readonly string[]).includes(type)) {
-    return {
-      error: `unknown step type ${JSON.stringify(type)}. A routine step is one of ${INPUT_STEP_TYPES.join(' | ')} (the game_input vocabulary) or 'command'. Note in particular that there is no step that calls a component method directly — express an intent as {type:'command', name:'…'}, so the wire from the player to the effect is the thing being exercised.`,
-    };
-  }
-
-  const unknown = Object.keys(record).filter(key => !ALLOWED_STEP_KEYS.has(key));
-  if (unknown.length > 0) {
-    return {
-      error: `unknown field(s) ${unknown.map(key => `"${key}"`).join(', ')} on a ${type} step. An input step carries exactly the game_input fields: ${Object.keys(INPUT_STEP_FIELDS).join(', ')} (plus the ignored "why").`,
-    };
-  }
-
-  for (const field of ['target', 'interaction', 'code'] as const) {
-    if (record[field] !== undefined && typeof record[field] !== 'string') {
-      return { error: `"${field}" must be a string.` };
-    }
-  }
-  if (record.space !== undefined && record.space !== 'world' && record.space !== 'overlay') {
-    return {
-      error: `"space" must be 'world' (through the Camera2D) or 'overlay' (CanvasLayer2D).`,
-    };
-  }
-  for (const field of ['x', 'y', 'ms', 'frames', 'holdMs'] as const) {
-    const value = record[field];
-    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
-      return { error: `"${field}" must be a finite number.` };
-    }
-  }
-  if (
-    record.codes !== undefined &&
-    (!Array.isArray(record.codes) || record.codes.some(entry => typeof entry !== 'string'))
-  ) {
-    return {
-      error: `"codes" must be an array of KeyboardEvent.code strings, e.g. ['KeyW','KeyA'].`,
-    };
-  }
-  if (record.to !== undefined) {
-    if (typeof record.to !== 'object' || record.to === null || Array.isArray(record.to)) {
-      return { error: `"to" must be an object {x, y} or {target}.` };
-    }
-    const to = record.to as Record<string, unknown>;
-    const unknownTo = Object.keys(to).filter(key => !['x', 'y', 'target'].includes(key));
-    if (unknownTo.length > 0) {
-      return { error: `"to" carries only {x, y, target}; unknown ${unknownTo.join(', ')}.` };
-    }
-  }
-  if (
-    record.args !== undefined &&
-    (typeof record.args !== 'object' || record.args === null || Array.isArray(record.args))
-  ) {
-    return { error: `"args" must be an object keyed by the interaction's argument names.` };
-  }
-  if (record.why !== undefined && typeof record.why !== 'string') {
-    return { error: `"why" must be a string (documentation; the runner ignores it).` };
-  }
-  if (type === 'invoke' && typeof record.interaction !== 'string') {
-    return {
-      error: `an invoke step needs "interaction" (the name game_controls lists: 'click', 'setValue', …).`,
-    };
-  }
-  if (type === 'key' && typeof record.code !== 'string') {
-    return { error: `a key step needs "code" — a KeyboardEvent.code like 'ArrowLeft' or 'KeyW'.` };
-  }
-  if (type === 'keys' && !Array.isArray(record.codes)) {
-    return { error: `a keys step needs "codes" — the chord, e.g. ['KeyW','KeyA'].` };
-  }
-
-  return { step: record as unknown as RoutineInputStep };
-}
-
 // ---------------------------------------------------------------------------
 // Parameters
 // ---------------------------------------------------------------------------
 
 const PLACEHOLDER = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-
-function placeholdersIn(text: string): string[] {
-  return [...text.matchAll(PLACEHOLDER)].map(match => match[1]);
-}
 
 /**
  * Bind `args` to the routine's declared `params` and substitute them everywhere.
@@ -549,87 +264,6 @@ export function prepareRoutine(
     },
     args,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Index (§5.7.2) — the reason the whole mechanism exists
-// ---------------------------------------------------------------------------
-
-/** Default cap on index lines in the agent's context. */
-export const MAX_ROUTINE_INDEX_LINES = 24;
-
-export interface RoutineIndexEntry {
-  name: string;
-  description: string;
-  params?: Record<string, RoutineParamType>;
-  scope?: string;
-  /** No assertions — a macro, and the listing says so. */
-  macro: boolean;
-}
-
-/** The three fields (plus the macro flag) that may reach the model. Never the body. */
-export function routineIndexEntry(routine: GameRoutine): RoutineIndexEntry {
-  return {
-    name: routine.name,
-    description: routine.description,
-    ...(routine.params ? { params: routine.params } : {}),
-    ...(routine.scope ? { scope: routine.scope } : {}),
-    macro: isMacroRoutine(routine),
-  };
-}
-
-/**
- * Does this routine belong in the index for `activeScene`?
- *
- * A `scope` that looks like a scene path (it has a `/` or ends in `.pix3scene`) is
- * matched against the active scene, by full path or by file name — the same
- * routine is legitimately addressed both ways. Anything else is treated as a tag,
- * which never filters anything out: a tag is a note to the reader, and silently
- * hiding a routine because its scope was a word rather than a path would look like
- * the library had lost it.
- */
-export function routineInScope(entry: RoutineIndexEntry, activeScene?: string | null): boolean {
-  const scope = entry.scope?.trim();
-  if (!scope) return true;
-  const looksLikeScene = scope.includes('/') || scope.endsWith('.pix3scene');
-  if (!looksLikeScene) return true;
-  if (!activeScene) return true;
-  const tail = (path: string): string => path.split('/').pop() ?? path;
-  return scope === activeScene || tail(scope) === tail(activeScene);
-}
-
-/**
- * The index as prompt lines: `name` + `params` + `description`, filtered by the
- * active scene and capped. The body of a routine never appears here — that is the
- * whole economy of §5.7.2, one line against fifteen re-typed input steps.
- */
-export function buildRoutineIndexLines(
-  routines: readonly GameRoutine[],
-  options: { activeScene?: string | null; maxLines?: number } = {}
-): string[] {
-  const maxLines = options.maxLines ?? MAX_ROUTINE_INDEX_LINES;
-  const entries = routines
-    .map(routineIndexEntry)
-    .filter(entry => routineInScope(entry, options.activeScene))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  if (entries.length === 0) return [];
-
-  const shown = entries.slice(0, Math.max(0, maxLines));
-  const lines = shown.map(entry => {
-    const params = entry.params
-      ? `(${Object.entries(entry.params)
-          .map(([name, type]) => `${name}: ${type}`)
-          .join(', ')})`
-      : '';
-    const macro = entry.macro ? ' [MACRO — replays steps, asserts nothing]' : '';
-    return `    - ${entry.name}${params} — ${entry.description}${macro}`;
-  });
-  if (entries.length > shown.length) {
-    lines.push(
-      `    … (+${entries.length - shown.length} more routines in ${ROUTINE_DIRECTORY} — fs_list it if you need the rest)`
-    );
-  }
-  return lines;
 }
 
 // ---------------------------------------------------------------------------

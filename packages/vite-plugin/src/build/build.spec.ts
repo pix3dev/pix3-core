@@ -18,7 +18,7 @@ import {
   writeFixtureProject,
   type FixtureProjectOptions,
 } from '../test-support/build-fixture.ts';
-import { readBuildRecord } from './record.ts';
+import { buildRecordPath, type BuildRecord } from './record.ts';
 import type { BuildReport } from './report.ts';
 
 /**
@@ -26,6 +26,15 @@ import type { BuildReport } from './report.ts';
  * `build: false`, the strip decisions and the option handling — judged by what lands in
  * `dist/` and `.pix3/build.json`, not by the plugin's own log.
  */
+
+/** `.pix3/build.json` as the build left it, or null (nothing but specs reads it back). */
+const readBuildRecord = (root: string): BuildRecord | null => {
+  try {
+    return JSON.parse(readFileSync(buildRecordPath(root), 'utf8')) as BuildRecord;
+  } catch {
+    return null;
+  }
+};
 
 const roots: string[] = [];
 const BUILD_TIMEOUT_MS = 120_000;
