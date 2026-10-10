@@ -21,7 +21,7 @@ import {
 
 import { diagnostic, type Diagnostic, type DiagnosticInput } from './diagnostics.ts';
 import { toProjectPath, type ProjectFiles } from './project.ts';
-import type { LabelKeyUse } from './resource-files.ts';
+import type { LabelKeyUse, SpriteKeyUse } from './resource-files.ts';
 import { nearest } from './suggest.ts';
 import { inspectProjectSvg, isSvgPath } from './svg.ts';
 import type { UserScriptIndex } from './user-scripts.ts';
@@ -60,6 +60,8 @@ export interface SceneCheckResult {
   readonly parsed: ParsedYaml | null;
   /** Every non-empty `labelKey` a node or an instance override sets (checked against the locales). */
   readonly labelKeys: readonly LabelKeyUse[];
+  /** Every non-empty sprite key (`textureKey`, a `Button2D` state's) — checked against `sprites`. */
+  readonly spriteKeys: readonly SpriteKeyUse[];
   /** Whether any node carries a `user:` component. */
   readonly usesUserComponents: boolean;
 }
@@ -170,10 +172,21 @@ export class PrefabCache {
 
 const RES_PREFIX = /^res:\/\//i;
 
+/** A texture reference the loader keeps (`coerceTextureResource`): a non-empty string or `{ url }`. */
+const isTextureReference = (value: unknown): boolean =>
+  typeof value === 'string'
+    ? value.trim() !== ''
+    : isRecord(value) && typeof value.url === 'string' && value.url.trim() !== '';
+
+/** A `Sprite2D` bag with a texture of its own (`texture`, or the read-compat `texturePath`). */
+const hasTexture = (properties: Record<string, unknown>): boolean =>
+  isTextureReference(properties.texture ?? properties.texturePath);
+
 class SceneChecker {
   readonly diagnostics: Diagnostic[] = [];
   readonly references = new Set<string>();
   readonly labelKeys: LabelKeyUse[] = [];
+  readonly spriteKeys: SpriteKeyUse[] = [];
   usesUserComponents = false;
   /** SVGs already reported for this scene (one report per file, at its first reference). */
   private readonly svgChecked = new Set<string>();
@@ -206,6 +219,50 @@ class SceneChecker {
       path: formatPath(at),
       line: this.parsed.lineOf(at),
     });
+  }
+
+  private noteSpriteKey(
+    value: unknown,
+    property: string,
+    hasOwnTexture: boolean,
+    nodeId: string | undefined,
+    at: DocPath
+  ): void {
+    if (typeof value !== 'string' || value.trim() === '') return;
+    this.spriteKeys.push({
+      file: this.file,
+      key: value,
+      property,
+      hasOwnTexture,
+      nodeId,
+      path: formatPath(at),
+      line: this.parsed.lineOf(at),
+    });
+  }
+
+  /**
+   * The sprite keys of one property: `Sprite2D.textureKey` (its own texture: `texture` /
+   * `texturePath`, in this bag or — for an instance — in the prefab node's), a `Button2D` state's
+   * key on disk (`stateTextureKeys.<state>`) or by schema name on an instance (`texture<State>Key`).
+   * A button always has a skin to show, so a missing key there is never an empty node.
+   */
+  private noteSpriteKeys(
+    type: string,
+    key: string,
+    value: unknown,
+    ownTexture: () => boolean,
+    nodeId: string | undefined,
+    at: DocPath
+  ): void {
+    if (type === 'Sprite2D' && key === 'textureKey') {
+      this.noteSpriteKey(value, key, ownTexture(), nodeId, at);
+    } else if (type === 'Button2D' && key === 'stateTextureKeys' && isRecord(value)) {
+      for (const [state, stateKey] of Object.entries(value)) {
+        this.noteSpriteKey(stateKey, `${key}.${state}`, true, nodeId, [...at, state]);
+      }
+    } else if (type === 'Button2D' && /^texture(?:Normal|Hover|Pressed|Disabled)Key$/.test(key)) {
+      this.noteSpriteKey(value, key, true, nodeId, at);
+    }
   }
 
   run(): void {
@@ -435,6 +492,10 @@ class SceneChecker {
     for (const [key, value] of Object.entries(properties)) {
       const keyAt = [...at, key];
       if (key === 'labelKey') this.noteLabelKey(value, nodeId, keyAt);
+      this.noteSpriteKeys(format.type, key, value, () => hasTexture(properties), nodeId, keyAt);
+      if (format.type === 'AnimatedSprite3D' && key === 'frames' && Array.isArray(value)) {
+        this.checkFrameList(value, nodeId, keyAt);
+      }
       const resolution = resolveSceneDiskKey(format, schema, key);
       switch (resolution.kind) {
         case 'schema':
@@ -586,6 +647,28 @@ class SceneChecker {
       message: `${reference} does not exist in the project.`,
       fix: caseMatch ? `the file is res://${caseMatch} (case differs)` : undefined,
       at,
+    });
+  }
+
+  /**
+   * `AnimatedSprite3D.frames`: each entry is a texture (`res://` path, bare path or `{ url }`) the
+   * loader loads into that frame; anything else is a blank frame. Existence and the SVG rules as
+   * for any texture (`res://` strings are reached by {@link checkStrings}, the rest here).
+   */
+  private checkFrameList(frames: unknown[], nodeId: string | undefined, at: DocPath): void {
+    frames.forEach((frame, index) => {
+      const frameAt = [...at, index];
+      if (isTextureReference(frame)) {
+        this.checkResourceValue(frame, nodeId, frameAt);
+        return;
+      }
+      this.report({
+        code: 'E_PROPERTY_TYPE',
+        nodeId,
+        message: `frames[${index}] is ${frame === null ? 'null' : typeof frame === 'string' ? 'an empty string' : JSON.stringify(frame)}, not a texture: the sprite shows nothing on that frame.`,
+        fix: 'a res:// image path (or { url: res://… })',
+        at: frameAt,
+      });
     });
   }
 
@@ -871,6 +954,15 @@ class SceneChecker {
       const keyAt = [...at, key];
       this.checkStrings(value, keyAt, nodeId);
       if (key === 'labelKey') this.noteLabelKey(value, nodeId, keyAt);
+      this.noteSpriteKeys(
+        format.type,
+        key,
+        value,
+        () =>
+          hasTexture(properties) || (isRecord(target.properties) && hasTexture(target.properties)),
+        nodeId,
+        keyAt
+      );
       if (key === 'transform') {
         if (!isRecord(value)) {
           this.report({
@@ -1037,6 +1129,7 @@ export const checkSceneLevel1 = (
       references: new Set(),
       parsed: null,
       labelKeys: [],
+      spriteKeys: [],
       usesUserComponents: false,
     };
   }
@@ -1047,6 +1140,7 @@ export const checkSceneLevel1 = (
     references: checker.references,
     parsed,
     labelKeys: checker.labelKeys,
+    spriteKeys: checker.spriteKeys,
     usesUserComponents: checker.usesUserComponents,
   };
 };

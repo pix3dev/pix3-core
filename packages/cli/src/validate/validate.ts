@@ -19,6 +19,8 @@ import {
   checkAnimationFile,
   checkLabelKeys,
   checkLocaleTables,
+  checkScriptKeys,
+  checkSpriteKeys,
   resolveLocalization,
 } from './resource-files.ts';
 import { scanUserScripts } from './user-scripts.ts';
@@ -184,11 +186,17 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
   const localization = resolveLocalization(project);
   if (localization) {
     const tables = checkLocaleTables(project, localization);
-    // The tables themselves on whole-project runs (as W_UNUSED_ASSET); the keys of the scenes
-    // checked on every run.
-    if (wholeProject) diagnostics.push(...tables.diagnostics);
-    const uses = [...results.values()].flatMap(result => result.labelKeys);
-    diagnostics.push(...checkLabelKeys(localization, tables.strings, uses));
+    // The tables themselves (with the images their `sprites` name) and the keys the scripts pass
+    // on whole-project runs (as W_UNUSED_ASSET); the keys of the scenes checked on every run.
+    if (wholeProject) {
+      diagnostics.push(...tables.diagnostics);
+      diagnostics.push(...checkScriptKeys(project, localization, tables.tables));
+    }
+    const all = [...results.values()];
+    const labelKeys = all.flatMap(result => result.labelKeys);
+    diagnostics.push(...checkLabelKeys(localization, tables.tables, labelKeys));
+    const spriteKeys = all.flatMap(result => result.spriteKeys);
+    diagnostics.push(...checkSpriteKeys(localization, tables.tables, spriteKeys));
   }
 
   const usesUserComponents = [...results.values()].some(result => result.usesUserComponents);

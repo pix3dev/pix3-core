@@ -165,6 +165,30 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a labelKey the default (and fallback) locale has no text for — the key shows on screen',
   },
+  E_LOCALE_SCRIPT_KEY: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a literal key a script passes to tr()/setTextKey()/trPlural() that the default (and fallback) locale has no text for — the key shows on screen',
+  },
+  E_LOCALE_SPRITE_KEY: {
+    severity: 'error',
+    level: 1,
+    summary:
+      'a Sprite2D textureKey no default (or fallback) sprites entry has, on a sprite with no texture of its own — it draws nothing',
+  },
+  W_LOCALE_SPRITE_KEY: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      "a textureKey / stateTextureKeys / trSprite() key no default (or fallback) sprites entry has — the node's own texture shows in every locale, trSprite gives null",
+  },
+  E_MISSING_LOCALE_SPRITE: {
+    severity: 'error',
+    level: 1,
+    summary:
+      "an image a locale table's sprites names does not exist (its .svg ones get the E_SVG_* checks too)",
+  },
   W_LEGACY_VERSION: {
     severity: 'warning',
     level: 1,

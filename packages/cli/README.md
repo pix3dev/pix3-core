@@ -130,16 +130,20 @@ a sized SVG auto-sizes the sprite to its `width`×`height`; a viewBox-only one t
 without `xmlns`, or any SVG whose Blob type is not `image/svg+xml`, fails to load (browsers do
 not sniff SVG).
 
-### `.pix3anim` frames and locale tables
+### `.pix3anim` frames, locale tables and keys
 
 Level 1 also follows what a scene reaches through another file. Every `.pix3anim` (all of them on
 a whole-project run, else those the validated scenes name) must be a JSON object, and every image
 it names — each frame's `texturePath`, the spritesheet's top-level one — must exist; an `.svg`
 frame gets the sprite rules above (`E_SVG_*`), reported on the `.pix3anim` with the frame's path.
+An `AnimatedSprite3D` names its frames itself (`frames:` — `res://` paths, bare paths or
+`{ url }`): each must exist (`E_MISSING_RESOURCE`, the SVG rules on an `.svg`), and an entry that
+is not a texture is `E_PROPERTY_TYPE` (a blank frame).
 The locales are the ones the plugin ships: the `localization:` block of `pix3project.yaml`, else
 every `locales/*.json` (`en` the default when there is one). Severity is what the player would
 see: the default or fallback locale's table not loading means every `labelKey` shows its key
-(error); another locale's means its texts fall back (warning).
+(error); another locale's means its texts fall back (warning). A key is looked up the way
+`LocalizationService` does — the default table, then the fallback's, `""` counting as none.
 
 | Code | Severity | When |
 | --- | --- | --- |
@@ -148,11 +152,14 @@ see: the default or fallback locale's table not loading means every `labelKey` s
 | `E_LOCALE_MISSING` / `W_LOCALE_MISSING` | error / warning | a declared locale has no `locales/<id>.json` (default or fallback / another); on `pix3project.yaml` at its line |
 | `E_LOCALE_JSON` / `W_LOCALE_JSON` | error / warning | the table is not JSON, not an object, or `strings` / `sprites` is not a map |
 | `E_LOCALE_VALUE` / `W_LOCALE_VALUE` | error / warning | a `strings` / `sprites` value is not a string (the runtime drops it; nested keys are the usual cause) |
-| `E_LOCALE_KEY` | error | a `labelKey` (on a node or an instance) with no text in the default locale nor the fallback (`""` counts as none) — the node shows the key |
+| `E_MISSING_LOCALE_SPRITE` | error | an image a table's `sprites` names does not exist — in any locale: the table wins over a node's own texture, so its keyed nodes draw nothing in that locale; an `.svg` gets `E_SVG_*`, on the table at `sprites.<key>` |
+| `E_LOCALE_KEY` | error | a `labelKey` (on a node or an instance) with no text — the node shows the key |
+| `E_LOCALE_SCRIPT_KEY` | error | a key a script passes as a string literal to `tr` / `setTextKey` / `trPlural` with no text — the game shows the key (`trPlural`: neither `<key>.other` nor `<key>`, its last two steps). Every `.ts`/`.js` of the project but `.d.ts`; the same scan as the editor's Localization Scan (`scanScriptLocalizationKeys` in the runtime). A computed key — a variable, an interpolated template — is skipped |
+| `E_LOCALE_SPRITE_KEY` / `W_LOCALE_SPRITE_KEY` | error / warning | a `Sprite2D` `textureKey`, a `Button2D` `stateTextureKeys.<state>` (`texture<State>Key` on an instance) or a script's `trSprite('…')` with no `sprites` entry: an error for a `Sprite2D` with no `texture` of its own (it draws nothing), a warning otherwise (its own texture in every locale; a button keeps its skin; `trSprite` returns null) |
 
-The tables are checked on whole-project runs (as `W_UNUSED_ASSET`); `labelKey`s on every run.
-Not checked: keys a script passes to `tr()`, `textureKey` / `stateTextureKeys` against `sprites`,
-and the files a table's `sprites` name.
+The tables, their images and the scripts' keys are checked on whole-project runs (as
+`W_UNUSED_ASSET`); the keys a scene sets on every run. Nothing is said about keys when the project
+has no tables or the default one does not load (that is its own error).
 
 ## `pix3 sfx` — sound effects without the editor
 

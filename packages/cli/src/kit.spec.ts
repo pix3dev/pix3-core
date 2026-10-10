@@ -431,7 +431,7 @@ describe('kit drift', () => {
     expect(problems).toEqual([]);
   });
 
-  it("pix3-verify's code table covers the .pix3anim and locale checks, and no recipe says nothing checks them", () => {
+  it("pix3-verify's code table covers the .pix3anim, locale and key checks, and no recipe says nothing checks them", () => {
     const verify = text('.claude/skills/pix3-verify/SKILL.md');
     const rows = [...verify.matchAll(/^\| ((?:`[EW]_[A-Z0-9_]+\*?`(?:, )?)+) \|/gm)].flatMap(m =>
       [...m[1].matchAll(/`([EW]_[A-Z0-9_]+\*?)`/g)].map(c => c[1])
@@ -441,12 +441,21 @@ describe('kit drift', () => {
     const resourceCodes = Object.keys(DIAGNOSTIC_CODES).filter(code =>
       /_(ANIM|FRAME|LOCALE)(_|$)/.test(code)
     );
-    expect(resourceCodes.length).toBeGreaterThanOrEqual(9);
+    expect(resourceCodes.length).toBeGreaterThanOrEqual(13);
     expect(resourceCodes.filter(code => !covers(code))).toEqual([]);
+    // A key check is not what the table row `E_LOCALE_*` (the tables themselves) describes: each
+    // is named by a row of its own.
+    const keyCodes = resourceCodes.filter(code => /_KEY$|SPRITE/.test(code));
+    expect(keyCodes.length).toBeGreaterThanOrEqual(5);
+    expect(keyCodes.filter(code => !rows.includes(code))).toEqual([]);
     const recipes = `${text(PIX3ANIM)}\n${text('.claude/skills/pix3-scene-format/project-files.md')}`;
     expect(recipes).not.toMatch(
-      /[Nn]othing checks (them|the tables)|not the frames a `\.pix3anim`|does not look inside `\.pix3anim`/
+      /[Nn]othing checks (them|the tables)|not the frames a `\.pix3anim`|does not look inside `\.pix3anim`|[Kk]eys a script passes to `tr\(\)` are not|does not follow a locale/
     );
+    for (const code of keyCodes) {
+      // The recipe writes a pair as `E_`/`W_LOCALE_SPRITE_KEY`.
+      expect(text('.claude/skills/pix3-scene-format/project-files.md')).toContain(code.slice(2));
+    }
     for (const code of ['E_MISSING_FRAME', 'E_ANIM_JSON']) expect(text(PIX3ANIM)).toContain(code);
   });
 

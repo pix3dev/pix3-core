@@ -1056,6 +1056,199 @@ describe('level 1: locale tables and labelKey', () => {
   });
 });
 
+describe('level 1: sprite keys, locale sprites, script keys', () => {
+  const X = 'xmlns="http://www.w3.org/2000/svg"';
+  const table = (strings: Record<string, unknown>, sprites: Record<string, unknown> = {}) =>
+    `${JSON.stringify({ $meta: { locale: 'x' }, strings, sprites }, null, 2)}\n`;
+  const declared = (block: string): string => `${MANIFEST}localization:\n${block}`;
+
+  it('E_/W_LOCALE_SPRITE_KEY: textureKey and stateTextureKeys against sprites, by whether the node has art of its own', async () => {
+    const files = {
+      'pix3project.yaml': declared(
+        '  defaultLocale: en\n  fallbackLocale: de\n  locales: [en, de]\n'
+      ),
+      'sprites/logo.png': PNG,
+      'sprites/logo-de.png': PNG,
+      'locales/en.json': table({}, { 'logo.main': 'res://sprites/logo.png', 'logo.blank': '' }),
+      'locales/de.json': table({}, { 'logo.de': 'res://sprites/logo-de.png' }),
+      'prefabs/badge.pix3scene': scene(
+        '  - id: badge\n    type: Sprite2D\n    properties:\n      texture: res://sprites/logo.png\n'
+      ),
+      'scenes/a.pix3scene': scene(
+        [
+          '  - id: ok\n    type: Sprite2D\n    properties:\n      textureKey: logo.main\n',
+          '  - id: from-fallback\n    type: Sprite2D\n    properties:\n      textureKey: logo.de\n',
+          '  - id: bare\n    type: Sprite2D\n    properties:\n      textureKey: logo.gone\n',
+          '  - id: own\n    type: Sprite2D\n    properties:\n      texture: res://sprites/logo.png\n      textureKey: logo.blank\n',
+          '  - id: play\n    type: Button2D\n    properties:\n      stateTextureKeys:\n        normal: logo.main\n        hover: btn.hover\n',
+          '  - id: badge-1\n    instance: res://prefabs/badge.pix3scene\n    properties:\n      textureKey: badge.gone\n',
+        ].join('')
+      ),
+    };
+    const report = await run(files, { hydrate: false });
+    expect(find(report, 'E_LOCALE_SPRITE_KEY')).toMatchObject([
+      {
+        file: 'scenes/a.pix3scene',
+        nodeId: 'bare',
+        path: 'root[2].properties.textureKey',
+        line: 14,
+        message: expect.stringContaining('nor in locales/de.json: the node has no texture'),
+      },
+    ]);
+    expect(find(report, 'W_LOCALE_SPRITE_KEY').map(d => [d.nodeId, d.path])).toEqual([
+      ['own', 'root[3].properties.textureKey'],
+      ['play', 'root[4].properties.stateTextureKeys.hover'],
+      ['badge-1', 'root[5].properties.textureKey'],
+    ]);
+    // Keys are checked on a run over one scene too; nothing without tables.
+    const some = await run(files, { hydrate: false, files: ['scenes/a.pix3scene'] });
+    expect(codesOf(some).filter(code => code.includes('SPRITE_KEY'))).toHaveLength(4);
+    const { 'locales/en.json': _en, 'locales/de.json': _de, ...untabled } = files;
+    const none = await run({ ...untabled, 'pix3project.yaml': MANIFEST }, { hydrate: false });
+    expect(codesOf(none)).toEqual(['W_UNUSED_ASSET']); // logo-de.png, which only de.json named
+  });
+
+  it('E_MISSING_LOCALE_SPRITE: an image a table names that does not exist, in any locale; its SVGs get E_SVG_*', async () => {
+    const report = await run(
+      {
+        'sprites/logo.png': PNG,
+        'sprites/logo.svg': `<svg width="8" height="8"/>`,
+        'sprites/ok.svg': `<svg ${X} width="8" height="8"/>`,
+        'locales/en.json': table(
+          {},
+          {
+            ok: 'res://sprites/logo.png',
+            svg: 'res://sprites/ok.svg',
+            web: 'https://cdn.example/logo.png',
+            gone: 'res://sprites/gone.png',
+            case: 'res://sprites/Logo.png',
+          }
+        ),
+        'locales/de.json': table(
+          {},
+          { gone: 'sprites/gone-de.png', bad: 'res://sprites/logo.svg' }
+        ),
+      },
+      { hydrate: false }
+    );
+    const found = find(report, 'E_MISSING_LOCALE_SPRITE');
+    expect(found.map(d => [d.file, d.path])).toEqual([
+      ['locales/de.json', 'sprites.gone'],
+      ['locales/en.json', 'sprites.gone'],
+      ['locales/en.json', 'sprites.case'],
+    ]);
+    expect(found[2]).toMatchObject({
+      line: expect.any(Number),
+      fix: 'the file is res://sprites/logo.png (case differs)',
+    });
+    expect(
+      report.diagnostics.filter(d => d.code.startsWith('E_SVG')).map(d => [d.code, d.file, d.path])
+    ).toEqual([['E_SVG_INVALID', 'locales/de.json', 'sprites.bad']]);
+    // A run on some scenes does not read the tables' images.
+    const some = await run(
+      {
+        'locales/en.json': table({}, { gone: 'res://sprites/gone.png' }),
+        'scenes/a.pix3scene': scene('  - id: n\n    type: Node2D\n'),
+      },
+      { hydrate: false, files: ['scenes/a.pix3scene'] }
+    );
+    expect(codesOf(some)).toEqual([]);
+  });
+
+  it('E_LOCALE_SCRIPT_KEY: a literal key a script passes that has no text; trSprite → W_LOCALE_SPRITE_KEY; computed keys are not read', async () => {
+    const files = {
+      'pix3project.yaml': declared(
+        '  defaultLocale: en\n  fallbackLocale: de\n  locales: [en, de]\n'
+      ),
+      'locales/en.json': table(
+        { 'menu.play': 'Play', 'wave.other': '{count} waves', 'enemy.one': 'one enemy', blank: '' },
+        { logo: 'res://sprites/logo.png' }
+      ),
+      'locales/de.json': table({ 'only.de': 'Nur Deutsch' }),
+      'sprites/logo.png': PNG,
+      'src/hud.ts': [
+        'const loc = scene.localization;',
+        "loc.tr('menu.play'); loc.tr('only.de'); loc.trPlural('wave', n); loc.trSprite('logo');",
+        "loc.tr('menu.gone', { n: 1 });",
+        'label.setTextKey("blank");',
+        "loc.trPlural('enemy', n);",
+        "loc.trSprite('logo.gone');",
+        'loc.tr(key); loc.tr(`shop.${id}`);',
+      ].join('\n'),
+      'src/types.d.ts': "declare function tr(key: 'never.checked'): string;\n",
+    };
+    const report = await run(files, { hydrate: false });
+    expect(find(report, 'E_LOCALE_SCRIPT_KEY').map(d => [d.file, d.line, d.fix])).toEqual([
+      [
+        'src/hud.ts',
+        3,
+        'add "menu.gone": "<text>" to "strings" of locales/en.json (and the other locales)',
+      ],
+      [
+        'src/hud.ts',
+        4,
+        'add "blank": "<text>" to "strings" of locales/en.json (and the other locales)',
+      ],
+      [
+        'src/hud.ts',
+        5,
+        'add "enemy.other": "<text>" to "strings" of locales/en.json (and the other locales)',
+      ],
+    ]);
+    expect(find(report, 'E_LOCALE_SCRIPT_KEY')[0].message).toContain(
+      `tr('menu.gone'): "menu.gone" has no text in locales/en.json nor in locales/de.json`
+    );
+    expect(find(report, 'W_LOCALE_SPRITE_KEY')).toMatchObject([
+      { file: 'src/hud.ts', line: 6, message: expect.stringContaining('the script gets null') },
+    ]);
+    // Scripts are read on whole-project runs only, and not at all without tables.
+    const some = await run(
+      { ...files, 'scenes/a.pix3scene': scene('  - id: n\n    type: Node2D\n') },
+      { hydrate: false, files: ['scenes/a.pix3scene'] }
+    );
+    expect(codesOf(some)).toEqual([]);
+    const untabled = await run({ 'src/hud.ts': files['src/hud.ts'] }, { hydrate: false });
+    expect(codesOf(untabled)).toEqual([]);
+  });
+});
+
+describe('level 1: AnimatedSprite3D frames', () => {
+  it('each frame exists and passes the SVG rules, however it is written; a non-texture entry is E_PROPERTY_TYPE', async () => {
+    const report = await run(
+      {
+        'sprites/fx/1.png': PNG,
+        'sprites/fx/2.svg': '<svg width="8" height="8"/>',
+        'scenes/a.pix3scene': scene(
+          [
+            '  - id: fx',
+            '    type: AnimatedSprite3D',
+            '    properties:',
+            '      frames:',
+            '        - res://sprites/fx/1.png',
+            '        - sprites/fx/1.png',
+            '        - { url: sprites/fx/2.svg }',
+            '        - res://sprites/fx/gone.png',
+            '        - sprites/fx/gone-too.png',
+            '        - { url: res://sprites/fx/gone-3.png }',
+            '        - null',
+            '        - ""',
+            '',
+          ].join('\n')
+        ),
+      },
+      { hydrate: false }
+    );
+    expect(report.diagnostics.map(d => [d.code, d.path])).toEqual([
+      ['E_SVG_INVALID', 'root[0].properties.frames[2].url'],
+      ['E_MISSING_RESOURCE', 'root[0].properties.frames[3]'],
+      ['E_MISSING_RESOURCE', 'root[0].properties.frames[4]'],
+      ['E_MISSING_RESOURCE', 'root[0].properties.frames[5].url'],
+      ['E_PROPERTY_TYPE', 'root[0].properties.frames[6]'],
+      ['E_PROPERTY_TYPE', 'root[0].properties.frames[7]'],
+    ]);
+  });
+});
+
 describe('fixture coverage', () => {
   it('covers every diagnostic code', () => {
     expect(Object.keys(DIAGNOSTIC_CODES).filter(code => !covered.has(code))).toEqual([]);

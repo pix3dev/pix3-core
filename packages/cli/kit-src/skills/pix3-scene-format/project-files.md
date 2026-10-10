@@ -53,9 +53,9 @@ Everything refers to files by path, and nothing rewrites those paths for you.
    renaming `sprites/coin/` to `sprites/coins/` renames `coin.pix3anim` to `coins.pix3anim` too.
    To delete, first remove or replace the references, then the file.
 3. `pix3 check` names a reference that still points nowhere: a scene's (`E_MISSING_RESOURCE`,
-   `E_MISSING_PREFAB`) and a `.pix3anim` frame (`E_MISSING_FRAME`); it does not follow a locale
-   table's `sprites` — `pix3 smoke` on a scene that uses one reports a missing file when it
-   loads, as the **warning** `W_SMOKE_MISSING_RESOURCE` (exit 0).
+   `E_MISSING_PREFAB`), a `.pix3anim` frame (`E_MISSING_FRAME`) and a locale table's `sprites`
+   image (`E_MISSING_LOCALE_SPRITE`); `pix3 smoke` on a scene reports a missing file only when
+   it loads, as the **warning** `W_SMOKE_MISSING_RESOURCE` (exit 0).
 
 A script's file name is free to change: `type: user:Mover` names the exported class. Renaming
 the class means rewriting every `type: user:Mover` and every `import`.
@@ -179,9 +179,13 @@ Remove one:
 `pix3 check` checks the tables: a declared locale without its file (`E_LOCALE_MISSING` for the
 default or fallback locale, `W_LOCALE_MISSING` for another), a table that is not JSON
 (`E_`/`W_LOCALE_JSON`), a value that is not a string (`E_`/`W_LOCALE_VALUE` — keys are flat,
-`"menu.play"`, never nested), and a `labelKey` the default locale has no text for
-(`E_LOCALE_KEY`: the node would show the key itself). Keys a script passes to `tr()` are not
-checked — read those back yourself (or look at the running game).
+`"menu.play"`, never nested), a `sprites` image that does not exist (`E_MISSING_LOCALE_SPRITE`),
+a `labelKey` the default locale has no text for (`E_LOCALE_KEY`: the node would show the key
+itself), a key a script passes as a literal — `tr('menu.play')`, `setTextKey('…')`,
+`trPlural('…')` — with no text (`E_LOCALE_SCRIPT_KEY`), and a `textureKey` /
+`stateTextureKeys` / `trSprite('…')` key with no `sprites` entry (`E_`/`W_LOCALE_SPRITE_KEY`).
+A key the script builds at run time (`` tr(`shop.${id}`) ``, `tr(key)`) is not checked — read
+those back yourself (or look at the running game).
 
 In a script, `this.scene.localization`: `tr(key, { name: value })` (fills `{name}`),
 `trPlural(key, count)`, `trSprite(key)`, `has(key)`, `locale`, `locales`, `setLocale(id)`,

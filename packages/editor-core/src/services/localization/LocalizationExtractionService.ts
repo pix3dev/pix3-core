@@ -1,7 +1,12 @@
 import { injectable, inject } from '@/fw/di';
 import { appState } from '@/state';
 import { parse } from 'yaml';
-import { SceneManager, UIControl2D } from '@pix3/runtime';
+import {
+  SceneManager,
+  scanScriptLocalizationKeys,
+  UIControl2D,
+  type ScriptLocalizationKey,
+} from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 
@@ -47,12 +52,8 @@ export interface SceneLabelHit {
   literal: string;
 }
 
-/** Raw script localization-call hit. */
-export interface ScriptKeyHit {
-  fn: 'tr' | 'trSprite' | 'trPlural' | 'setTextKey';
-  key: string;
-  line: number;
-}
+/** Raw script localization-call hit (`scanScriptLocalizationKeys`, shared with `pix3 validate`). */
+export type ScriptKeyHit = ScriptLocalizationKey;
 
 /**
  * Project-wide localization gap scanner (the POT-extraction analog, design §4.5).
@@ -212,7 +213,7 @@ export class LocalizationExtractionService {
         } catch {
           continue;
         }
-        for (const hit of scanScriptText(text)) {
+        for (const hit of scanScriptLocalizationKeys(text)) {
           const section = hit.fn === 'trSprite' ? 'sprites' : 'strings';
           const missingKey = resolveMissingKey(hit, defaultStrings, defaultSprites);
           if (!missingKey || missing.has(missingKey)) continue;
@@ -297,20 +298,6 @@ function walkSceneNodes(nodes: unknown, hits: SceneLabelHit[]): void {
     }
     walkSceneNodes(node.children, hits);
   }
-}
-
-const SCRIPT_CALL_RE = /\b(tr|trSprite|trPlural|setTextKey)\s*\(\s*(['"`])([^'"`\r\n]+?)\2/g;
-
-/** Find localization-call string-literal keys in script source. */
-export function scanScriptText(text: string): ScriptKeyHit[] {
-  const hits: ScriptKeyHit[] = [];
-  SCRIPT_CALL_RE.lastIndex = 0;
-  for (const match of text.matchAll(SCRIPT_CALL_RE)) {
-    if (match[3].includes('${')) continue; // interpolated template literal — not a static key
-    const line = text.slice(0, match.index ?? 0).split('\n').length;
-    hits.push({ fn: match[1] as ScriptKeyHit['fn'], key: match[3], line });
-  }
-  return hits;
 }
 
 /**
