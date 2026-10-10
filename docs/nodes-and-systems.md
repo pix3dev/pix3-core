@@ -207,8 +207,8 @@ Each entry: **what it is → how to use it → where it lives**.
 
 Timeline-authored clips (position/rotation/scale/color tracks + audio + event
 tracks) on `core:AnimationPlayer`. **Use:** attach `core:AnimationPlayer`, author
-in the **Animation** timeline panel (keyframes — not the Sprite Editor, which owns
-flipbook frames), `player.play('clip')` or `autoplay`. Event tracks emit
+in the **Animation** timeline panel (keyframes — flipbook frames are a `.pix3anim`
+file, see the recipe in §2), `player.play('clip')` or `autoplay`. Event tracks emit
 signals (the "cutscene glue"); `finish()` fast-forwards. Signals:
 `animation_started` / `animation_finished`.
 See node-types-reference "AnimationPlayer" + [demo-03-animation-timeline.pix3scene](../packages/runtime/fixtures/hello-world-scenes/demo-03-animation-timeline.pix3scene).
@@ -303,251 +303,6 @@ Add a `PostProcess` node to enable an EffectComposer pass (bloom / vignette /
 chromatic aberration / AO modes). **Use:** drop one `PostProcess` node; configure
 its properties. Pure-2D scenes can opt 2D in via `affect2D`.
 
-### 2D UI kit generation (UI Kit Forge)
-
-The single surface for **game-UI art**: one theme in, a coherent set of sprites
-out — as files for a human, or baked straight into the open project and applied
-to nodes without leaving the editor. Two hosts (a standalone page and an editor
-tab) sit over one host-agnostic core, so the generator itself has no branch in it.
-
-**What it draws.** Buttons (four states), hex/square icon buttons, toggles,
-checkboxes, radios, sliders, progress and segment bars, shields, level bars,
-resource counters, panels (body + header plate + slot), tab bars — ~40 `comp*`
-generators plus 34 glyphs and 6 showcase screens, in ten palette roles (`sky`,
-`blue`, `green`, `yellow`, `bluegray`, `gray`, `white`, `red`, `orange`,
-`purple`). One `ForgeTheme` drives all of it: hue / saturation / lightness shift,
-corner radius, bevel, outline, skew, puffy, gloss (strip / dome / corner, with
-height and alpha), gradient, drop shadow (mode / dx / dy / blur / alpha), font +
-a separate Cyrillic face, text outline / drop / colour / tracking, dark tone, and
-an **absolute per-role `palette` override** — the hook a project's own colours
-come in through. Presets (`Standard`, `Brawl Stars`, `Bombastic`, `Candy Pop`,
-`Soft shadow`, `Flat`) and a randomizer that rolls the **shape** knobs only,
-never the palette. Everything is drawn as SVG in the browser, so output is
-resolution-independent; `normalizeTheme()` is the single entry point for a theme
-from JSON (bad hex → default, `shadowOff` → `shadowDx`/`shadowDy` migration,
-unknown keys dropped), so a hand-edited file or an agent's patch cannot poison it.
-
-**Use — human, no project (`tools/uikit-forge.html`).** Tools → UI Kit Forge with
-no project open, or `<editor>/#uikit`, or the page directly at
-`/tools/uikit-forge.html`; a cold load of that hash lands straight in the tool and
-it takes over the window rather than docking. Exports: per-component SVG/PNG, a
-bulk SVG dump into a picked folder (`showDirectoryPicker`, sequential downloads as
-the fallback), an HTML contact sheet, a glyph-only sheet, and a packed \*\*atlas PNG
-
-- TexturePacker-style JSON hash**. The manifest keeps TexturePacker's own fields,
-  so any loader reads it unchanged, and adds per frame what a _slicer_ needs — the
-  generator knows its own corner geometry, so nothing downstream has to guess:
-  `border`/`cap` (the safe nine-slice inset, exactly what
-  `TiledSprite2D.sliceBorderLeft/Right/Top/Bottom` takes), `body`/`shadow`/`midY`
-  (where the opaque body sits inside the frame, so a caption centres on the body
-  rather than on the rect), `anchors` (where each stripped caption belonged) and
-  `warnings`. The theme's transparent `pad` is trimmed out of every frame by
-  default. **"Kit + style contract"\** writes four files in one go — the atlas, its
-  manifest, `tokens.json` and `STYLE.md` (colours by role, the shape numbers, the
-  per-sprite slicing facts): the pictures are enough for a human, but anyone
-  *developing\* against the kit — an agent especially — needs the contract. The
-  theme round-trips as JSON through the clipboard, and presets live in
-  `localStorage`. `window.__UIKIT_FORGE_DEBUG__` (`buildManifest()`,
-  `listComponents()`, `faces()`, `patchTheme()`, `pickPreset()`) makes an export
-  inspectable in place — a downloaded file is unreadable from the session that
-  asked for it.
-
-**Use — human, project open (the "UI Kit" editor tab).** Tools → UI Kit Forge
-(`editor.open-uikit-forge`) opens `pix3-uikit-forge-panel`: theme controls +
-preset / randomize / reset on the left, a live per-tab gallery in the middle, and
-four project actions along the bottom.
-
-- **Save kit to project** (`UiKitProjectWriter.writeKit`) rasterizes the engine
-  lane and writes `sprites/ui/<kitId>/*.png`, the manifest `design/ui-kit.json`
-  and the theme `design/ui-theme.json`. `kitId` is the first 8 hex of an FNV-1a
-  over the _normalized_ theme's canonical JSON, so it is stable across machines
-  and sessions: re-baking an unchanged theme overwrites the same folder instead of
-  littering the project, while a re-theme writes a **new** folder and leaves the
-  old art in place — which is what keeps Ctrl+Z on the property edit meaningful,
-  and what `export.pruneUnusedAssets` collects later. Raster scale defaults to the
-  project manifest's `quality.maxPixelRatio` (clamped 1…4). Baked per colour role:
-  the four button states at 250×88 and `panel-body` / `header-plate` / `bar-fill`;
-  baked once, role-free: `slot`, `checkbox`, `checkbox-mark`, `slider-track`,
-  `slider-thumb`, `bar-trough`. Buttons are baked at a real size rather than a
-  small stamp because the gloss band's height is a _percent_ of the face while the
-  bevel lip is absolute — stretching a tiny source would smear both. The recorded
-  insets are **measured back off the rasterized pixels** (`frameMeta`), falling
-  back to the generator's own design-unit border scaled up where no canvas exists.
-- **Apply to selection** dispatches `properties.apply-uikit-skin` with the role
-  picked beside the button. It skins `Button2D` (four state slots +
-  `sliceBorder*`), `Checkbox2D` (`textureBox` / `textureBoxChecked` /
-  `textureMark`), `Slider2D` (`textureTrack` / `textureFill` / `textureThumb` +
-  `sliceBorder*` off the track), `Bar2D` (`textureTrough` / `textureFill` +
-  `sliceBorder*`), `TiledSprite2D` and `Sprite2D` (a panel body; `Sprite2D` gets no
-  insets, so it is only right at the baked size).
-- **Dialog prefab / Settings prefab** turn a core `TemplateSpec` into
-  `prefabs/ui/<templateId>-<kitId>.pix3scene` (`UiKitPrefabBuilder`) — an ordinary
-  prefab, see "Node Prefabs System"; **Instance into scene** then runs
-  `CreatePrefabInstanceCommand`. The core stops at data (parts + a layout) and
-  knows nothing about nodes: which node type a template row becomes, the
-  top-left/y-down → centre-origin/y-up conversion, and `TemplateNode.anchor` →
-  `Node2D.layout` all live in the builder.
-
-**Typography travels with the kit.** The PNGs carry no text, so a caption is only
-as good as what the node is told to draw it with — and a node left on the engine
-defaults draws 16 px Arial with no outline, which is a different kit from the one
-the page showed. So `design/ui-kit.json` carries a `typography` block (primary and
-Cyrillic family with each face's OWN weight, outline width/colour, drop shadow,
-tracking, ink colour), `TemplateSpec` gives every captioned node a `fontSize`
-derived from its own element height (a button caption is `h × 0.38`, a header
-title `h × 0.44` — the ratios the preview draws with), and both the prefab builder
-and "Apply to selection" write those onto `Button2D` / `Label2D`. A size is only
-written when the node is still on the engine default, so a hand-tuned caption
-survives a re-skin; the "Typography" switch next to the bake turns the whole
-behaviour off.
-
-**The faces ship with the project.** A family NAME alone leaves the browser to
-substitute, so the bake also downloads the theme's typefaces (Latin plus the
-Cyrillic subset, each at its own weight) into `fonts/` and declares them in
-`pix3project.yaml` under `fonts:`. `ProjectFontLoader` registers them as
-`FontFace`s **before the first frame** — in play mode (`SceneRunner`, next to the
-localization seed), on project open in the editor, and at boot in an exported
-game, where the exporter also keeps the files as reachability roots. Offline, the
-download degrades to a warning and the caption falls back to a system face. Turn
-it off with the "Ship fonts" switch.
-
-**Rows are a column, not three hard-coded y's.** `Node2D` gained a container
-`flow` (`{ enabled, direction, gap, paddingX, paddingY, align, autoSize }`,
-inspector group "Flow") that stacks a container's children in tree order along one
-axis while each child's own anchor still owns the cross axis. That is the half of
-layout anchors could not do, and it is why the settings template's rows sit in a
-`Rows` container: a fourth row added by hand lands under the third instead of on
-top of it. It is deliberately NOT a return of the `Layout2D` node.
-
-**Where the nine-slice numbers come from.** The generator knows which shape it
-drew, so the manifest records ITS answer, scaled: a bevelled part through the
-general formula, a recess or a fill (`slot`, `slider-track`, `bar-trough`,
-`bar-fill`) through the one that matches how those are painted. Re-deriving them
-from the theme at bake time is what handed a 240x36 trough insets that met in the
-middle, leaving nothing to stretch. A part is `sliceBorder: null` — scaled whole —
-only when it cannot be sliced: a glyph button by construction, anything under a
-`skew`/`puffy` theme, and the latter is reported as a warning.
-
-**Bake cost.** Parts are rasterized and written in batches of eight, so the browser
-decodes one while the next is handed to it: a 104-sprite kit takes ~2.6 s where the
-sequential loop took 20-30 s. The elapsed time comes back in the result and is
-shown next to the bake.
-
-**Undo semantics.** Property changes undo, binary writes do not. Every skin write
-goes through `UpdateObjectPropertyOperation` and the commits are composed with
-`BulkOperationBuilder`, so one Ctrl+Z takes the whole outfit back off. Baking and
-prefab-writing are file I/O with no undo — inventing a bulk-asset undo would be a
-worse trade than hash-named folders that simply stay on disk, which is exactly
-what makes the property undo land on art that is still there.
-
-**Use — agent.** The `skin_ui` tool: `{ action: 'bake' | 'apply' | 'restyle',
-preset?, theme? (a partial ForgeTheme), nodeIds?, colorRole?, targets?:
-'selection' | 'scene' }`. `bake` saves the theme and bakes the kit, answering with
-the kitId, the sprite count and the manifest path; `apply` runs
-`properties.apply-uikit-skin`; `restyle` bakes and then re-applies to every node
-already wearing a `sprites/ui/` texture — the "rounder, darker, less gloss" edit,
-which is a deterministic re-render off `design/ui-theme.json`, never a new roll.
-The bare command is reachable too: `run_command properties.apply-uikit-skin` takes
-no arguments, so its zero-argument form is defined — current selection, role
-`blue`, manifest read from `design/ui-kit.json`.
-
-**Use — the T0 expander.** `PrototypeBootstrapService` bakes the kit and dresses
-the recipe with **zero agent turns**, so the first frame of a generated prototype
-is a themed UI rather than coloured rectangles. The theme is the one saved in
-`design/ui-theme.json` when the user built one in the UI Kit tab, otherwise it is
-derived from the brief's palette; a kit already baked for that exact theme is
-reused rather than re-rendered. Every `Button2D` / `Checkbox2D` / `Slider2D` /
-`Bar2D` / `Label2D` in the recipe scenes gets the art **and** the caption recipe
-(face, weight, outline, drop, tracking, and a size only if nobody set one) — a
-button also gets the `labelColor` its role's ground asks for, which is the one
-place a skin may repaint a caption. The kit is baked even when the recipe has no UI
-node yet, the `dialog` and `settings` window prefabs are written to `prefabs/ui/`,
-and `design/style.md` gains a `## UI kit` section naming the kitId, the roles, the
-face and the prefabs. From then on `create_node` auto-applies the kit to any
-skinnable node it makes (unless `texturePath` was given), so the agent never has to
-remember `skin_ui apply`.
-
-**The engine-vs-tool boundary** (get this wrong and the art fights the runtime):
-
-- **Captions belong to the engine.** Every PNG export is rendered without its
-  label text, single component and atlas alike: the baked caption is preview only,
-  and a `Button2D` / `UIControl2D` label over the skin is what makes one sprite
-  reusable across states _and_ localizations. SVG exports and the HTML sheet keep
-  the text; the engine lane strips it by construction. A baked **glyph** is the
-  exception — glyphs are language-independent, which is what the `icon-button`
-  skin component is for (a dialog's close button, for instance).
-- **`pad` is forced to 0 for engine skins.** The kit's default 24 px transparent
-  margin lands _inside_ the frame and a `Button2D` computes its hit box from
-  `width`/`height`, so ~20 % of the button would be dead border.
-- **`feDropShadow` is not used in the engine lane.** Its blur differs by GPU and
-  browser, so two collaborators regenerating one theme would get different bytes;
-  at `pad: 0` it would be clipped anyway.
-- **Nine-slice comes from `sliceBorder`, and only when the silhouette allows it.**
-  `SkinPart.sliceBorder` is `null` whenever the theme sets `skew` or `puffy` —
-  those bulge or lean the edges, so no edge is uniform along its length and
-  stretching the middle flattens the shape; a host must render per size instead. A
-  sliced skin also opts out of the 2D quad batcher and is excluded from the
-  pre-launch atlas (`TextureAtlasService` disqualifies any node with a non-zero
-  inset, because the patch geometry needs the whole source rect).
-- **Pix3 does not read the atlas manifest** — project textures are atlased
-  automatically at play time by `TextureAtlasService` — so for a Pix3 project take
-  the baked kit (or the per-component export), not the atlas.
-
-**Where it lives.** The generator is a host-agnostic **core** in
-`src/services/uikit/` — `ForgeTheme`/`color`, `svg-primitives`, `icons`,
-`skins/*`, `showcase`, `registry`, `strings`, `slices` (`sliceBorder` /
-`frameMeta` / anchors), `SkinSpec` (the engine lane: `buildSkin`,
-`buildButtonStates`, `isNineSliceable`), `TemplateSpec` (dialog / settings),
-`presets`, `style-doc`. It touches no DOM, no DI and nothing under
-`src/services/*`, `src/ui` or `src/state` (pinned by `host-agnostic.spec.ts`),
-which is what lets two hosts share one generator: rasterization and file writing
-are supplied by the host. The **standalone page** is a second Vite build entry —
-`tools/uikit-forge.html` plus `src/tools/uikit-forge/` (controls, Google-Fonts
-inlining, rasterizer, atlas packer, export lanes, localStorage presets) — embedded
-by the `#uikit` route as a same-origin iframe (`src/ui/tools/`); same-origin is
-load-bearing, since the exports use `showDirectoryPicker()` and anchor downloads.
-The **editor host** is `src/ui/uikit-forge/` (the panel) over
-`src/services/uikit-editor/` (`UiKitThemeService` — the live theme, deliberately
-_not_ in `appState` because it is a project document; `UiKitProjectWriter`;
-`UiKitPrefabBuilder`) plus `src/features/uikit/` (the apply command + operation).
-Route constants: `src/core/tool-routes.ts`. File formats: spec → "UI kit assets".
-
-### 3D model generation (Model Lab — editor authoring)
-
-Editor-side tool that reconstructs a hard-surface 3D model **procedurally by
-code** from a reference image (NOT neural image-to-mesh): vision assess → sculpt
-spec → locked passes (blockout → structure → form → material → lighting →
-optimization) where each pass is rendered offscreen, composited against the
-reference into a comparison sheet, vision-scored, and self-corrected. The output
-is a self-contained `.glb` (+ optional `.sculpt.json` / `.factory.ts` siblings
-for re-editing) that becomes a scene node via `MeshInstance`. The generated code
-contract is a pure `createModel(THREE): THREE.Group` factory — Mesh*Standard*/
-_Physical_ materials only (no `ShaderMaterial`, it wouldn't survive GLB export).
-**Use (editor):** Tools → Model Lab; drop a reference image, Generate, Save GLB,
-Add to scene; the Settings tab picks the codegen + vision models and a
-pause-per-pass manual review (Accept / Retry / Stop). **Use (agent):** the
-`generate_model_3d` tool — args `reference` (project asset path) + `name` (GLB
-target); returns the saved path, per-pass scores, and a preview. **Headless /
-debug:** `window.__PIX3_DEBUG__.model3d` (`generate` / `generateFromSpec` /
-`rebuild` / `history` / `openHistory`). Objects only — characters/organics are
-not supported yet. Lives in `src/services/model-gen/` + `src/ui/model-lab/`.
-
-Model Lab has a second **Scene lane** (a lane switch in the panel) that generates
-whole `.pix3scene` **levels** from a text brief, using the project's existing
-assets as a palette: scan inventory → `LevelSpec` (zones / lighting / camera
-intent + flagged palette gaps) → locked passes (layout → placement → dressing →
-lighting → polish) emitting declarative `.pix3scene` YAML, gated by the runtime
-`SceneManager.parseScene` PLUS an allow-list/asset-ref check (parseScene alone
-tolerates unknown types and missing refs), previewed as a live runtime scene from
-multiple viewpoints, and vision-reviewed against the brief. It can also EDIT an
-existing scene (dress/light passes over a loaded `.pix3scene`), expands a
-`type: Scatter` authoring-sugar node into deterministic seeded node clusters
-before the gate (never persisted), and flags "palette gaps" that hand off to the
-model lane. Output saves via `writeTextFile` and opens as a normal scene tab
-(`EditorTabService.focusOrOpenScene`). **Agent:** `generate_scene_3d` (`brief` +
-`name`, optional `references` / `baseScene`). **Debug:** `__PIX3_DEBUG__.scene3d`.
-Scene lane lives in `src/services/model-gen/scene/`.
-
 ### Localization (i18n)
 
 Per-locale JSON tables in the project's `locales/` directory
@@ -567,7 +322,7 @@ authored texture refs stay as fallback. **Use — scripts:**
 `await this.scene.localization.setLocale('ru')` (every keyed label/sprite
 re-renders live), `onChange(cb)`, `trSprite(key)`; `label.setTextKey(key, params?)`
 keeps dynamic labels re-resolvable on locale switch (`setText` clears the key).
-**Authoring:** View → Localization panel (Strings/Sprites tabs, per-locale
+**Authoring:** Window → Localization panel (Strings/Sprites tabs, per-locale
 columns, missing-translation filter, preview-locale switch that live-updates the
 viewport). The panel's **Scan** button extracts keys project-wide: it lists
 unlocalized `label:` literals (per-item Extract creates the default-locale key
@@ -577,9 +332,10 @@ entries count as untranslated and fall through to the fallback locale). Rows
 rename in place (pencil / double-click) — the key moves in every locale table
 and `labelKey`/`textureKey` references in open scenes are rewritten, one undo.
 Locale list/default live in `pix3project.yaml` (`localization:` block)
-or are auto-discovered from `locales/`; locale tables get their own **Locales**
-category in the asset browser's by-type view. Exports bake the config and embed
-the tables + localized sprites automatically. Lives in
+or are auto-discovered from `locales/`; a locale is a file the agent adds or removes
+(kit `pix3-scene-format/project-files.md`), and locale tables get their own **Locales**
+category in the asset panel's by-type view. A build bakes the config and embeds
+the declared tables + localized sprites automatically. Lives in
 `packages/runtime/src/core/localization/`.
 
 ### Particles
@@ -692,8 +448,8 @@ Stepped in `SceneRunner`'s existing fixed-step slot, so hitstop and slow motion
 dilate the simulation for free and the `fixed`/`manual` time modes make a run
 reproducible. Play mode draws collider wireframes when the editor's collider
 toggle is on (sensors green, sleeping bodies dim); the editor viewport draws the
-authored outlines for the selected node, or for everything under **View → Toggle
-Collision Shapes**.
+authored outlines for the selected node, or for everything under **View → Collision
+Shapes** (a check item).
 
 Lives in [../packages/runtime/src/core/Physics2DService.ts](../packages/runtime/src/core/Physics2DService.ts) +
 [../packages/runtime/src/core/physics-2d-narrowphase.ts](../packages/runtime/src/core/physics-2d-narrowphase.ts).
@@ -709,8 +465,8 @@ templates depend on); `polygon` is rotation-aware and may be concave. A polygon'
 vertices come either from `points` (drag them in the viewport: **Edit points** on
 the component, then drag a vertex, click an edge midpoint to insert, Alt-click to
 remove) or, with `polygonSource: 'frame'`, from the collision polygon of the
-`AnimatedSprite2D` frame showing right now — the outline the Sprite Editor traces
-from the frame's alpha. **Use from scripts:**
+`AnimatedSprite2D` frame showing right now — the frame's `collisionPolygon` in the
+`.pix3anim`. **Use from scripts:**
 `scene.collision2d.overlapPoint(x, y, group?)` / `overlapCircle(x, y, r, group?)` /
 `overlapRect(cx, cy, w, h, group?)` → `Hit2D[]`, and
 `raycast(x1, y1, x2, y2, group?)` → closest hit with entry point + distance (the
@@ -823,8 +579,9 @@ rather than keeping a second, hand-maintained list.
 
 **Boundary:** commands express intent, not continuous control. Movement, gestures
 and aiming stay on input axes/controls — "drive left" as a command loses both the
-analog magnitude and the per-frame cadence. Every project template registers its
-flow intents this way (`start-game`, `open-settings`, `restart`, `cta-click`, …).
+analog magnitude and the per-frame cadence. The 1.x templates (now the scene corpus,
+`packages/runtime/fixtures/scene-corpus/`) register their flow intents this way
+(`start-game`, `open-settings`, `restart`, `cta-click`, …).
 
 ### Screen transitions
 
@@ -854,7 +611,7 @@ scene). `network.connect({url, token, roomId})` joins a pix3-rooms room; then
 
 **Everything networked is spawned** — an authored node has no network identity of
 its own. Attach **`core:NetworkedNode`** to a _prefab_ that is also listed in the
-build's `netKindTable` (the exporter emits it from the project's prefabs, sorted;
+build's `netKindTable` (the build emits it from the project's prefabs, sorted;
 `registerNetworkPrefab(path)` is the fallback for a session with no built
 manifest). On start it sends a spawn request and binds the `netId` the fabric
 mints; when a _peer's_ entity arrives instead, `scene.netNodes`
@@ -881,20 +638,9 @@ whose `kind` separates `'quota'` (this owner's 64-entity budget),
 `'entity-limit'` (the room's table) and `'kind-not-allowed'`;
 `network.despawn(netId)`.
 
-**Getting online in the editor: "Play Online"** (`game.start-online`, project menu
-or the Game tab). It scans the project for spawnable prefabs, installs that
-`netKindTable`, starts the preview relay, asks pix3-cloud for a room, joins it,
-and only then enters play mode — so a script's `onStart` already sees
-`net.isOnline` and nothing needs a "wait until connected" dance. A session card
-floats over the running game with the QR/join link, the roster, ping and the
-number of visible entities. The join link carries the **room id, never a token**:
-the player page mints its own guest token, and the kind table reaches it through
-the relay's session config, because every participant must resolve a wire `Kind`
-through the same list. The membership survives a scene restart and a
-tab⇄popout swap; it ends when play mode ends or you press Leave. Requires a
-pix3-cloud with `ROOMS_ADMIN_URL` / `ROOMS_SERVICE_TOKEN` / `ROOMS_JWT_SECRET`
-configured; without one the button reports `rooms_not_configured` and single-player
-Play is unaffected.
+The 2.x editor has no "Play Online": a build emits the table from the project's prefabs
+(`netKindTable` of `virtual:pix3/scene-manifest`), and a session without one calls
+`registerNetworkPrefab(path)` on every client.
 
 ### Scene transitions (change the running scene)
 
@@ -922,22 +668,6 @@ over (idempotent; `onGameEnd(cb)` to observe, auto-`reset()` on every
 orientation-aware layouts (the 1.x `playable-3d` template's `user:CtaButton`, kept in
 `packages/runtime/fixtures/scene-corpus/`, is a worked example).
 
-### Asset Library (reuse before you build)
-
-**Before generating graphics or writing UI/prefabs from scratch, search the Asset
-Library** — it holds reusable prefabs, images, fonts, audio and shaders across three
-scopes (built-in starter pack, your personal library, and the team library). In the
-editor: the **Library** panel (tabbed with the Asset Browser) — filter by scope/type,
-search, then drag a card into the viewport (or double-click) to insert. Inserting
-copies the bundle into `res://assets/library/<slug>/` and remaps its paths; it is a
-snapshot, so later edits to the library item do not change the project. Files whose
-content the project already holds (sha256, at any path) are reused in place instead of
-copied, so inserting an item back into the project it came from adds only its entry. Publish a
-reusable node with **Publish to Library** (Edit menu, or `library.publish-node`),
-which packs the subtree and its asset dependencies into a personal item. Good results
-from the Sprite Editor can be kept with its **Save to Library** action. Programmatic
-scope (agent HTTP/preview commands) arrives in Phase 2 — see `.plans/asset-library.md`.
-
 ---
 
 ## 5. Scripts-facing runtime API (the surface a `Script` sees)
@@ -948,7 +678,7 @@ Inside any `Script` subclass:
 - `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, and `commands` for named game intents). May be `undefined` in some editor previews — guard it.
 - `this.input` — the `InputService` (§4 Input).
 - `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`).
-- `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`). In the in-editor code editor the argument autocompletes to the node names/paths of the open scenes and the return type is the exact node type (`this.getNode('Hero')` → `Sprite2D`), à la Godot's `$Node` / WPF `x:Name`. Any other string resolves to `NodeBase`, so a script reused in a scene that lacks the name still type-checks — the names are hints, never constraints. (Typed names come from the editor augmenting `SceneNodeNames`; it's empty in exported games, where only `getNode<T>(query)` applies.)
+- `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`); `getNode<T>(query)` types the result. (`SceneNodeNames` is an empty augmentation point for typed names; nothing fills it in 2.x.)
 
 **Lifecycle:** `onAttach(node)` → `onStart()` (first frame) → `onUpdate(dt)` (every
 frame, `dt` is scaled game time) → `onDetach()`. Define `static getPropertySchema()`
@@ -987,15 +717,15 @@ play-mode hook, so the editor keeps running.
 
 ## 6. Editor-side rules (when an agent edits scenes/state)
 
-- **Mutation gateway:** every state change flows UI → `CommandDispatcher.execute(CommandClass, args)` → Command → Operation → history. **Never mutate `appState` or node properties directly.** A feature = a `Command` + an `Operation` under `src/features/<area>/`. (See CLAUDE.md + AGENTS.md — binding.)
+- **Mutation gateway:** every state change flows UI → `CommandDispatcher.execute(CommandClass, args)` → Command → Operation → history. **Never mutate `appState` or node properties directly.** A feature = a `Command` + an `Operation` under `packages/editor-core/src/features/<area>/`. (See CLAUDE.md + AGENTS.md — binding.)
 - **Property schema:** nodes and `Script`s expose `static getPropertySchema()` returning typed `PropertyDefinition`s (`getValue`/`setValue`); the Inspector renders editors from it and all edits go through `UpdateObjectPropertyOperation`. See [property-schema-reference.md](property-schema-reference.md).
 - **A new node's constructor must end with `installReactiveSchemaProperties(this, TheNode.getPropertySchema)`.** Without it, a schema `setValue` that redraws (clamp, geometry rebuild, canvas repaint, material colour) runs for the Inspector but not for a script: `node.prop = x` changes the field, redraws nothing, and the getter still returns `x` — so even state-based verification reports a success that never reached the screen. `reactive-schema-coverage.spec.ts` fails if a `SceneLoader`-constructible node skips it.
 - **Serialization:** scenes are `.pix3scene` YAML (`root:` tree of nodes with `properties`, `components`, `children`). Copy a known-good scene from the spec corpus (`packages/runtime/fixtures/scene-corpus/*/files/scenes/`) or a starter (`packages/create-pix3/templates/{2d,3d}/files/scenes/`).
-- **2D texture filtering (project setting):** Project Settings → _2D Texture Filtering_ is `linear` (default, smoothed) or `nearest` (crisp pixel-art). It lives on the `ProjectManifest` and is pushed to the runtime global via `setProjectTextureFiltering`; `configure2DTexture` (runtime) and the editor's sprite-texture setup both read it, so 2D sprite/UI textures pick up the mode in edit mode, play mode, and export. 3D textures are unaffected (they keep mipmapped linear sampling).
+- **2D texture filtering (project setting):** `textureFiltering` in `pix3project.yaml` is `linear` (default, smoothed) or `nearest` (crisp pixel-art). It lives on the `ProjectManifest` and is pushed to the runtime global via `setProjectTextureFiltering`; `configure2DTexture` (runtime) and the editor's sprite-texture setup both read it, so 2D sprite/UI textures pick up the mode in edit mode, play mode, and a build. 3D textures are unaffected (they keep mipmapped linear sampling).
 - **2D blend modes:** every `Node2D` carries `blendMode` (`normal` | `additive` | `multiply` | `subtract`, Inspector → Style). It maps to the three.js blending constant on the materials the node itself owns and is _not_ inherited by children — set it per sprite, not on a wrapping group. Use `additive` for glow/VFX. A blended node is excluded from the 2D quad batcher (a batch run may only contain the default blend), so it costs its own draw call. Details and the "why no `screen`" note: [node-types-reference.md](node-types-reference.md) → `### Node2D`.
-- **2D draw-call optimization (play mode):** a pre-launch **texture atlas** + a paint-order **quad batcher** cut a 2D frame from ~one draw call per node to a handful. The editor packer (`TextureAtlasService`) packs eligible sprite textures (Sprite2D / Button2D / AnimatedSprite2D / Bar2D — plus dynamic paths reached via script `res://` directory prefixes) into a few sheets, cached in IndexedDB, and installs a resolver on the play-mode `AssetLoader` so every texture load returns a lightweight **view** onto a shared sheet (`configure2DTexture` keeps sheets mipmap-free). The runtime `Batch2DSystem` then merges maximal contiguous same-source runs (in stamped `renderOrder`) into single draws, preserving paint order by construction (per-node opacity/tint ride vertex colors). Editor viewport rendering is unaffected (it draws its own proxy meshes). Toggles (`'auto'` default; `'off'` = byte-identical): project manifest `rendering2D.textureAtlas` / `.batching`, or `?pix3Atlas2D=off` / `?pix3Batch2D=off`, or `window.__PIX3_RENDER2D__`. `Label2D`/canvas text and `TiledSprite2D` are intentionally not atlased/batched. Exported games consume a shipped `assets/.atlas/atlas-manifest.json` via `installAtlasFromManifest` (emission from `ProjectBuildService` is a pending follow-up).
-- **Editor Peek (view mask) — never confuse it with `visible`.** The author can hide or solo whole branches of the scene for their own eyes only: `NodeBase.hiddenByEditor` (set by `PeekService` on branch ROOTS; the `visible` accessor folds it in, so three.js's cascade, picking and `isVisibleInTree` — hence `UIControl2D`'s input gate — all follow), plus an editor-side solo fade in `src/services/viewport/peek-gating.ts`. It is **not serialized, not exported and not shared in collab**, it stays live during play (pushed into the clone by `SceneRunner.setEditorPeekMask`), and it is outside undo. Read the author's flag with `node.authoredVisible`, never `node.visible`, anywhere the AUTHORED value is meant (scene saving, state snapshots, agent reports). To hide something **in the game**, set `visible` / `initiallyVisible` — Peek cannot do it. Details: [pix3-specification.md](pix3-specification.md) → "Editor Peek (View Mask)".
-- **Debug bridge (dev):** `window.__PIX3_DEBUG__` exposes scene/liveScene/play/setProperty/errors for driving the running editor (see the `debug-running-game` skill). Consumer games can register `registerGameDebug({name, snapshot, inspect, action})` from `@pix3/runtime` for a game-specific surface.
+- **2D draw-call optimization (play mode):** a pre-launch **texture atlas** + a paint-order **quad batcher** cut a 2D frame from ~one draw call per node to a handful. The editor packer (`TextureAtlasService`) packs eligible sprite textures (Sprite2D / Button2D / AnimatedSprite2D / Bar2D — plus dynamic paths reached via script `res://` directory prefixes) into a few sheets, cached in IndexedDB, and installs a resolver on the play-mode `AssetLoader` so every texture load returns a lightweight **view** onto a shared sheet (`configure2DTexture` keeps sheets mipmap-free). The runtime `Batch2DSystem` then merges maximal contiguous same-source runs (in stamped `renderOrder`) into single draws, preserving paint order by construction (per-node opacity/tint ride vertex colors). Editor viewport rendering is unaffected (it draws its own proxy meshes). Toggles (`'auto'` default; `'off'` = byte-identical): project manifest `rendering2D.textureAtlas` / `.batching`, or `?pix3Atlas2D=off` / `?pix3Batch2D=off`, or `window.__PIX3_RENDER2D__`. `Label2D`/canvas text and `TiledSprite2D` are intentionally not atlased/batched. The player consumes a shipped `assets/.atlas/atlas-manifest.json` via `installAtlasFromManifest` when the project has one; the 2.x build does not emit one yet.
+- **Editor Peek (view mask) — never confuse it with `visible`.** The author can hide or solo whole branches of the scene for their own eyes only: `NodeBase.hiddenByEditor` (set by `PeekService` on branch ROOTS; the `visible` accessor folds it in, so three.js's cascade, picking and `isVisibleInTree` — hence `UIControl2D`'s input gate — all follow), plus an editor-side solo fade in `packages/editor-core/src/services/viewport/peek-gating.ts`. It is **not serialized and not in a build**, it stays live during play (pushed into the clone by `SceneRunner.setEditorPeekMask`), and it is outside undo. Read the author's flag with `node.authoredVisible`, never `node.visible`, anywhere the AUTHORED value is meant (scene saving, state snapshots, agent reports). To hide something **in the game**, set `visible` / `initiallyVisible` — Peek cannot do it. Details: [pix3-specification.md](pix3-specification.md) → "Editor Peek (View Mask)".
+- **Debug bridge (dev):** `window.__PIX3_DEBUG__` exposes the `pix3_*` tools (`call`, `tools()`) and short forms (`status`, `sync`, `scene`, `node`, `find`, `pending`, `errors`, `play.start/stop/restart/pause`) for driving the open editor (`packages/editor-core/src/host/debug-bridge.ts`; the kit's `pix3-editor` skill). Consumer games can register `registerGameDebug({name, snapshot, inspect, action})` from `@pix3/runtime` for a game-specific surface.
 
 ---
 
@@ -1007,7 +737,7 @@ play-mode hook, so the editor keeps running.
 3. Read the engine through `this.scene` / `this.input` / `this.node` — guard `this.scene` for previews.
 4. Reference it in a scene as `type: user:<Name>`.
 5. **Don't reimplement** juice/audio/animation/camera/cutscene — call the systems in §4.
-6. Verify by running it: use the `debug-running-game` skill (attach to the editor, `play.start()`, read `errors()`, screenshot). For sprites/UI art use `generate-sprites-in-editor`.
+6. Verify by running it: `pix3 check`, then with the editor open `pix3_sync` → `pix3_play` → `pix3_errors` (the kit's `pix3-editor` skill), or without one `pix3 smoke <scene>`. For sprite art write an SVG or generate one in the editor's Asset Generator panel.
 
 ---
 
@@ -1015,8 +745,6 @@ play-mode hook, so the editor keeps running.
 
 - Runtime (nodes, systems, script APIs): `packages/runtime/src/` — public surface re-exported from its `index.ts`.
 - Built-in behaviors: `packages/runtime/src/behaviors/`; shader effects: `.../shader-effects/`; animation: `.../animation/`.
-- Editor features (commands/operations): `src/features/<area>/`; services: `src/services/`.
-- Asset Library: services `src/services/library/AssetLibraryService.ts`, `LibraryInsertService.ts`, `PublishToLibraryService.ts`, providers + model in `src/services/library/`; panel `src/ui/asset-library/`; builtin pack `public/library/`.
-- Model Lab (3D generation): orchestrator + pipeline in `src/services/model-gen/` (`Model3DGenService`, `SculptSpec`, `ModelPreviewRenderer`, `ComparisonSheet`, `Model3DGenHistoryService`, `prompts/`); scene lane in `src/services/model-gen/scene/` (`Scene3DGenService`, `LevelSpec`, `scene-validate`, `SceneInventoryService`, `ScenePreviewRenderer`, `scene-scatter`, `prompts`); panel `src/ui/model-lab/`; agent tools `generate_model_3d` / `generate_scene_3d` (`src/services/agent/AgentToolRegistry.ts`); debug lanes `__PIX3_DEBUG__.model3d` / `.scene3d` (`src/core/debug-bridge.ts`).
+- Editor features (commands/operations): `packages/editor-core/src/features/<area>/`; services: `packages/editor-core/src/services/<domain>/`.
 - Demo scenes + example scripts: `packages/runtime/fixtures/hello-world-scenes/`; `docs/example-scripts/`.
 - Deeper docs: [node-types-reference.md](node-types-reference.md), [pix3-specification.md](pix3-specification.md), [architecture.md](architecture.md), [property-schema-reference.md](property-schema-reference.md).
