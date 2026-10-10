@@ -5,6 +5,7 @@ import { ComponentBase, customElement, html, state, inject } from '@/fw';
 import { appState } from '@/state';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
+import { HostNoticeService } from '@/host/HostNoticeService';
 import {
   LocalizationEditorService,
   type LocaleTableSection,
@@ -76,7 +77,22 @@ export class LocalizationPanel extends ComponentBase {
   @state()
   private renamingKey: string | null = null;
 
+  @inject(HostNoticeService)
+  private readonly notices!: HostNoticeService;
+
   private disposeSub?: () => void;
+  private disposeExternalSub?: () => void;
+  /**
+   * A cell the user is typing in (not committed yet) and the value it started from. If the disk
+   * changes that key meanwhile, the cell shows the disk value and a notice says so (§C.3 "same
+   * key": the disk wins, never silently).
+   */
+  private typing: {
+    locale: string;
+    key: string;
+    section: LocaleTableSection;
+    from: string;
+  } | null = null;
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -85,11 +101,26 @@ export class LocalizationPanel extends ComponentBase {
       this.revision = appState.localization.revision;
       this.syncTargetLocale();
     });
+    this.disposeExternalSub = this.service.onExternalKeys((locale, keys) => {
+      const typing = this.typing;
+      if (!typing || typing.locale !== locale) return;
+      if (!keys.some(k => k.key === typing.key && k.section === typing.section)) return;
+      if (this.service.getEntry(locale, typing.key, typing.section) === typing.from) return;
+      this.typing = null;
+      this.notices.show({
+        key: `locale-typing:${locale}:${typing.key}`,
+        tone: 'warn',
+        message: `"${typing.key}" in locales/${locale}.json changed on disk while you were typing it.`,
+        detail: 'The cell shows the value on disk; your text was not saved.',
+      });
+    });
   }
 
   disconnectedCallback(): void {
     this.disposeSub?.();
     this.disposeSub = undefined;
+    this.disposeExternalSub?.();
+    this.disposeExternalSub = undefined;
     super.disconnectedCallback();
   }
 
@@ -120,7 +151,23 @@ export class LocalizationPanel extends ComponentBase {
     void this.commandDispatcher.execute(new SetPreviewLocaleCommand({ locale }));
   }
 
+  private onCellInput(locale: string, key: string): void {
+    const same =
+      this.typing?.locale === locale &&
+      this.typing.key === key &&
+      this.typing.section === this.section;
+    if (!same) {
+      this.typing = {
+        locale,
+        key,
+        section: this.section,
+        from: this.service.getEntry(locale, key, this.section),
+      };
+    }
+  }
+
   private onCellChange(locale: string, key: string, event: Event): void {
+    this.typing = null;
     const value = (event.target as HTMLInputElement).value;
     void this.commandDispatcher.execute(
       new UpdateLocaleEntryCommand({ locale, key, value, section: this.section })
@@ -564,7 +611,9 @@ export class LocalizationPanel extends ComponentBase {
           role="cell"
           .value=${this.service.getEntry(def, key, this.section)}
           placeholder=${valuePlaceholder}
+          @input=${() => this.onCellInput(def, key)}
           @change=${(e: Event) => this.onCellChange(def, key, e)}
+          @blur=${() => (this.typing = null)}
           @keydown=${this.onEditKeydown}
           aria-label=${`${key} in ${def}`}
         />
@@ -574,7 +623,9 @@ export class LocalizationPanel extends ComponentBase {
               role="cell"
               .value=${this.service.getEntry(target, key, this.section)}
               placeholder=${valuePlaceholder}
+              @input=${() => this.onCellInput(target, key)}
               @change=${(e: Event) => this.onCellChange(target, key, e)}
+              @blur=${() => (this.typing = null)}
               @keydown=${this.onEditKeydown}
               aria-label=${`${key} in ${target}`}
             />`

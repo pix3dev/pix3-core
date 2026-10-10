@@ -1,10 +1,15 @@
-import { inject, injectable } from '@/fw/di';
+import { inject, injectable, ServiceContainer } from '@/fw/di';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
+import {
+  LocalizationEditorService,
+  localeOfPath,
+} from '@/services/localization/LocalizationEditorService';
 import { SceneMergeService } from '@/services/project/SceneMergeService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 import { ProjectService } from '@/services/project/ProjectService';
+import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { appState } from '@/state';
 
 /**
@@ -16,7 +21,8 @@ import { appState } from '@/state';
  *   your edit" is detected;
  * - a changed prefab refreshes its instances in every other open scene and re-derives their
  *   baselines (the override base moved);
- * - `pix3project.yaml` is re-read.
+ * - `pix3project.yaml` is re-read;
+ * - a `locales/<id>.json` goes to `LocalizationEditorService` (its key-level merge, W20).
  */
 @injectable()
 export class ExternalReloadService {
@@ -31,6 +37,9 @@ export class ExternalReloadService {
 
   @inject(SceneMergeService)
   private readonly merges!: SceneMergeService;
+
+  @inject(LocalizationEditorService)
+  private readonly localization!: LocalizationEditorService;
 
   private unsubscribe: (() => void) | null = null;
 
@@ -51,6 +60,9 @@ export class ExternalReloadService {
     if (changed.has('pix3project.yaml')) {
       await this.projects.reloadProjectManifest();
     }
+    const locales = [...changed].filter(path => localeOfPath(path) !== null);
+    for (const path of locales) await this.localization.applyExternal(path);
+    if (locales.length > 0) viewport()?.refreshLocalizedLabels();
     const prefabsChanged = [...changed].filter(path => /\.(?:prefab|pix3scene)$/i.test(path));
     for (const descriptor of Object.values(appState.scenes.descriptors)) {
       const path = toProjectPath(descriptor.filePath);
@@ -79,4 +91,11 @@ export class ExternalReloadService {
     }
     return { failed };
   }
+}
+
+/** The viewport, when one is mounted (labels show the preview locale's strings). */
+function viewport(): ViewportRendererService | null {
+  const container = ServiceContainer.getInstance();
+  const token = container.getOrCreateToken(ViewportRendererService);
+  return container.hasService(token) ? container.getService<ViewportRendererService>(token) : null;
 }

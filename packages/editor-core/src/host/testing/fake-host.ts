@@ -327,6 +327,12 @@ export class FakeHost implements EditorHost {
     ]);
   }
 
+  /** Another writer (an agent) deletes a file. */
+  externalDelete(path: string): void {
+    if (!this.store.delete(path)) return;
+    this.emit([{ op: 'delete', path, kind: 'file', author: 'external' }]);
+  }
+
   setScripts(roots: ScriptRoots): void {
     this.roots = roots;
     for (const listener of this.scriptListeners) listener(roots);

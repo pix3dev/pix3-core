@@ -2,13 +2,44 @@ import { subscribe } from 'valtio/vanilla';
 import { injectable, inject } from '@/fw/di';
 import { appState } from '@/state';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { SceneJournalService } from '@/services/project/SceneJournalService';
+import { SceneWriteConflictError } from '@/services/project/write-errors';
+import { readDiskVersion } from '@/services/project/disk/disk-version';
+import { toProjectPath } from '@/services/project/disk/project-paths';
+import { HostNoticeService } from '@/host/HostNoticeService';
+import { HostService } from '@/host/HostService';
 import { LocalizationService, setActiveLocalization, type LocaleTable } from '@pix3/runtime';
 import type { LocalizationSettings } from '@/core/ProjectManifest';
+import {
+  diffLocaleTables,
+  findClobberedLocaleKeys,
+  mergeLocaleTables,
+  recordLocaleWrite,
+  type LocaleKeyRef,
+  type LocaleLedger,
+} from '@/core/locale-table-merge';
 
 const LOCALES_DIR = 'locales';
 
 /** Which half of a locale table an entry lives in: UI strings or localized sprite paths. */
 export type LocaleTableSection = 'strings' | 'sprites';
+
+/** How many keys a notice names before "and N more". */
+const NOTICE_KEYS = 4;
+/** A write refused because the disk moved is merged and retried at most this often. */
+const MAX_WRITE_ATTEMPTS = 3;
+
+/** The last disk version of a table the editor confirmed (read, followed or written). */
+interface LocaleBaseline {
+  readonly sha: string;
+  readonly table: LocaleTable;
+}
+
+/** `locales/<id>.json` → `<id>`, else null. */
+export function localeOfPath(path: string): string | null {
+  const match = /^locales\/([^/]+)\.json$/i.exec(toProjectPath(path));
+  return match ? match[1] : null;
+}
 
 /** Human-readable default names for common locale ids (used when a table has no `$meta.name`). */
 const LOCALE_DISPLAY_NAMES: Record<string, string> = {
@@ -33,11 +64,28 @@ const LOCALE_DISPLAY_NAMES: Record<string, string> = {
  * `appState.localization`; the actual tables stay here (state-vs-scene-graph
  * separation). All *undoable* mutations run through Commands/Operations that call
  * into this service — the service persists + feeds the preview + bumps `revision`.
+ *
+ * **The files are the truth** (`.plans/write-model.md` W20): every table has a baseline (the
+ * last disk version the editor confirmed); a write is `If-Match` on it (`createOnly` for a new
+ * file); a refused write and an external version (`ExternalReloadService`, after
+ * `ExternalChangeService` settled it; a deletion straight from the `pix3:fs` frame) go through
+ * the key-level merge of `locale-table-merge.ts` — the agent's keys come in, the editor's
+ * unwritten edits of other keys stay and are written on top, a key both changed keeps the disk
+ * value with a notice and the editor's table in the journal. Writes run one at a time.
  */
 @injectable()
 export class LocalizationEditorService {
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
+
+  @inject(HostNoticeService)
+  private readonly notices!: HostNoticeService;
+
+  @inject(SceneJournalService)
+  private readonly journal!: SceneJournalService;
+
+  @inject(HostService)
+  private readonly hostService!: HostService;
 
   private preview: LocalizationService | null = null;
   /** In-memory authoring tables keyed by locale id (source of truth while editing). */
@@ -47,20 +95,46 @@ export class LocalizationEditorService {
   private loadedProjectKey: string | null = null;
   private previewLocale = '';
   private disposeProjectSub?: () => void;
+  private disposeFsSub?: () => void;
   private initialized = false;
+  private readonly baselines = new Map<string, LocaleBaseline>();
+  private readonly ledgers = new Map<string, LocaleLedger>();
+  /** Writes and merges, one at a time (a merge must not race a write on the same baseline). */
+  private queue: Promise<void> = Promise.resolve();
+  private loading: Promise<void> = Promise.resolve();
+  /** Listeners told which keys an external version changed (the panel's typing guard). */
+  private readonly externalListeners = new Set<(locale: string, keys: LocaleKeyRef[]) => void>();
 
   initialize(): void {
     if (this.initialized) return;
     this.initialized = true;
     this.disposeProjectSub = subscribe(appState.project, () => {
-      void this.syncFromProject();
+      this.loading = this.syncFromProject();
     });
-    void this.syncFromProject();
+    if (HostService.isInstalled()) {
+      // A deletion is final: it needs no settling, and ExternalChangeService does not deliver it.
+      this.disposeFsSub = this.hostService.host.events.onFs(frame => {
+        for (const event of frame.events) {
+          if (event.kind !== 'file' || (event.op !== 'delete' && event.op !== 'rename')) continue;
+          const gone = event.op === 'rename' ? (event.from ?? '') : event.path;
+          const projectPath = this.hostService.projectPath(gone);
+          if (projectPath !== null && localeOfPath(projectPath)) {
+            void this.applyExternal(projectPath);
+          }
+        }
+      });
+    }
+    this.loading = this.syncFromProject();
   }
 
   dispose(): void {
     this.disposeProjectSub?.();
     this.disposeProjectSub = undefined;
+    this.disposeFsSub?.();
+    this.disposeFsSub = undefined;
+    this.baselines.clear();
+    this.ledgers.clear();
+    this.externalListeners.clear();
     setActiveLocalization(null);
     this.preview?.dispose();
     this.preview = null;
@@ -89,6 +163,8 @@ export class LocalizationEditorService {
     this.preview?.dispose();
     this.preview = null;
     this.tables.clear();
+    this.baselines.clear();
+    this.ledgers.clear();
     this.settings = null;
     this.previewLocale = '';
 
@@ -136,8 +212,9 @@ export class LocalizationEditorService {
     if (!settings) return;
 
     for (const locale of settings.locales) {
-      const table = await this.readTableFile(locale);
+      const { table, baseline } = await this.readTableFile(locale);
       this.tables.set(locale, table);
+      if (baseline) this.baselines.set(locale, baseline);
     }
 
     // Build the preview instance from the loaded tables and activate it.
@@ -172,14 +249,21 @@ export class LocalizationEditorService {
     return this.preview;
   }
 
-  private async readTableFile(locale: string): Promise<LocaleTable> {
+  private async readTableFile(
+    locale: string
+  ): Promise<{ table: LocaleTable; baseline: LocaleBaseline | null }> {
     try {
-      const text = await this.storage.readTextFile(`${LOCALES_DIR}/${locale}.json`);
-      return parseTableFile(locale, text);
+      const version = await readDiskVersion(this.storage, pathOf(locale));
+      if (version) {
+        const table = parseTableFile(locale, version.text);
+        return { table, baseline: { sha: version.hash, table: cloneTable(table) } };
+      }
     } catch {
-      // Missing/broken file ⇒ empty table (still declared; panel can populate it).
-      return { locale, strings: {}, sprites: {} };
+      // broken file: below
     }
+    // Missing/broken file ⇒ empty table (still declared; panel can populate it). No baseline:
+    // a broken file is never written over (the first write is `createOnly`, and is refused).
+    return { table: emptyTable(locale), baseline: null };
   }
 
   // ---- read API (panel / inspector widget) --------------------------------
@@ -410,18 +494,274 @@ export class LocalizationEditorService {
     return table;
   }
 
-  private async saveLocale(locale: string): Promise<void> {
-    const table = this.tables.get(locale);
-    if (!table) return;
-    try {
-      // writeTextFile does not create parent dirs; ensure `locales/` exists first
-      // (idempotent — no-op when already present) so the first save in a project
-      // without a locales/ directory succeeds.
-      await this.storage.createDirectory(LOCALES_DIR);
-      await this.storage.writeTextFile(`${LOCALES_DIR}/${locale}.json`, serializeTableFile(table));
-    } catch (error) {
-      console.error(`[Localization] Failed to save locale "${locale}"`, error);
+  /** Write `locale`'s table if it differs from its baseline (queued; resolves once done). */
+  private saveLocale(locale: string): Promise<void> {
+    return this.enqueue(() => this.writeLocale(locale));
+  }
+
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(task, task);
+    this.queue = run.catch(error => console.error('[Localization]', error));
+    return this.queue;
+  }
+
+  /**
+   * Write every table with edits the disk does not have yet (sync step 0, with the scenes'
+   * flush): an edit whose write failed without a conflict (the dev server was down) is retried.
+   */
+  async flush(): Promise<void> {
+    await this.loading;
+    for (const locale of this.tables.keys()) {
+      if (this.hasUnwrittenEdits(locale)) void this.saveLocale(locale);
     }
+    await this.queue;
+  }
+
+  /** Whether `locale` has edits its baseline (the disk the editor knows) does not. */
+  hasUnwrittenEdits(locale: string): boolean {
+    const table = this.tables.get(locale);
+    if (!table) return false;
+    return diffLocaleTables(this.baselineTable(locale), table).length > 0;
+  }
+
+  /** The table the disk has as far as the editor knows (no file = an empty table). */
+  private baselineTable(locale: string): LocaleTable {
+    return this.baselines.get(locale)?.table ?? emptyTable(locale);
+  }
+
+  private async writeLocale(locale: string): Promise<void> {
+    const path = pathOf(locale);
+    for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+      const table = this.tables.get(locale);
+      if (!table) return;
+      const base = this.baselines.get(locale) ?? null;
+      if (!this.hasUnwrittenEdits(locale)) return;
+      const written = cloneTable(table);
+      try {
+        // writeTextFile does not create parent dirs; ensure `locales/` exists first.
+        if (!base) await this.storage.createDirectory(LOCALES_DIR);
+        const sha = await this.storage.writeTextFile(
+          path,
+          serializeTableFile(written),
+          base ? { baseHash: base.sha } : { createOnly: true }
+        );
+        this.ledgers.set(
+          locale,
+          recordLocaleWrite(
+            this.ledgers.get(locale) ?? new Map(),
+            this.baselineTable(locale),
+            written
+          )
+        );
+        this.baselines.set(locale, { sha, table: written });
+        return;
+      } catch (error) {
+        if (!(error instanceof SceneWriteConflictError)) {
+          // No answer, a read-only tab, …: the edit stays in memory and the next write or sync
+          // retries it.
+          console.error(`[Localization] Failed to save locale "${locale}"`, error);
+          return;
+        }
+        // The disk moved since the baseline: take it in, keep the edits it did not touch, retry.
+        const outcome = await this.followDisk(locale, false);
+        if (outcome !== 'followed') return;
+      }
+    }
+    console.error(`[Localization] ${path}: gave up writing after ${MAX_WRITE_ATTEMPTS} conflicts`);
+  }
+
+  // ---- external versions (plan §C.3 for a locale table) -------------------
+
+  /**
+   * Whatever is on disk now at `path` (a `locales/<id>.json`): a new table appears, a deleted one
+   * goes, a changed one is merged key by key with the editor's unwritten edits.
+   */
+  async applyExternal(path: string): Promise<void> {
+    const locale = localeOfPath(path);
+    if (!locale || !this.initialized) return;
+    await this.loading;
+    if (this.loadedProjectKey === null) return;
+    await this.enqueue(async () => {
+      if ((await this.followDisk(locale, true)) === 'followed' && this.hasUnwrittenEdits(locale)) {
+        await this.writeLocale(locale);
+      }
+    });
+  }
+
+  /** Called with the keys of a locale an external version changed (before the panel re-renders). */
+  onExternalKeys(listener: (locale: string, keys: LocaleKeyRef[]) => void): () => void {
+    this.externalListeners.add(listener);
+    return () => this.externalListeners.delete(listener);
+  }
+
+  private async followDisk(
+    locale: string,
+    fromFrame: boolean
+  ): Promise<'unchanged' | 'followed' | 'unreadable'> {
+    const path = pathOf(locale);
+    let version;
+    try {
+      version = await readDiskVersion(this.storage, path);
+    } catch {
+      version = null;
+    }
+    if (!version) {
+      this.removeTable(locale);
+      return 'followed';
+    }
+    const base = this.baselines.get(locale) ?? null;
+    if (base?.sha === version.hash) return 'unchanged';
+    let external: LocaleTable;
+    try {
+      external = parseTableFile(locale, version.text);
+    } catch (error) {
+      // The last good table stays; the version arrives again once it parses.
+      console.warn(
+        `[Localization] File not readable: ${path} (${error instanceof Error ? error.message : String(error)}). Keeping the last good version.`
+      );
+      return 'unreadable';
+    }
+
+    const local = this.tables.get(locale);
+    if (!local) {
+      if (!this.acceptsLocale(locale)) return 'unchanged';
+      this.addTable(locale, external, { sha: version.hash, table: cloneTable(external) });
+      return 'followed';
+    }
+
+    const before = cloneTable(local);
+    const clobbered = findClobberedLocaleKeys(this.ledgers.get(locale) ?? new Map(), external);
+    this.ledgers.delete(locale);
+    const { merged, dropped } = mergeLocaleTables(this.baselineTable(locale), external, local);
+    if (dropped.length > 0) {
+      await this.journal.recordRejectedDraft(
+        path,
+        serializeTableFile(local),
+        'editor table replaced by a merge with an external version'
+      );
+      const names = dropped.map(d => describeKey(d));
+      this.notices.show({
+        key: `locale-merge:${path}`,
+        tone: 'warn',
+        message: `${path} changed on disk while you were editing it: your change to ${dropped.length} key${dropped.length === 1 ? ' was' : 's was'} dropped, the disk value kept.`,
+        detail:
+          `${listNames(names)}. ` + (this.journal.available ? 'Your version is in History.' : ''),
+      });
+    }
+    this.tables.set(locale, merged);
+    this.baselines.set(locale, { sha: version.hash, table: cloneTable(external) });
+    if (clobbered.length > 0 && fromFrame) this.offerRestore(locale, clobbered);
+    const changed = diffLocaleTables(before, merged);
+    for (const listener of [...this.externalListeners]) listener(locale, changed);
+    this.preview?.setTable(merged);
+    this.mirrorSlice();
+    return 'followed';
+  }
+
+  /** "An agent overwrote your edit" — its file was written from a read older than the editor's write. */
+  private offerRestore(
+    locale: string,
+    clobbered: ReadonlyArray<LocaleKeyRef & { readonly written: string | null }>
+  ): void {
+    const path = pathOf(locale);
+    this.notices.show({
+      key: `locale-clobber:${path}`,
+      tone: 'warn',
+      message: `An agent overwrote your edit in ${path}.`,
+      detail: `${listNames(clobbered.map(describeKey))} — it wrote a file it read before you saved them.`,
+      actions: [
+        {
+          label: 'Restore my edit',
+          run: async () => {
+            const table = this.ensureTable(locale);
+            for (const { section, key, written } of clobbered) {
+              if (written === null) delete table[section][key];
+              else table[section][key] = written;
+            }
+            this.preview?.setTable(table);
+            this.mirrorSlice();
+            await this.saveLocale(locale);
+          },
+        },
+      ],
+    });
+  }
+
+  /** In a project that declares its locales (`pix3project.yaml`), only those have tables. */
+  private acceptsLocale(locale: string): boolean {
+    const declared = appState.project.manifest?.localization?.locales;
+    return !declared || declared.length === 0 || declared.includes(locale);
+  }
+
+  private addTable(locale: string, table: LocaleTable, baseline: LocaleBaseline): void {
+    this.tables.set(locale, table);
+    this.baselines.set(locale, baseline);
+    if (!this.settings) {
+      this.settings = { defaultLocale: locale, locales: [locale] };
+      this.previewLocale = locale;
+    } else if (!this.settings.locales.includes(locale)) {
+      const locales = [...this.settings.locales, locale].sort();
+      const defaultLocale =
+        locales.includes('en') && !this.isDeclared() ? 'en' : this.settings.defaultLocale;
+      this.settings = { ...this.settings, defaultLocale, locales };
+    }
+    this.ensurePreview().setTable(table);
+    void this.preview?.setLocale(this.previewLocale);
+    this.mirrorSlice();
+  }
+
+  private removeTable(locale: string): void {
+    const table = this.tables.get(locale);
+    const hadEdits = this.hasUnwrittenEdits(locale) && this.baselines.has(locale);
+    this.baselines.delete(locale);
+    this.ledgers.delete(locale);
+    if (!table) return;
+    const path = pathOf(locale);
+    if (hadEdits) {
+      void this.journal.recordRejectedDraft(
+        path,
+        serializeTableFile(table),
+        'editor table dropped: the file was deleted on disk'
+      );
+      this.notices.show({
+        key: `locale-merge:${path}`,
+        tone: 'warn',
+        message: `${path} was deleted on disk while you were editing it.`,
+        detail: this.journal.available ? 'Your version is in History.' : '',
+      });
+    }
+    this.preview?.setTable(emptyTable(locale));
+    if (this.isDeclared()) {
+      // Still declared by the manifest: an empty table, as when the file is missing at load.
+      this.tables.set(locale, emptyTable(locale));
+    } else if (this.settings) {
+      this.tables.delete(locale);
+      const locales = this.settings.locales.filter(l => l !== locale);
+      if (locales.length === 0) {
+        this.settings = null;
+        this.previewLocale = '';
+        setActiveLocalization(null);
+        this.preview?.dispose();
+        this.preview = null;
+      } else {
+        const defaultLocale =
+          this.settings.defaultLocale === locale
+            ? locales.includes('en')
+              ? 'en'
+              : locales[0]
+            : this.settings.defaultLocale;
+        this.settings = { ...this.settings, defaultLocale, locales };
+        if (this.previewLocale === locale) {
+          this.previewLocale = defaultLocale;
+          void this.preview?.setLocale(defaultLocale);
+        }
+      }
+    }
+    this.mirrorSlice();
+  }
+
+  private isDeclared(): boolean {
+    return (appState.project.manifest?.localization?.locales.length ?? 0) > 0;
   }
 
   private mirrorSlice(): void {
@@ -440,6 +780,25 @@ export class LocalizationEditorService {
 }
 
 // ---- file (de)serialization -------------------------------------------------
+
+const pathOf = (locale: string): string => `${LOCALES_DIR}/${locale}.json`;
+
+const emptyTable = (locale: string): LocaleTable => ({ locale, strings: {}, sprites: {} });
+
+function cloneTable(table: LocaleTable): LocaleTable {
+  return {
+    locale: table.locale,
+    strings: { ...table.strings },
+    sprites: { ...table.sprites },
+    ...(table.meta ? { meta: { ...table.meta } } : {}),
+  };
+}
+
+const describeKey = (ref: LocaleKeyRef): string =>
+  ref.section === 'strings' ? ref.key : `${ref.key} (sprite)`;
+
+const listNames = (names: readonly string[]): string =>
+  `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''}`;
 
 /** Parse a `locales/<locale>.json` file into a runtime {@link LocaleTable}. */
 function parseTableFile(locale: string, text: string): LocaleTable {

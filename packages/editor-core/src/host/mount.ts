@@ -12,6 +12,7 @@ import { ProjectStorageService } from '@/services/project/ProjectStorageService'
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneDraftService } from '@/services/project/SceneDraftService';
+import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { LiveComponentService } from '@/services/scripting/LiveComponentService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
@@ -85,7 +86,11 @@ export async function mountEditorWith(
   drafts.start();
   const syncApply = service(SyncApplyService);
   host.sync.setHandlers({
-    flush: timeoutMs => sceneWrite.flushDirty(timeoutMs),
+    flush: async timeoutMs => {
+      // Locale tables write through; one whose write failed without a conflict goes now.
+      await service(LocalizationEditorService).flush();
+      return sceneWrite.flushDirty(timeoutMs);
+    },
     applySync: info => syncApply.apply(info),
   });
 

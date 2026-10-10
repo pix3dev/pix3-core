@@ -195,13 +195,18 @@ export class ProjectStorageService {
   /**
    * `options.baseHash`: the `If-Match` base instead of the last hash this editor saw — a scene save
    * passes the version it accepted into its graph. `options.unconditional`: no base at all, only
-   * for files the editor owns outright.
+   * for files the editor owns outright. `options.createOnly`: the file must not exist yet (a
+   * refusal is a `SceneWriteConflictError` like a stale base).
    */
   /** Resolves to the sha256 of the bytes written (the plugin's hash of what is on disk now). */
   async writeTextFile(
     path: string,
     contents: string,
-    options: { readonly unconditional?: boolean; readonly baseHash?: string } = {}
+    options: {
+      readonly unconditional?: boolean;
+      readonly baseHash?: string;
+      readonly createOnly?: boolean;
+    } = {}
   ): Promise<string> {
     return this.write(path, contents, options);
   }
@@ -246,15 +251,24 @@ export class ProjectStorageService {
   private async write(
     path: string,
     data: Uint8Array | string,
-    options: { readonly unconditional?: boolean; readonly baseHash?: string }
+    options: {
+      readonly unconditional?: boolean;
+      readonly baseHash?: string;
+      readonly createOnly?: boolean;
+    }
   ): Promise<string> {
     const wirePath = this.wire(path);
-    const base = options.unconditional
-      ? undefined
-      : (options.baseHash ?? this.knownHashes.get(wirePath));
+    const base =
+      options.unconditional || options.createOnly
+        ? undefined
+        : (options.baseHash ?? this.knownHashes.get(wirePath));
     let sha: string;
     try {
-      const result = await this.files.write(wirePath, data, base ? { ifMatch: base } : {});
+      const result = await this.files.write(
+        wirePath,
+        data,
+        options.createOnly ? { createOnly: true } : base ? { ifMatch: base } : {}
+      );
       sha = result.sha256;
       this.knownHashes.set(wirePath, sha);
     } catch (error) {
