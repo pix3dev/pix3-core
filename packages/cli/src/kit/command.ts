@@ -6,11 +6,13 @@ import { hasOwnTsconfig } from '../types/project-types.ts';
 import { formatKitReport, installKit } from './install.ts';
 import { ensureKit } from './kit-source.ts';
 
-/** `pix3 kit [--update] [--project <dir>]`; returns the exit code. */
+/** `pix3 kit [--update | --migrate] [--project <dir>]`; returns the exit code. */
 export const runKitCli = async (options: {
   readonly cwd: string;
   readonly projectDir?: string;
   readonly update: boolean;
+  /** A 1.x project's kit → 2.x (`kit/migrate.ts`); implies `--update`. */
+  readonly migrate?: boolean;
 }): Promise<number> => {
   const start = options.projectDir ? resolve(options.cwd, options.projectDir) : options.cwd;
   const root = options.projectDir ? start : findProjectRoot(start);
@@ -25,6 +27,11 @@ export const runKitCli = async (options: {
   const runtimeTypes = hasOwnTsconfig(root)
     ? undefined
     : (await import('../types/runtime-types.ts')).ensureRuntimeTypes({ log });
+  if (options.migrate) {
+    const { formatMigrationReport, migrateKit } = await import('./migrate.ts');
+    process.stdout.write(formatMigrationReport(migrateKit(root, kit, { runtimeTypes }), root));
+    return 0;
+  }
   const report = installKit(root, kit, { update: options.update, runtimeTypes });
   process.stdout.write(formatKitReport(report, root));
   return 0;

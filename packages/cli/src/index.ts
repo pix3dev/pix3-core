@@ -127,6 +127,7 @@ const main = async (): Promise<number> => {
         cwd: process.cwd(),
         projectDir: stringFlag(args, 'project'),
         update: args.flags.has('update'),
+        migrate: args.flags.has('migrate'),
       });
     case 'editor': // own argument parsing; finds or starts the dev server, opens Chrome
       return (await import('./editor/command.ts')).runEditorCli(

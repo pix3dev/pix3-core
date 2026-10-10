@@ -15,7 +15,8 @@ pix3 smoke [scene] [--changed|--all] [--frames N] [--timeout S] [--json] [--proj
                                               run the game headless in Node, report what threw
 pix3 tree [scene] [--depth N] [--types A,B] [--props] [--json] [--project <dir>]
                                               scene outline, one line per node; no scene = overview
-pix3 kit [--update] [--project <dir>]         install / update the agent kit in a project
+pix3 kit [--update] [--migrate] [--project <dir>]
+                                              install / update the agent kit; --migrate: a 1.x kit → 2.x
 pix3 character-compile <spec> [--dry-run] [--force] [--json] [--project <dir>]
                                               a 2D character (.pix3anim + prefab) from frame PNGs
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
@@ -305,7 +306,7 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 | --- | --- |
 | `AGENTS.md` | Root rules (read by Codex, Cursor, …). If the project already has its own, it is kept and the kit goes to `AGENTS.pix3.md` (the command prints the line to add). |
 | `CLAUDE.md` | `@AGENTS.md` (plus `@AGENTS.pix3.md` in that case). A `CLAUDE.md` of the project's own is never touched — the command prints the line to add. |
-| `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry |
+| `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format |
 | `.gitignore` | `.pix3/` appended when not covered; existing content kept |
 | `tsconfig.json`, `.pix3/tsconfig.check.json`, `.pix3/types/` | Only without a `tsconfig.json` of the project's own (see below) |
 | `pix3project.yaml` | `metadata.agentKit: { version, files }` (everything else as written) |
@@ -322,13 +323,36 @@ as edited.
 prose plus `{{include:<repo path>#<heading>}}` / `{{include:<repo path>@<paragraph>}}` directives
 over `docs/pix3-specification.md`, `docs/node-types-reference.md`, `docs/nodes-and-systems.md`,
 `packages/cli/kit-includes/engine-api-map.md` and this README, and `{{generated:…}}` blocks
-computed from code (the `core:` component table from the runtime's registry, the MCP tool list,
-the barrier error codes). Syntax: `src/kit/generate.ts`. `src/kit.spec.ts` builds the kit and fails
-on drift: an unresolved directive, a `pix3` command or flag not in the usage text, a tool name
-outside the 14, a diagnostic code no command emits, a node type the loader does not know, a
-property in the nodes skill's tables that the disk-format descriptor
-(`packages/runtime/src/core/scene-disk-format.ts`) does not accept, a `core:` component that
-does not exist.
+computed from code (the `core:` component table from the runtime's registry). Syntax:
+`src/kit/generate.ts`. `src/kit.spec.ts` builds the kit and fails on drift: an unresolved
+directive, a `pix3` command or flag not in the usage text, an `npm run` script the starter does
+not have, a `pix3_*` tool, parameter or sync reason the bridge (`bridge-tools.ts`) does not have, a
+retired 1.x in-editor tool, a verdict phrase `GameTestService` does not produce, a diagnostic code
+no command emits, a node type the loader does not know, a property in the nodes skill's tables
+that the disk-format descriptor (`packages/runtime/src/core/scene-disk-format.ts`) does not
+accept, a `core:` component that does not exist, and a `.pix3anim` reference (`pix3anim.md`)
+whose interfaces, fields, optionality, types or "Omitted →" defaults differ from
+`packages/runtime/src/core/AnimationResource.ts` and `normalizeAnimationResource`.
+
+### `pix3 kit --migrate` — a 1.x project's kit to 2.x
+
+Plan §A.4 step 2. It migrates **the kit only** (`src/kit/migrate.ts`), and reports every change:
+
+| What | How |
+| --- | --- |
+| `.mcp.json` | the 1.x `pix3 mcp --workspace` server (`npx -y @pix3/cli@1.x mcp …`, or the dev `node …/packages/cli/src/index.ts mcp`) is removed; other servers stay; a file left empty is deleted |
+| Retired kit files | files in `.pix3/kit-manifest.json` that the 2.x kit no longer ships: deleted when unchanged, kept and reported when edited |
+| `pix3project.yaml` | `metadata.pix3Hybrid` (the 1.x cloud link) removed, its value printed; `metadata.agentKit` rewritten |
+| The kit | installed with `--update` semantics: unchanged 1.x kit files replaced, edited ones kept; an edited one that still mentions `pix3 mcp` / `pix3 serve` / `pix3 read` / the live channel / the in-editor tools is flagged `STILL 1.x` and the 2.x text written to `.pix3/kit-migrate/<path>` for a manual merge |
+
+Never touched: anything outside the project (`~/.codex/config.toml` — the report says to delete a
+1.x `[mcp_servers.pix3]` table), a project `.codex/config.toml` (reported when it runs `pix3 mcp`),
+the project's own `AGENTS.md` / `CLAUDE.md` (an edited copy of the 1.x kit's `AGENTS.md` is
+reported), scenes, scripts, assets, `package.json`, `vite.config.*`. The 2.x agent config is
+`pix3 agent-setup`'s (the report says to run it). Moving a 1.x project onto Vite (`pix3()` in
+`vite.config`, plan §A.4 step 3) is optional and by hand; the report notes a project without
+`@pix3/vite-plugin`. A second run finds nothing to migrate. Spec: `src/kit/migrate.spec.ts`
+(a 1.x-shaped starter, edits kept, idempotence, a copy of `../DeepCore` when present).
 
 ### Script types (`.pix3/types/`)
 
