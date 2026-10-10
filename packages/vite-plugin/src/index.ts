@@ -13,10 +13,19 @@ import {
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
 import { toClassicScriptHtml } from './build/classic-script.ts';
+import { toCompressedHtml, type CompressedHtml } from './build/compress.ts';
+import {
+  collectRuntimeImports,
+  RUNTIME_SPECIFIER,
+  scanDependencyImports,
+} from './build/dependency-imports.ts';
 import { EditorUnsyncedError, flushEditorBeforeBuild } from './build/editor-flush.ts';
 import {
   EMBEDDED_ASSETS_ID,
   embeddedAssetsSource,
+  GLTF_LOADER_SPECIFIER,
+  GLTF_LOADER_STUB_ID,
+  gltfLoaderStubSource,
   NETWORK_ID,
   networkSource,
   noEmbeddedAssetsSource,
@@ -27,10 +36,15 @@ import {
   postprocessingStubSource,
   PROJECT_SCRIPTS_ID,
   projectScriptsSource,
+  SCENE_LIKE_ASSET,
   SCENE_MANIFEST_ID,
+  sceneAsJson,
   sceneManifestSource,
   SPINE_ID,
   spineSource,
+  YAML_STUB_ID,
+  yamlStubSource,
+  type EmbeddedAssetsResult,
 } from './build/player-modules.ts';
 import {
   readProjectManifest,
@@ -38,8 +52,22 @@ import {
   type ProjectManifestInfo,
 } from './build/project-manifest.ts';
 import { fileDigest, writeBuildRecord } from './build/record.ts';
+import {
+  buildReportPath,
+  classifyModule,
+  displayId,
+  gzipBytesOf,
+  summarizeCode,
+  writeBuildReport,
+  type ModuleSize,
+} from './build/report.ts';
 import { isPrefabPath, listProjectFiles, scanProject, type ProjectScan } from './build/scan.ts';
-import { decideStrip } from './build/strip-decision.ts';
+import {
+  decideStrip,
+  KEEP_HINT,
+  runtimeDependents,
+  type StripOption,
+} from './build/strip-decision.ts';
 import {
   buildStrippedModuleSource,
   resolveStrippableRuntimeModules,
@@ -86,13 +114,22 @@ export interface Pix3Options {
    * `vite build` alone.
    */
   readonly build?: 'html' | 'zip' | false;
-  /** Gzip + inline bootstrap (plan §B.6 item 5, P2 — accepted, not implemented yet). */
+  /**
+   * `build: 'html'` only: ship the bundle gzip'd (`iife`, base64) behind a bootstrap that
+   * inflates it with `DecompressionStream` and injects it as a classic script's text (plan §B.6
+   * item 5). About two thirds off the file; a wash over a gzip channel, +21% over brotli
+   * (CLAUDE.md «Playable export size»). Needs Chrome 80+ / Safari 16.4+ / Firefox 113+.
+   */
   readonly compress?: boolean;
   /**
-   * Replace runtime modules nothing in the project mentions with throwing stubs. Default: on
-   * unless a dependency depends on `@pix3/runtime` itself (its imports are not scanned yet).
+   * Replace runtime modules nothing in the project mentions with throwing stubs (and `yaml`,
+   * `GLTFLoader`, `postprocessing` when unused). On by default; a dependency that declares
+   * `@pix3/runtime` has its imports parsed (N11), and one the build cannot follow (`import * as`,
+   * a dynamic import) turns strip off with a message. `{ keep: ['GeometryMesh', …] }` names
+   * what such a dependency uses and keeps strip on; `false` strips nothing; `true` strips
+   * regardless of what the dependencies import.
    */
-  readonly strip?: boolean;
+  readonly strip?: StripOption;
   /** The scene a build boots into (`res://`-relative); default `defaultExportScenePath`. */
   readonly entryScene?: string;
   /** Answer `/__pix3/*` for non-loopback peers too (a dev server started with `--host`). */
@@ -135,20 +172,43 @@ const editorOptimizeDeps = (editorCoreDir: string | null): string[] => {
   }
 };
 
-/** What `buildStart` learned about the project for this `vite build`. */
+/** What `buildStart` learned about the project for this `vite build`, plus what the bundle told. */
 interface BuildState {
   readonly format: 'html' | 'zip';
   readonly manifest: ProjectManifestInfo;
   readonly scan: ProjectScan;
   /** Module paths (under the runtime's `src/`) replaced by stubs. */
   readonly stripped: ReadonlySet<string>;
+  /** `name a dependency may import → the stripped module it keeps` (the transform net). */
+  readonly stubbedNames: ReadonlyMap<string, string>;
   readonly stripReason: string | null;
   readonly stripEnabled: boolean;
+  /** Whether `pix3({ strip })` was set at all (the net errors only when it was not). */
+  readonly stripConfigured: boolean;
+  readonly keep: readonly string[];
+  /** N11: what the dependencies that declare the runtime import from it, and how many files. */
+  readonly dependencyImports: ReadonlySet<string>;
+  readonly dependencyParsed: Record<string, number>;
   /** Real path of the runtime's `src/`, or null when it did not resolve. */
   readonly runtimeSrc: string | null;
   readonly spineInstalled: boolean;
   readonly postprocessingInstalled: boolean;
+  /** Scenes ship as JSON and the runtime's `yaml` is `JSON.parse`. */
+  readonly stubYaml: boolean;
+  /** No model in the project: `GLTFLoader` is a stub. */
+  readonly stubGltf: boolean;
+  // Filled by the bundle hooks, for the report.
+  readonly moduleSizes: ModuleSize[];
+  bundleBytes: number;
+  assets: EmbeddedAssetsResult | null;
+  compressed: CompressedHtml | null;
 }
+
+const isUnder = (file: string, dir: string | null): boolean => {
+  if (!dir) return false;
+  const rel = relative(dir, file);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+};
 
 export function pix3(options: Pix3Options = {}): Plugin[] {
   const settings = {
@@ -192,6 +252,18 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
     const rel = relative(build.runtimeSrc, file);
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null;
     return rel.split(sep).join('/').replace(/\.ts$/, '');
+  };
+
+  /** The bytes an asset ships as: a scene or prefab as JSON when the runtime's `yaml` is a stub. */
+  const shippedBytes = (resPath: string, bytes: Buffer): Buffer => {
+    if (!build?.stubYaml || !SCENE_LIKE_ASSET.test(resPath)) return bytes;
+    try {
+      return Buffer.from(sceneAsJson(bytes.toString('utf8')), 'utf8');
+    } catch (error) {
+      // Not YAML the build can read: ship it as is; the runtime reports it when it loads.
+      warn(`${resPath} did not parse as YAML (${String(error)}); shipped as written`);
+      return bytes;
+    }
   };
 
   /** Dev: the scene manifest from the disk as it is now. */
@@ -252,6 +324,9 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         typeof (this as { meta?: { rolldownVersion?: unknown } }).meta?.rolldownVersion ===
         'string';
       const singleChunk = rolldown ? { codeSplitting: false } : { inlineDynamicImports: true };
+      // A compressed build is injected as script text: `iife`, so it declares nothing global.
+      const outputFormat =
+        settings.compress && format === 'html' ? { format: 'iife' as const } : {};
       return {
         resolve: { dedupe: ['three', '@pix3/runtime'] },
         optimizeDeps: {
@@ -275,7 +350,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                       cssCodeSplit: false,
                       assetsDir: '',
                       modulePreload: false,
-                      rollupOptions: { output: singleChunk },
+                      rollupOptions: { output: { ...singleChunk, ...outputFormat } },
                     }
                   : {}),
               },
@@ -329,32 +404,73 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           'a scene places a SpineSkeleton2D but @esotericsoftware/spine-threejs is not installed'
         );
 
-      const decision = decideStrip(projectRoot, settings.strip);
+      // N11: a dependency that declares the runtime is parsed for what it imports from it.
+      const dependents = settings.strip === false ? [] : runtimeDependents(projectRoot);
+      const dependencyScan = await scanDependencyImports({
+        root: projectRoot,
+        packages: dependents,
+        parse: code => this.parse(code),
+      });
+      const decision = decideStrip(settings.strip, dependencyScan);
+      const mentions = (name: string): boolean =>
+        scan.mentionedNames.has(name) ||
+        dependencyScan.names.has(name) ||
+        decision.keep.includes(name);
       const stripped = new Set<string>();
+      const stubbedNames = new Map<string, string>();
       if (decision.enabled && runtimeSrc) {
-        for (const entry of resolveStrippableRuntimeModules(name => scan.mentionedNames.has(name)))
+        for (const entry of resolveStrippableRuntimeModules(mentions)) {
           stripped.add(entry.modulePath);
+          for (const name of entry.keepWhenMentioned) stubbedNames.set(name, entry.modulePath);
+        }
       }
+      const stubGltf =
+        decision.enabled &&
+        !mentions('GLTFLoader') &&
+        !mentions('glb') &&
+        !mentions('gltf') &&
+        !scan.assetPaths.some(path => /\.(glb|gltf)$/i.test(path));
       build = {
         format,
         manifest,
         scan,
         stripped,
+        stubbedNames,
         stripReason: decision.reason,
         stripEnabled: decision.enabled,
+        stripConfigured: settings.strip !== undefined,
+        keep: decision.keep,
+        dependencyImports: dependencyScan.names,
+        dependencyParsed: dependencyScan.parsed,
         runtimeSrc,
         spineInstalled,
         postprocessingInstalled,
+        stubYaml: decision.enabled,
+        stubGltf,
+        moduleSizes: [],
+        bundleBytes: 0,
+        assets: null,
+        compressed: null,
       };
+      for (const [name, files] of Object.entries(dependencyScan.parsed)) {
+        log(
+          `${name} depends on ${RUNTIME_SPECIFIER}: ${files} file(s) parsed` +
+            (dependencyScan.names.size > 0
+              ? `, keeping ${[...dependencyScan.names].sort().join(', ')}`
+              : '')
+        );
+      }
       log(
-        `build ${format}: entry ${scan.entryScenePath || '(none)'}, ${scan.scenePaths.length} scene(s), ` +
+        `build ${format}${settings.compress && format === 'html' ? ' (compressed)' : ''}: ` +
+          `entry ${scan.entryScenePath || '(none)'}, ${scan.scenePaths.length} scene(s), ` +
           `${scan.assetPaths.length} asset(s), ${scan.textSourceCount} text source(s) scanned; ` +
           (decision.enabled
-            ? `strip on (${stripped.size} module(s))${decision.reason ? ` — ${decision.reason}` : ''}`
+            ? `strip on (${stripped.size} module(s)${stubGltf ? ', GLTFLoader' : ''}, scenes as JSON)` +
+              (decision.reason ? ` — ${decision.reason}` : '')
             : `strip off — ${decision.reason}`)
       );
-      if (settings.compress)
-        warn('compress is not implemented yet (plan §B.6, P2); building uncompressed');
+      if (settings.compress && format === 'zip')
+        warn('compress applies to build: "html" only; the zip is written as is');
     },
 
     /**
@@ -382,18 +498,84 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         return;
       }
       const digest = fileDigest(artifact);
+      const at = new Date().toISOString();
+      const stripped = [...build.stripped].sort();
+      const reportPath = buildReportPath(artifact, dir);
+      const compressed = build.compressed;
+      const assets = build.assets;
+      writeBuildReport(reportPath, {
+        format: build.format,
+        path: artifact,
+        at,
+        entryScene: build.scan.entryScenePath,
+        scenes: build.scan.scenePaths.length,
+        bytes: digest.bytes,
+        gzipBytes: gzipBytesOf(readFileSync(artifact)),
+        compress: compressed
+          ? {
+              enabled: true,
+              bundleBytes: compressed.bundleBytes,
+              gzipBytes: compressed.gzipBytes,
+              base64Bytes: compressed.base64Bytes,
+              ratio:
+                Math.round((compressed.gzipBytes / Math.max(1, compressed.bundleBytes)) * 1000) /
+                1000,
+              savedBytes: compressed.bundleBytes - compressed.base64Bytes,
+            }
+          : { enabled: false },
+        code: summarizeCode({ bundleBytes: build.bundleBytes, modules: build.moduleSizes }),
+        strip: {
+          enabled: build.stripEnabled,
+          reason: build.stripReason,
+          keep: build.keep,
+          stripped,
+          dependencies: build.dependencyParsed,
+          dependencyImports: [...build.dependencyImports].sort(),
+        },
+        libraries: {
+          yaml: build.stubYaml ? 'stub: scenes and prefabs ship as JSON' : 'bundled',
+          GLTFLoader: build.stubGltf ? 'stub: no .glb/.gltf in the project' : 'bundled',
+          postprocessing: !build.postprocessingInstalled
+            ? 'not installed'
+            : build.scan.usesPostProcessing
+              ? 'bundled (static import)'
+              : build.format !== 'html'
+                ? 'lazy chunk (the runtime import())'
+                : build.stripEnabled
+                  ? 'stub: no PostProcess node'
+                  : 'bundled (the runtime import(), inlined; strip is off)',
+          spine: !build.scan.usesSpine
+            ? 'not bundled: no SpineSkeleton2D'
+            : build.spineInstalled
+              ? 'bundled (static import)'
+              : 'not installed',
+          network: build.scan.usesNetwork ? 'bundled (NetworkService installed)' : 'no-op',
+        },
+        assets: {
+          count: build.scan.assetPaths.length,
+          rawBytes: assets?.rawBytes ?? 0,
+          base64Bytes: assets?.base64Bytes ?? 0,
+          entries: assets?.entries ?? [],
+        },
+        warnings: build.scan.warnings,
+      });
       writeBuildRecord(root(), {
         format: build.format,
         path: artifact,
         ...digest,
-        at: new Date().toISOString(),
+        at,
         entryScene: build.scan.entryScenePath,
         assets: build.scan.assetPaths.length,
-        stripped: [...build.stripped].sort(),
+        stripped,
         warnings: build.scan.warnings,
+        report: reportPath,
       });
       log(
-        `${build.format}: ${relative(root(), artifact)} (${(digest.bytes / 1024).toFixed(1)} KiB)`
+        `${build.format}: ${relative(root(), artifact)} (${(digest.bytes / 1024).toFixed(1)} KiB` +
+          (compressed
+            ? `, bundle ${(compressed.bundleBytes / 1024).toFixed(1)} → gzip ${(compressed.gzipBytes / 1024).toFixed(1)} KiB`
+            : '') +
+          `); report ${relative(root(), reportPath)}`
       );
     },
 
@@ -563,12 +745,16 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           root: root(),
           resRoot: settings.resRoot,
           assetPaths: build.scan.assetPaths,
+          shippedBytes,
         });
+        build.assets = embedded;
         log(
           `embedded ${embedded.count} asset(s), ${(embedded.rawBytes / 1024).toFixed(1)} KiB raw`
         );
         return embedded.source;
       }
+      if (virtual === YAML_STUB_ID) return yamlStubSource();
+      if (virtual === GLTF_LOADER_STUB_ID) return gltfLoaderStubSource();
       if (virtual === PROJECT_SCRIPTS_ID) return projectScriptsSource();
       if (virtual === SPINE_ID) {
         if (!build) return spineSource('dev');
@@ -586,21 +772,96 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       return null;
     },
 
-    /** Zip: the assets go beside `index.html`, under their `res://` paths. */
-    generateBundle() {
-      if (build?.format !== 'zip') return;
+    /**
+     * Zip: the assets go beside `index.html`, under their `res://` paths. Every format: the
+     * chunks' per-module sizes, for the report.
+     */
+    generateBundle(_options, bundle) {
+      if (!build || !isBuild()) return;
+      const classifier = {
+        root: root(),
+        runtimeSrc: build.runtimeSrc,
+        playerDir: PACKAGE_DIR,
+        embeddedAssetsId: EMBEDDED_ASSETS_ID,
+      };
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue;
+        build.bundleBytes += Buffer.byteLength(output.code, 'utf8');
+        for (const [id, rendered] of Object.entries(output.modules)) {
+          const { group, package: pkg } = classifyModule(id, classifier);
+          build.moduleSizes.push({
+            id: displayId(id, classifier),
+            group,
+            package: pkg,
+            renderedBytes: rendered.renderedLength,
+          });
+        }
+      }
+      if (build.format !== 'zip') return;
+      const entries = [];
       for (const resPath of build.scan.assetPaths) {
         const absolute =
           settings.resRoot === '.'
             ? join(root(), ...resPath.split('/'))
             : join(root(), settings.resRoot, ...resPath.split('/'));
-        this.emitFile({ type: 'asset', fileName: resPath, source: readFileSync(absolute) });
+        const source = shippedBytes(resPath, readFileSync(absolute));
+        entries.push({ path: resPath, rawBytes: source.byteLength, base64Bytes: 0 });
+        this.emitFile({ type: 'asset', fileName: resPath, source });
       }
+      build.assets = {
+        source: '',
+        count: entries.length,
+        rawBytes: entries.reduce((sum, entry) => sum + entry.rawBytes, 0),
+        base64Bytes: 0,
+        entries: entries.sort((a, b) => b.rawBytes - a.rawBytes || (a.path < b.path ? -1 : 1)),
+      };
     },
 
     transform(code, id, transformOptions) {
-      if (config?.command !== 'serve' || transformOptions?.ssr || !scripts) return null;
-      return scripts.stamp(code, id);
+      if (transformOptions?.ssr) return null;
+      if (config?.command === 'serve') return scripts ? scripts.stamp(code, id) : null;
+      // The N11 safety net: a `node_modules` module the bundle pulls in (a transitive dependency,
+      // one that does not declare the runtime) importing something this build stripped.
+      if (
+        !build ||
+        !build.stripEnabled ||
+        id.startsWith('\0') ||
+        !code.includes(RUNTIME_SPECIFIER) ||
+        isUnder(id.split('?')[0], build.runtimeSrc) ||
+        isUnder(id.split('?')[0], PACKAGE_DIR) ||
+        !(id.includes('/node_modules/') || !isUnder(id.split('?')[0], root()))
+      ) {
+        return null;
+      }
+      const label = displayId(id, {
+        root: root(),
+        runtimeSrc: build.runtimeSrc,
+        playerDir: PACKAGE_DIR,
+        embeddedAssetsId: EMBEDDED_ASSETS_ID,
+      });
+      let findings;
+      try {
+        findings = collectRuntimeImports(this.parse(code), label);
+      } catch {
+        return null; // not JS the bundler can parse here (it will say so itself)
+      }
+      const hits = [...findings.names].filter(name => build?.stubbedNames.has(name)).sort();
+      if (hits.length > 0) {
+        const message =
+          `${label} imports ${hits.join(', ')} from ${RUNTIME_SPECIFIER}, which this build ` +
+          `stripped (nothing in the project mentions ${hits.length > 1 ? 'them' : 'it'}). ` +
+          `Add ${hits.map(name => `'${name}'`).join(', ')} to pix3({ strip: { keep } })` +
+          (settings.strip === true ? '' : ', or pass strip: false');
+        if (settings.strip === true) warn(message);
+        else this.error(message);
+      }
+      if (findings.opaque.length > 0 && !build.stripConfigured) {
+        this.error(
+          `${findings.opaque[0]} — the build cannot see which runtime modules it reaches. ` +
+            `Name them with ${KEEP_HINT}, or pass strip: false`
+        );
+      }
+      return null;
     },
 
     async handleHotUpdate(ctx) {
@@ -639,24 +900,30 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
   if (settings.build === false) return [core];
 
   /**
-   * A single-file build with no PostProcess node: the runtime's `import('postprocessing')` would
-   * be inlined whole; point the bare specifier at a stub instead (CLAUDE.md «Playable export
-   * size»). Part of the strip (`strip: false` keeps the library). `enforce: 'pre'`, because Vite's
-   * own resolver runs before a normal plugin's `resolveId`.
+   * The optional libraries a build leaves out (CLAUDE.md «Playable export size»), part of the
+   * strip (`strip: false` keeps them all). `enforce: 'pre'`, because Vite's own resolver runs
+   * before a normal plugin's `resolveId`:
+   *
+   * - `postprocessing` in a single-file build with no PostProcess node — the runtime's
+   *   `import('postprocessing')` would be inlined whole;
+   * - `yaml` **for the runtime's own importers** — the scenes ship as JSON (`shippedBytes`), so
+   *   `SceneLoader`'s `parse` is `JSON.parse`; a project module importing `yaml` keeps the real
+   *   one (plan §B.6 item 4, done the 1.x way: no runtime change, no second scene format);
+   * - `GLTFLoader` when no scene, script or asset names a model.
    */
-  const postprocessingStub: Plugin = {
-    name: 'pix3:postprocessing-stub',
+  const libraryStubs: Plugin = {
+    name: 'pix3:library-stubs',
     apply: 'build',
     enforce: 'pre',
-    resolveId(id) {
-      if (
-        id === 'postprocessing' &&
-        build?.format === 'html' &&
-        build.stripEnabled &&
-        !build.scan.usesPostProcessing
-      ) {
+    resolveId(id, importer) {
+      if (!build?.stripEnabled) return null;
+      if (id === 'postprocessing' && build.format === 'html' && !build.scan.usesPostProcessing) {
         return resolvedId(POSTPROCESSING_STUB_ID);
       }
+      if (id === 'yaml' && build.stubYaml && importer && isUnder(importer, build.runtimeSrc)) {
+        return resolvedId(YAML_STUB_ID);
+      }
+      if (id === GLTF_LOADER_SPECIFIER && build.stubGltf) return resolvedId(GLTF_LOADER_STUB_ID);
       return null;
     },
   };
@@ -665,13 +932,19 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
   const singleFile: Plugin = {
     ...(viteSingleFile({
       useRecommendedBuildConfig: false,
-      removeViteModuleLoader: true,
+      // `modulePreload: false` above means there is no preload polyfill to remove — and the
+      // removal's regex takes the first IIFE it sees for that polyfill, which in a compressed
+      // (`iife`) build is the head of the bundle itself.
+      removeViteModuleLoader: false,
     }) as Plugin),
     name: 'pix3:single-file',
     apply: (_user, env) => env.command === 'build' && buildFormat() === 'html',
   };
 
-  /** Then make that one script classic, at the end of `<body>` (DeepCore's compatibility plugin). */
+  /**
+   * Then make that one script classic, at the end of `<body>` (DeepCore's compatibility plugin),
+   * and with `compress` replace it by the gzip payload and its bootstrap (`build/compress.ts`).
+   */
   const classicScript: Plugin = {
     name: 'pix3:classic-script',
     apply: (_user, env) => env.command === 'build' && buildFormat() === 'html',
@@ -683,12 +956,19 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           typeof output.source === 'string'
             ? output.source
             : Buffer.from(output.source).toString('utf8');
-        output.source = toClassicScriptHtml(html);
+        const classic = toClassicScriptHtml(html);
+        if (!settings.compress || !build) {
+          output.source = classic;
+          continue;
+        }
+        const compressed = toCompressedHtml(classic);
+        build.compressed = compressed;
+        output.source = compressed.html;
       }
     },
   };
 
-  return [postprocessingStub, core, singleFile, classicScript];
+  return [libraryStubs, core, singleFile, classicScript];
 }
 
 export default pix3;

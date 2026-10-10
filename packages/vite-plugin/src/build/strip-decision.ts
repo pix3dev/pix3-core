@@ -4,16 +4,21 @@ import { join } from 'node:path';
 import { findPackageDir } from '../dev-info.ts';
 
 /**
- * Whether a build may strip unmentioned runtime modules (plan §B.6 item 2, P1 rule): on unless a
- * dependency of the project declares `@pix3/runtime` in its `dependencies`/`peerDependencies` —
- * such a package imports runtime modules the scan never sees (the barrel-import case, N11), and
- * parsing its imports is P2. `pix3({ strip: false })` switches it off for foreign entries;
- * `strip: true` forces it on.
+ * Whether a build may strip unmentioned runtime modules (plan §B.6 item 2, N11). On by default.
+ * A dependency that declares `@pix3/runtime` is parsed first (`dependency-imports.ts`): its
+ * named imports keep their modules, and an import the build cannot follow (`import * as`, a
+ * dynamic import, a parse error) turns strip **off** with a message naming
+ * `pix3({ strip: { keep } })` — the owner names the runtime classes the library uses and strip
+ * stays on. `strip: false` switches it off for foreign entries; `strip: true` forces it on.
  */
+export type StripOption = boolean | { readonly keep?: readonly string[] };
+
 export interface StripDecision {
   readonly enabled: boolean;
-  /** Why it is off (or `forced` when the option turned it on), for the build log. */
+  /** Why it is off (or on against findings), for the build log; null when nothing to say. */
   readonly reason: string | null;
+  /** Names kept by `pix3({ strip: { keep } })`. */
+  readonly keep: readonly string[];
 }
 
 const OWN_PACKAGES = new Set([
@@ -22,6 +27,9 @@ const OWN_PACKAGES = new Set([
   '@pix3/editor-core',
   '@pix3/cli',
 ]);
+
+/** The fix a message names when a dependency's imports cannot be followed. */
+export const KEEP_HINT = "pix3({ strip: { keep: ['<RuntimeClass>', …] } })";
 
 const readPackage = (dir: string): Record<string, unknown> | null => {
   try {
@@ -61,17 +69,45 @@ export const runtimeDependents = (root: string): string[] => {
   return dependents.sort();
 };
 
-export const decideStrip = (root: string, option: boolean | undefined): StripDecision => {
-  if (option === false) return { enabled: false, reason: 'pix3({ strip: false })' };
-  if (option === true) return { enabled: true, reason: 'forced by pix3({ strip: true })' };
-  const dependents = runtimeDependents(root);
-  if (dependents.length > 0) {
+export interface StripFindings {
+  /** Imports of `@pix3/runtime` the build could not follow (from `scanDependencyImports`). */
+  readonly opaque: readonly string[];
+}
+
+export const decideStrip = (
+  option: StripOption | undefined,
+  findings: StripFindings = { opaque: [] }
+): StripDecision => {
+  if (option === false) return { enabled: false, reason: 'pix3({ strip: false })', keep: [] };
+  if (option === true) {
+    return { enabled: true, reason: 'forced by pix3({ strip: true })', keep: [] };
+  }
+  const keep = option && typeof option === 'object' ? [...(option.keep ?? [])] : [];
+  const opaque = findings.opaque;
+  if (opaque.length === 0) {
     return {
-      enabled: false,
-      reason:
-        `${dependents.join(', ')} depend(s) on @pix3/runtime and may import modules the scan ` +
-        `cannot see; pass pix3({ strip: true }) to strip anyway`,
+      enabled: true,
+      reason: keep.length > 0 ? `keeping ${keep.join(', ')} by pix3({ strip: { keep } })` : null,
+      keep,
     };
   }
-  return { enabled: true, reason: null };
+  const first = opaque[0] + (opaque.length > 1 ? ` (+${opaque.length - 1} more)` : '');
+  if (option && typeof option === 'object') {
+    return {
+      enabled: true,
+      reason:
+        `${first} — the build cannot see which runtime modules it reaches; stripping anyway ` +
+        `because pix3({ strip: { keep } }) names what it uses` +
+        (keep.length > 0 ? ` (${keep.join(', ')})` : ' (nothing listed!)'),
+      keep,
+    };
+  }
+  return {
+    enabled: false,
+    reason:
+      `${first} — the build cannot see which runtime modules it reaches, so nothing is ` +
+      `stripped. Name the runtime classes it uses with ${KEEP_HINT} to strip the rest, ` +
+      `or pass strip: true to strip regardless`,
+    keep,
+  };
 };

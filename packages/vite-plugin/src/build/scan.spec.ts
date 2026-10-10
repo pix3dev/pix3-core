@@ -242,7 +242,7 @@ describe('parseProjectManifest', () => {
   });
 });
 
-describe('decideStrip (plan §B.6 item 2, P1 rule)', () => {
+describe('decideStrip (plan §B.6 item 2, N11)', () => {
   const withDeps = (deps: Record<string, Record<string, unknown>>): string =>
     project({
       'package.json': JSON.stringify({
@@ -264,28 +264,54 @@ describe('decideStrip (plan §B.6 item 2, P1 rule)', () => {
   it('is on when no dependency depends on the runtime (own packages do not count)', () => {
     const root = withDeps({ three: {}, lit: { dependencies: { 'lit-html': '*' } } });
     expect(runtimeDependents(root)).toEqual([]);
-    expect(decideStrip(root, undefined)).toEqual({ enabled: true, reason: null });
+    expect(decideStrip(undefined)).toEqual({ enabled: true, reason: null, keep: [] });
   });
 
-  it('is off when a dependency declares @pix3/runtime in deps or peerDeps', () => {
+  it('names the dependencies that declare @pix3/runtime in deps or peerDeps (parsed by N11)', () => {
     const root = withDeps({
       'game-kit': { peerDependencies: { '@pix3/runtime': '*' } },
       'ui-pack': { dependencies: { '@pix3/runtime': '*' } },
       three: {},
     });
     expect(runtimeDependents(root)).toEqual(['game-kit', 'ui-pack']);
-    const decision = decideStrip(root, undefined);
-    expect(decision.enabled).toBe(false);
-    expect(decision.reason).toContain('game-kit, ui-pack');
-    expect(decideStrip(root, true)).toEqual({
+    // Their named imports keep modules; nothing opaque → strip stays on.
+    expect(decideStrip(undefined, { opaque: [] })).toEqual({
       enabled: true,
-      reason: 'forced by pix3({ strip: true })',
+      reason: null,
+      keep: [],
     });
   });
 
-  it('strip: false wins', () => {
-    const root = withDeps({});
-    expect(decideStrip(root, false)).toEqual({ enabled: false, reason: 'pix3({ strip: false })' });
+  it('is off, with the keep hint, when a dependency imports the runtime opaquely', () => {
+    const opaque = ["game-kit/dist/index.js: import * as pix3 from '@pix3/runtime'"];
+    const decision = decideStrip(undefined, { opaque });
+    expect(decision.enabled).toBe(false);
+    expect(decision.reason).toContain('game-kit/dist/index.js');
+    expect(decision.reason).toContain('pix3({ strip: { keep:');
+    expect(decision.reason).toContain('strip: true');
+    // The owner names what it uses: strip stays on, the names are kept.
+    const kept = decideStrip({ keep: ['GeometryMesh'] }, { opaque });
+    expect(kept.enabled).toBe(true);
+    expect(kept.keep).toEqual(['GeometryMesh']);
+    expect(kept.reason).toContain('stripping anyway');
+    expect(decideStrip(true, { opaque })).toEqual({
+      enabled: true,
+      reason: 'forced by pix3({ strip: true })',
+      keep: [],
+    });
+  });
+
+  it('strip: false wins; strip: { keep } with nothing opaque only adds names', () => {
+    expect(decideStrip(false)).toEqual({
+      enabled: false,
+      reason: 'pix3({ strip: false })',
+      keep: [],
+    });
+    expect(decideStrip({ keep: ['Slider2D'] })).toEqual({
+      enabled: true,
+      reason: 'keeping Slider2D by pix3({ strip: { keep } })',
+      keep: ['Slider2D'],
+    });
   });
 });
 
