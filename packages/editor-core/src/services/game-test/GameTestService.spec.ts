@@ -781,6 +781,28 @@ describe('GameTestService.run — the pause survives the focus rule', () => {
     }
   });
 
+  it('waits for a runtime that is still starting (play start answers first; a minimized window takes ~1 s)', async () => {
+    const { appState } = await import('@/state');
+    appState.ui.isPlaying = true;
+    try {
+      const runner = makeRunner();
+      let started = false;
+      Object.defineProperty(runner, 'running', { get: () => started, configurable: true });
+      const { service } = buildWiredService(runner);
+      setTimeout(() => {
+        started = true;
+      }, 120);
+
+      const result = await service.run({ until: [{ kind: 'frames', n: 5 }] });
+
+      // Before: stepFrames on the starting runner executed 0 → "the runner stopped at frame 0".
+      expect(result.outcome?.kind).toBe('until');
+      expect(result.metrics?.frames).toBe(5);
+    } finally {
+      appState.ui.isPlaying = false;
+    }
+  });
+
   it('steps a game that a previous run left paused instead of reporting it dead', async () => {
     const { appState } = await import('@/state');
     appState.ui.isPlaying = true;

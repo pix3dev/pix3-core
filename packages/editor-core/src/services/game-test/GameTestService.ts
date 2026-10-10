@@ -718,6 +718,28 @@ export class GameTestService {
   private protocolStore: RunProtocolStore | null = null;
 
   /**
+   * The play runtime once its scene runs. Play mode turns on (and `pix3_play start` answers)
+   * before that: the runtime starts after the Game tab registers its host and the scene loads —
+   * about a second later in a minimized window, where no frame is painted (gate P2, «Окно
+   * свёрнуто → pix3_game_run»). A run that stepped a runner still starting reported "the runner
+   * stopped at frame 0". Bounded: a start that never comes is the caller's error to read.
+   */
+  private async waitForRunningRuntime(
+    timeoutMs = GameTestService.RUNTIME_START_TIMEOUT_MS
+  ): Promise<ReturnType<GamePlaySessionService['getActiveRuntime']>> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const runtime = this.playSession.getActiveRuntime();
+      if (runtime?.runner.running || !appState.ui.isPlaying || Date.now() >= deadline) {
+        return runtime;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
+
+  static readonly RUNTIME_START_TIMEOUT_MS = 15_000;
+
+  /**
    * Run one gameplay test against the live game. Returns `ok: false` only when
    * the run could not start; a failed or timed-out run is a successful call with
    * a negative verdict.
@@ -729,7 +751,7 @@ export class GameTestService {
         error: 'The game is not running. Call play_start first, then game_run.',
       };
     }
-    const runtime = this.playSession.getActiveRuntime();
+    const runtime = await this.waitForRunningRuntime();
     if (!runtime) {
       return {
         ok: false,
