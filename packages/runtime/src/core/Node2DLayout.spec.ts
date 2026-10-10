@@ -9,6 +9,8 @@ import { SceneSaver } from './SceneSaver';
 import { ScriptRegistry } from './ScriptRegistry';
 import { Sprite2D } from '../nodes/2D/Sprite2D';
 import { Group2D } from '../nodes/2D/Group2D';
+import { Checkbox2D } from '../nodes/2D/UI/Checkbox2D';
+import { Joystick2D } from '../nodes/2D/UI/Joystick2D';
 
 function createLoader(): SceneLoader {
   return new SceneLoader(
@@ -281,6 +283,175 @@ describe('Node2D anchor margins in the scene file', () => {
     // The flow placed the knob at the top of the column; the anchor placed it at the right.
     expect(knob.position.y).toBe(150 - 10);
     expect(knob.position.x).toBe(200 - 20 - 10);
+  });
+});
+
+/**
+ * W21 for a square (`size`: Checkbox2D, `radius`: Joystick2D): under `stretch` its side is the
+ * stretched span, placed on the other axis with that side, so the one size key is the margins'
+ * and is not written — a parent resize leaves the child's entry alone, as for `width`/`height`.
+ */
+describe('a square node under stretch: its size is the margins’', () => {
+  const PANEL = [
+    'version: 1.0.0',
+    'root:',
+    '  - id: panel',
+    '    type: Group2D',
+    '    name: Panel',
+    '    properties:',
+    '      width: 400',
+    '      height: 300',
+    '    children:',
+    '      - id: check',
+    '        type: Checkbox2D',
+    '        name: Check',
+    '        properties:',
+    '          size: 40',
+    '          layout: { enabled: true, horizontalAlign: stretch, verticalAlign: top }',
+    '          transform: { position: [0, 110], scale: [1, 1], rotation: 0 }',
+    '      - id: stick',
+    '        type: Joystick2D',
+    '        name: Stick',
+    '        properties:',
+    '          radius: 30',
+    '          layout: { enabled: true, horizontalAlign: left, verticalAlign: stretch }',
+    '          transform: { position: [-150, 0], scale: [1, 1], rotation: 0 }',
+    '',
+  ].join('\n');
+
+  type Graph = Awaited<ReturnType<SceneLoader['parseScene']>>;
+  const parsed = async (text: string) =>
+    createLoader().parseScene(text, { filePath: 'res://scenes/p.pix3scene' });
+  const layOut = (graph: Graph) => {
+    for (const root of graph.rootNodes) {
+      if (root instanceof Group2D) root.applyAnchoredLayoutRecursive({ width: 400, height: 300 });
+    }
+    return graph;
+  };
+  const save = (graph: Graph) => new SceneSaver().serializeScene(graph);
+  const props = (graph: Graph, id: string) =>
+    (
+      JSON.parse(JSON.stringify(new SceneSaver().serializeSceneDocument(graph))) as {
+        root: Array<{ children: Array<{ id: string; properties: Record<string, unknown> }> }>;
+      }
+    ).root[0].children.find(c => c.id === id)!.properties;
+  /** What the editor does after a parent resize: the children keep the rects the margins gave. */
+  const resize = (graph: Graph, axis: 'width' | 'height', value: number) => {
+    const panel = graph.nodeMap.get('panel') as Group2D;
+    panel[axis] = value;
+    for (const child of panel.children) {
+      if (child instanceof Checkbox2D || child instanceof Joystick2D) {
+        child.captureAuthoredLayoutRectFromCurrent();
+      }
+    }
+  };
+  const rects = (graph: Graph) => {
+    const check = graph.nodeMap.get('check') as Checkbox2D;
+    const stick = graph.nodeMap.get('stick') as Joystick2D;
+    return [
+      check.position.x,
+      check.position.y,
+      check.size,
+      stick.position.x,
+      stick.position.y,
+      stick.radius,
+    ];
+  };
+  const changedLines = (before: string, after: string) => {
+    const a = after.split('\n');
+    expect(a.length).toBe(before.split('\n').length);
+    return before.split('\n').filter((line, i) => a[i] !== line);
+  };
+
+  it('a legacy file: the margins come from the square, `size`/`radius` are not written', async () => {
+    const graph = await parsed(PANEL);
+    const check = props(graph, 'check');
+    expect(check.layout).toEqual({
+      enabled: true,
+      horizontalAlign: 'stretch',
+      verticalAlign: 'top',
+      left: 180,
+      right: 180,
+      top: 20,
+    });
+    expect(check.size).toBeUndefined();
+    const stick = props(graph, 'stick');
+    expect(stick.layout).toEqual({
+      enabled: true,
+      horizontalAlign: 'left',
+      verticalAlign: 'stretch',
+      left: 20,
+      bottom: 120,
+      top: 120,
+    });
+    expect(stick.radius).toBeUndefined();
+    const beforeLayout = save(graph);
+    layOut(graph);
+    expect(save(graph)).toBe(beforeLayout);
+  });
+
+  it('the margin file loads to the same squares as the legacy one, and is a fixed point', async () => {
+    const legacy = layOut(await parsed(PANEL));
+    expect(rects(legacy)).toEqual([0, 110, 40, -150, 0, 30]);
+    const saved = save(await parsed(PANEL));
+    const reloaded = layOut(await parsed(saved));
+    expect(rects(reloaded)).toEqual(rects(legacy));
+    expect(save(reloaded)).toBe(saved);
+  });
+
+  it('a parent resize writes the parent’s line only; a fresh load reproduces the squares', async () => {
+    const graph = layOut(await parsed(PANEL));
+    const before = save(graph);
+    resize(graph, 'width', 500);
+    // The checkbox's side is its stretched span (500 − 180 − 180), hung 20 below the top.
+    expect(rects(graph)).toEqual([0, 150 - 20 - 70, 140, -250 + 20 + 30, 0, 30]);
+    const wide = save(graph);
+    expect(changedLines(before, wide)).toEqual(['      width: 400']);
+    resize(graph, 'height', 400);
+    // The joystick's diameter is its stretched span (400 − 120 − 120).
+    expect((graph.nodeMap.get('stick') as Joystick2D).radius).toBe(80);
+    const tall = save(graph);
+    expect(changedLines(before, tall)).toEqual(['      width: 400', '      height: 300']);
+    const reloaded = await parsed(tall);
+    (reloaded.rootNodes[0] as Group2D).applyAnchoredLayoutRecursive({ width: 500, height: 400 });
+    expect(rects(reloaded)).toEqual(rects(graph));
+    // And back: the side follows the span both ways (no ratchet through the re-captured rect).
+    resize(graph, 'width', 400);
+    resize(graph, 'height', 300);
+    expect(rects(graph)).toEqual([0, 110, 40, -150, 0, 30]);
+    expect(save(graph)).toBe(before);
+  });
+
+  it('an explicit size edit writes: the margins follow the new side, and reload keeps it', async () => {
+    const graph = layOut(await parsed(PANEL));
+    const before = save(graph);
+    const check = graph.nodeMap.get('check') as Checkbox2D;
+    // The inspector's `size` edit (UpdateObjectPropertyOperation): set, re-derive, lay out.
+    check.size = 60;
+    check.captureAuthoredLayoutRectFromCurrent(true);
+    layOut(graph);
+    expect([check.position.x, check.position.y, check.size]).toEqual([0, 110, 60]);
+    const after = save(graph);
+    expect(props(graph, 'check').layout).toEqual({
+      enabled: true,
+      horizontalAlign: 'stretch',
+      verticalAlign: 'top',
+      left: 170,
+      right: 170,
+      top: 10,
+    });
+    expect(changedLines(before, after).length).toBeGreaterThan(0);
+    const reloaded = layOut(await parsed(after));
+    expect(rects(reloaded)).toEqual(rects(graph));
+  });
+
+  it('not stretched: the size is the node’s own and is written', async () => {
+    const graph = layOut(
+      await parsed(PANEL.replace('horizontalAlign: stretch', 'horizontalAlign: left'))
+    );
+    expect(props(graph, 'check').size).toBe(40);
+    expect((graph.nodeMap.get('check') as Checkbox2D).marginDerivedSizeKeys()).toEqual([]);
+    expect((graph.nodeMap.get('stick') as Joystick2D).marginDerivedSizeKeys()).toEqual(['radius']);
   });
 });
 

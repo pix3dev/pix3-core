@@ -849,7 +849,8 @@ export class SceneSaver {
   /**
    * What the margins of an anchored axis derive is not written (W21): the position component of
    * that axis goes out as `0` (a vector cannot lose one component) and, under `stretch`, the size
-   * key goes. The loader resolves both from the margins and the parent's current size, so a parent
+   * key goes (`width`/`height`, a square's `size`/`radius`: {@link Node2D.marginDerivedSizeKeys}).
+   * The loader resolves both from the margins and the parent's current size, so a parent
    * resize changes nothing in the child's entry — the point of storing margins at all.
    */
   private dropMarginDerivedRect(node: Node2D, props: Record<string, unknown>): void {
@@ -864,8 +865,7 @@ export class SceneSaver {
         if (marginY) position[1] = 0;
       }
     }
-    if (marginX && node.horizontalAlign === 'stretch') delete props.width;
-    if (marginY && node.verticalAlign === 'stretch') delete props.height;
+    for (const key of node.marginDerivedSizeKeys()) delete props[key];
   }
 
   /** The instance-diff counterpart of {@link dropMarginDerivedRect}, on schema-valued records. */
@@ -885,8 +885,7 @@ export class SceneSaver {
       if (marginY) masked.y = 0;
       out.position = masked;
     }
-    if (marginX && node.horizontalAlign === 'stretch') delete out.width;
-    if (marginY && node.verticalAlign === 'stretch') delete out.height;
+    for (const key of node.marginDerivedSizeKeys()) delete out[key];
     return out;
   }
 

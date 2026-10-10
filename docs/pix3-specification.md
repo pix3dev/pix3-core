@@ -1491,8 +1491,11 @@ stretch` (default `center`). **An anchored axis is placed by its margins** — `
 `left` alignment keeps `left`, `right` keeps `right`, `stretch` keeps both and sizes the node from
 them, a centred axis keeps none and uses `position` as authored. What the margins derive is not
 stored: the saver writes `0` for the `position` component of an anchored axis (the loader ignores
-it when the margin is present) and omits `width` / `height` under `stretch`. That is what lets a
-parent be resized without touching a single child entry — the layout re-resolves each child from
+it when the margin is present) and omits `width` / `height` under `stretch`. A square node — one
+size key for both axes: `Checkbox2D`'s `size`, `Joystick2D`'s `radius` (half the side) — takes its
+side from the stretched span (both axes stretched: `Checkbox2D` the larger span, `Joystick2D` the
+smaller), is placed on a non-stretched axis with that side, and its key is omitted too. That is
+what lets a parent be resized without touching a single child entry — the layout re-resolves each child from
 its margins and the parent's current size, in the editor and in the game alike (`.plans/write-model.md`
 W21). A node directly under a parent flow (`flow.enabled`) has no margin on the flow's main axis:
 the flow places it there. A **root** 2D node's reference is the project's `viewportBaseSize`, which a

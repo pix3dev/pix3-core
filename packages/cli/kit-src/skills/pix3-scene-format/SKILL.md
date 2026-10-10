@@ -109,7 +109,8 @@ layout:
 An anchored axis is placed by its margin, and keeps it when the parent resizes (a different
 screen aspect, a container resized in the editor). On that axis the `transform.position`
 component is ignored — write `0` — and under `stretch` the node's `width` / `height` is derived
-from the two margins, so leave it out. A centred axis has no margin: `position` places it, as
+from the two margins, so leave it out (a `Checkbox2D`'s `size` / `Joystick2D`'s `radius` too: its
+side is the stretched span). A centred axis has no margin: `position` places it, as
 for any node. A file with the anchors but **no margins** still loads: the margins are read off
 the rect, and the editor rewrites the node in the margin form the first time it saves the file.
 HUD widgets anchor to screen edges; full-screen backgrounds and roots use `stretch` on both

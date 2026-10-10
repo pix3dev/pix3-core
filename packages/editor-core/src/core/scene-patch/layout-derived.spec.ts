@@ -425,3 +425,131 @@ describe('W21: a parent resize writes only the parent; the anchored children liv
     expect(resized.split('\n').length).toBe(saved.split('\n').length);
   });
 });
+
+/**
+ * The same for a square (`size`: Checkbox2D, `radius`: Joystick2D): under `stretch` its side is the
+ * stretched span, so its one size key is the margins' (`Node2D.marginDerivedSizeKeys`) — a parent
+ * resize is the parent's line alone, and the legacy file's `size`/`radius` goes on its first write.
+ */
+describe('W21 for a square: a parent resize does not write the stretched child’s size/radius', () => {
+  const PANEL = [
+    'version: 1.0.0',
+    'root:',
+    '  - id: panel',
+    '    type: Group2D',
+    '    name: Panel',
+    '    properties:',
+    '      width: 400',
+    '      height: 300',
+    '    children:',
+    '      - id: check',
+    '        type: Checkbox2D',
+    '        name: Check',
+    '        properties:',
+    '          size: 40',
+    '          label: Sound',
+    '          layout:',
+    '            enabled: true',
+    '            horizontalAlign: stretch',
+    '            verticalAlign: top',
+    '          transform:',
+    '            position: [0, 110]',
+    '      - id: stick',
+    '        type: Joystick2D',
+    '        name: Stick',
+    '        properties:',
+    '          radius: 30',
+    '          layout:',
+    '            enabled: true',
+    '            horizontalAlign: left',
+    '            verticalAlign: stretch',
+    '          transform:',
+    '            position: [-150, 0]',
+    '',
+  ].join('\n');
+
+  type Square = Node2D & { size?: number; radius?: number };
+  const squares = (graph: SceneGraph) =>
+    ['check', 'stick'].map(id => {
+      const n = graph.nodeMap.get(id) as Square;
+      return [n.position.x, n.position.y, n.size ?? n.radius];
+    });
+  /** The editor's parent resize: set the size, the children keep the rects the margins gave. */
+  const resizePanel = (graph: SceneGraph, width: number, height: number) => {
+    const panel = graph.nodeMap.get('panel') as Group2D;
+    setProp(panel, 'width', width);
+    setProp(panel, 'height', height);
+    for (const child of panel.children) {
+      if (child instanceof Node2D) child.captureAuthoredLayoutRectFromCurrent();
+    }
+  };
+
+  it('the designer resizes the panel: the squares follow their spans, only the panel is pending', async () => {
+    const h = createSceneHarness(dir);
+    const graph = await h.parse(PANEL, 'scenes/p.pix3scene');
+    const B = h.normOf(graph);
+    layOut(graph);
+    expect(squares(graph)).toEqual([
+      [0, 110, 40],
+      [-150, 0, 30],
+    ]);
+    resizePanel(graph, 500, 400);
+    // check: 500 − 180 − 180 wide, hung 20 below the top; stick: (400 − 120 − 120) / 2.
+    expect(squares(graph)).toEqual([
+      [0, 200 - 20 - 70, 140],
+      [-250 + 20 + 80, 0, 80],
+    ]);
+    const G = maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph));
+    expect(keys(diffScenes(B, G))).toEqual(['panel::properties.height', 'panel::properties.width']);
+    expect(indexNodes(B).get('check')!.def.properties!.size).toBeUndefined();
+    expect(indexNodes(B).get('stick')!.def.properties!.radius).toBeUndefined();
+  });
+
+  it('the first flush converts the legacy squares; the written file reloads to the same squares', async () => {
+    const h = createSceneHarness(dir);
+    const graph = await h.parse(PANEL, 'scenes/p.pix3scene');
+    const B = h.normOf(graph);
+    layOut(graph);
+    resizePanel(graph, 500, 400);
+    const G = maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph));
+    const ops = diffScenes(B, G).filter(isLeafOp);
+    const written = applySceneOps(PANEL, withLegacyAnchorConversion(PANEL, B, ops));
+    expect(written).not.toMatch(/^\s+(size|radius):/m);
+    expect(await h.norm(written, 'scenes/p.pix3scene')).toEqual(G);
+    const reloaded = await h.parse(written, 'scenes/p.pix3scene');
+    layOut(reloaded);
+    expect(squares(reloaded)).toEqual(squares(graph));
+    // The next resize, onto the converted file: the panel's lines and nothing else.
+    resizePanel(reloaded, 600, 400);
+    const B2 = await h.norm(written, 'scenes/p.pix3scene');
+    const next = diffScenes(B2, h.normOf(reloaded)).filter(isLeafOp);
+    const again = applySceneOps(written, withLegacyAnchorConversion(written, B2, next));
+    const changed = written.split('\n').filter((line, i) => again.split('\n')[i] !== line);
+    expect(changed).toEqual(['      width: 500']);
+  });
+
+  it('an inspector edit of the child’s size writes: its margins, and the reload has the new size', async () => {
+    const h = createSceneHarness(dir);
+    const graph = await h.parse(PANEL, 'scenes/p.pix3scene');
+    const B = h.normOf(graph);
+    layOut(graph);
+    // UpdateObjectPropertyOperation on `size`: set it, re-derive the margins, lay out again.
+    const check = graph.nodeMap.get('check') as Node2D;
+    setProp(check, 'size', 60);
+    check.captureAuthoredLayoutRectFromCurrent(true);
+    layOut(graph);
+    const G = maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph));
+    expect(keys(diffScenes(B, G))).toEqual([
+      'check::properties.layout.left',
+      'check::properties.layout.right',
+      'check::properties.layout.top',
+    ]);
+    const written = applySceneOps(
+      PANEL,
+      withLegacyAnchorConversion(PANEL, B, diffScenes(B, G).filter(isLeafOp))
+    );
+    const reloaded = await h.parse(written, 'scenes/p.pix3scene');
+    layOut(reloaded);
+    expect(squares(reloaded)[0]).toEqual([0, 110, 60]);
+  });
+});

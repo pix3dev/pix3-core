@@ -463,6 +463,34 @@ export class Node2D extends NodeBase {
   }
 
   /**
+   * The size keys the margins derive, which a scene file need not carry: `width` / `height` of a
+   * `stretch` margin axis. A square (`size` — `Checkbox2D`, `radius` — `Joystick2D`) has one key
+   * for both axes, and under `stretch` its side is the stretched span ({@link applyAnchoredLayout}),
+   * so the key is derived as soon as one axis is a stretched margin axis.
+   */
+  marginDerivedSizeKeys(): string[] {
+    const x = this._horizontalAlign === 'stretch' && this.isMarginAxis('x');
+    const y = this._verticalAlign === 'stretch' && this.isMarginAxis('y');
+    const square = this.squareSizeKey();
+    if (square) return x || y ? [square] : [];
+    return [...(x ? ['width'] : []), ...(y ? ['height'] : [])];
+  }
+
+  /** The one key of a square node's rect (`size` / `radius`); null for a width/height node. */
+  private squareSizeKey(): 'size' | 'radius' | null {
+    const record = this as unknown as Record<string, unknown>;
+    if (typeof record.width === 'number' && typeof record.height === 'number') return null;
+    if (typeof record.size === 'number') return 'size';
+    if (typeof record.radius === 'number') return 'radius';
+    return null;
+  }
+
+  /** `stretch` on `axis`, and the axis is the anchor's (not a parent flow's). */
+  private stretchesAxis(axis: LayoutAxis): boolean {
+    return this.layoutAxisMode(axis) === 'both' && !this.flowOwnsAxis(axis);
+  }
+
+  /**
    * Take the node's current position and size as its authored rect. With `rederiveMargins` (an
    * edit of the node itself — a drag, an inspector value) the margins of every anchored axis are
    * read off the new rect against the parent's current size; without it (the children of a resized
@@ -1125,26 +1153,39 @@ export class Node2D extends NodeBase {
     // the editor and the game pass differently (design size vs. screen), so a root keeps resolving
     // from its authored rect every pass, as it always did.
     const store = this.parent instanceof Node2D;
+    const resolve = (axis: LayoutAxis, placedSize?: number) =>
+      this.resolveAxisLayout(
+        axis,
+        axis === 'x' ? currentReference.width : currentReference.height,
+        axis === 'x' ? authoredReference.width : authoredReference.height,
+        axis === 'x' ? this.authoredLayoutPosition.x : this.authoredLayoutPosition.y,
+        axis === 'x' ? authoredSize.width : authoredSize.height,
+        store,
+        placedSize
+      );
 
-    const resolvedHorizontal = this.resolveAxisLayout(
-      'x',
-      currentReference.width,
-      authoredReference.width,
-      this.authoredLayoutPosition.x,
-      authoredSize.width,
-      store
-    );
-    const resolvedVertical = this.resolveAxisLayout(
-      'y',
-      currentReference.height,
-      authoredReference.height,
-      this.authoredLayoutPosition.y,
-      authoredSize.height,
-      store
-    );
+    // A square stretched on one axis takes its side from that axis's span and is placed on the
+    // other with that side: its one size key is then wholly the margins', like `width` under
+    // `stretch` (W21), instead of depending on its own previous side (which a parent resize in the
+    // editor re-captured — a ratchet, and a write of the child's key).
+    const square = this.squareSizeKey() !== null;
+    const stretchX = square && this.stretchesAxis('x');
+    const stretchY = square && this.stretchesAxis('y');
+    let horizontal: { center: number; size: number };
+    let vertical: { center: number; size: number };
+    if (stretchX && !stretchY) {
+      horizontal = resolve('x');
+      vertical = resolve('y', horizontal.size);
+    } else if (stretchY && !stretchX) {
+      vertical = resolve('y');
+      horizontal = resolve('x', vertical.size);
+    } else {
+      horizontal = resolve('x');
+      vertical = resolve('y');
+    }
 
-    this.position.set(resolvedHorizontal.center, resolvedVertical.center, this.position.z);
-    this.applyCurrentLayoutSize(resolvedHorizontal.size, resolvedVertical.size);
+    this.position.set(horizontal.center, vertical.center, this.position.z);
+    this.applyCurrentLayoutSize(horizontal.size, vertical.size);
   }
 
   private normalizeReferenceSize(size: Node2DLayoutSize): Node2DLayoutSize {
@@ -1158,6 +1199,8 @@ export class Node2D extends NodeBase {
    * One axis of the anchor layout: the margins the alignment keeps (stored, else derived once from
    * the authored rect against the authored reference — a legacy file), resolved against the
    * current reference. A centred axis, and the main axis of a parent flow, keep the authored rect.
+   * `placedSize` (a square's side, set by its stretched axis) places a non-stretched axis instead
+   * of the authored size; a missing margin is still derived from the authored rect.
    */
   private resolveAxisLayout(
     axis: LayoutAxis,
@@ -1165,12 +1208,13 @@ export class Node2D extends NodeBase {
     authoredReference: number,
     authoredCenter: number,
     authoredSize: number,
-    store: boolean
+    store: boolean,
+    placedSize?: number
   ): { center: number; size: number } {
     const safeSize = Math.max(0, authoredSize);
+    const placed = placedSize === undefined ? safeSize : Math.max(0, placedSize);
     const mode = this.layoutAxisMode(axis);
-    if (mode === 'none' || this.flowOwnsAxis(axis))
-      return { center: authoredCenter, size: safeSize };
+    if (mode === 'none' || this.flowOwnsAxis(axis)) return { center: authoredCenter, size: placed };
 
     const [loSide, hiSide] = AXIS_SIDES[axis];
     let lo = this.layoutMargins[loSide];
@@ -1190,11 +1234,11 @@ export class Node2D extends NodeBase {
     switch (mode) {
       case 'lo': {
         const edge = -currentReference / 2 + (lo as number);
-        return { center: edge + safeSize / 2, size: safeSize };
+        return { center: edge + placed / 2, size: placed };
       }
       case 'hi': {
         const edge = currentReference / 2 - (hi as number);
-        return { center: edge - safeSize / 2, size: safeSize };
+        return { center: edge - placed / 2, size: placed };
       }
       default: {
         const loEdge = -currentReference / 2 + (lo as number);

@@ -22,8 +22,8 @@ import { deepEqual, indexNodes, isPlainObject } from '@/core/scene-patch/scene-d
  * Not needed here: the rects the ANCHOR layout (`layout:` stretch/edges) gives children when their
  * parent is resized. Since W21 the file stores the margins in the `layout:` block and the saver
  * writes nothing the margins derive (`SceneSaver.dropMarginDerivedRect`: a `0` for the position
- * component of an anchored axis, no `width`/`height` under `stretch`), so a parent resize leaves
- * every child's norm as it was — nothing to mask.
+ * component of an anchored axis, no `width`/`height` — a square's `size`/`radius` — under
+ * `stretch`), so a parent resize leaves every child's norm as it was — nothing to mask.
  */
 
 /** One derived leaf of the norm: the node definition it lives on and the path inside it. */

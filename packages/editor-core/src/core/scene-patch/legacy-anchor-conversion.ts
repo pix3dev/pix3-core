@@ -22,9 +22,9 @@ import {
  *
  * So the first write of a legacy scene converts every anchored node whose entry in the TEXT lacks
  * a margin the norm has: the missing margins go in, the position of the anchored axes goes to
- * the norm's (`0`), and under `stretch` the derived `width`/`height` go out. All leaf ops, so the
- * patch writer keeps everything else byte-identical; values are the baseline norm's, so a flush
- * that carries them still satisfies `norm(patch(text)) == G`. A file already in the margin form
+ * the norm's (`0`), and under `stretch` the derived `width`/`height` (a square's `size`/`radius`)
+ * go out. All leaf ops, so the patch writer keeps everything else byte-identical; values are the
+ * baseline norm's, so a flush that carries them still satisfies `norm(patch(text)) == G`. A file already in the margin form
  * yields nothing; overrides of an instance's inner nodes are left alone (their margins live in the
  * prefab file, which converts on its own first write).
  */
@@ -88,6 +88,9 @@ export function withLegacyAnchorConversion(
   return [...conversion, ...ops];
 }
 
+/** The size keys `stretch` derives (`Node2D.marginDerivedSizeKeys`): a rect's, a square's. */
+const MARGIN_DERIVED_SIZE_KEYS = ['width', 'height', 'size', 'radius'] as const;
+
 const record = (value: unknown): Record<string, unknown> | null =>
   isPlainObject(value) ? value : null;
 
@@ -126,7 +129,7 @@ function convertNode(
       });
     }
   }
-  for (const key of ['width', 'height'] as const) {
+  for (const key of MARGIN_DERIVED_SIZE_KEYS) {
     if (props[key] === undefined && typeof rawProps[key] === 'number') {
       push({ kind: 'delete', nodeId: def.id, path: ['properties', key] });
     }
@@ -159,7 +162,7 @@ function convertInstanceRoot(
   if (isPlainObject(props.position) && !deepEqual(rawProps.position, props.position)) {
     push({ kind: 'set', nodeId: def.id, path: ['properties', 'position'], value: props.position });
   }
-  for (const key of ['width', 'height'] as const) {
+  for (const key of MARGIN_DERIVED_SIZE_KEYS) {
     if (props[key] === undefined && typeof rawProps[key] === 'number') {
       push({ kind: 'delete', nodeId: def.id, path: ['properties', key] });
     }
