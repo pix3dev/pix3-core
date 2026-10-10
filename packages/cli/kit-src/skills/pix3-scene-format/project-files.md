@@ -30,7 +30,8 @@ the sha256 of every file you wrote, or (no editor) `pix3 smoke <the scene>`.
    only have to be unique **within** a scene, so a copy keeps them.
 2. A scene under `scenes/` that is not under `scenes/prefabs/`, `prefabs/` or `scenes/ui/` is a
    playable scene: reach it with `await this.scene.changeScene('res://scenes/<name>.pix3scene')`.
-   To make the game boot into it, set `defaultExportScenePath: scenes/<name>.pix3scene`.
+   To make the game boot into it, set `defaultExportScenePath: scenes/<name>.pix3scene` — and
+   give it a way on (a menu's button script calls `changeScene` to the game).
 3. Under `scenes/prefabs/`, `prefabs/` or `scenes/ui/` the file is a prefab or an overlay: it is
    instanced, never booted.
 
@@ -38,8 +39,11 @@ the sha256 of every file you wrote, or (no editor) `pix3 smoke <the scene>`.
 
 Everything refers to files by path, and nothing rewrites those paths for you.
 
-1. Find every reference first, in every text file outside `node_modules/`, `.pix3/` and `dist/`:
-   `grep -rn "sprites/coin.png" --exclude-dir={node_modules,.pix3,dist,.git,.claude} .`
+1. Find every reference first, in every text file of the project (not `node_modules/`,
+   `.pix3/`, `dist/`, `.git/`, and not the kit's own docs in `.claude/`):
+   `grep -rn "sprites/coin.png" --exclude-dir={node_modules,.pix3,dist,.git,.claude} .` — for
+   a folder, search it with its trailing slash (`sprites/coin/`), which `sprites/coins/` does
+   not match.
    — scenes and prefabs (`res://…`), `.pix3anim` frame paths, `locales/*.json` `sprites`,
    scripts, and `pix3project.yaml` (which writes paths **without** `res://`:
    `defaultExportScenePath`, `fonts[].path`). Search the folder name too: a path a script builds
@@ -92,9 +96,10 @@ The branch: a node of the host scene with everything under it, e.g. in `scenes/m
    keeps its prefab id **when that id is free in the host scene**; otherwise the loader renames
    it `<id>-1`, `<id>-2`, … — which is what happens to the second instance of the same prefab.
    So a lookup by id (`findNode('coin-count')`) finds the first instance's node only; to reach
-   an inner node of each instance, go through the instance:
-   `this.findNode('coin-hud-2')?.findByName('Coin Count')` (names never change; the renamed id
-   is its `nodeId`). A `node` property of a component inside the prefab that names another
+   an inner node of each instance, go through the instance — a second copy is one more instance
+   node with an id and name you choose (`coin-hud-2`, "Coin HUD 2"), its inner `coin-count`
+   becomes `coin-count-1`: `this.findNode('coin-hud-2')?.findByName('Coin Count')` (names never
+   change; the renamed id is its `nodeId`). A `node` property of a component inside the prefab that names another
    node of the prefab is re-pointed per instance by the loader.
 5. Replace the branch in the host scene, at the same place in `children` (tree order is paint
    order), with one instance node: the branch root's `id` (scripts that find it keep finding
@@ -120,7 +125,9 @@ The branch: a node of the host scene with everything under it, e.g. in `scenes/m
    inside the prefab that sets the same property in `onStart` wins, and a component's `config`
    cannot differ per copy (no component overrides) — make the script read the node property,
    or keep the tunable on a plain node of the host scene. Components start parent first, so a
-   host script's `onStart` sees an inner node before the prefab's own scripts touched it.
+   host script's `onStart` sees an inner node before the prefab's own scripts touched it. A
+   label with a `labelKey` shows that key's text, whatever `label` says: per copy, override the
+   `labelKey` (one key per copy) instead.
 7. `pix3 check` — `E_PREFAB_ROOT` (not one root), `E_DUPLICATE_ID`, `E_MISSING_PREFAB`,
    `E_UNKNOWN_OVERRIDE_TARGET` name the slips — then sync with `expect` of both files and look
    at it running.
@@ -168,7 +175,9 @@ Remove one:
 
 Nothing checks the tables: a `labelKey` no table has shows the key itself on screen, and a
 declared locale without its file loads empty — read the keys back yourself (or look at the
-running game).
+running game). In a script, `this.scene.localization`: `tr(key, { name: value })` (fills
+`{name}`), `trPlural(key, count)`, `trSprite(key)`, `has(key)`, `locale`, `locales`,
+`setLocale(id)`, `onChange(fn)`; a node shows `tr(node.labelKey)` when it has a key.
 
 ## `pix3project.yaml`
 

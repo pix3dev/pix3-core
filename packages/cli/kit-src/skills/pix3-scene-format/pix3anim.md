@@ -18,8 +18,8 @@ shows the folder as one item). Nothing enforces it: any `res://` path works.
 The editor does not create a `.pix3anim` (its inspector binds an existing one); you write it:
 
 1. Frames into one folder: `sprites/<name>/<clip>_0001.png`, `<clip>_0002.png`, … (or SVGs —
-   by the rules of AGENTS.md rule 5: `pix3 validate` checks the SVGs a scene names, not the
-   frames a `.pix3anim` names).
+   by the rules of AGENTS.md rule 5 — nothing checks them: `pix3 validate` checks the SVGs a
+   scene names, not the frames a `.pix3anim` names).
 2. `sprites/<name>/<name>.pix3anim`: `version`, `texturePath: ""` and one clip per animation,
    each frame naming its image — the example under "Two modes" below; leave out every field
    whose default (the tables) is what you want.

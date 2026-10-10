@@ -972,6 +972,12 @@ describe('kit drift', () => {
     } as unknown as runtime.ResourceManager);
     await localization.setLocale(parsedTable.$meta.locale);
     expect(localization.tr('menu.play')).toBe('Spielen');
+    // The script API the recipe lists is the service's.
+    const api =
+      /`this\.scene\.localization`: ([^;]+);/.exec(locales.replace(/\n/g, ' '))?.[1] ?? '';
+    const members = [...api.matchAll(/`(\w+)(?:\(|`)/g)].map(m => m[1]);
+    expect(members.length).toBeGreaterThan(6);
+    for (const member of members) expect(member in localization, member).toBe(true);
 
     const report = await validateProject({ projectRoot: root, hydrate: true });
     const problems = report.diagnostics

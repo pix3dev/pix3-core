@@ -189,7 +189,8 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 - `pix3 validate [paths…]` — scenes only, no type-check.
 - `pix3 smoke [scene] [--frames N] [--json]` — run a scene headless (no browser) and report
   script throws with frame and stack, `console.error`, missing `res://` files (a warning:
-  read the warnings too); exit 1 on errors. `console.log` output is only in `--json` (`logs`).
+  read the warnings too); exit 1 on errors. `console.log` output is only in `--json`
+  (`logs.lines`, `"[frame 0] …"`).
   Name the game scene (`pix3 smoke scenes/main.pix3scene`); no scene = the scenes git changes
   reach, else every top-level scene (`--all` forces that).
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
