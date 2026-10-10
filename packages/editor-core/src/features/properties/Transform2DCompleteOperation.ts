@@ -118,7 +118,9 @@ export class Transform2DCompleteOperation implements Operation<OperationInvokeRe
       }
     }
 
-    node.captureAuthoredLayoutRectFromCurrent();
+    // The node itself was moved or resized: its margins follow the new rect. The descendants a
+    // resize re-laid-out keep theirs (the plain capture below).
+    node.captureAuthoredLayoutRectFromCurrent(true);
     if (node.isContainer && (typeof state.width === 'number' || typeof state.height === 'number')) {
       node.reflowAnchoredChildren();
       this.captureAnchoredDescendantRects(node);

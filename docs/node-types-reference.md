@@ -101,6 +101,10 @@ The base class for all 2D scene nodes. Use this for simple grouping or as a cont
 | `blendMode`                       | enum    | normal   | How the node's own visuals combine with the backdrop: `normal`, `additive`, `multiply`, `subtract`. NOT inherited by children |
 | `zIndex`                          | number  | 0        | Draw-order override, `-4096..4096` (integer). Higher draws on top                                                             |
 | `zAsRelative`                     | boolean | true     | Add `zIndex` to the parent's effective z instead of treating it as absolute                                                   |
+| `layout.enabled`                  | boolean | false    | Anchor this node to its parent's edges (inspector: `layoutEnabled`, section Anchors)                                          |
+| `layout.horizontalAlign`          | enum    | center   | `left`, `center`, `right`, `stretch`                                                                                          |
+| `layout.verticalAlign`            | enum    | center   | `top`, `center`, `bottom`, `stretch`                                                                                          |
+| `layout.left/right/top/bottom`    | number  | —        | Margins of the anchored sides, px from the parent's edge to the node's (inspector: `layoutLeft` …). They place the node on that axis; its `position` component there is written as `0`, and under `stretch` the size is derived. Omitted in a file → derived once from the rect (spec §7.2.3) |
 | `flow.enabled`                    | boolean | false    | Stack this container's children in tree order instead of leaving them where they were authored                                |
 | `flow.direction`                  | enum    | vertical | `vertical` (a column) or `horizontal` (a row)                                                                                 |
 | `flow.gap`                        | number  | 0        | Space between two children, px                                                                                                |

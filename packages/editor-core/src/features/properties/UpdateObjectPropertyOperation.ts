@@ -5,7 +5,7 @@ import type {
   OperationMetadata,
 } from '@/core/Operation';
 import { NodeBase } from '@pix3/runtime';
-import { Node2D } from '@pix3/runtime';
+import { NODE2D_MARGIN_SIDES, Node2D } from '@pix3/runtime';
 import { Group2D } from '@pix3/runtime';
 import { Sprite3D } from '@pix3/runtime';
 import { SceneManager } from '@pix3/runtime';
@@ -14,6 +14,9 @@ import { coerceToPropertyType, getNodePropertySchema } from '@pix3/runtime';
 import { getRuntimeLivePropertySink } from '@pix3/runtime';
 import type { PropertyDefinition } from '@/fw';
 import type { ServiceContainer } from '@/fw/di';
+
+/** `layoutLeft` … `layoutBottom`: a margin edit re-lays the node out like an anchor change. */
+const LAYOUT_MARGIN_PROPERTIES = NODE2D_MARGIN_SIDES.map(side => Node2D.marginPropertyName(side));
 
 export interface UpdateObjectPropertyParams {
   nodeId: string;
@@ -286,6 +289,7 @@ export class UpdateObjectPropertyOperation implements Operation<OperationInvokeR
       'layoutEnabled',
       'horizontalAlign',
       'verticalAlign',
+      ...LAYOUT_MARGIN_PROPERTIES,
       'width',
       'height',
       'size',
@@ -400,7 +404,8 @@ export class UpdateObjectPropertyOperation implements Operation<OperationInvokeR
     }
 
     if (this.affects2DAuthoredRect(propertyPath)) {
-      node.captureAuthoredLayoutRectFromCurrent();
+      // An edit of the node's own rect: its margins follow it (W21).
+      node.captureAuthoredLayoutRectFromCurrent(true);
     }
 
     if (this.isParentSizeProperty(propertyPath) && node.isContainer) {
@@ -418,6 +423,7 @@ export class UpdateObjectPropertyOperation implements Operation<OperationInvokeR
       'layoutEnabled',
       'horizontalAlign',
       'verticalAlign',
+      ...LAYOUT_MARGIN_PROPERTIES,
       'width',
       'height',
       'size',

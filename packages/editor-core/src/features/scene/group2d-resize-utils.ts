@@ -141,7 +141,7 @@ export function sizeGroupToRect(group: Group2D, rect: LocalRect): void {
   group.width = Math.max(1, rect.maxX - rect.minX);
   group.height = Math.max(1, rect.maxY - rect.minY);
   group.position.set((rect.minX + rect.maxX) / 2, (rect.minY + rect.maxY) / 2, group.position.z);
-  group.captureAuthoredLayoutRectFromCurrent();
+  group.captureAuthoredLayoutRectFromCurrent(true);
 }
 
 /** How a node participates in proportional resize: via width/height (recurse) or via scale (stop). */

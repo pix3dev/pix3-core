@@ -1,13 +1,15 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import { installCanvasOnlyDocument } from '../node';
 import { createSceneHarness, extraCorpus, templateCorpus } from '../node/scene-corpus';
 import { getNodePropertySchema } from '../fw/property-schema-utils';
-import type { NodeBase } from '../nodes/NodeBase';
+import { NodeBase } from '../nodes/NodeBase';
+import { Node2D } from '../nodes/Node2D';
 import { readImageHeaderSize } from './image-header-size';
 
 /**
@@ -157,3 +159,57 @@ function png(width: number, height: number): Uint8Array {
   view.setUint32(20, height);
   return out;
 }
+
+/**
+ * W21: the margin form of `layout:` places every node where the legacy rect did — at the design
+ * size and when the screen is wider or taller (the runtime's case) — over the whole corpus, so a
+ * scene converted by its first save does not move. `designOf` reads the project's viewport; the
+ * fixture projects without a manifest use the runtime's default reference.
+ */
+describe('the margin form of layout: lays out as the legacy rects did', () => {
+  const designOf = (projectDir: string): { width: number; height: number } => {
+    const file = join(projectDir, 'pix3project.yaml');
+    if (!existsSync(file)) return { width: 1920, height: 1080 };
+    const doc = parseYaml(readFileSync(file, 'utf8')) as {
+      viewportBaseSize?: { width?: number; height?: number };
+    };
+    return {
+      width: doc.viewportBaseSize?.width ?? 1920,
+      height: doc.viewportBaseSize?.height ?? 1080,
+    };
+  };
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  const rects = (roots: NodeBase[]): unknown[] => {
+    const out: unknown[] = [];
+    const visit = (node: NodeBase): void => {
+      if (node instanceof Node2D) {
+        const s = node.getCurrentLayoutSize();
+        out.push([node.nodeId, r(node.position.x), r(node.position.y), r(s.width), r(s.height)]);
+      }
+      for (const c of node.children) if (c instanceof NodeBase) visit(c);
+    };
+    for (const root of roots) visit(root);
+    return out;
+  };
+
+  it.each(corpus.map(scene => [scene.name, scene] as const))('%s', async (_name, scene) => {
+    const h = createSceneHarness(scene.projectDir);
+    const design = designOf(scene.projectDir);
+    const screens = [
+      design,
+      { width: design.width * 1.5, height: design.height },
+      { width: design.width, height: design.height * 1.4 },
+    ];
+    const layoutAt = async (text: string, current: { width: number; height: number }) => {
+      const graph = await h.parse(text, scene.path);
+      for (const root of graph.rootNodes) {
+        if (root instanceof Node2D) root.applyAnchoredLayoutRecursive(current, design);
+      }
+      return rects(graph.rootNodes);
+    };
+    const saved = h.save(await h.parse(scene.text, scene.path));
+    for (const screen of screens) {
+      expect(await layoutAt(saved, screen)).toEqual(await layoutAt(scene.text, screen));
+    }
+  });
+});

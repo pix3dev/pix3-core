@@ -1,7 +1,7 @@
 import { MathUtils, type Material, Vector2, Vector3 } from 'three';
 
 import { NodeBase, type NodeBaseProps } from './NodeBase';
-import type { PropertySchema } from '../fw/property-schema';
+import type { PropertyDefinition, PropertySchema } from '../fw/property-schema';
 import {
   getNodePropertySchema,
   getPropertyDefinition,
@@ -18,11 +18,41 @@ import {
 export type Node2DHorizontalAlign = 'left' | 'center' | 'right' | 'stretch';
 export type Node2DVerticalAlign = 'top' | 'center' | 'bottom' | 'stretch';
 
-export interface Node2DLayoutConfig {
+/** A side of the parent an anchored axis keeps its distance to. */
+export type Node2DMarginSide = 'left' | 'right' | 'top' | 'bottom';
+
+export const NODE2D_MARGIN_SIDES: readonly Node2DMarginSide[] = ['left', 'right', 'top', 'bottom'];
+
+/**
+ * Margins of an anchored node: the distance from the parent's edge to the node's same edge, in
+ * design pixels, for the sides the alignment uses (`left` → `left`; `right` → `right`; `stretch` →
+ * both; `top`/`bottom` likewise; a centred axis has none). They are what the `layout:` block of a
+ * scene file stores (`.plans/write-model.md` W21): the node's rect on an anchored axis is derived
+ * from them and the parent's current size, so a parent resize changes nothing in the child.
+ *
+ * A file without them (every scene before W21) derives them once from the node's authored rect
+ * against the parent's authored size, exactly as the layout always did — no visual change.
+ */
+export interface Node2DLayoutMargins {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+export interface Node2DLayoutConfig extends Node2DLayoutMargins {
   enabled?: boolean;
   horizontalAlign?: Node2DHorizontalAlign;
   verticalAlign?: Node2DVerticalAlign;
 }
+
+type LayoutAxis = 'x' | 'y';
+/** Which margins an axis's alignment keeps: the low side (left/bottom), the high one (right/top), both, or none. */
+type LayoutAxisMode = 'none' | 'lo' | 'hi' | 'both';
+const AXIS_SIDES: Readonly<Record<LayoutAxis, readonly [Node2DMarginSide, Node2DMarginSide]>> = {
+  x: ['left', 'right'],
+  y: ['bottom', 'top'],
+};
 
 /**
  * Container flow: children are stacked by the parent instead of sitting where they were authored.
@@ -102,6 +132,8 @@ export class Node2D extends NodeBase {
   private _flow: ResolvedFlow;
   private _horizontalAlign: Node2DHorizontalAlign;
   private _verticalAlign: Node2DVerticalAlign;
+  /** Stored margins (from the file, the inspector, or derived once from a legacy rect). */
+  private readonly layoutMargins: Node2DLayoutMargins = {};
   private readonly authoredLayoutPosition = new Vector2();
   private readonly authoredLayoutSize = new Vector2();
   protected readonly tmpPointerWorld = new Vector2();
@@ -137,6 +169,7 @@ export class Node2D extends NodeBase {
     this._layoutEnabled = layout.enabled;
     this._horizontalAlign = layout.horizontalAlign;
     this._verticalAlign = layout.verticalAlign;
+    Object.assign(this.layoutMargins, Node2D.readMargins(props.layout));
     this.authoredLayoutPosition.set(position.x, position.y);
 
     const initialLayoutSize = Node2D.readInitialLayoutSize(props);
@@ -296,6 +329,7 @@ export class Node2D extends NodeBase {
 
     this.captureAuthoredLayoutRectFromCurrent();
     this._layoutEnabled = nextValue;
+    this.pruneLayoutMargins();
     this.syncLayoutProperties();
   }
 
@@ -309,7 +343,12 @@ export class Node2D extends NodeBase {
       return;
     }
 
+    // The node stays where it is: the rect is captured first, and the margins the new alignment
+    // needs are derived from it at the next layout pass (the ones it no longer needs go — a side
+    // nothing maintained would place the node somewhere else when it is needed again).
+    this.captureAuthoredLayoutRectFromCurrent();
     this._horizontalAlign = nextValue;
+    this.pruneLayoutMargins();
     this.syncLayoutProperties();
   }
 
@@ -323,7 +362,9 @@ export class Node2D extends NodeBase {
       return;
     }
 
+    this.captureAuthoredLayoutRectFromCurrent();
     this._verticalAlign = nextValue;
+    this.pruneLayoutMargins();
     this.syncLayoutProperties();
   }
 
@@ -332,6 +373,7 @@ export class Node2D extends NodeBase {
       enabled: this._layoutEnabled,
       horizontalAlign: this._horizontalAlign,
       verticalAlign: this._verticalAlign,
+      ...this.layoutMargins,
     };
   }
 
@@ -341,16 +383,168 @@ export class Node2D extends NodeBase {
     this._layoutEnabled = normalized.enabled;
     this._horizontalAlign = normalized.horizontalAlign;
     this._verticalAlign = normalized.verticalAlign;
+    for (const side of NODE2D_MARGIN_SIDES) delete this.layoutMargins[side];
+    Object.assign(this.layoutMargins, Node2D.readMargins(layout));
+    this.pruneLayoutMargins();
     this.syncLayoutProperties();
   }
 
-  captureAuthoredLayoutRectFromCurrent(): void {
+  /** The stored margin of `side` (as loaded or set), whether or not the alignment uses it. */
+  getLayoutMargin(side: Node2DMarginSide): number | undefined {
+    return this.layoutMargins[side];
+  }
+
+  setLayoutMargin(side: Node2DMarginSide, value: number | undefined): void {
+    if (typeof value === 'number' && Number.isFinite(value)) this.layoutMargins[side] = value;
+    else delete this.layoutMargins[side];
+    this.syncLayoutProperties();
+  }
+
+  /**
+   * True when `side` places this node: anchors on, the alignment of that axis keeps this side,
+   * the axis is not a parent flow's, and there is a 2D parent to measure from (a root's reference
+   * is the project's viewport, which the node cannot see — its rect stays authored, as before).
+   */
+  usesLayoutMargin(side: Node2DMarginSide): boolean {
+    const axis: LayoutAxis = side === 'left' || side === 'right' ? 'x' : 'y';
+    const mode = this.layoutAxisMode(axis);
+    const [lo, hi] = AXIS_SIDES[axis];
+    const kept = (side === lo && mode !== 'hi') || (side === hi && mode !== 'lo');
+    return mode !== 'none' && kept && !this.flowOwnsAxis(axis) && this.parent instanceof Node2D;
+  }
+
+  /**
+   * The margins the file carries for this node: the stored ones the alignment uses, filled in
+   * from the authored rect against the parent's authored size where a legacy file has none.
+   * Pure — the first layout pass is what stores a derived margin ({@link applyAnchoredLayout}).
+   */
+  resolveLayoutMargins(): Node2DLayoutMargins {
+    const out: Node2DLayoutMargins = {};
+    if (!this._layoutEnabled) return out;
+    const parent = this.parent instanceof Node2D ? this.parent : null;
+    const reference = parent ? this.normalizeReferenceSize(parent.getAuthoredLayoutSize()) : null;
+    const authoredSize = this.getAuthoredLayoutSize();
+    for (const axis of ['x', 'y'] as const) {
+      const mode = this.layoutAxisMode(axis);
+      if (mode === 'none' || this.flowOwnsAxis(axis)) continue;
+      const [lo, hi] = AXIS_SIDES[axis];
+      const derived =
+        reference &&
+        Node2D.deriveMargins(
+          axis === 'x' ? this.authoredLayoutPosition.x : this.authoredLayoutPosition.y,
+          axis === 'x' ? authoredSize.width : authoredSize.height,
+          axis === 'x' ? reference.width : reference.height
+        );
+      if (mode !== 'hi') {
+        const value = this.layoutMargins[lo] ?? derived?.lo;
+        if (value !== undefined) out[lo] = value;
+      }
+      if (mode !== 'lo') {
+        const value = this.layoutMargins[hi] ?? derived?.hi;
+        if (value !== undefined) out[hi] = value;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * True when the node's rect on `axis` is what the margins give it (every margin the alignment
+   * needs is known), so a scene file need not carry it: the position component on that axis, and
+   * for `stretch` the size.
+   */
+  isMarginAxis(axis: LayoutAxis): boolean {
+    const mode = this.layoutAxisMode(axis);
+    if (mode === 'none' || this.flowOwnsAxis(axis)) return false;
+    const [lo, hi] = AXIS_SIDES[axis];
+    const margins = this.resolveLayoutMargins();
+    return (
+      (mode === 'hi' || margins[lo] !== undefined) && (mode === 'lo' || margins[hi] !== undefined)
+    );
+  }
+
+  /**
+   * Take the node's current position and size as its authored rect. With `rederiveMargins` (an
+   * edit of the node itself — a drag, an inspector value) the margins of every anchored axis are
+   * read off the new rect against the parent's current size; without it (the children of a resized
+   * parent, whose rects the margins just produced) they stay as they are.
+   */
+  captureAuthoredLayoutRectFromCurrent(rederiveMargins = false): void {
     this.authoredLayoutPosition.set(this.position.x, this.position.y);
     const currentSize = this.getCurrentLayoutSize();
     if (currentSize.width > 0 && currentSize.height > 0) {
       this.authoredLayoutSize.set(currentSize.width, currentSize.height);
       this.hasAuthoredLayoutSize = true;
     }
+    if (!rederiveMargins) return;
+    for (const side of NODE2D_MARGIN_SIDES) delete this.layoutMargins[side];
+    if (!this._layoutEnabled || !(this.parent instanceof Node2D)) return;
+    const reference = this.normalizeReferenceSize(this.parent.getCurrentLayoutSize());
+    for (const axis of ['x', 'y'] as const) {
+      const mode = this.layoutAxisMode(axis);
+      if (mode === 'none' || this.flowOwnsAxis(axis)) continue;
+      const [lo, hi] = AXIS_SIDES[axis];
+      const derived = Node2D.deriveMargins(
+        axis === 'x' ? this.position.x : this.position.y,
+        axis === 'x' ? currentSize.width : currentSize.height,
+        axis === 'x' ? reference.width : reference.height
+      );
+      if (mode !== 'hi') this.layoutMargins[lo] = derived.lo;
+      if (mode !== 'lo') this.layoutMargins[hi] = derived.hi;
+    }
+    this.syncLayoutProperties();
+  }
+
+  /** Drop the stored margins the current alignment does not keep. */
+  private pruneLayoutMargins(): void {
+    for (const axis of ['x', 'y'] as const) {
+      const mode = this._layoutEnabled ? this.layoutAxisMode(axis) : 'none';
+      const [lo, hi] = AXIS_SIDES[axis];
+      if (mode === 'none' || mode === 'hi') delete this.layoutMargins[lo];
+      if (mode === 'none' || mode === 'lo') delete this.layoutMargins[hi];
+    }
+  }
+
+  private layoutAxisMode(axis: LayoutAxis): LayoutAxisMode {
+    if (!this._layoutEnabled) return 'none';
+    const align = axis === 'x' ? this._horizontalAlign : this._verticalAlign;
+    switch (align) {
+      case 'left':
+      case 'bottom':
+        return 'lo';
+      case 'right':
+      case 'top':
+        return 'hi';
+      case 'stretch':
+        return 'both';
+      default:
+        return 'none';
+    }
+  }
+
+  /** A parent flow owns its main axis: the anchor on that axis is not applied (`applyFlowLayout`). */
+  private flowOwnsAxis(axis: LayoutAxis): boolean {
+    const parent = this.parent;
+    if (!(parent instanceof Node2D) || !parent.flow.enabled) return false;
+    return (parent.flow.direction === 'horizontal') === (axis === 'x');
+  }
+
+  /** Margins of a rect (centre + size) inside a reference span centred on the origin. */
+  private static deriveMargins(
+    center: number,
+    size: number,
+    reference: number
+  ): { lo: number; hi: number } {
+    const half = Math.max(0, size) / 2;
+    return { lo: center - half + reference / 2, hi: reference / 2 - (center + half) };
+  }
+
+  private static readMargins(layout: Node2DLayoutConfig | null | undefined): Node2DLayoutMargins {
+    const out: Node2DLayoutMargins = {};
+    for (const side of NODE2D_MARGIN_SIDES) {
+      const value = layout?.[side];
+      if (typeof value === 'number' && Number.isFinite(value)) out[side] = value;
+    }
+    return out;
   }
 
   getAuthoredLayoutPosition(): Node2DLayoutPosition {
@@ -601,17 +795,10 @@ export class Node2D extends NodeBase {
     // happen before the children recurse, or each child would anchor against a stale slot.
     this.applyFlowLayout();
 
+    // The flow has already placed every child on the main axis; a child's anchor leaves that axis
+    // alone (`flowOwnsAxis`), so the authored size can be handed down as it is.
     const nextCurrentSize = this.getCurrentLayoutSize();
-    let nextAuthoredSize = this.getAuthoredLayoutSize();
-    if (this._flow.enabled) {
-      // The flow has already placed every child on the main axis against the CURRENT span, so a
-      // child's own anchor must see no size change there — otherwise a top-anchored row would be
-      // shifted by the container's growth a second time. The cross axis keeps the real delta.
-      nextAuthoredSize =
-        this._flow.direction === 'vertical'
-          ? { width: nextAuthoredSize.width, height: nextCurrentSize.height }
-          : { width: nextCurrentSize.width, height: nextAuthoredSize.height };
-    }
+    const nextAuthoredSize = this.getAuthoredLayoutSize();
     for (const child of this.children) {
       if (child instanceof Node2D) {
         child.applyAnchoredLayoutRecursive(nextCurrentSize, nextAuthoredSize);
@@ -642,11 +829,20 @@ export class Node2D extends NodeBase {
     return { width: 0, height: 0 };
   }
 
-  /** The `layout:` block, written like {@link serializeFlow}: `enabled` plus non-default keys. */
+  /**
+   * The `layout:` block, written like {@link serializeFlow}: `enabled` plus non-default keys, and
+   * while enabled the margins of the anchored axes ({@link resolveLayoutMargins}).
+   */
   serializeLayout(): Record<string, unknown> | undefined {
     const tuned: Record<string, unknown> = {};
     if (this._horizontalAlign !== 'center') tuned.horizontalAlign = this._horizontalAlign;
     if (this._verticalAlign !== 'center') tuned.verticalAlign = this._verticalAlign;
+    if (this._layoutEnabled) {
+      const margins = this.resolveLayoutMargins();
+      for (const side of NODE2D_MARGIN_SIDES) {
+        if (margins[side] !== undefined) tuned[side] = margins[side];
+      }
+    }
     if (!this._layoutEnabled && Object.keys(tuned).length === 0) return undefined;
     return { enabled: this._layoutEnabled, ...tuned };
   }
@@ -925,18 +1121,26 @@ export class Node2D extends NodeBase {
       referenceAuthoredSize ?? referenceCurrentSize
     );
     const currentReference = this.normalizeReferenceSize(referenceCurrentSize);
+    // A derived margin is kept only under a 2D parent: a root's reference is the viewport, which
+    // the editor and the game pass differently (design size vs. screen), so a root keeps resolving
+    // from its authored rect every pass, as it always did.
+    const store = this.parent instanceof Node2D;
 
-    const resolvedHorizontal = this.resolveHorizontalLayout(
+    const resolvedHorizontal = this.resolveAxisLayout(
+      'x',
       currentReference.width,
       authoredReference.width,
       this.authoredLayoutPosition.x,
-      authoredSize.width
+      authoredSize.width,
+      store
     );
-    const resolvedVertical = this.resolveVerticalLayout(
+    const resolvedVertical = this.resolveAxisLayout(
+      'y',
       currentReference.height,
       authoredReference.height,
       this.authoredLayoutPosition.y,
-      authoredSize.height
+      authoredSize.height,
+      store
     );
 
     this.position.set(resolvedHorizontal.center, resolvedVertical.center, this.position.z);
@@ -950,67 +1154,53 @@ export class Node2D extends NodeBase {
     };
   }
 
-  private resolveHorizontalLayout(
-    currentReferenceWidth: number,
-    authoredReferenceWidth: number,
-    authoredCenterX: number,
-    authoredWidth: number
+  /**
+   * One axis of the anchor layout: the margins the alignment keeps (stored, else derived once from
+   * the authored rect against the authored reference — a legacy file), resolved against the
+   * current reference. A centred axis, and the main axis of a parent flow, keep the authored rect.
+   */
+  private resolveAxisLayout(
+    axis: LayoutAxis,
+    currentReference: number,
+    authoredReference: number,
+    authoredCenter: number,
+    authoredSize: number,
+    store: boolean
   ): { center: number; size: number } {
-    const safeAuthoredWidth = Math.max(0, authoredWidth);
-    const authoredLeft = authoredCenterX - safeAuthoredWidth / 2;
-    const authoredRight = authoredCenterX + safeAuthoredWidth / 2;
-    const leftMargin = authoredLeft + authoredReferenceWidth / 2;
-    const rightMargin = authoredReferenceWidth / 2 - authoredRight;
+    const safeSize = Math.max(0, authoredSize);
+    const mode = this.layoutAxisMode(axis);
+    if (mode === 'none' || this.flowOwnsAxis(axis))
+      return { center: authoredCenter, size: safeSize };
 
-    switch (this._horizontalAlign) {
-      case 'left': {
-        const left = -currentReferenceWidth / 2 + leftMargin;
-        return { center: left + safeAuthoredWidth / 2, size: safeAuthoredWidth };
+    const [loSide, hiSide] = AXIS_SIDES[axis];
+    let lo = this.layoutMargins[loSide];
+    let hi = this.layoutMargins[hiSide];
+    if ((mode !== 'hi' && lo === undefined) || (mode !== 'lo' && hi === undefined)) {
+      const derived = Node2D.deriveMargins(authoredCenter, safeSize, authoredReference);
+      if (mode !== 'hi' && lo === undefined) {
+        lo = derived.lo;
+        if (store) this.layoutMargins[loSide] = lo;
       }
-      case 'right': {
-        const right = currentReferenceWidth / 2 - rightMargin;
-        return { center: right - safeAuthoredWidth / 2, size: safeAuthoredWidth };
+      if (mode !== 'lo' && hi === undefined) {
+        hi = derived.hi;
+        if (store) this.layoutMargins[hiSide] = hi;
       }
-      case 'stretch': {
-        const left = -currentReferenceWidth / 2 + leftMargin;
-        const right = currentReferenceWidth / 2 - rightMargin;
-        const size = Math.max(1, right - left);
-        return { center: (left + right) / 2, size };
-      }
-      default:
-        return { center: authoredCenterX, size: safeAuthoredWidth };
     }
-  }
 
-  private resolveVerticalLayout(
-    currentReferenceHeight: number,
-    authoredReferenceHeight: number,
-    authoredCenterY: number,
-    authoredHeight: number
-  ): { center: number; size: number } {
-    const safeAuthoredHeight = Math.max(0, authoredHeight);
-    const authoredBottom = authoredCenterY - safeAuthoredHeight / 2;
-    const authoredTop = authoredCenterY + safeAuthoredHeight / 2;
-    const bottomMargin = authoredBottom + authoredReferenceHeight / 2;
-    const topMargin = authoredReferenceHeight / 2 - authoredTop;
-
-    switch (this._verticalAlign) {
-      case 'bottom': {
-        const bottom = -currentReferenceHeight / 2 + bottomMargin;
-        return { center: bottom + safeAuthoredHeight / 2, size: safeAuthoredHeight };
+    switch (mode) {
+      case 'lo': {
+        const edge = -currentReference / 2 + (lo as number);
+        return { center: edge + safeSize / 2, size: safeSize };
       }
-      case 'top': {
-        const top = currentReferenceHeight / 2 - topMargin;
-        return { center: top - safeAuthoredHeight / 2, size: safeAuthoredHeight };
+      case 'hi': {
+        const edge = currentReference / 2 - (hi as number);
+        return { center: edge - safeSize / 2, size: safeSize };
       }
-      case 'stretch': {
-        const bottom = -currentReferenceHeight / 2 + bottomMargin;
-        const top = currentReferenceHeight / 2 - topMargin;
-        const size = Math.max(1, top - bottom);
-        return { center: (top + bottom) / 2, size };
+      default: {
+        const loEdge = -currentReference / 2 + (lo as number);
+        const hiEdge = currentReference / 2 - (hi as number);
+        return { center: (loEdge + hiEdge) / 2, size: Math.max(1, hiEdge - loEdge) };
       }
-      default:
-        return { center: authoredCenterY, size: safeAuthoredHeight };
     }
   }
 
@@ -1074,6 +1264,7 @@ export class Node2D extends NodeBase {
       enabled: true,
       horizontalAlign: this._horizontalAlign,
       verticalAlign: this._verticalAlign,
+      ...this.layoutMargins,
     };
   }
 
@@ -1095,6 +1286,39 @@ export class Node2D extends NodeBase {
     }
 
     return this;
+  }
+
+  /** The schema name of a margin: `layoutLeft`, `layoutRight`, `layoutTop`, `layoutBottom`. */
+  static marginPropertyName(side: Node2DMarginSide): string {
+    return `layout${side[0].toUpperCase()}${side.slice(1)}`;
+  }
+
+  /**
+   * One margin as an inspector property (group Anchors): read-only unless the alignment keeps
+   * that side ({@link usesLayoutMargin}); its value is the stored margin, else the one the file
+   * would get ({@link resolveLayoutMargins}).
+   */
+  private static marginPropertyDefinition(side: Node2DMarginSide): PropertyDefinition {
+    const label = side[0].toUpperCase() + side.slice(1);
+    return {
+      name: Node2D.marginPropertyName(side),
+      type: 'number',
+      ui: {
+        label,
+        description: `Distance from the parent's ${side} edge to this node's ${side} edge`,
+        group: 'Anchors',
+        step: 1,
+        precision: 2,
+        readOnly: target => !(target instanceof Node2D) || !target.usesLayoutMargin(side),
+      },
+      getValue: (node: unknown) => {
+        const target = node as Node2D;
+        return target.getLayoutMargin(side) ?? target.resolveLayoutMargins()[side] ?? 0;
+      },
+      setValue: (node: unknown, value: unknown) => {
+        (node as Node2D).setLayoutMargin(side, Number(value));
+      },
+    };
   }
 
   /**
@@ -1365,6 +1589,7 @@ export class Node2D extends NodeBase {
             (node as Node2D).verticalAlign = value as Node2DVerticalAlign;
           },
         },
+        ...NODE2D_MARGIN_SIDES.map(side => Node2D.marginPropertyDefinition(side)),
       ],
       groups: {
         ...baseSchema.groups,

@@ -347,9 +347,11 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
         this.originalWidth = w;
         this.originalHeight = h;
 
-        // If no explicit dimensions, use texture dimensions
+        // An axis without an explicit dimension takes the texture's; an authored one stays (a
+        // stretched axis has no `width`/`height` in the file — W21 — and must not drag the other
+        // axis to the texture size with it).
         if (this.width === undefined || this.height === undefined) {
-          this.updateSize(w, h);
+          this.updateSize(this.width ?? w, this.height ?? h);
         }
       }
     }

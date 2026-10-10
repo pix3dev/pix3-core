@@ -616,6 +616,16 @@ export class SceneRunner {
     // is synchronous and the rAF loop starts below.
     this.isRunning = true;
 
+    // Lay the 2D roots out before the pre-roll tick: a stretched node's size and an anchored
+    // node's position live in the `layout:` margins (W21), not in the rect the file carries, so
+    // an `onStart` that reads `panel.width` must see the resolved rect, not the loader's default.
+    // Needs a measurable canvas; headless hosts without one get the first render's pass.
+    const canvas = this.measureCanvas();
+    if (canvas.width > 0 && canvas.height > 0) {
+      this.updateViewportSize(canvas.width, canvas.height);
+      this.reflowRoot2DNodes();
+    }
+
     // Initial tick to update transforms before render
     this.updateNodes(0);
     this.flushInstancedNodes();
@@ -1369,56 +1379,68 @@ export class SceneRunner {
     NodeBase.flushFreeQueue();
   }
 
-  private render(): void {
+  /**
+   * The canvas's CSS (logical) pixel size, for display-independent scaling so that the camera
+   * coordinate space is consistent regardless of device pixel ratio. Prefers the
+   * observer-maintained cache; falls back to a (layout-forcing) clientWidth read only until the
+   * observer has delivered its first size, or in environments without ResizeObserver.
+   */
+  private measureCanvas(): { width: number; height: number } {
     const canvas = this.renderer.domElement;
     this.observeCanvasSize(canvas);
-    // Use CSS (logical) pixel dimensions for display-independent scaling so that
-    // the camera coordinate space is consistent regardless of device pixel ratio.
-    // Prefer the observer-maintained cache; fall back to a (layout-forcing)
-    // clientWidth read only until the observer has delivered its first size, or
-    // in environments without ResizeObserver.
     const cached = this.canvasCssSize;
-    const cssWidth =
+    const width =
       cached && cached.width > 0
         ? cached.width
         : canvas.clientWidth > 0
           ? canvas.clientWidth
           : canvas.width;
-    const cssHeight =
+    const height =
       cached && cached.height > 0
         ? cached.height
         : canvas.clientHeight > 0
           ? canvas.clientHeight
           : canvas.height;
+    return { width, height };
+  }
+
+  /**
+   * Track the viewport and recompute the adaptive logical camera size (Expand / Match-Min mode)
+   * from the authored project viewport size. Returns whether the viewport changed.
+   */
+  private updateViewportSize(cssWidth: number, cssHeight: number): boolean {
+    const viewportChanged =
+      this.viewportSize.width !== cssWidth || this.viewportSize.height !== cssHeight;
+    if (!viewportChanged) return false;
+
+    this.viewportSize.width = cssWidth;
+    this.viewportSize.height = cssHeight;
+
+    const baseW = this.rootLayoutAuthoredSize.width;
+    const baseH = this.rootLayoutAuthoredSize.height;
+
+    const baseAspect = baseW / baseH;
+    const viewportAspect = cssWidth / cssHeight;
+    let cameraWidth = baseW;
+    let cameraHeight = baseH;
+    if (viewportAspect >= baseAspect) {
+      cameraHeight = baseH;
+      cameraWidth = cameraHeight * viewportAspect;
+    } else {
+      cameraWidth = baseW;
+      cameraHeight = cameraWidth / viewportAspect;
+    }
+
+    this.logicalCameraSize = { width: cameraWidth, height: cameraHeight };
+    return true;
+  }
+
+  private render(): void {
+    const { width: cssWidth, height: cssHeight } = this.measureCanvas();
 
     // 0. Handle Resizing
     // Track whether viewport changed so we can notify scripts AFTER cameras are updated.
-    const viewportChanged =
-      this.viewportSize.width !== cssWidth || this.viewportSize.height !== cssHeight;
-
-    if (viewportChanged) {
-      this.viewportSize.width = cssWidth;
-      this.viewportSize.height = cssHeight;
-
-      // Compute adaptive logical camera dimensions (Expand / Match-Min mode)
-      // from the authored project viewport size.
-      const baseW = this.rootLayoutAuthoredSize.width;
-      const baseH = this.rootLayoutAuthoredSize.height;
-
-      const baseAspect = baseW / baseH;
-      const viewportAspect = cssWidth / cssHeight;
-      let cameraWidth = baseW;
-      let cameraHeight = baseH;
-      if (viewportAspect >= baseAspect) {
-        cameraHeight = baseH;
-        cameraWidth = cameraHeight * viewportAspect;
-      } else {
-        cameraWidth = baseW;
-        cameraHeight = cameraWidth / viewportAspect;
-      }
-
-      this.logicalCameraSize = { width: cameraWidth, height: cameraHeight };
-    }
+    const viewportChanged = this.updateViewportSize(cssWidth, cssHeight);
 
     // 1. Update Cameras
 
@@ -1830,7 +1852,7 @@ export class SceneRunner {
     }
 
     if (['position', 'width', 'height', 'size', 'radius'].includes(propertyPath)) {
-      node.captureAuthoredLayoutRectFromCurrent();
+      node.captureAuthoredLayoutRectFromCurrent(true);
     }
 
     if (

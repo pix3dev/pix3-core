@@ -1,4 +1,4 @@
-import type { NodeBase } from '@pix3/runtime';
+import { NODE2D_MARGIN_SIDES, Node2D, type NodeBase } from '@pix3/runtime';
 
 export interface PrefabMetadata {
   localId: string;
@@ -66,10 +66,10 @@ export const findPrefabInstanceRoot = (node: NodeBase): NodeBase | null => {
  * + the `properties:` diff), so moving/anchoring an instance is placement, not a
  * content override, and the inspector must not flag them or offer a Revert.
  *
- * Includes 2D anchored-layout keys (layoutEnabled/horizontalAlign/verticalAlign)
- * so pinning a panel to a window edge counts as placement; the anchored layout
- * itself rewrites the root's position on resize. 3D roots never expose these
- * names, so listing them is harmless there.
+ * Includes 2D anchored-layout keys (layoutEnabled/horizontalAlign/verticalAlign
+ * and the margins layoutLeft/Right/Top/Bottom) so pinning a panel to a window
+ * edge counts as placement. 3D roots never expose these names, so listing them
+ * is harmless there.
  */
 const INSTANCE_PLACEMENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'name',
@@ -79,6 +79,7 @@ const INSTANCE_PLACEMENT_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'layoutEnabled',
   'horizontalAlign',
   'verticalAlign',
+  ...NODE2D_MARGIN_SIDES.map(side => Node2D.marginPropertyName(side)),
 ]);
 
 /**

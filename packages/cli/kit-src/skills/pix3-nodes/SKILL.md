@@ -41,7 +41,7 @@ keys — read their section in `reference.md` first. `Layout2D` is removed and f
 | `zIndex` | int | 0 | -4096..4096; higher draws on top; ties = tree order |
 | `zAsRelative` | bool | true | Add to the parent's z instead of absolute |
 | `blendMode` | enum | normal | `normal`, `additive` (glow/VFX), `multiply`, `subtract`; not inherited |
-| `layout` | block | — | `{ enabled, horizontalAlign: left/center/right/stretch, verticalAlign: top/center/bottom/stretch }` |
+| `layout` | block | — | `{ enabled, horizontalAlign: left/center/right/stretch, verticalAlign: top/center/bottom/stretch, left, right, top, bottom }` — the margins (px from the parent's edge) place an anchored axis; its `position` component is then `0`, and `stretch` derives the size (`pix3-scene-format`) |
 | `flow` | block | — | `{ enabled, direction: vertical/horizontal, gap, paddingX, paddingY, align: start/center/end, autoSize }` |
 
 Paint order = tree order (later sibling / deeper node on top) unless `zIndex` says otherwise.
@@ -193,13 +193,15 @@ screen blooms — **raise** `bloomThreshold` (0.85–0.95) so only the accents g
     labelColor: "#f5ae39"
     labelAlign: right
     transform:
-      position: [340, 790]
+      position: [0, 0]       # both axes anchored: the margins place it
       scale: [1, 1]
       rotation: 0
     layout:
       enabled: true
       horizontalAlign: right
       verticalAlign: top
+      right: 40              # px from the parent's right edge to the label's right edge
+      top: 60
   children: []
 ```
 

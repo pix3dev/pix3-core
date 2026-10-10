@@ -23,6 +23,7 @@ import {
   isLeafOp,
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
+import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { findClobberedKeys, planMerge, recordFlushedKeys } from '@/core/scene-patch/scene-merge';
 
@@ -190,7 +191,10 @@ const flush = async (
 ): Promise<Flushed> => {
   const snapshot = h.normOf(graph);
   const ops = diffScenes(base, snapshot);
-  const patched = applySceneOps(text, ops);
+  // What `FlushService.snapshot` writes: the ops, with the one-time conversion of a legacy file's
+  // anchored nodes to the margin form (W21) in front of them.
+  const written = withLegacyAnchorConversion(text, base, ops);
+  const patched = applySceneOps(text, written);
   expect(await h.norm(patched, scene.path)).toEqual(snapshot);
   const a = comments(text);
   const b = comments(patched);
@@ -201,7 +205,7 @@ const flush = async (
         ? sameMultiset(a, b)
         : isSubsequence(b, a);
   expect(ok, `comments (${rule})`).toBe(true);
-  return { patched, ops, ...lineDiff(text, patched) };
+  return { patched, ops: written, ...lineDiff(text, patched) };
 };
 
 /** ≤3 lines per changed `norm` key, plus the nesting of a new path (S12 §7.3). */
@@ -329,7 +333,10 @@ describe.each(corpus.map(scene => [scene.name, scene] as const))('%s', (_name, s
       const E1 = await h.norm(renamed, scene.path);
       const plan1 = planMerge(base, E1, G);
       expect(plan1.dropped).toEqual([]);
-      const merged = await h.norm(applySceneOps(renamed, plan1.accepted), scene.path);
+      const merged = await h.norm(
+        applySceneOps(renamed, withLegacyAnchorConversion(renamed, E1, plan1.accepted)),
+        scene.path
+      );
       const mergedNode = indexNodes(merged).get(node.nodeId)!.def;
       expect(mergedNode.name).toBe(`${node.name} (agent)`);
       expect(mergedNode.properties).toEqual(indexNodes(G).get(node.nodeId)!.def.properties);
@@ -344,11 +351,15 @@ describe.each(corpus.map(scene => [scene.name, scene] as const))('%s', (_name, s
       const same = applySceneOps(scene.text, [
         { kind: 'set', nodeId: k.nodeId, path: k.path, value: agentValue },
       ]);
-      const plan2 = planMerge(base, await h.norm(same, scene.path), G);
+      const E2 = await h.norm(same, scene.path);
+      const plan2 = planMerge(base, E2, G);
       expect(plan2.dropped.map(d => d.key)).toContain(`${k.nodeId}::${k.path.join('.')}`);
       // The agent's value wins; other keys of the edit (layout-derived ones) are still accepted.
-      const merged2 = await h.norm(applySceneOps(same, plan2.accepted), scene.path);
-      const agentNorm = await h.norm(same, scene.path);
+      const merged2 = await h.norm(
+        applySceneOps(same, withLegacyAnchorConversion(same, E2, plan2.accepted)),
+        scene.path
+      );
+      const agentNorm = E2;
       const value = (doc: SavedSceneDocument) =>
         k.path.reduce<unknown>(
           (v, seg) => (v as Record<string, unknown> | undefined)?.[seg as string],

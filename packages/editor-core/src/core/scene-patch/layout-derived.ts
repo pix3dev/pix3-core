@@ -19,10 +19,11 @@ import { deepEqual, indexNodes, isPlainObject } from '@/core/scene-patch/scene-d
  * treats them as the designer's edits. {@link maskLayoutDerived} puts the baseline's value back
  * for each of them, so the diff, the flush, the draft and the merge see only authored changes.
  *
- * Not covered here, on purpose: sizes and positions the ANCHOR layout (`layout:` stretch/edges)
- * gives children when their parent is resized. Those are not recomputable from the file — a
- * child's rect relative to its parent's authored size is how the margins are stored — so a parent
- * resize has to write them (see `planMerge` for how a merge keeps them consistent).
+ * Not needed here: the rects the ANCHOR layout (`layout:` stretch/edges) gives children when their
+ * parent is resized. Since W21 the file stores the margins in the `layout:` block and the saver
+ * writes nothing the margins derive (`SceneSaver.dropMarginDerivedRect`: a `0` for the position
+ * component of an anchored axis, no `width`/`height` under `stretch`), so a parent resize leaves
+ * every child's norm as it was — nothing to mask.
  */
 
 /** One derived leaf of the norm: the node definition it lives on and the path inside it. */

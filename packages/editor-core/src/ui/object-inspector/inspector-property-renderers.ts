@@ -5,6 +5,7 @@ import type { PropertyDefinition } from '@/fw';
 import { appState } from '@/state';
 import {
   Group2D,
+  NODE2D_MARGIN_SIDES,
   Node2D,
   Sprite2D,
   UIControl2D,
@@ -452,7 +453,7 @@ export class InspectorPropertyRenderers {
           ${sizeProps.length > 0
             ? html`<div class="layout-size-block">${this.renderSizeContent(sizeProps)}</div>`
             : ''}
-          ${anchorProps.length > 0 ? this.renderAnchorsSubsection() : ''}
+          ${anchorProps.length > 0 ? this.renderAnchorsSubsection(anchorProps) : ''}
           ${flowProps.length > 0 ? this.renderFlowSubsection(flowProps) : ''}
         </div>
       `,
@@ -548,14 +549,24 @@ export class InspectorPropertyRenderers {
    * rather than ignoring anchors (`Node2D.applyFlowLayout`) — but `stretch` is
    * dropped from the axis the flow drives, because stretching along the main
    * axis fights how the flow measures the child.
+   *
+   * Below the modes, one number row per margin the current anchors keep
+   * (`layoutLeft` … `layoutBottom`, W21): the distance to that edge of the
+   * parent, which is what the file stores for an anchored axis. A side the
+   * alignment does not use, or a root (its reference is the viewport), has no row.
    */
-  renderAnchorsSubsection() {
+  renderAnchorsSubsection(props: PropertyDefinition[] = []) {
     const node = this.host.primaryNode;
     if (!(node instanceof Node2D)) {
       return '';
     }
 
     const enabled = this.isAnchorLayoutEnabled();
+    const marginProps = props.filter(
+      prop =>
+        NODE2D_MARGIN_SIDES.some(side => Node2D.marginPropertyName(side) === prop.name) &&
+        !this.isPropertyReadOnly(prop.ui?.readOnly, node)
+    );
     // Play mode is a read-only live mirror — gate the switch and every control
     // in the body so they can't silently mutate the authored node during play.
     const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
@@ -609,6 +620,11 @@ export class InspectorPropertyRenderers {
             </div>
           </div>
         </div>
+        ${marginProps.length > 0
+          ? html`<div class="anchor-margins">
+              ${marginProps.map(prop => this.renderPropertyInput(prop))}
+            </div>`
+          : ''}
         ${flowMainAxis
           ? html`<p class="inspector-subsection__note">
               Stretch is unavailable on the ${flowMainAxis === 'vertical' ? 'V' : 'H'} axis while

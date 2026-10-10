@@ -215,8 +215,13 @@ export class SceneSaver {
     const baseMap = marker?.basePropertiesByLocalId ?? {};
     const currentMap = this.captureInstanceComparableMap(node);
     const normalizedRootKey = marker ? marker.effectiveLocalId : this.normalizeLocalId(node.nodeId);
-    const currentRoot = currentMap[normalizedRootKey] ?? {};
-    const baseRoot = baseMap[normalizedRootKey] ?? {};
+    // The prefab base was captured before any layout pass; the live values after it. What the
+    // margins derive is masked on both sides, by the node's anchors as they are now.
+    const currentRoot = this.dropMarginDerivedComparable(
+      node,
+      currentMap[normalizedRootKey]?.values ?? {}
+    );
+    const baseRoot = this.dropMarginDerivedComparable(node, baseMap[normalizedRootKey] ?? {});
     const rootDiff = this.diffRecord(baseRoot, currentRoot);
 
     if (Object.keys(rootDiff).length > 0) {
@@ -224,12 +229,16 @@ export class SceneSaver {
     }
 
     const byLocalId: Record<string, { properties?: Record<string, unknown> }> = {};
-    for (const [effectiveLocalId, currentValues] of Object.entries(currentMap)) {
+    for (const [effectiveLocalId, entry] of Object.entries(currentMap)) {
       if (effectiveLocalId === normalizedRootKey) {
         continue;
       }
 
-      const baseValues = baseMap[effectiveLocalId] ?? {};
+      const currentValues = this.dropMarginDerivedComparable(entry.node, entry.values);
+      const baseValues = this.dropMarginDerivedComparable(
+        entry.node,
+        baseMap[effectiveLocalId] ?? {}
+      );
       const diff = this.diffRecord(baseValues, currentValues);
       if (Object.keys(diff).length === 0) {
         continue;
@@ -833,11 +842,58 @@ export class SceneSaver {
       props.subEmitterInheritVelocity = node.subEmitterInheritVelocity;
     }
 
+    if (node instanceof Node2D) this.dropMarginDerivedRect(node, props);
     return orderLikeSource(props, Object.keys(node.properties));
   }
 
-  private captureInstanceComparableMap(root: NodeBase): Record<string, Record<string, unknown>> {
-    const result: Record<string, Record<string, unknown>> = {};
+  /**
+   * What the margins of an anchored axis derive is not written (W21): the position component of
+   * that axis goes out as `0` (a vector cannot lose one component) and, under `stretch`, the size
+   * key goes. The loader resolves both from the margins and the parent's current size, so a parent
+   * resize changes nothing in the child's entry — the point of storing margins at all.
+   */
+  private dropMarginDerivedRect(node: Node2D, props: Record<string, unknown>): void {
+    const marginX = node.isMarginAxis('x');
+    const marginY = node.isMarginAxis('y');
+    if (!marginX && !marginY) return;
+    const transform = props.transform;
+    if (transform && typeof transform === 'object') {
+      const position = (transform as Record<string, unknown>).position;
+      if (Array.isArray(position)) {
+        if (marginX) position[0] = 0;
+        if (marginY) position[1] = 0;
+      }
+    }
+    if (marginX && node.horizontalAlign === 'stretch') delete props.width;
+    if (marginY && node.verticalAlign === 'stretch') delete props.height;
+  }
+
+  /** The instance-diff counterpart of {@link dropMarginDerivedRect}, on schema-valued records. */
+  private dropMarginDerivedComparable(
+    node: NodeBase,
+    values: Record<string, unknown>
+  ): Record<string, unknown> {
+    if (!(node instanceof Node2D)) return values;
+    const marginX = node.isMarginAxis('x');
+    const marginY = node.isMarginAxis('y');
+    if (!marginX && !marginY) return values;
+    const out = { ...values };
+    const position = out.position;
+    if (position && typeof position === 'object' && !Array.isArray(position)) {
+      const masked = { ...(position as Record<string, unknown>) };
+      if (marginX) masked.x = 0;
+      if (marginY) masked.y = 0;
+      out.position = masked;
+    }
+    if (marginX && node.horizontalAlign === 'stretch') delete out.width;
+    if (marginY && node.verticalAlign === 'stretch') delete out.height;
+    return out;
+  }
+
+  private captureInstanceComparableMap(
+    root: NodeBase
+  ): Record<string, { node: NodeBase; values: Record<string, unknown> }> {
+    const result: Record<string, { node: NodeBase; values: Record<string, unknown> }> = {};
     const stack: NodeBase[] = [root];
 
     while (stack.length > 0) {
@@ -848,7 +904,7 @@ export class SceneSaver {
 
       const marker = this.getPrefabMarker(node);
       if (marker) {
-        result[marker.effectiveLocalId] = this.captureComparableProperties(node);
+        result[marker.effectiveLocalId] = { node, values: this.captureComparableProperties(node) };
       }
 
       for (const child of node.children) {

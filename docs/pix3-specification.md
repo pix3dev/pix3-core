@@ -1,8 +1,8 @@
 # Pix3 — Technical Specification
 
-Version: 2.0
+Version: 2.1
 
-Date: 2026-10-08
+Date: 2026-10-10
 
 > **Reading this doc economically (agents):** it is long — don't load the whole
 > file. `Grep` the heading *text* below, then `Read` with `offset`/`limit`.
@@ -1432,6 +1432,53 @@ in **§6.23 UI Kit Assets**.
     textureMark: { type: 'texture', url: 'res://sprites/ui/check_tick.png' }
 ```
 
+### 7.2.3 2D transform and anchor layout
+
+A 2D node's placement is its `transform` block (`position: [x, y]` — the node's centre relative to
+its parent, X right, Y up — `scale`, `rotation` in degrees) and, when it is anchored, its `layout`
+block:
+
+```yaml
+- id: score
+  type: Label2D
+  properties:
+    width: 200
+    height: 60
+    transform: { position: [0, 0], scale: [1, 1], rotation: 0 }
+    layout: { enabled: true, horizontalAlign: left, verticalAlign: top, left: 40, top: 30 }
+- id: bar
+  type: Group2D
+  properties:
+    height: 40                                   # no width: stretch derives it
+    transform: { position: [0, 0], scale: [1, 1], rotation: 0 }
+    layout: { enabled: true, horizontalAlign: stretch, verticalAlign: bottom, left: 40, right: 40, bottom: 20 }
+```
+
+`horizontalAlign` is `left | center | right | stretch`, `verticalAlign` `top | center | bottom |
+stretch` (default `center`). **An anchored axis is placed by its margins** — `left` / `right` /
+`top` / `bottom`, the distance in design pixels from the parent's edge to the node's same edge; a
+`left` alignment keeps `left`, `right` keeps `right`, `stretch` keeps both and sizes the node from
+them, a centred axis keeps none and uses `position` as authored. What the margins derive is not
+stored: the saver writes `0` for the `position` component of an anchored axis (the loader ignores
+it when the margin is present) and omits `width` / `height` under `stretch`. That is what lets a
+parent be resized without touching a single child entry — the layout re-resolves each child from
+its margins and the parent's current size, in the editor and in the game alike (`.plans/write-model.md`
+W21). A node directly under a parent flow (`flow.enabled`) has no margin on the flow's main axis:
+the flow places it there. A **root** 2D node's reference is the project's `viewportBaseSize`, which a
+scene file does not know, so a root keeps its authored rect and resolves against the screen as
+before; margins written on a root by hand are honoured.
+
+**Files without margins** (every scene written before W21, and any file an agent writes with the
+anchors alone) load exactly as they always did: the margins are derived once from the node's
+rect against the parent's authored size. The editor converts such a file to the margin form on its
+first write of it (`legacy-anchor-conversion.ts`): a partial patch of a legacy entry would not be
+sound, since a parent's new `width` changes what every child rect in the file means. There is no
+scene-format version bump — the loader reads both forms, `pix3 validate` accepts both — and no
+migration command: a project moves over file by file as the editor saves them. On a prefab
+**instance**, the same values use the schema names `layoutLeft` / `layoutRight` / `layoutTop` /
+`layoutBottom` beside `layoutEnabled` / `horizontalAlign` / `verticalAlign` and `position: {x, y}`
+(the instance's placement, §6.20 "Default overrides"), whatever the file's key order.
+
 ### 7.3 Validation Rules
 
 - The root section must contain at least one node entry.
@@ -1614,6 +1661,7 @@ in **§6.23 UI Kit Assets**.
 
 > Section numbers cited in older entries reflect the numbering at that release; the appended systems were renumbered to 6.15–6.22 to remove duplicate numbers. Refer to sections by heading text.
 
+- **2.1 (2026-10-10):** **Anchor margins are stored in `layout:`.** An anchored 2D node's margins — the distance from the parent's edge to its own — used to exist only implicitly, as the node's rect against its parent's *authored* size (`Node2D.resolveHorizontalLayout`), so resizing a container in the editor had to rewrite every stretched or edge-anchored child's `width`/`height`/`position` (`.plans/write-model.md` W16's open debt). The `layout:` block now carries `left` / `right` / `top` / `bottom` for the sides the alignment keeps, the saver writes nothing they derive (`0` for the position component of an anchored axis, no `width`/`height` under `stretch`), the loader resolves the rect from the margins and the parent's current size, and a parent resize writes the parent alone (§7.2.3). Files without margins load as before — the margins are derived once from the rect — and the editor converts such a file on its first write of it (a partial patch of a legacy entry is not sound once a parent's size changes); no scene-format version bump, no migration command. `pix3 validate` knows the four keys; the inspector shows the margins the anchors keep under the anchor modes; on an instance root they are `layoutLeft` … `layoutBottom`. The merge rule's `laid-out` drop reason is gone with the rects it protected. Proven over the whole scene corpus and DeepCore: the margin form places every node where the legacy rect did, at the design size and on a wider or taller screen. Also: `Sprite2D` fills only the axis the file leaves out from the texture (it used to replace both), and the runner lays 2D roots out before the pre-roll tick so `onStart` reads resolved rects.
 - **2.0 (2026-10-08):** **pix3-core repository seeded.** This spec, the runtime, the CLI and the project templates moved from `pix3` (now `pix3-full`, frozen on 1.6.x) into `pix3-core` with their history; this file is the version of record from here on. Pix3 2.x is a Vite plugin (`@pix3/vite-plugin`) that serves the editor (`@pix3/editor-core`) on the game's own dev server, plus `@pix3/runtime`, `@pix3/cli` and `create-pix3` (`.plans/pix3-core.md` in `pix3`). Editor-facing sections below still describe the 1.x editor until the port lands; entries up to 1.42 are the `pix3` history.
 - **1.42 (2026-09-28):** **Library insert reuses content the project already has, and lands in one refresh.** Dropping a published Seven character back into its own project wrote a second copy of all 137 files under `assets/library/<slug>/`, one sequential request per file, and bumped `fileRefreshSignal` after every file — over a remote `pix3 serve` that re-listed the asset tree ~140 times, and because the prefab and flipbook were written first, each refresh loaded a character whose frames did not exist yet (hundreds of "Resource not found" failures). `LibraryInsertService` now dedups by content: a bundle file whose sha256 matches a project file at any path is referenced there instead of copied — hashes come from the backend's manifest (`ProjectStorageService.getContentHashIndex`: `pix3 serve` and cloud already carry sha256; local FSA has none, so only the file's own original path is hashed and compared). Text files are matched after their references are remapped, so a flipbook whose frames were all found compares equal to the project's own and is reused too; among byte-identical files (a looping flipbook repeats frames) the file's own path wins, or the remap would rewrite `…_0009.png` to its twin `…_0005.png` and defeat that match. Writes go binaries → text files in dependency order → entry last, six at a time, with each directory created once; a reference cycle is copied into the target folder rather than stalling. `ProjectStorageService.batchMutations(fn)` coalesces the local listing signal of every write inside it into one (collaborators still see each write). Measured on the live Seven project: re-inserting Knight wrote 1 file and signalled once. Guarded by `LibraryInsertService.spec.ts` (order, cycle, hash dedup at another path, twin frames, local fallback, differing content) and `ProjectStorageService.spec.ts` (coalescing, including a failing batch).
 - **1.41 (2026-09-27):** **Flipbook clips are independent, and a character is a variant/state vocabulary.** Phase 0 of `.plans/asset-store-packs.md` (semantic Store packs), which starts from a runtime defect the plan's review confirmed by test: `SceneLoader.loadAnimatedSprite2DAsset` keyed every sequence frame texture by the frame's index *inside its clip*, merged across all clips, so `attack[0]` replaced `idle[0]` — of a resource with an idle of three frames and an attack of two, only three files were ever requested and idle rendered attack pixels. The editor viewport never showed it (its proxy holds the current frame's texture by path), which is why it survived: it is a play-mode and export defect, and the acceptance for anything flipbook-related is play mode / export, not the viewport. `AnimatedSprite2D` now keys frame textures by `texturePath` (`setFrameTexture(path, texture)`; a numeric index is still accepted and resolves through the ACTIVE clip only), and the loader loads each distinct path once. New **`AnimatedSprite2D.play(name?, { restart? })`** — the same shape as `SpineSkeleton2D.play`: `false` (nothing changes) for a clip the loaded resource lacks, no silent fallback to the first clip as writing `currentClip` still does; a different clip starts at frame 0 with a fresh play-clock; the current clip keeps its position unless `restart`, which is also what replays a finished one-shot (a second `attack` must begin at frame 0). Because the loader fetches the `.pix3anim` asynchronously and a component's `onStart` usually runs first, a name given before the resource arrives is accepted and resolved on load (an unknown one is warned about there). `getClipNames()` added. New **`core:CharacterVisual2D`** — `variant + state → clip` over the naming convention `<variant><separator><state>` (`sword.idle`; a clip without the separator is a variant-less state): `playState`, `setVariant` (keeps the state, restarts its clip), `getVariants`/`getStates`, and a `state-finished (state, variant)` signal on the host when the current one-shot ends. Deliberately Unity's Sprite Library + Sprite Resolver and not an AnimationTree: no movement, physics, AI or automatic transitions, and **no new file format** — the mapping IS the clip names and the chosen pair is the component's config in the prefab, so a Store character stays one prefab + one flipbook and `pix3 validate` already checks it (the plan's `.pix3character` descriptor was dropped in review for exactly that). **`compileCharacter`** (`src/services/library/character-compiler.ts`, pure, deterministic) turns grouped frame files into that shape — a managed sprite folder `sprites/<slug>/<slug>.pix3anim` + `<variant>_<state>_<nnnn>.png` and `prefabs/<Name>.pix3scene` — with `scanNumberedSequences` as the generic numeric-suffix grouping (gaps, duplicates and mixed sizes reported, never guessed); fps 12 and one-shot `attack`/`die` are proposals surfaced as warnings. Resource-graph walking got its one table: **`RESOURCE_GRAPH_EXTENSIONS`** (`src/core/asset-categories.ts` — scenes, prefabs, `.pix3anim`) now feeds publish-to-library (which recursed into scenes and scripts only, so a re-published character came back without its frames), playable export, insert-time remap and move-remap (which rewrote `.pix3scene` only, so moving a frame folder broke its flipbook). Guarded by the multi-clip and `play` cases in `AnimatedSprite2DAnimation.spec.ts`, `CharacterVisual2DBehavior.spec.ts`, `character-compiler.spec.ts`, and `character-compiler.headless.spec.ts`, which boots the compiled prefab through the real loader and drives idle → attack → attack (restart) → idle → die → variant switch with zero script errors.

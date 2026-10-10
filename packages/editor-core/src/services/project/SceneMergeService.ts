@@ -9,6 +9,7 @@ import {
   type LeafOp,
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
+import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
 import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
@@ -183,7 +184,8 @@ export class SceneMergeService {
     let mergedText = eText;
     if (accepted.length > 0) {
       try {
-        mergedText = applySceneOps(E.text, accepted);
+        // E may still be a legacy file: the accepted keys land with its conversion (W21).
+        mergedText = applySceneOps(E.text, withLegacyAnchorConversion(E.text, E.norm, accepted));
       } catch (error) {
         if (!(error instanceof ScenePatchError)) throw error;
         accepted = [];
@@ -337,7 +339,6 @@ export class SceneMergeService {
     const op = dropped.op;
     const label =
       op.kind === 'set' || op.kind === 'delete' ? describeLeaf(name, op.path) : dropped.key;
-    if (dropped.reason === 'laid-out') return `${label} (follows a dropped resize)`;
     return dropped.reason === 'node-gone' ? `${label} (node deleted on disk)` : label;
   }
 }

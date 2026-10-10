@@ -46,7 +46,12 @@ import { VirtualCamera3D, VIRTUAL_CAMERA_DEFAULTS } from '../nodes/3D/VirtualCam
 import { PostProcess } from '../nodes/PostProcess';
 import { isKeyframeEasing } from '../animation/easing';
 
-import { Node2D, type Node2DFlowConfig, type Node2DLayoutConfig } from '../nodes/Node2D';
+import {
+  NODE2D_MARGIN_SIDES,
+  Node2D,
+  type Node2DFlowConfig,
+  type Node2DLayoutConfig,
+} from '../nodes/Node2D';
 import { AssetLoader } from './AssetLoader';
 import { ResourceManager } from './ResourceManager';
 import { ScriptRegistry } from './ScriptRegistry';
@@ -815,7 +820,16 @@ export class SceneLoader {
     const schema = getNodePropertySchema(node);
     const byName = new Map(schema.properties.map(prop => [prop.name, prop] as const));
 
-    for (const [key, rawValue] of Object.entries(properties)) {
+    // The margins go on last, whatever the file's key order: the `layoutEnabled` / align setters
+    // drop the margins their new alignment does not keep, so a `layoutLeft` applied before
+    // `horizontalAlign: left` would be gone by the time it is needed.
+    const entries = Object.entries(properties);
+    const marginNames = new Set(NODE2D_MARGIN_SIDES.map(side => Node2D.marginPropertyName(side)));
+    const ordered = [
+      ...entries.filter(([key]) => !marginNames.has(key)),
+      ...entries.filter(([key]) => marginNames.has(key)),
+    ];
+    for (const [key, rawValue] of ordered) {
       if (key === 'transform') {
         this.applyTransformOverride(node, byName, rawValue);
         continue;
@@ -2470,11 +2484,18 @@ export class SceneLoader {
 
     const horizontalAlign = horizontalAlignValues.find(v => v === layout.horizontalAlign);
     const verticalAlign = verticalAlignValues.find(v => v === layout.verticalAlign);
+    const margin = (value: unknown): number | undefined =>
+      typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
     return {
       enabled: typeof layout.enabled === 'boolean' ? layout.enabled : undefined,
       horizontalAlign,
       verticalAlign,
+      // Margins of the anchored axes (W21); a file without them derives them from the rect.
+      left: margin(layout.left),
+      right: margin(layout.right),
+      top: margin(layout.top),
+      bottom: margin(layout.bottom),
     };
   }
 }

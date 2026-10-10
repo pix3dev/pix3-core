@@ -102,12 +102,18 @@ layout:
   enabled: true
   horizontalAlign: left      # left | center | right | stretch
   verticalAlign: top         # top | center | bottom | stretch
+  left: 40                   # margins, px from the parent's edge to the node's same edge:
+  top: 30                    # `left` keeps `left`, `right` keeps `right`, `stretch` keeps both
 ```
 
-The node keeps its authored distance to that edge of its parent when the parent resizes
-(a different screen aspect). `stretch` keeps both margins and resizes the node. Position is
-still authored in `transform.position`. HUD widgets anchor to screen edges; full-screen
-backgrounds and roots use `stretch` on both axes.
+An anchored axis is placed by its margin, and keeps it when the parent resizes (a different
+screen aspect, a container resized in the editor). On that axis the `transform.position`
+component is ignored — write `0` — and under `stretch` the node's `width` / `height` is derived
+from the two margins, so leave it out. A centred axis has no margin: `position` places it, as
+for any node. A file with the anchors but **no margins** still loads: the margins are read off
+the rect, and the editor rewrites the node in the margin form the first time it saves the file.
+HUD widgets anchor to screen edges; full-screen backgrounds and roots use `stretch` on both
+axes (a root's reference is `viewportBaseSize`, so a root keeps its full rect, no margins).
 
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
@@ -185,9 +191,10 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
   stays the instance's own id). `findByName('Result Overlay')` finds the instance above, not
   the name written in `result.pix3scene`; omit `name` to keep the prefab's.
 - Instance `properties` are applied to the prefab's root through its **schema names**:
-  `visible`, `opacity`, `width`, `layoutEnabled`, `horizontalAlign`, … plus a `transform` block
-  (`position`, `rotation`, `scale`). The `layout:` / `flow:` blocks of a plain node are not read
-  here — write `layoutEnabled: true` + `horizontalAlign: right` instead.
+  `visible`, `opacity`, `width`, `layoutEnabled`, `horizontalAlign`, the margins `layoutLeft` /
+  `layoutRight` / `layoutTop` / `layoutBottom`, … plus a `transform` block (`position`,
+  `rotation`, `scale`). The `layout:` / `flow:` blocks of a plain node are not read here — write
+  `layoutEnabled: true` + `horizontalAlign: right` + `layoutRight: 20` instead.
 - Do **not** add `components` or `children` to an instance node — they are ignored (the
   content comes from the prefab). To change what is inside, edit the prefab file itself, or
   override one inner node's properties:

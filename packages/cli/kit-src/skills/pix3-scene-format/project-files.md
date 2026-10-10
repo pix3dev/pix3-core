@@ -71,8 +71,8 @@ The branch: a node of the host scene with everything under it, e.g. in `scenes/m
         properties:
           width: 260
           height: 80
-          transform: { position: [-780, 440], scale: [1, 1], rotation: 0 }
-          layout: { enabled: true, horizontalAlign: left, verticalAlign: top }
+          transform: { position: [0, 0], scale: [1, 1], rotation: 0 }
+          layout: { enabled: true, horizontalAlign: left, verticalAlign: top, left: 60, top: 40 }
         children:
           - id: coin-icon
             type: ColorRect2D
@@ -105,18 +105,21 @@ The branch: a node of the host scene with everything under it, e.g. in `scenes/m
    order), with one instance node: the branch root's `id` (scripts that find it keep finding
    it) and `name`, `instance: res://scenes/prefabs/CoinHud.pix3scene`, and `properties` with the
    root's `transform` and its anchoring in the **flat** names an instance reads —
-   `layoutEnabled`, `horizontalAlign`, `verticalAlign` (scene-format "Prefab instance"). No
-   `type`, no `components`, no `children`:
+   `layoutEnabled`, `horizontalAlign`, `verticalAlign` and the margins `layoutLeft` /
+   `layoutRight` / `layoutTop` / `layoutBottom` (scene-format "Prefab instance"). No `type`,
+   no `components`, no `children`:
 
    ```yaml
       - id: coin-hud
         name: Coin HUD
         instance: res://scenes/prefabs/CoinHud.pix3scene
         properties:
-          transform: { position: [-780, 440] }
+          transform: { position: [0, 0] }
           layoutEnabled: true
           horizontalAlign: left
           verticalAlign: top
+          layoutLeft: 60
+          layoutTop: 40
    ```
 
 6. A value that differed per copy goes into the instance: on the root as above, on an inner

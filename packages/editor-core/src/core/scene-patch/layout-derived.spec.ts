@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   getNodePropertySchema,
+  Group2D,
   Node2D,
   type NodeBase,
   type SavedSceneDocument,
@@ -20,6 +21,7 @@ import {
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
 import { layoutDerivedLeaves, maskLayoutDerived } from '@/core/scene-patch/layout-derived';
+import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { applySceneOps } from '@/core/scene-patch/scene-patch-writer';
 import { planMerge } from '@/core/scene-patch/scene-merge';
 
@@ -191,8 +193,12 @@ describe('flow-computed values are not pending', () => {
     layOut(graph);
     const c = graph.nodeMap.get('c') as Node2D;
     setProp(c, 'position', { x: c.position.x + 15, y: c.position.y });
+    // What the editor's operations do after a position edit: the margins follow the rect (W21),
+    // so the edit is the left margin, not the position (the file's x on that axis is a `0`).
+    c.captureAuthoredLayoutRectFromCurrent(true);
     layOut(graph);
-    expect(keys(pendingOf(h, B, graph))).toEqual(['c::properties.transform.position']);
+    expect(keys(pendingOf(h, B, graph))).toEqual(['c::properties.layout.left']);
+    expect(c.getLayoutMargin('left')).toBe(35);
   });
 
   it('switching the flow off writes where it left the rows (they keep them)', async () => {
@@ -210,7 +216,11 @@ describe('flow-computed values are not pending', () => {
       'c::properties.transform.position',
       'col::properties.flow.enabled',
     ]);
-    const reloaded = layOut(await h.parse(applySceneOps(FLOW_SCENE, ops), 'scenes/a.pix3scene'));
+    // The flush carries the legacy file's conversion with the ops (`c` gets its margin).
+    const written = withLegacyAnchorConversion(FLOW_SCENE, B, ops.filter(isLeafOp));
+    const reloaded = layOut(
+      await h.parse(applySceneOps(FLOW_SCENE, written), 'scenes/a.pix3scene')
+    );
     expect(livePositions(reloaded, ['a', 'b', 'c'])).toEqual(before);
   });
 
@@ -266,7 +276,7 @@ describe('flow inside a prefab instance: no position overrides', () => {
   });
 });
 
-describe('§C.3 merge: what the anchor layout derived from a dropped resize goes with it', () => {
+describe('W21: a parent resize writes only the parent; the anchored children live in their margins', () => {
   const PANEL = [
     'version: 1.0.0',
     'root:',
@@ -314,21 +324,36 @@ describe('§C.3 merge: what the anchor layout derived from a dropped resize goes
     const B = h.normOf(graph);
     layOut(graph);
     setProp(graph.nodeMap.get('panel')!, 'width', 500);
-    return { B, G: maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph)) };
+    return { graph, B, G: maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph)) };
   };
 
-  it('the designer resizes the panel; the stretched bar and its right-anchored knob follow', async () => {
+  it('the designer resizes the panel: the stretched bar and its right-anchored knob follow, and only the panel is pending', async () => {
     const h = createSceneHarness(dir);
-    const { B, G } = await resizedPanel(h);
-    // Under the current format these are the margins: a parent resize has to write them.
-    expect(keys(diffScenes(B, G))).toEqual([
-      'bar::properties.width',
-      'knob::properties.transform.position',
-      'panel::properties.width',
-    ]);
+    const { graph, B, G } = await resizedPanel(h);
+    const bar = graph.nodeMap.get('bar') as Group2D;
+    const knob = graph.nodeMap.get('knob') as Node2D;
+    // The margins (20 each side of the bar, 5 for the knob) hold at the new width.
+    expect(bar.width).toBe(460);
+    expect(knob.position.x).toBeCloseTo(460 / 2 - 5 - 5);
+    expect(keys(diffScenes(B, G))).toEqual(['panel::properties.width']);
+    // The baseline already carries the margins (derived from the legacy rects), not the rects.
+    const barDef = indexNodes(B).get('bar')!.def.properties!;
+    expect(barDef.layout).toEqual({
+      enabled: true,
+      horizontalAlign: 'stretch',
+      left: 20,
+      right: 20,
+    });
+    expect(barDef.width).toBeUndefined();
+    expect(barDef.transform).toEqual({ position: [0, 0], scale: [1, 1], rotation: 0 });
+    expect(indexNodes(B).get('knob')!.def.properties!.layout).toEqual({
+      enabled: true,
+      horizontalAlign: 'right',
+      right: 5,
+    });
   });
 
-  it('an agent resized the panel too: its size wins, and the children keep the file’s rects', async () => {
+  it('an agent resized the panel too: its size wins, nothing else is dropped', async () => {
     const h = createSceneHarness(dir);
     const { B, G } = await resizedPanel(h);
     const E = await h.norm(
@@ -339,15 +364,12 @@ describe('§C.3 merge: what the anchor layout derived from a dropped resize goes
     );
     const plan = planMerge(B, E, G);
     expect(plan.accepted).toEqual([]);
-    const reasons = Object.fromEntries(plan.dropped.map(d => [d.key, d.reason]));
-    expect(reasons['panel::properties.width']).toBe('same-key');
-    expect(reasons['bar::properties.width']).toBe('laid-out');
-    for (const [key, reason] of Object.entries(reasons)) {
-      if (key !== 'panel::properties.width') expect(reason).toBe('laid-out');
-    }
+    expect(plan.dropped.map(d => [d.key, d.reason])).toEqual([
+      ['panel::properties.width', 'same-key'],
+    ]);
   });
 
-  it('an agent renamed the title: the resize and everything it laid out are accepted', async () => {
+  it('an agent renamed the title: the resize is accepted, alone', async () => {
     const h = createSceneHarness(dir);
     const { B, G } = await resizedPanel(h);
     const E = await h.norm(
@@ -356,22 +378,50 @@ describe('§C.3 merge: what the anchor layout derived from a dropped resize goes
     );
     const plan = planMerge(B, E, G);
     expect(plan.dropped).toEqual([]);
-    expect(keys(plan.accepted)).toEqual(keys(diffScenes(B, G)));
+    expect(keys(plan.accepted)).toEqual(['panel::properties.width']);
   });
 
-  it('a centred child the designer moved by hand is not dropped with the resize', async () => {
+  it('a child the designer moved by hand is an edit of its margin, kept through a dropped resize', async () => {
     const h = createSceneHarness(dir);
     const graph = await h.parse(PANEL, 'scenes/p.pix3scene');
     const B = h.normOf(graph);
+    layOut(graph);
     setProp(graph.nodeMap.get('panel')!, 'width', 500);
     setProp(graph.nodeMap.get('title')!, 'position', { x: 30, y: 100 });
+    const knob = graph.nodeMap.get('knob') as Node2D;
+    setProp(knob, 'position', { x: knob.position.x - 10, y: 0 });
+    knob.captureAuthoredLayoutRectFromCurrent(true);
     const G = maskLayoutDerived(h.normOf(graph), B, layoutDerivedLeaves(graph));
+    expect(keys(diffScenes(B, G))).toEqual([
+      'knob::properties.layout.right',
+      'panel::properties.width',
+      'title::properties.transform.position',
+    ]);
     const E = await h.norm(
       applySceneOps(PANEL, [
         { kind: 'set', nodeId: 'panel', path: ['properties', 'width'], value: 450 },
       ]),
       'scenes/p.pix3scene'
     );
-    expect(keys(planMerge(B, E, G).accepted)).toEqual(['title::properties.transform.position']);
+    expect(keys(planMerge(B, E, G).accepted)).toEqual([
+      'knob::properties.layout.right',
+      'title::properties.transform.position',
+    ]);
+  });
+
+  it('the re-saved file lays out as the legacy one, and the panel resize changes one line', async () => {
+    const h = createSceneHarness(dir);
+    const legacy = layOut(await h.parse(PANEL, 'scenes/p.pix3scene'));
+    const saved = h.save(await h.parse(PANEL, 'scenes/p.pix3scene'));
+    const reloaded = layOut(await h.parse(saved, 'scenes/p.pix3scene'));
+    const ids = ['panel', 'bar', 'knob', 'title'];
+    expect(livePositions(reloaded, ids)).toEqual(livePositions(legacy, ids));
+    expect((reloaded.nodeMap.get('bar') as Group2D).width).toBe(360);
+    // Resize the panel in the reloaded graph: the full save differs from `saved` in one line.
+    setProp(reloaded.nodeMap.get('panel')!, 'width', 500);
+    const resized = h.save(reloaded);
+    const changed = saved.split('\n').filter((line, i) => resized.split('\n')[i] !== line);
+    expect(changed).toEqual(['      width: 400']);
+    expect(resized.split('\n').length).toBe(saved.split('\n').length);
   });
 });

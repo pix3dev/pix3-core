@@ -130,12 +130,22 @@ const TRANSFORM_3D: SceneDiskKeyRule = {
   },
 };
 
+/**
+ * `layout:` — the anchors, and the margins of the anchored axes (W21): `left`/`right` for a
+ * `left`/`right`/`stretch` horizontal alignment, `top`/`bottom` likewise. With a margin present the
+ * loader ignores that axis of `transform.position` (and `width`/`height` under `stretch`); without
+ * it the rect is read as the margin's source, as every pre-W21 file is.
+ */
 const LAYOUT_2D: SceneDiskKeyRule = {
   kind: 'record',
   nested: {
     enabled: { schemaName: 'layoutEnabled' },
     horizontalAlign: { schemaName: 'horizontalAlign' },
     verticalAlign: { schemaName: 'verticalAlign' },
+    left: { schemaName: 'layoutLeft' },
+    right: { schemaName: 'layoutRight' },
+    top: { schemaName: 'layoutTop' },
+    bottom: { schemaName: 'layoutBottom' },
   },
 };
 

@@ -3,6 +3,7 @@ import { subscribe } from 'valtio/vanilla';
 import { inject, injectable } from '@/fw/di';
 import type { HookReply } from '@/host/EditorHost';
 import { diffScenes, type SceneOp } from '@/core/scene-patch/scene-diff';
+import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { editorNormOfGraph, serializeGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { sha256 } from '@/core/hash';
@@ -247,13 +248,15 @@ export class FlushService {
       return { path, baseline, revision, norm, ops, text: baseline.text, fallback: false };
     }
     try {
+      // A legacy file (anchored rects, no margins) is converted by its first write (W21).
+      const written = withLegacyAnchorConversion(baseline.text, baseline.norm, ops);
       return {
         path,
         baseline,
         revision,
         norm,
         ops,
-        text: applySceneOps(baseline.text, ops),
+        text: applySceneOps(baseline.text, written),
         fallback: false,
       };
     } catch (error) {
