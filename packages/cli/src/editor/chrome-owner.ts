@@ -11,6 +11,7 @@ import { ensureCdpToken } from './cdp-token.ts';
 import { chromeArgs } from './chrome.ts';
 import { removeChromeState, writeChromeState } from './chrome-state.ts';
 import { CDP_PROXY_PROTOCOL, cdpWsEndpoint, chromeOwnerLogPath } from './paths.ts';
+import { readCdpForwardPorts } from './remote.ts';
 
 /**
  * The Chrome owner (plan §D.5): a detached process `pix3 editor` starts, which launches Chrome
@@ -78,7 +79,13 @@ export const runChromeOwner = async (
     chrome.once('error', error => resolve(error.message));
   });
   const pipe = pipeFromStreams(chrome.stdio[3] as Writable, chrome.stdio[4] as Readable);
-  const proxy = new CdpProxy({ pipe, token, log });
+  const proxy = new CdpProxy({
+    pipe,
+    token,
+    log,
+    // Remote SSH: the ports `pix3 editor --url … --remote-port` named, read on every challenge.
+    forwardPorts: () => readCdpForwardPorts(env),
+  });
 
   // 1. Chrome answers on the pipe — or exits first (a Chrome that already runs this profile
   // takes the launch over and the new process exits at once).

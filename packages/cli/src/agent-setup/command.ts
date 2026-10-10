@@ -5,13 +5,12 @@ import { ensureCdpToken } from '../editor/cdp-token.ts';
 import { readChromeState } from '../editor/chrome-state.ts';
 import { proveCdpProxy } from '../editor/cdp-proof.ts';
 import {
-  CDP_PORT_RANGE,
   cdpWsEndpoint,
   DEFAULT_CDP_PORT,
   localMcpConfigPath,
   remoteMcpConfigPath,
 } from '../editor/paths.ts';
-import { findCdpForward, readRemoteCdpToken } from '../editor/remote.ts';
+import { readRemoteCdpToken, remoteCdpPort } from '../editor/remote.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import {
@@ -38,8 +37,10 @@ import {
  * `--remote` is the agent's side of Remote SSH (plan §E.3): the proxy runs on the human's
  * machine and its port comes back here through `RemoteForward`. The token is
  * `~/.pix3/remote-cdp-token` (copied over SSH by the line `pix3 editor --url` prints there); the
- * port is `--cdp-port`, else the one of 9333–9339 that proves it knows the token (`cdp-proof.ts`
- * — the token is never sent to a port on a shared host that has not proven it). The endpoint and
+ * port is the one configured for this host — `--cdp-port` (stored), else the one `pix3 editor
+ * --cdp-port` stored, else 9333 — never a scan (A28). It is asked for the proof of the token for
+ * that port (`cdp-proof.ts`); something there that cannot give it (a squatter on a shared host)
+ * gets nothing written, a port nothing answers on yet is written with a warning. The endpoint and
  * the token go to `~/.pix3/remote-cdp.json` (0600); the project's config names only that file.
  */
 
@@ -185,41 +186,39 @@ export const runAgentSetupCli = async (
 };
 
 /**
- * Remote SSH: the token copied from the human's machine and the forwarded port that proves it
- * knows that token. Null after printing why not.
+ * Remote SSH: the token copied from the human's machine and the one configured forward port,
+ * unless something there cannot prove the token for it. Null after printing why not.
  */
 const remoteEndpoint = async (
   parsed: AgentSetupArgs,
   io: AgentSetupIo,
   env: NodeJS.ProcessEnv
 ): Promise<{ port: number; token: string } | null> => {
+  const port = remoteCdpPort(parsed.cdpPort, env);
   const token = readRemoteCdpToken(env);
   if (!token) {
     io.stderr(
       'pix3 agent-setup --remote: no ~/.pix3/remote-cdp-token here. On your machine, run\n' +
-        '  npx @pix3/cli editor --chrome-only --url <the editor address VS Code forwarded>\n' +
+        `  npx @pix3/cli editor --chrome-only --url <the editor address VS Code forwarded> --remote-port ${port}\n` +
         'and the ssh line it prints (it copies the token here over SSH; never paste the token by hand).\n'
     );
     return null;
   }
-  if (parsed.cdpPort) {
-    const proven = await proveCdpProxy(parsed.cdpPort, token);
-    if (proven.kind !== 'ours') {
-      io.stdout(
-        `  Port ${parsed.cdpPort} does not answer with the proof of the token now (${proven.kind === 'closed' ? 'nothing listens' : proven.detail}); written anyway — it must once the SSH session is up.\n`
-      );
-    }
-    return { port: parsed.cdpPort, token };
-  }
-  const forward = await findCdpForward(token);
-  if (forward.live === null) {
+  const proven = await proveCdpProxy(port, token, { scope: 'forward' });
+  if (proven.kind === 'foreign') {
     io.stderr(
-      `pix3 agent-setup --remote: no port of ${DEFAULT_CDP_PORT}–${DEFAULT_CDP_PORT + CDP_PORT_RANGE} on this host proves it knows the token.\n` +
-        forward.taken.map(t => `  ${t.detail}\n`).join('') +
-        'Is the SSH session up with the RemoteForward line `pix3 editor` prints here, and `pix3 editor --chrome-only` running on your machine? ' +
-        'Or pass --cdp-port <the RemoteForward port>.\n'
+      `pix3 agent-setup --remote: port ${port} on this host does not prove it knows the token for port ${port} — nothing written.\n` +
+        `  ${proven.detail}\n` +
+        'On a shared host it may be another user waiting for the token. If your SSH session is up with\n' +
+        `ExitOnForwardFailure and RemoteForward 127.0.0.1:${port} …, it is not your forward. Pick another port:\n` +
+        '`pix3 editor --cdp-port <n>` here, the same <n> in RemoteForward and in --remote-port on your machine.\n'
     );
     return null;
   }
-  return { port: forward.live, token };
+  if (proven.kind === 'closed') {
+    io.stdout(
+      `  Port ${port} does not answer yet; written anyway — it must prove the token once the SSH session is up (pix3 editor here says when).\n`
+    );
+  }
+  return { port, token };
 };

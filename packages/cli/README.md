@@ -578,28 +578,34 @@ reaches your browser through VS Code's port forward; the agent reaches that brow
 
 1. **On the remote host** (VS Code's terminal, in the project): `npm run editor`. Under
    `SSH_CONNECTION` it starts (or reuses) the dev server, launches no Chrome, and prints what to
-   do on your machine — with the ports it found free there:
+   do on your machine — with the one remote port this host uses for the forward (9333, or
+   `--cdp-port <n>`, which it stores):
 
    ```text
    On your machine, once — ~/.ssh/config, under the Host you connect to, then reconnect:
        RemoteForward 127.0.0.1:9333 127.0.0.1:9333
        ExitOnForwardFailure yes
    On your machine, each session — VS Code forwards port 5173 (its Ports tab shows the local address):
-       npx @pix3/cli@<version> editor --chrome-only --url http://localhost:5173/__pix3/
+       npx @pix3/cli@<version> editor --chrome-only --url http://localhost:5173/__pix3/ --remote-port 9333
    ```
 
    VS Code forwards the dev server's port by itself (it sees the URL in the terminal; the Ports
    tab lists it). When the local port is not the same (5173 was taken on your machine), use the
    local address in `--url`.
 2. **On your machine, once:** add the two lines to `~/.ssh/config` under that `Host`, close the
-   remote window and connect again. The first port is the one on the remote host (`pix3 editor`
-   skips one another user of that host already holds); the second is your proxy (9333 unless
-   `pix3 editor` said it had to use another). `ExitOnForwardFailure yes` is not optional: without
-   it a connection whose forward failed — because someone else on the remote host took the port —
-   comes up anyway, and the agent would hand its token to whoever holds the port.
+   remote window and connect again. The first port is the one on the remote host — one port,
+   configured on both sides, never "the next free one": if another user of that host holds it,
+   the forward must fail visibly (`pix3 editor` there says the port is held; pick another with
+   `--cdp-port <n>` there, the same `<n>` in `RemoteForward` and in `--remote-port`); the second
+   is your proxy (9333 unless `pix3 editor` said it had to use another). `ExitOnForwardFailure
+   yes` is not optional: without it a connection whose forward failed — because someone else on
+   the remote host took the port — comes up anyway, and the agent would hand its token to
+   whoever holds the port.
 3. **On your machine, each session:** the `npx @pix3/cli … editor --chrome-only --url …` line.
    No project needed there: it checks that the URL answers as a Pix3 editor, starts Chrome behind
-   the token proxy (as `pix3 editor` always does) and opens the editor. It then prints one line
+   the token proxy (as `pix3 editor` always does), opens the editor, and records `--remote-port`
+   (default 9333) in `~/.pix3/cdp-forward-ports.json`: the proxy proves its token for the ports
+   listed there and for its own, nothing else. It then prints one line
    that copies its token to the remote host (`--ssh <host>` fills the host in):
 
    ```text
@@ -610,12 +616,18 @@ reaches your browser through VS Code's port forward; the agent reaches that brow
    the SSH channel into a 0600 file on the remote host: it is never printed, typed, pasted or put
    on a command line.
 4. **On the remote host, once:** `npx pix3 agent-setup --remote`, then a new agent thread. It
-   finds the forward among 9333–9339 by asking each port for **proof** that it knows the token
-   (`X-Pix3-Challenge` → `X-Pix3-Proof`, an HMAC the proxy computes; the token itself is never
-   sent to a port that has not proven it), writes `~/.pix3/remote-cdp.json` (0600: the endpoint
-   `ws://127.0.0.1:<port>/pix3` and the token, read by chrome-devtools-mcp's `--config`), and the
-   project's `.mcp.json` / `.codex/config.toml` entry `npx -y chrome-devtools-mcp@1.10.1 …
-   --config=<that file>`, which holds no secret. `--cdp-port <n>` names the port instead.
+   asks the configured port (the one `pix3 editor` stored, or `--cdp-port <n>`) for **proof**
+   that it knows the token (`X-Pix3-Challenge` + `X-Pix3-Proof-Scope: forward` → `X-Pix3-Proof`,
+   an HMAC the proxy computes over the challenge **and the port the client dialled**; the token
+   itself is never sent to a port that has not proven it), writes `~/.pix3/remote-cdp.json`
+   (0600: the endpoint `ws://127.0.0.1:<port>/pix3` and the token, read by chrome-devtools-mcp's
+   `--config`), and the project's `.mcp.json` / `.codex/config.toml` entry `npx -y
+   chrome-devtools-mcp@1.10.1 … --config=<that file>`, which holds no secret. Something on the
+   port that cannot give the proof gets nothing written (exit 1: a squatter waiting for the
+   token, or your proxy not told the port — `--remote-port`); a port nothing answers on yet is
+   written with a warning. Bound to the port, a proof cannot be relayed: a squatter on 9333 that
+   passes the challenge to your real forward on 9334 gets an answer for 9334, which the agent's
+   side rejects.
    `npm run editor` on the remote host says whether the forward is live (`CDP forward: live on
    127.0.0.1:9333`).
 

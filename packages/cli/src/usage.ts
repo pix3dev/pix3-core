@@ -67,6 +67,7 @@ export const COMMAND_USAGE = {
 `,
   editor: `Usage: pix3 editor [--project <dir>] [--stop] [--stop-chrome] [--chrome-only] [--no-chrome]
                    [--headless] [--port <n>] [--cdp-port <n>] [--url <editor url>] [--ssh <host>]
+                   [--remote-port <n>]
 
   Find the project's Vite dev server (.pix3/dev.json), or start it detached, and open the editor
   (/__pix3/) in a Chrome whose DevTools are reachable only through the token proxy
@@ -80,9 +81,12 @@ export const COMMAND_USAGE = {
   --chrome-only    only Chrome, for a dev server that already runs
   --headless       headless Chrome (a plain tab)
   --port n         the dev server's port (Vite --port --strictPort)
-  --cdp-port n     the proxy's preferred port (default 9333)
+  --cdp-port n     the proxy's preferred port (default 9333); over SSH: the one RemoteForward
+                   port of this host (stored; never a scan)
   --url url        on your machine: open a forwarded remote editor (no project here)
   --ssh host       with --url: the host the printed token-copy line names
+  --remote-port n  with --url: the remote port of your RemoteForward line (default 9333) — the
+                   only one the proxy proves its token for
 `,
   'agent-setup': `Usage: pix3 agent-setup [claude|codex] [--repair] [--remote] [--cdp-port <n>] [--project <dir>]
 
@@ -91,8 +95,9 @@ export const COMMAND_USAGE = {
   ~/.pix3/cdp-mcp.json (no token in the project or on a command line).
 
   --repair       rewrite an entry that drifted (version, port, token, an older launch)
-  --remote       the agent runs on an SSH host, Chrome on your machine (found through the forward)
-  --cdp-port n   the proxy port (default: the one pix3 editor recorded, else 9333)
+  --remote       the agent runs on an SSH host, Chrome on your machine (through the forward)
+  --cdp-port n   the proxy port (default: the one pix3 editor recorded, else 9333); with
+                 --remote the RemoteForward port (stored; default the one pix3 editor stored)
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 `,
   validate: `Usage: pix3 validate [paths…] [--json] [--no-hydrate] [--project <dir>]

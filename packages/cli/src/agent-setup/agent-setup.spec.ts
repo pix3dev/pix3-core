@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer, request, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -16,7 +17,12 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { CdpProxy } from '../editor/cdp-proxy.ts';
 import { ensureCdpToken, readCdpToken } from '../editor/cdp-token.ts';
 import { FakeChrome } from '../editor/fake-chrome.ts';
-import { localMcpConfigPath, remoteCdpTokenPath, remoteMcpConfigPath } from '../editor/paths.ts';
+import {
+  localMcpConfigPath,
+  remoteCdpPortPath,
+  remoteCdpTokenPath,
+  remoteMcpConfigPath,
+} from '../editor/paths.ts';
 import { writeChromeState } from '../editor/chrome-state.ts';
 import { parseAgentSetupArgs, runAgentSetupCli } from './command.ts';
 import {
@@ -358,16 +364,22 @@ describe('pix3 agent-setup', () => {
     expect(outside.err()).toContain('pix3project.yaml');
   });
 
-  it('--remote: the token copied over SSH, the port that proves it, the endpoint in a 0600 --config file', async () => {
+  it('--remote: the token copied over SSH, the one configured port, the endpoint in a 0600 --config file', async () => {
     const env = { PIX3_HOME: join(scratch, 'home-remote') };
     const root = project();
     const none = io(root, env);
     expect(await runAgentSetupCli(['claude', '--remote'], none.io)).toBe(1);
     expect(none.err()).toContain('no ~/.pix3/remote-cdp-token');
+    expect(none.err()).toContain('--remote-port 9333');
 
-    // The human's proxy, as its SSH forward shows it here.
-    const proxy = new CdpProxy({ pipe: new FakeChrome().pipe(), token: TOKEN });
-    const port = await proxy.listen(0);
+    // The human's proxy, as its SSH forward shows it here (1:1: the proxy was told this port).
+    let port = 0;
+    const proxy = new CdpProxy({
+      pipe: new FakeChrome().pipe(),
+      token: TOKEN,
+      forwardPorts: () => [port],
+    });
+    port = await proxy.listen(0);
     try {
       mkdirSync(env.PIX3_HOME, { recursive: true });
       writeFileSync(remoteCdpTokenPath(env), `${TOKEN}\n`, { mode: 0o600 });
@@ -383,6 +395,8 @@ describe('pix3 agent-setup', () => {
         wsHeaders: JSON.stringify({ Authorization: `Bearer ${TOKEN}` }),
       });
       if (process.platform !== 'win32') expect(statSync(config).mode & 0o777).toBe(0o600);
+      // The port is stored: the next run needs no --cdp-port.
+      expect(JSON.parse(readFileSync(remoteCdpPortPath(env), 'utf8'))).toEqual({ port });
       // The project's files and the output name the config file, never the token.
       for (const text of [read(root, '.mcp.json'), read(root, CODEX_CONFIG_FILE), run.out()]) {
         expect(text).toContain(`--config=${config}`);
@@ -392,21 +406,73 @@ describe('pix3 agent-setup', () => {
       const local = io(root, HOME_ENV);
       expect(await runAgentSetupCli(['claude'], local.io)).toBe(1);
       const again = io(root, env);
-      expect(
-        await runAgentSetupCli(['claude', '--remote', '--cdp-port', String(port)], again.io)
-      ).toBe(0);
+      expect(await runAgentSetupCli(['claude', '--remote'], again.io)).toBe(0);
       expect(again.out()).toContain('up to date');
 
-      // A port that does not prove the token: written, with a warning (the session may be down).
+      // Something on the port that does not prove the token: nothing written, exit 1.
       const wrong = io(root, env);
       writeFileSync(remoteCdpTokenPath(env), `${'u'.repeat(43)}\n`);
-      expect(
-        await runAgentSetupCli(
-          ['claude', '--remote', '--cdp-port', String(port), '--repair'],
-          wrong.io
-        )
-      ).toBe(0);
-      expect(wrong.out()).toContain('does not answer with the proof of the token');
+      expect(await runAgentSetupCli(['claude', '--remote', '--repair'], wrong.io)).toBe(1);
+      expect(wrong.err()).toContain('nothing written');
+      expect(readFileSync(config, 'utf8')).toContain(TOKEN);
+      writeFileSync(remoteCdpTokenPath(env), `${TOKEN}\n`);
+    } finally {
+      await proxy.close();
+    }
+
+    // The forward not up yet (nothing listens): written, with a warning.
+    const down = io(root, env);
+    expect(await runAgentSetupCli(['claude', '--remote'], down.io)).toBe(0);
+    expect(down.out()).toContain(`Port ${port} does not answer yet`);
+  });
+
+  it('--remote: a squatter on the configured port relaying to the real forward gets no token', async () => {
+    // The human's proxy forwarded to remote port F (it signs `forward` proofs for F only); a
+    // squatter holds S — the port this host is configured for — and relays every request to F,
+    // with the Host it got or rewritten to F's. The agent's host must never send it the token.
+    let forward = 0;
+    const proxy = new CdpProxy({
+      pipe: new FakeChrome().pipe(),
+      token: TOKEN,
+      forwardPorts: () => [forward],
+    });
+    forward = await proxy.listen(0);
+    const seen: IncomingHttpHeaders[] = [];
+    const squatter = (rewriteHost: boolean) =>
+      createServer((req, res) => {
+        seen.push(req.headers);
+        const headers = { ...req.headers };
+        if (rewriteHost) headers.host = `127.0.0.1:${forward}`;
+        const upstream = request(
+          { host: '127.0.0.1', port: forward, path: req.url, method: req.method, headers },
+          answer => {
+            res.writeHead(answer.statusCode ?? 502, answer.headers);
+            answer.pipe(res);
+          }
+        );
+        upstream.on('error', () => res.destroy());
+        req.pipe(upstream);
+      });
+    try {
+      for (const rewriteHost of [false, true]) {
+        const server = squatter(rewriteHost);
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        const port = (server.address() as { port: number }).port;
+        const env = { PIX3_HOME: join(scratch, `home-relay-${String(rewriteHost)}`) };
+        mkdirSync(env.PIX3_HOME, { recursive: true });
+        writeFileSync(remoteCdpTokenPath(env), `${TOKEN}\n`, { mode: 0o600 });
+        const root = project();
+        const run = io(root, env);
+        expect(
+          await runAgentSetupCli(['claude', '--remote', '--cdp-port', String(port)], run.io)
+        ).toBe(1);
+        expect(run.err()).toContain('nothing written');
+        expect(existsSync(remoteMcpConfigPath(env))).toBe(false);
+        expect(existsSync(join(root, '.mcp.json'))).toBe(false);
+        await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every(headers => headers.authorization === undefined)).toBe(true);
     } finally {
       await proxy.close();
     }

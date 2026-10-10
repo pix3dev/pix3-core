@@ -1,9 +1,14 @@
-import { randomBytes } from 'node:crypto';
-import { chmodSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { CLI_VERSION } from '../version.ts';
-import { proveCdpProxy } from './cdp-proof.ts';
-import { CDP_PORT_RANGE, DEFAULT_CDP_PORT, remoteCdpTokenPath } from './paths.ts';
+import type { ProvenPort } from './cdp-proof.ts';
+import {
+  cdpForwardPortsPath,
+  DEFAULT_CDP_PORT,
+  remoteCdpPortPath,
+  remoteCdpTokenPath,
+} from './paths.ts';
 
 /**
  * Remote SSH (plan §E.3): Vite and the coding agent on a remote host, the browser on the
@@ -12,7 +17,9 @@ import { CDP_PORT_RANGE, DEFAULT_CDP_PORT, remoteCdpTokenPath } from './paths.ts
  * `RemoteForward` brings the proxy's port back to the remote host's loopback, where the agent's
  * chrome-devtools-mcp connects with the token. The token travels once, over SSH, from the
  * human's `~/.pix3/cdp-token` to the remote's `~/.pix3/remote-cdp-token`
- * (decisions A20–A23 in `.plans/agent-bridge.md`).
+ * (decisions A20–A23, A28 in `.plans/agent-bridge.md`). Both machines name the same remote
+ * port: the remote's `--cdp-port` (stored), the human's `RemoteForward` line and `--remote-port`
+ * (the proxy signs a `forward` proof only for it).
  */
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,}$/;
@@ -30,36 +37,51 @@ export const readRemoteCdpToken = (env: NodeJS.ProcessEnv = process.env): string
   }
 };
 
-export interface ForwardState {
-  /** The port the forward answers on (with the proof of the token), or null. */
-  readonly live: number | null;
-  /** The port to put in `RemoteForward`: the live one, else the first that nothing holds. */
-  readonly suggested: number | null;
-  /** Ports something else holds on this host, with what. */
-  readonly taken: Array<{ port: number; detail: string }>;
-}
-
 /**
- * Where the forward of the human's proxy is on this host's loopback. Every port is asked for
- * the proof of the token (`cdp-proof.ts`) — the token itself is never sent to a port here: on a
- * shared host another user may hold it. Without a token only free ports can be told.
+ * The one `RemoteForward` port of this host (the agent's side): `--cdp-port` when given (then
+ * stored), else the stored one, else 9333. Never a scan of 9333–9339: the first port that
+ * answered with a proof used to win, so a squatter on 9333 relaying to the real forward on 9334
+ * received the token (A28). One port, configured on both machines, makes a squatter a visible
+ * failure instead (`ExitOnForwardFailure`).
  */
-export const findCdpForward = async (
-  token: string | null,
-  options: { readonly preferred?: number; readonly fetch?: typeof fetch } = {}
-): Promise<ForwardState> => {
-  const preferred = options.preferred ?? DEFAULT_CDP_PORT;
-  // No token yet: a random one cannot be proven, so every answer reads as "taken".
-  const probeToken = token ?? randomBytes(32).toString('base64url');
-  const taken: Array<{ port: number; detail: string }> = [];
-  let suggested: number | null = null;
-  for (let port = preferred; port <= preferred + CDP_PORT_RANGE; port++) {
-    const state = await proveCdpProxy(port, probeToken, options.fetch);
-    if (state.kind === 'ours') return { live: port, suggested: port, taken };
-    if (state.kind === 'closed') suggested ??= port;
-    else taken.push({ port, detail: state.detail });
+export const remoteCdpPort = (
+  given: number | undefined,
+  env: NodeJS.ProcessEnv = process.env
+): number => {
+  if (given !== undefined) {
+    writeJson(remoteCdpPortPath(env), { port: given });
+    return given;
   }
-  return { live: null, suggested, taken };
+  const stored = readJson(remoteCdpPortPath(env)) as { port?: unknown } | null;
+  return isPort(stored?.port) ? stored.port : DEFAULT_CDP_PORT;
+};
+
+/** The human's machine: the remote ports a `RemoteForward` brings this proxy to. */
+export const readCdpForwardPorts = (env: NodeJS.ProcessEnv = process.env): number[] => {
+  const stored = readJson(cdpForwardPortsPath(env)) as { ports?: unknown } | null;
+  return Array.isArray(stored?.ports) ? stored.ports.filter(isPort) : [];
+};
+
+/** Record `port` as a `RemoteForward` port of this machine's proxy (it signs proofs for it). */
+export const addCdpForwardPort = (port: number, env: NodeJS.ProcessEnv = process.env): void => {
+  const ports = readCdpForwardPorts(env);
+  if (!ports.includes(port)) writeJson(cdpForwardPortsPath(env), { ports: [...ports, port] });
+};
+
+const isPort = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 65536;
+
+const readJson = (path: string): unknown => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+  } catch {
+    return null;
+  }
+};
+
+const writeJson = (path: string, value: unknown): void => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value)}\n`);
 };
 
 /** `~/.ssh/config` lines on the human's machine: the proxy's port brought back here. */
@@ -86,8 +108,8 @@ export const tokenCopyLine = (
 };
 
 /** The command the human runs on their machine (no project there: `npx` fetches the CLI). */
-export const localChromeCommand = (editorUrl: string): string =>
-  `npx @pix3/cli@${CLI_VERSION} editor --chrome-only --url ${editorUrl}`;
+export const localChromeCommand = (editorUrl: string, remotePort: number): string =>
+  `npx @pix3/cli@${CLI_VERSION} editor --chrome-only --url ${editorUrl} --remote-port ${remotePort}`;
 
 /** What `pix3 editor` prints under `SSH_CONNECTION` (on the remote host). */
 export const describeRemoteSession = (options: {
@@ -95,19 +117,22 @@ export const describeRemoteSession = (options: {
   readonly publicEditorUrl?: string;
   readonly devPort: number;
   readonly token: string | null;
-  readonly forward: ForwardState;
+  /** The configured `RemoteForward` port of this host ({@link remoteCdpPort}). */
+  readonly port: number;
+  /** What answers on it: proven with the token, nothing, or something that cannot prove it. */
+  readonly forward: ProvenPort;
 }): string => {
-  const { forward } = options;
-  const port = forward.suggested ?? DEFAULT_CDP_PORT;
+  const { forward, port } = options;
   const url = options.publicEditorUrl ?? options.editorUrl;
   const lines = [
     'SSH session: Chrome is not launched here — it runs on the machine with your screen, and an agent',
     'here drives it through an SSH port forward of its CDP token proxy.',
     '',
-    '  On your machine, once — ~/.ssh/config, under the Host you connect to, then reconnect:',
+    `  On your machine, once — ~/.ssh/config, under the Host you connect to, then reconnect`,
+    `  (the second port is the proxy's on your machine; pix3 editor prints it there):`,
     ...remoteForwardLines(port).map(line => `      ${line}`),
     `  On your machine, each session — VS Code forwards port ${options.devPort} (its Ports tab shows the local address):`,
-    `      ${localChromeCommand(url)}`,
+    `      ${localChromeCommand(url, port)}`,
     options.publicEditorUrl
       ? `    (${options.publicEditorUrl} is where a browser reached this server; dev.json publicEditorUrl)`
       : `    (use the local address of port ${options.devPort} if VS Code forwarded it to another port)`,
@@ -115,16 +140,26 @@ export const describeRemoteSession = (options: {
     '  Here, once: npx pix3 agent-setup --remote, then start a new agent thread.',
     '',
   ];
-  for (const skipped of forward.taken) lines.push(`  Port ${skipped.port}: ${skipped.detail}`);
   if (!options.token) {
-    lines.push('  CDP forward: no token here yet (~/.pix3/remote-cdp-token).');
-  } else if (forward.live !== null) {
     lines.push(
-      `  CDP forward: live on 127.0.0.1:${forward.live} — it proved it knows the token of ~/.pix3/remote-cdp-token.`
+      forward.kind === 'closed'
+        ? `  CDP forward: no token here yet (~/.pix3/remote-cdp-token); port ${port} is free.`
+        : `  CDP forward: no token here yet (~/.pix3/remote-cdp-token); something answers on port ${port} — your forward if the SSH session is up, else someone else's: run pix3 editor again after the token copy to tell which.`
+    );
+  } else if (forward.kind === 'ours') {
+    lines.push(
+      `  CDP forward: live on 127.0.0.1:${port} — it proved it knows the token of ~/.pix3/remote-cdp-token, for this port.`
+    );
+  } else if (forward.kind === 'foreign') {
+    lines.push(
+      `  CDP forward: port ${port} on this host is held by something that does not prove the token (${forward.detail}).`,
+      '  On a shared host that may be another user waiting for your token: with ExitOnForwardFailure your SSH',
+      '  session cannot forward to it. Pick another port — pix3 editor --cdp-port <n> here (stored), the same',
+      '  <n> in your RemoteForward line and --remote-port — and reconnect.'
     );
   } else {
     lines.push(
-      `  CDP forward: nothing answers with the token on ports ${DEFAULT_CDP_PORT}–${DEFAULT_CDP_PORT + CDP_PORT_RANGE} yet (is the SSH session up with the RemoteForward line, and pix3 editor --chrome-only running on your machine?).`
+      `  CDP forward: nothing answers on 127.0.0.1:${port} yet (is the SSH session up with the RemoteForward line, and pix3 editor --chrome-only running on your machine?).`
     );
   }
   return `${lines.join('\n')}\n`;

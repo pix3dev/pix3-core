@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createServer, request } from 'node:http';
+import { createServer as createTcpServer, connect as tcpConnect } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 
@@ -31,14 +32,59 @@ afterEach(async () => {
   for (const { proxy } of running.splice(0)) await proxy.close();
 });
 
-const start = async (urls?: string[]) => {
+const start = async (urls?: string[], forwardPorts: () => readonly number[] = () => []) => {
   const chrome = new FakeChrome(urls);
   const pipe = chrome.pipe();
-  const proxy = new CdpProxy({ pipe, token: TOKEN });
+  const lines: string[] = [];
+  const proxy = new CdpProxy({ pipe, token: TOKEN, forwardPorts, log: line => lines.push(line) });
   const port = await proxy.listen(0);
   running.push({ proxy, pipe });
-  return { chrome, pipe, proxy, port };
+  return { chrome, pipe, proxy, port, lines };
 };
+
+/** A TCP forward to `to` (what `ssh -R` holds on the remote host); resolves with its port. */
+const tcpForward = (to: number) =>
+  new Promise<{ port: number; close: () => Promise<void> }>(resolve => {
+    const server = createTcpServer(client => {
+      const upstream = tcpConnect({ host: '127.0.0.1', port: to });
+      client.pipe(upstream).pipe(client);
+      const end = () => {
+        client.destroy();
+        upstream.destroy();
+      };
+      client.on('error', end).on('close', end);
+      upstream.on('error', end).on('close', end);
+    });
+    server.listen(0, '127.0.0.1', () =>
+      resolve({
+        port: (server.address() as { port: number }).port,
+        close: () => new Promise<void>(r => server.close(() => r())),
+      })
+    );
+  });
+
+/** An HTTP squatter relaying every request to `to`, its `Host` kept or rewritten to `to`'s. */
+const relay = (to: number, rewriteHost: boolean) =>
+  new Promise<{ port: number; close: () => Promise<void> }>(resolve => {
+    const server = createServer((req, res) => {
+      const headers = { ...req.headers, ...(rewriteHost ? { host: `127.0.0.1:${to}` } : {}) };
+      const upstream = request(
+        { host: '127.0.0.1', port: to, path: req.url, method: req.method, headers },
+        answer => {
+          res.writeHead(answer.statusCode ?? 502, answer.headers);
+          answer.pipe(res);
+        }
+      );
+      upstream.on('error', () => res.destroy());
+      req.pipe(upstream);
+    });
+    server.listen(0, '127.0.0.1', () =>
+      resolve({
+        port: (server.address() as { port: number }).port,
+        close: () => new Promise<void>(r => server.close(() => r())),
+      })
+    );
+  });
 
 /** A CDP client: every message it gets, `send` → the answer to that id. */
 const connect = (port: number, path = '/pix3', headers: Record<string, string> = AUTH) =>
@@ -155,8 +201,12 @@ describe('auth', () => {
 
 describe('proof of the token (a forwarded port on a shared host)', () => {
   it('proves it knows the token without the client sending it; a squatter cannot', async () => {
-    const { port, proxy } = await start();
+    const { port, proxy, lines } = await start();
     expect(await proveCdpProxy(port, TOKEN)).toEqual({ kind: 'ours' });
+    // pix3's own probe (a challenge, no token) is answered, not logged as a refusal.
+    expect(lines.filter(line => line.startsWith('refused'))).toEqual([]);
+    expect((await get(port, '/json/version', {})).status).toBe(401);
+    expect(lines.filter(line => line.startsWith('refused'))).toHaveLength(1);
     // Another user's proxy: it answers with the marker, but its proof is for its own token.
     const other = await proveCdpProxy(port, 'b'.repeat(43));
     expect(other.kind).toBe('foreign');
@@ -175,6 +225,33 @@ describe('proof of the token (a forwarded port on a shared host)', () => {
     await new Promise<void>(resolve => squatter.close(() => resolve()));
     expect(await proveCdpProxy(squatterPort, TOKEN)).toEqual({ kind: 'closed' });
     expect(proxy.clientCount).toBe(0);
+  });
+
+  it('binds the proof to the dialled port: a squatter relaying to the real forward proves nothing', async () => {
+    // The human's proxy on `port`, brought to the remote host's `forward.port` by RemoteForward
+    // (here a TCP forward); the proxy was told that port (`--remote-port`).
+    let forwardPort = 0;
+    const { port, lines } = await start(undefined, () => [forwardPort]);
+    const forward = await tcpForward(port);
+    forwardPort = forward.port;
+    expect(await proveCdpProxy(forward.port, TOKEN, { scope: 'forward' })).toEqual({
+      kind: 'ours',
+    });
+    expect(await proveCdpProxy(port, TOKEN)).toEqual({ kind: 'ours' });
+    // A local probe through the forward, a forward probe of the proxy's own port: not signed.
+    expect((await proveCdpProxy(forward.port, TOKEN)).kind).toBe('foreign');
+    expect((await proveCdpProxy(port, TOKEN, { scope: 'forward' })).kind).toBe('foreign');
+    // A squatter on another port relays the challenge to the forward, Host kept or rewritten.
+    for (const rewriteHost of [false, true]) {
+      const squatter = await relay(forward.port, rewriteHost);
+      for (const scope of ['forward', 'local'] as const) {
+        const proven = await proveCdpProxy(squatter.port, TOKEN, { scope });
+        expect(proven.kind, `${scope}, Host rewritten: ${rewriteHost}`).toBe('foreign');
+      }
+      await squatter.close();
+    }
+    expect(lines.some(line => line.startsWith('no proof for forward:'))).toBe(true);
+    await forward.close();
   });
 });
 

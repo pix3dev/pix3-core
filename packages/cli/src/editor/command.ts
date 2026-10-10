@@ -1,8 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { chooseCdpPort } from './cdp-port.ts';
+import { proveCdpProxy } from './cdp-proof.ts';
 import { ensureCdpToken } from './cdp-token.ts';
 import {
   describeChromeNotFound,
@@ -28,9 +30,10 @@ import {
   localMcpConfigPath,
 } from './paths.ts';
 import {
+  addCdpForwardPort,
   describeRemoteSession,
-  findCdpForward,
   readRemoteCdpToken,
+  remoteCdpPort,
   remoteForwardLines,
   tokenCopyLine,
 } from './remote.ts';
@@ -48,10 +51,13 @@ import { COMMAND_USAGE } from '../usage.ts';
  * opens Chrome against the recorded server only; with `--url <editor url>` it needs no project
  * at all — the human's side of Remote SSH (plan §E.3): the editor of a dev server on another
  * host, reached through a port forward, and the line that copies the proxy's token to that host
- * (`--ssh <host>` fills the host in). `--no-chrome` starts the server only (CI, a headless box).
+ * (`--ssh <host>` fills the host in; `--remote-port <n>`, default 9333, is the remote port of the
+ * `RemoteForward`, the only one the proxy proves the token for, A28). `--no-chrome` starts the server only (CI, a headless box).
  * Under `SSH_CONNECTION` Chrome is not launched: the remote side prints what to run on the
- * human's machine and whether the forward of its proxy is up (`remote.ts`). `--cdp-port <n>`
- * moves the port (a test harness; the MCP config must then be repaired with the same port).
+ * human's machine and whether the forward of its proxy is up on the one configured port
+ * (`remote.ts`; there `--cdp-port <n>` sets and stores that port). Locally `--cdp-port <n>`
+ * moves the proxy's port (a test harness; the MCP config must then be repaired with the same
+ * port).
  */
 
 export interface EditorIo {
@@ -76,6 +82,8 @@ export interface EditorArgs {
   readonly url?: string;
   /** The SSH host the token-copy line names. */
   readonly sshHost?: string;
+  /** With `--url`: the remote port of the `RemoteForward` (default 9333). */
+  readonly remotePort?: number;
 }
 
 export const parseEditorArgs = (argv: readonly string[]): EditorArgs | { error: string } => {
@@ -150,10 +158,17 @@ export const parseEditorArgs = (argv: readonly string[]): EditorArgs | { error: 
         out.devPort = v;
         break;
       }
+      case '--remote-port': {
+        const v = port();
+        if (typeof v !== 'number') return v;
+        out.remotePort = v;
+        break;
+      }
       default:
         return { error: `unknown option "${arg}"` };
     }
   }
+  if (out.remotePort !== undefined && !out.url) return { error: '--remote-port goes with --url' };
   return out;
 };
 
@@ -250,13 +265,17 @@ export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promi
   if (parsed.noChrome) return 0;
   if (env.SSH_CONNECTION && !parsed.headless && !env.PIX3_CHROME) {
     const token = readRemoteCdpToken(env);
+    const port = remoteCdpPort(parsed.cdpPort, env);
+    // Without a token nothing can prove itself: a random one tells a free port from a held one.
+    const probeToken = token ?? randomBytes(32).toString('base64url');
     io.stdout(
       `\n${describeRemoteSession({
         editorUrl: info.editorUrl,
         publicEditorUrl: info.publicEditorUrl,
         devPort: info.port,
         token,
-        forward: await findCdpForward(token, { preferred: parsed.cdpPort }),
+        port,
+        forward: await proveCdpProxy(port, probeToken, { scope: 'forward' }),
       })}`
     );
     return 0;
@@ -284,14 +303,19 @@ const runRemoteEditor = async (
     return 1;
   }
   io.stdout(`Editor:     ${editorUrl} (a dev server reached through a port forward)\n`);
+  // The proxy proves the token for this remote port only (read on every challenge, so a proxy
+  // that already runs learns it too).
+  const remotePort = parsed.remotePort ?? DEFAULT_CDP_PORT;
+  addCdpForwardPort(remotePort, env);
   const port = await openInChrome(editorUrl, null, parsed, io, env);
   if (port === null) return 1;
   io.stdout(
     '\nFor a coding agent on the remote host (once per token): copy the token there over SSH —\n' +
       `  ${tokenCopyLine(cdpTokenPath(env), parsed.sshHost ?? '<ssh-host>')}\n` +
       'then run `npx pix3 agent-setup --remote` there and start a new agent thread. Your ~/.ssh/config\n' +
-      'must bring this proxy back to the remote host (the port pix3 editor printed there, e.g. 9333):\n' +
-      remoteForwardLines(DEFAULT_CDP_PORT, port)
+      `must bring this proxy back to port ${remotePort} of the remote host (the port pix3 editor printed there;\n` +
+      'another one: --remote-port <n> here, pix3 editor --cdp-port <n> there):\n' +
+      remoteForwardLines(remotePort, port)
         .map(line => `  ${line}\n`)
         .join('')
   );

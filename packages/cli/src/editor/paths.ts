@@ -22,7 +22,7 @@ export const chromeStatePath = (env: NodeJS.ProcessEnv = process.env): string =>
 
 /** The port chrome-devtools-mcp is configured for by default (plan §D.4). */
 export const DEFAULT_CDP_PORT = 9333;
-/** Ports tried when 9333 belongs to someone else: 9334–9339. */
+/** Ports tried locally when 9333 belongs to someone else: 9334–9339 (never for a forward). */
 export const CDP_PORT_RANGE = 6;
 
 /** `~/.pix3/cdp-token`: the bearer token of the CDP proxy (plan §D.5), mode 0600. */
@@ -46,8 +46,31 @@ export const CDP_PROXY_HEADER = 'X-Pix3-Cdp-Proxy';
 
 /** A client's nonce: the proxy answers it with {@link CDP_PROOF_HEADER} (`cdp-proof.ts`). */
 export const CDP_CHALLENGE_HEADER = 'X-Pix3-Challenge';
-/** `base64url(HMAC-SHA256(key = sha256(token), challenge))`: the listener knows the token. */
+/**
+ * The proof that the listener knows the token, bound to the port the client dialled
+ * (`cdp-proof.ts`: `HMAC-SHA256(sha256(token), "pix3-cdp-proof/2\n<scope>:<port>\n<challenge>")`).
+ */
 export const CDP_PROOF_HEADER = 'X-Pix3-Proof';
+/** `local` (the client dialled the proxy) or `forward` (a `RemoteForward` of it). */
+export const CDP_PROOF_SCOPE_HEADER = 'X-Pix3-Proof-Scope';
+/** Sent instead of a proof when the proxy is not reachable at the `Host` port in that scope. */
+export const CDP_PROOF_REFUSED_HEADER = 'X-Pix3-Proof-Refused';
+
+/**
+ * On the human's machine: `~/.pix3/cdp-forward-ports.json` (`{"ports": [9333]}`), the remote
+ * ports this machine's proxy is brought to by `RemoteForward` — the only ports it signs a
+ * `forward` proof for. Written by `pix3 editor --url … --remote-port <n>`.
+ */
+export const cdpForwardPortsPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'cdp-forward-ports.json');
+
+/**
+ * On the agent's (remote) host: `~/.pix3/remote-cdp-port.json` (`{"port": 9333}`), the one
+ * `RemoteForward` port configured for this host — `pix3 editor` prints it, `agent-setup
+ * --remote` connects to it; never a scan (a squatter on it must make the forward fail visibly).
+ */
+export const remoteCdpPortPath = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pix3Home(env), 'remote-cdp-port.json');
 
 /**
  * Remote SSH (plan §E.3), on the machine the agent runs on: `~/.pix3/remote-cdp-token` is the
