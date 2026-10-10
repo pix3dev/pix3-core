@@ -222,7 +222,7 @@ export class GameRules extends Script {
    * End the run: write the outcome text, then hand the end screen to `GameFlow`.
    *
    * Dispatching its `finish` command rather than reaching for the component keeps the
-   * ending in ONE place and journals it, so a routine can watch the run end by intent.
+   * ending in ONE place and journals it, so a test can watch the run end by intent.
    */
   finish(won: boolean): void {
     if (this.over) return;
@@ -260,7 +260,7 @@ export class GameRules extends Script {
   /**
    * Back to the state `onStart` left behind. Called by GameFlow's `restart`, so one intent
    * arms a fresh run everywhere — a restart that put the gate back but kept last run's score
-   * is the kind of half-reset that makes a routine's second pass meaningless.
+   * is the kind of half-reset that makes a test's second pass meaningless.
    */
   resetRun(): void {
     this.score = 0;

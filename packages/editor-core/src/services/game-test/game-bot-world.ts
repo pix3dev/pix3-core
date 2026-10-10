@@ -17,7 +17,7 @@
 import { Box3, Ray, Vector3 } from 'three';
 import { NodeBase } from '@pix3/runtime';
 import type { BotHit, BotNodeView, BotPoint } from '@/services/game-test/game-bots';
-import type { TraceInputSink } from '@/services/game-test/game-traces';
+import type { InputSink } from '@/services/game-test/frame-input';
 
 /**
  * The slice of the runner the bot world reads. Duck-typed for the same reason
@@ -218,9 +218,9 @@ export function projectToCanvasFraction(
 }
 
 /**
- * Pointer id the bot's taps and aim use. Distinct from the replay/monkey pointer so a
- * policy tapping while a trace feeds input does not have the two gestures fight over one
- * finger — the runtime is multi-touch now, and two channels sharing an id would cancel
+ * Pointer id the bot's taps and aim use. Distinct from the monkey's / negative control's
+ * pointer so a policy tapping while other synthetic input is fed does not have the two
+ * gestures fight over one finger — the runtime is multi-touch now, and two channels sharing an id would cancel
  * each other's press.
  */
 export const BOT_POINTER_ID = 20;
@@ -259,7 +259,7 @@ export class PhysicalAxisDriver {
   constructor(
     private readonly scene: BotSceneHandle,
     private readonly canvas: BotCanvasHandle,
-    private readonly sink: TraceInputSink
+    private readonly sink: InputSink
   ) {}
 
   steer(axis: string, value: number): string | null {

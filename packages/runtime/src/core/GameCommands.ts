@@ -9,7 +9,7 @@
  *
  * 1. a test that never taps anything (`dispatch('open-settings')`);
  * 2. a report timeline in game terms — {@link GameCommandRegistry.log};
- * 3. a regression trace that survives renaming a node (the command name is the
+ * 3. a regression test that survives renaming a node (the command name is the
  *    contract, the scene layout is not);
  * 4. undo, when a handler declares it, as a game feature rather than extra work.
  *
@@ -46,7 +46,7 @@ import type { PropertyDefinition } from '../fw/property-schema';
  * Log cap. Dispatches are discrete events whose *order* is the timeline, so this
  * is a ring buffer (drop oldest, count the drops) rather than the dedup-by-kind
  * discipline the tick-cadence recorders use — collapsing two dispatches of the
- * same command into a counter would destroy exactly the sequence a trace is.
+ * same command into a counter would destroy exactly the sequence the timeline is.
  */
 const MAX_LOG_ENTRIES = 50;
 /** Recursion cap: a handler that dispatches, whose handler dispatches, … */
@@ -61,7 +61,7 @@ const MAX_ARGS_DEPTH = 6;
 
 /**
  * `kebab-case`, optionally namespaced with dots: `restart`, `settings.toggle-music`.
- * Names are typed by agents and stored in traces, so the shape is fixed rather
+ * Names are typed by agents and stored in test policies, so the shape is fixed rather
  * than a convention — see {@link GameCommandRegistry.register}.
  */
 const COMMAND_NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$/;
@@ -149,7 +149,7 @@ function findNonSerializable(
     return Number.isFinite(value) ? null : `${path} is ${String(value)}, which JSON cannot carry`;
   }
   if (type === 'undefined') {
-    // JSON.stringify silently drops these, so a trace would replay a different
+    // JSON.stringify silently drops these, so the journal would record a different
     // call than the one that ran. Refusing is the only honest option.
     return `${path} is undefined — use null for an absent value`;
   }
@@ -262,9 +262,9 @@ export class GameCommandRegistry {
   /**
    * Run the intent registered under `name`.
    *
-   * `args` must be JSON-serialisable — anything else could not survive a trace
-   * or a routine file, so it is refused before the handler runs rather than
-   * blowing up on replay. A throwing handler is contained: the error lands in
+   * `args` must be JSON-serialisable — anything else could not survive the
+   * journal or a tool call, so it is refused before the handler runs rather than
+   * being recorded as a different call. A throwing handler is contained: the error lands in
    * {@link log} with `status: 'error'` and is reported, and the caller (usually
    * the frame loop, through a button handler) carries on.
    *
@@ -371,7 +371,7 @@ export class GameCommandRegistry {
     }
   }
 
-  /** Every registered command, sorted by name — the discovery surface for agents, bots and routines. */
+  /** Every registered command, sorted by name — the discovery surface for agents and bots. */
   list(): GameCommandDescriptor[] {
     return [...this.commands.values()]
       .map(command => ({

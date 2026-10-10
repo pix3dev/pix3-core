@@ -650,7 +650,7 @@ export class AssetsContent extends ComponentBase {
   private onSpaceKey(event: KeyboardEvent): void {
     // `instanceof HTMLElement`, not a cast: this listener is on `window`, so a key
     // event dispatched AT the window (which is what synthetic input does — the agent
-    // harness, a trace replay, a bot policy pressing `Key_Space`) arrives with
+    // harness, a monkey run, a bot policy pressing `Key_Space`) arrives with
     // `event.target === window`. That is truthy but not a `Node`, so the old
     // `this.contains(target)` threw `Failed to execute 'contains' on 'Node'` and the
     // throw surfaced as an uncaught runtime error — measured: two entries in the

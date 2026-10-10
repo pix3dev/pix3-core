@@ -12,7 +12,7 @@ import {
   type BotCanvasHandle,
   type BotSceneHandle,
 } from '@/services/game-test/game-bot-world';
-import type { TraceInputSink } from '@/services/game-test/game-traces';
+import type { InputSink } from '@/services/game-test/frame-input';
 
 /**
  * Geometry, against real `NodeBase` trees.
@@ -74,7 +74,7 @@ const canvas: BotCanvasHandle = {
   getBoundingClientRect: () => ({ width: 200, height: 200 }),
 };
 
-function makeSink(): TraceInputSink & { events: string[] } {
+function makeSink(): InputSink & { events: string[] } {
   const events: string[] = [];
   return {
     events,

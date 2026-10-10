@@ -30,7 +30,7 @@ export interface GameDebugProvider {
   snapshot?(): GameDebugSnapshot;
   /**
    * The named intents this game understands — its discovery surface for agents
-   * and test routines.
+   * and test bots.
    *
    * A game with a command registry must answer this **from the registry**
    * (`scene.commands.list().map(command => command.name)`) instead of keeping a

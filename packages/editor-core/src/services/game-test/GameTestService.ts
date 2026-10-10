@@ -39,52 +39,11 @@ import {
   type SignalWatchSpec,
 } from '@/services/game-test/game-assertions';
 import {
-  buildTraceFromRun,
-  compareTraceToRun,
-  DomTraceEventSource,
-  DomTraceInputSink,
-  InMemoryTraceStore,
-  makeTraceFeeder,
-  TraceRecorder,
-  traceFilePath,
-  type CompareTraceOptions,
-  type GameInputTrace,
-  type TraceComparison,
-  type TraceEnvelope,
-  type TraceEvent,
-  type TraceEventSource,
-  type TraceInputSink,
-  type TraceStore,
-} from '@/services/game-test/game-traces';
-import {
-  describeAvailableRoutines,
-  InMemoryRoutineStore,
-  ROUTINE_DIRECTORY,
-  runRoutine,
-  type GameRoutine,
-  type RoutineGameSample,
-  type RoutineInputStep,
-  type RoutineRunResult,
-  type RoutineStore,
-  type RoutineWorld,
-} from '@/services/game-test/game-routines';
-import {
-  buildRunProtocolDocument,
-  protocolReply,
-  protocolJson,
-  recordRoutineWorld,
-  RunProtocolRecorder,
-  saveRunProtocol,
-  type ProtocolRoutineRead,
-  type RunArtifactReport,
-  type RunProtocolSink,
-  type RunProtocolStore,
-} from '@/services/game-test/game-run-protocol';
-import {
-  installNondeterminismProbe,
-  type NondeterminismProbe,
-  type ProbeTarget,
-} from '@/services/game-test/nondeterminism-probe';
+  DomInputSink,
+  makeFrameInputFeeder,
+  type FrameInputEvent,
+  type InputSink,
+} from '@/services/game-test/frame-input';
 import {
   MonkeyDriver,
   MonkeyInvariantMonitor,
@@ -135,7 +94,6 @@ import {
   type BotSceneHandle,
 } from '@/services/game-test/game-bot-world';
 import { Vector3 } from 'three';
-import { CURRENT_EDITOR_VERSION } from '@/version';
 
 /**
  * `game_run` — drive the running game frame by frame and stop on the first
@@ -215,13 +173,6 @@ const OUTRAN_REAL_TIME_FACTOR = 4;
  * looks hung. 30 keeps each block at roughly one animation frame's worth of work.
  */
 const YIELD_EVERY_FRAMES = 30;
-/**
- * Breath between a routine's last step and the frame its expectations are judged
- * on. Short on purpose: the input layer settles each of its own batches, so this
- * only has to cover a command step's effect landing on the next tick.
- */
-const ROUTINE_SETTLE_MS = 150;
-
 /** Max node names tracked per run (matches NodeWatchRecorder's watch cap). */
 const MAX_TRACKED_NODES = 8;
 /** Timeline cap (§6 rule 2). */
@@ -325,26 +276,6 @@ export type GameRunOutcomeKind =
    */
   | 'bot-idle';
 
-/**
- * How an outcome is spelled in a report's FILE NAME (`0009-run-timeout-f600.json`).
- *
- * Deliberately not `outcome.kind` verbatim: the name has to answer "how did this
- * run end" to a human scanning an `fs_list`, and `until` answers that question
- * wrongly — it names the channel that fired, not the fact that the run passed.
- */
-const REPORT_VERDICT_SLUGS: Record<GameRunOutcomeKind, string> = {
-  until: 'pass',
-  fail: 'fail',
-  timeout: 'timeout',
-  error: 'error',
-  'precondition-already-met': 'precondition',
-  'monkey-empty': 'nothing-tested',
-  'bot-pass': 'bot-pass',
-  'bot-fail': 'bot-fail',
-  'bot-error': 'bot-error',
-  'bot-idle': 'nothing-driven',
-};
-
 export interface GameRunOutcome {
   kind: GameRunOutcomeKind;
   /** Index into the channel's assertion list, when a predicate decided the run. */
@@ -427,13 +358,6 @@ export interface GameRunResult {
   bot?: BotReport;
   /** Whether the negative control proved the binding — three-valued (§5.4.4). */
   control?: NegativeControlReport;
-  /**
-   * The pointer to the FULL protocol of this run in `design/tests/reports/`: read
-   * it with `fs_read {offset, limit}` when this reply is not enough, and read the
-   * `reason` when it says `written: false` — that is the one case where everything
-   * the caps cut is gone for good.
-   */
-  artifact?: RunArtifactReport;
 }
 
 /**
@@ -584,11 +508,8 @@ export interface GameRunLoopDeps {
    * loop calls each one **only when an assertion asks for it** — see the selectors
    * in `drive` — so a run that mentions none of them costs nothing.
    *
-   * Their names and signatures are deliberately identical to {@link RoutineWorld}'s:
-   * the routine driver collects exactly the same four fields, both are fed by the
-   * same live readers in this file (`snapshotLiveNode`, `readLiveNodeProperty`,
-   * `countLiveNodesOfType`, `readLiveAxis`), and a second spelling of "where the
-   * node is" would be a second thing to keep in sync.
+   * They are fed by the live readers in this file (`snapshotLiveNode`,
+   * `readLiveNodeProperty`, `countLiveNodesOfType`, `readLiveAxis`).
    */
   /** Transform snapshot of a live node — the expensive read `nodeMoved` needs. */
   snapshotNode?: (query: string) => LiveNodeSnapshot | null;
@@ -620,17 +541,12 @@ export interface GameRunLoopDeps {
   sleep?: (ms: number) => Promise<void>;
   /**
    * Called immediately before `stepFrames(1)` executes `frame`, i.e. in the gap
-   * between two ticks. This is the seam trace replay feeds input through
-   * (`game-traces.ts`): a wall-clock pacer cannot deliver input in `'manual'`
-   * mode at all, whereas an event dispatched here is polled by the game on
-   * exactly `frame`. Recording and the nondeterminism probe use the same gap.
+   * between two ticks. This is the seam the negative control's gesture is fed
+   * through (`frame-input.ts`): a wall-clock pacer cannot deliver input in
+   * `'manual'` mode at all, whereas an event dispatched here is polled by the game
+   * on exactly `frame`.
    */
   beforeFrame?: (frame: number) => void;
-  /**
-   * Called immediately after the tick returns — including when it throws, so a
-   * probe armed in `beforeFrame` is always disarmed.
-   */
-  afterFrame?: (frame: number) => void;
   /**
    * Ask the *host* to hold the game paused (or release it), rather than pausing
    * the runner behind the host's back. It matters because the editor decides the
@@ -661,13 +577,6 @@ export interface GameRunLoopDeps {
    * seam instead of through {@link GameRunResult}.
    */
   onBaseline?: (baseline: AssertionBaseline) => void;
-  /**
-   * Where the run's full protocol is recorded (`game-run-protocol.ts`). The loop
-   * writes into it and never *decides* anything from it, so a run without one
-   * behaves identically — which is what lets every existing loop spec keep passing
-   * a sink-less deps object and still describe the loop faithfully.
-   */
-  protocol?: RunProtocolSink;
 }
 
 // ---------------------------------------------------------------------------
@@ -694,28 +603,6 @@ export class GameTestService {
    */
   @inject(GameBotHost)
   private readonly botHost!: GameBotHost;
-
-  /**
-   * Default storage is in-memory: a record → replay round trip inside one editor
-   * session works, a reload loses the traces. Writing `design/tests/*.trace.json`
-   * into the open project means going through the project's file services, so it
-   * is a backend swapped in via {@link setTraceStore} rather than a dependency of
-   * this service. See {@link TraceStore} for the seam.
-   */
-  private traceStore: TraceStore = new InMemoryTraceStore();
-
-  /** Routine library backend, swapped for the project's files by the tool layer. */
-  private routineStore: RoutineStore = new InMemoryRoutineStore();
-
-  /**
-   * Where a run's full protocol is written — the same seam as the two stores above
-   * and for the same reason (the file backend needs `ProjectStorageService`, which
-   * this service deliberately does not depend on). `null` rather than an in-memory
-   * default on purpose: an in-memory protocol store would be a file the agent is
-   * told to `fs_read` and cannot, so with no project open the run says the protocol
-   * was lost instead of pointing at nothing.
-   */
-  private protocolStore: RunProtocolStore | null = null;
 
   /**
    * The play runtime once its scene runs. Play mode turns on (and `pix3_play start` answers)
@@ -797,12 +684,6 @@ export class GameTestService {
       );
     }
 
-    const startedAt = new Date().toISOString();
-    // ONE recorder for the whole experiment, created here rather than inside
-    // `runSession`: a recorder per session would give the negative control its own
-    // report file, and a control read apart from the run it controls means nothing.
-    const recorders = [new RunProtocolRecorder('main', normalized.monkey?.seed ?? null)];
-
     let mainBaseline: AssertionBaseline | null = null;
     // The runner ticks the policy, not the loop — through the same per-tick hook the
     // watch recorder uses. That is what makes one session work under manual stepping
@@ -816,7 +697,6 @@ export class GameTestService {
           {
             ...deps,
             signal,
-            protocol: recorders[0],
             onBaseline: baseline => {
               mainBaseline = baseline;
             },
@@ -834,42 +714,7 @@ export class GameTestService {
       // controls, and each press happens inside the frame loop the run is judged by.
       if (bot) await this.gameInput.flushReachJournal();
     }
-    if (bot) {
-      const report = bot.report();
-      recorders[0].botLog({
-        name: report.name,
-        channel: report.channel,
-        frames: report.frames,
-        sent: report.sent,
-        refused: report.refused,
-        log: bot.fullLog().map(entry => ({ ...entry })),
-      });
-    }
-    const judged = await this.judgeWithNegativeControl(main, normalized, mainBaseline, recorders);
-    // `ok: false` gets no artifact and no `written: false` note: nothing ran, so
-    // there is no protocol to have lost, and a pointer to a file that would only
-    // hold the refusal is noise on top of the sentence that already explains it.
-    if (!judged.ok || !judged.outcome) return judged;
-
-    judged.artifact = await saveRunProtocol(
-      this.protocolStore,
-      buildRunProtocolDocument({
-        kind: 'game_run',
-        subject: runSubject(normalized),
-        startedAt,
-        editorVersion: CURRENT_EDITOR_VERSION.version,
-        sceneId: appState.scenes.activeSceneId,
-        reply: protocolReply(judged),
-        sections: recorders.map(recorder => recorder.section()),
-        notes: recorders.flatMap(recorder => [...recorder.notes()]),
-      }),
-      {
-        subject: runSubject(normalized),
-        verdict: REPORT_VERDICT_SLUGS[judged.outcome.kind],
-        frame: judged.outcome.frame,
-      }
-    );
-    return judged;
+    return this.judgeWithNegativeControl(main, normalized, mainBaseline);
   }
 
   /**
@@ -884,13 +729,7 @@ export class GameTestService {
   private async judgeWithNegativeControl(
     main: GameRunResult,
     spec: NormalizedRunSpec,
-    mainBaseline: AssertionBaseline | null,
-    /**
-     * The experiment's recorders, `main` first. A control run appends its own here
-     * instead of opening a second report: the two runs are one experiment, and
-     * `sections[0]` vs `sections[1]` is the comparison the whole mechanism is about.
-     */
-    recorders: RunProtocolRecorder[] = []
+    mainBaseline: AssertionBaseline | null
   ): Promise<GameRunResult> {
     if (!main.ok || !main.outcome) return main;
     const passed = main.outcome.kind === 'until';
@@ -937,20 +776,14 @@ export class GameTestService {
       delete controlSpec.monkey;
       delete controlSpec.control;
       delete controlSpec.bot;
-      const feeder = makeTraceFeeder(
+      const feeder = makeFrameInputFeeder(
         controlGestureEvents(control),
-        new DomTraceInputSink(runtime.canvas, runtime.windowRef)
+        new DomInputSink(runtime.canvas, runtime.windowRef)
       );
-      const controlRecorder = new RunProtocolRecorder('control');
-      controlRecorder.note(
-        `This section is the NEGATIVE CONTROL: ${gesture}, after the game was put back to the main run's starting state by ${isolation.method}. Its readings are what the same predicates saw with the control untouched, so compare them against sections[0] frame for frame.`
-      );
-      recorders.push(controlRecorder);
       controlResult = await this.runSession(runtime.runner, deps =>
         runGameTestLoop(
           {
             ...deps,
-            protocol: controlRecorder,
             beforeFrame: frame => feeder.before(frame),
             onBaseline: baseline => {
               controlBaseline = baseline;
@@ -1018,8 +851,8 @@ export class GameTestService {
    * The world a monkey run presses: the live listing for what is there, and the
    * three channels for pressing it.
    *
-   * Keys go through synthesized DOM events — the real player path, the same sink a
-   * trace replays through — while interactions and commands are the semantic
+   * Keys go through synthesized DOM events — the real player path, the same sink the
+   * negative control's gesture goes through — while interactions and commands are the semantic
    * channels of §5.6/§5.8. Held actions are released on a frame schedule rather
    * than a timer, for the same reason the whole loop is frame-denominated: in
    * `manual` time a wall-clock release may never happen at all.
@@ -1029,7 +862,7 @@ export class GameTestService {
     canvas: HTMLCanvasElement;
     windowRef: Window;
   }): MonkeyWorld {
-    const sink = new DomTraceInputSink(runtime.canvas, runtime.windowRef);
+    const sink = new DomInputSink(runtime.canvas, runtime.windowRef);
     let holds: Array<{ frame: number; release: () => void }> = [];
     const holdUntil = (frame: number, release: () => void): void => {
       holds.push({ frame, release });
@@ -1068,8 +901,8 @@ export class GameTestService {
   /**
    * The world a policy senses and actuates through (§5.3).
    *
-   * Composed here, next to the monkey's world and the routine's, because the
-   * *editor-side* readers a bot shares with them live here — `resolveLiveInput`,
+   * Composed here, next to the monkey's world, because the *editor-side* readers a
+   * bot shares with it live here — `resolveLiveInput`,
    * `findInteractionOwner`, `readGameState`, `keyCodeOf`. The geometry (node views,
    * ray-versus-box, the joystick deflection) is in `game-bot-world.ts` instead, for
    * one reason: it is the part a spec can hold to account without a browser, and it is
@@ -1084,7 +917,7 @@ export class GameTestService {
     channel: BotActuatorChannel
   ): BotWorld {
     const { runner } = runtime;
-    const sink = new DomTraceInputSink(runtime.canvas, runtime.windowRef);
+    const sink = new DomInputSink(runtime.canvas, runtime.windowRef);
     const scene = runner as unknown as BotSceneHandle;
     const sticks = new PhysicalAxisDriver(scene, runtime.canvas, sink);
     /** Keys/buttons the world put down, so `releaseAll` can be exhaustive. */
@@ -1231,126 +1064,8 @@ export class GameTestService {
   }
 
   /**
-   * Record a run's input as a frame-denominated trace (§5.2 "Трассы").
-   *
-   * Two things happen alongside the ordinary loop: every input event the game
-   * receives is stamped with the frame it was delivered before, and the
-   * nondeterminism probe watches each tick, so the stored trace states whether a
-   * strict replay comparison is even applicable. `feed` supplies the input to
-   * record — frame-denominated events driven through the loop's inter-tick gap,
-   * which is the delivery `game_input` cannot provide in `'manual'` time mode.
-   * Without it the recording captures whatever else drives the game (a human at
-   * the keyboard while the loop yields, an agent's `game_input` in another
-   * call).
-   */
-  async recordTrace(
-    spec: GameRunSpec,
-    options: { name: string; seed?: number | null; feed?: readonly TraceEvent[] }
-  ): Promise<GameTraceRecordResult> {
-    const preflight = this.preflight(spec);
-    if ('error' in preflight) return { ok: false, error: preflight.error };
-    const { runtime, spec: normalized } = preflight;
-    const path = traceFilePath(options.name);
-
-    const recorded = await this.runSession(runtime.runner, deps =>
-      recordTraceRun(deps, normalized, {
-        name: options.name,
-        source: new DomTraceEventSource(runtime.canvas, runtime.windowRef),
-        sink: new DomTraceInputSink(runtime.canvas, runtime.windowRef),
-        env: this.envelopeSeed(runtime.canvas, options.seed),
-        ...(options.feed ? { feed: options.feed } : {}),
-      })
-    );
-    await this.traceStore.save(path, recorded.trace);
-    // Deliberately NO run-protocol artifact here, nor in `replayTrace`. A trace
-    // already IS a project file, and it carries the run's events, outcome, metrics
-    // and determinism evidence — a second file describing the same run would be one
-    // more thing to rotate and one more path for the agent to guess between. (The
-    // document's `determinism` field is where a future caller that does want both
-    // would put the probe's report.)
-    return { ...recorded.result, trace: recorded.trace, tracePath: path };
-  }
-
-  /**
-   * Replay a stored trace and compare the two runs.
-   *
-   * Diagnostic by construction: the comparison judges `outcome.kind` and metrics
-   * within tolerance, and a trace the probe marked `nondeterministic` is compared
-   * by thresholds only — a fact the verdict states rather than leaves implied.
-   */
-  async replayTrace(
-    nameOrPath: string,
-    spec?: GameRunSpec,
-    options?: CompareTraceOptions
-  ): Promise<GameTraceReplayResult> {
-    const path = traceFilePath(nameOrPath);
-    let trace: GameInputTrace | null;
-    try {
-      trace = await this.traceStore.load(path);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-    if (!trace) {
-      const known = await this.traceStore.list();
-      return {
-        ok: false,
-        error: `No trace stored at ${path}.${known.length ? ` Known traces: ${known.join(', ')}.` : ' Record one first with a game_run record call.'}`,
-      };
-    }
-    // The trace's own tick length is part of what makes a replay comparable, so
-    // it wins over the default unless the caller deliberately overrides it.
-    const effective: GameRunSpec = {
-      until: spec?.until ?? [{ kind: 'frames', n: Math.max(1, trace.metrics.frames) }],
-      ...(spec ?? {}),
-      fixedDeltaSec: spec?.fixedDeltaSec ?? trace.env.fixedDeltaSec,
-    };
-    const preflight = this.preflight(effective);
-    if ('error' in preflight) return { ok: false, error: preflight.error };
-    const { runtime, spec: normalized } = preflight;
-    const replayEnv = this.envelopeSeed(runtime.canvas, null);
-
-    const replayed = await this.runSession(runtime.runner, deps =>
-      replayTraceRun(deps, trace, normalized, {
-        sink: new DomTraceInputSink(runtime.canvas, runtime.windowRef),
-        compare: {
-          ...options,
-          // Deliberately without `seed`: the replay's seed is whatever the game
-          // rolled this time and is not known here, and claiming it differs
-          // would block strict comparison on no evidence.
-          env: {
-            runtimeVersion: replayEnv.runtimeVersion,
-            viewport: replayEnv.viewport,
-            sceneId: replayEnv.sceneId,
-            fixedDeltaSec: normalized.fixedDeltaSec,
-            ...options?.env,
-          },
-        },
-        ...(spec ? {} : { noAssertions: true }),
-      })
-    );
-    return { ...replayed.result, replay: replayed.comparison, tracePath: path };
-  }
-
-  /** Swap in a persistent backend — see {@link TraceStore} for the file seam. */
-  setTraceStore(store: TraceStore): void {
-    this.traceStore = store;
-  }
-
-  getTraceStore(): TraceStore {
-    return this.traceStore;
-  }
-
-  /** Swap in the project-file routine store — same seam, same reason as the traces. */
-  setRoutineStore(store: RoutineStore): void {
-    this.routineStore = store;
-  }
-
-  getRoutineStore(): RoutineStore {
-    return this.routineStore;
-  }
-
-  /**
-   * Swap in the project-file policy store — same seam, same reason as the two above.
+   * Swap in the project-file policy store (the file backend needs the project's file
+   * services, which this service deliberately does not depend on).
    * Delegated to the host rather than held here: the host is what reads a policy, and
    * two owners of one store is how a run ends up compiling last project's file.
    */
@@ -1362,242 +1077,21 @@ export class GameTestService {
     return this.botHost.getStore();
   }
 
-  /** Swap in the project-file report store — same seam, same reason as the two above. */
-  setProtocolStore(store: RunProtocolStore | null): void {
-    this.protocolStore = store;
-  }
-
-  getProtocolStore(): RunProtocolStore | null {
-    return this.protocolStore;
-  }
-
-  /**
-   * Execute a stored routine (§5.7): one tool call for a scenario that would
-   * otherwise be re-typed as fifteen input steps in every iteration.
-   *
-   * Everything about *how* a routine behaves lives in `game-routines.ts` and is
-   * unit-tested against a fake world; this method's whole job is to supply the live
-   * world — the running scene's nodes, its command registry, its debug provider,
-   * the real input path — and to refuse cleanly when there is nothing to run
-   * against.
-   *
-   * The live world is handed to the driver through {@link recordRoutineWorld}, so
-   * every reading it took lands in the artifact: a routine's reply carries the
-   * outcome snapshot and a scalar diff, and the baseline snapshot it was diffed
-   * against — the one a reader needs to disagree with the verdict — is only in the
-   * file.
-   */
-  async runRoutine(
-    name: string,
-    args: Record<string, unknown> = {}
-  ): Promise<RoutineRunResult & { artifact?: RunArtifactReport }> {
-    if (!appState.ui.isPlaying) {
-      return {
-        ok: false,
-        error:
-          'The game is not running, and a routine drives the LIVE game. Call play_start first, then game_run {routine}.',
-      };
-    }
-    const runtime = this.playSession.getActiveRuntime();
-    if (!runtime) {
-      return {
-        ok: false,
-        error: 'Play mode is starting but the runtime is not attached yet; retry in a moment.',
-      };
-    }
-
-    let routine: GameRoutine | null;
-    try {
-      routine = await this.routineStore.load(name);
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
-    if (!routine) {
-      const known = await this.routineStore
-        .loadAll()
-        .catch(() => ({ routines: [] as GameRoutine[], broken: [] }));
-      return {
-        ok: false,
-        error: `No routine called "${name}" in ${ROUTINE_DIRECTORY}/. ${describeAvailableRoutines(known.routines)}`,
-      };
-    }
-
-    const startedAt = new Date().toISOString();
-    const reads: ProtocolRoutineRead[] = [];
-    const world = this.buildRoutineWorld(runtime.runner);
-    let result: RoutineRunResult;
-    try {
-      result = await runRoutine(recordRoutineWorld(world.world, reads), routine, args);
-    } finally {
-      world.dispose();
-    }
-    // A ROUTINE STALE refusal executed nothing, so there is no protocol — same rule
-    // as `run()`'s `ok: false`.
-    if (!result.ok) return result;
-
-    // The verdict slug is derived from the report's own fields rather than parsed off
-    // the verdict LINE: the wording is a sentence written for a human and rewording
-    // it must not silently rename every file this writes.
-    const verdict = result.routine?.macro
-      ? 'macro'
-      : (result.expectations ?? []).every(expectation => expectation.met)
-        ? 'pass'
-        : 'fail';
-    const artifact = await saveRunProtocol(
-      this.protocolStore,
-      buildRunProtocolDocument({
-        kind: 'routine',
-        subject: `routine-${routine.name}`,
-        startedAt,
-        editorVersion: CURRENT_EDITOR_VERSION.version,
-        sceneId: appState.scenes.activeSceneId,
-        reply: protocolReply(result),
-        // No frame loop ran, so there is no per-frame section: a routine's evidence is
-        // the readings its driver took, and inventing an empty `main` section would
-        // suggest a timeline that was never collected.
-        sections: [],
-        routine: { reads },
-      }),
-      { subject: `routine-${routine.name}`, verdict, frame: result.frames }
-    );
-    return { ...result, artifact };
-  }
-
-  /**
-   * The live implementation of {@link RoutineWorld}.
-   *
-   * Two details are load-bearing. The **tick counter** is a `subscribeFrameStats`
-   * subscription rather than a wall-clock estimate, so the report's `frames` is
-   * what the game actually executed (a background tab throttles rAF, and a routine
-   * that ran 3 ticks must not read as one that ran 180). And the **axis read** is
-   * taken outside any poll-recording window: the runtime records `getAxis` names
-   * only while `game_input` holds a window open, so sampling here — after the input
-   * batch returned — cannot pollute `observedPolls`, the one field that separates
-   * "the key was never pressed" from "the game never asks".
-   */
-  private buildRoutineWorld(runner: SceneRunner): { world: RoutineWorld; dispose: () => void } {
-    let frames = 0;
-    const frameSource = runner as unknown as {
-      subscribeFrameStats?: (listener: () => void) => () => void;
-    };
-    let unsubscribe: (() => void) | null = null;
-    try {
-      unsubscribe =
-        typeof frameSource.subscribeFrameStats === 'function'
-          ? frameSource.subscribeFrameStats(() => {
-              frames += 1;
-            })
-          : null;
-    } catch {
-      unsubscribe = null;
-    }
-
-    const world: RoutineWorld = {
-      nodeExists: query =>
-        (runner.getLiveNodeById(query) ?? runner.findLiveNodeByName(query)) !== null,
-      runInput: async (steps: RoutineInputStep[]) => {
-        const result = await this.gameInput.run(steps);
-        return { ok: result.ok, ...(result.error ? { error: result.error } : {}) };
-      },
-      dispatchCommand: (commandName, commandArgs) => {
-        const registry = findCommandRegistry(runner);
-        if (!registry) return null;
-        try {
-          return registry.dispatch(commandName, commandArgs)
-            ? { ok: true }
-            : {
-                ok: false,
-                error: `no registered handler took "${commandName}" — check it against the intents the scene registers (the game's debug provider lists them as actions).`,
-              };
-        } catch (error) {
-          return {
-            ok: false,
-            error: `the "${commandName}" handler threw: ${error instanceof Error ? error.message : String(error)}`,
-          };
-        }
-      },
-      sampleGameState: (): RoutineGameSample | null => {
-        const sample = readGameState();
-        if (!sample || sample.snapshot === undefined) return null;
-        return { name: sample.provider, snapshot: sample.snapshot };
-      },
-      errorCount: () => capturedErrors().length,
-      errorsSince: from =>
-        capturedErrors()
-          .slice(from)
-          .map(entry => ({ source: entry.source, message: entry.message })),
-      snapshotNode: query => snapshotLiveNode(runner, query),
-      readNodeProperty: (query, path) => readLiveNodeProperty(runner, query, path),
-      countNodesOfType: type => countLiveNodesOfType(runner, type),
-      readAxis: name => readLiveAxis(runner, name),
-      readCommandJournal: () => {
-        const registry = findCommandRegistry(runner);
-        return registry ? { entries: registry.log, dropped: registry.droppedLogEntries } : null;
-      },
-      watchSignals: specs => new LiveSignalWatcher(() => runner.getLiveRootNodes(), specs),
-      framesElapsed: () => frames,
-      // `GameInputService` already waits its own settle window after each batch; this
-      // is the extra breath a command step (which goes straight into the registry,
-      // with no settle of its own) needs before the outcome frame is read.
-      settle: () => new Promise<void>(resolve => setTimeout(resolve, ROUTINE_SETTLE_MS)),
-    };
-
-    return {
-      world,
-      dispose: () => {
-        try {
-          unsubscribe?.();
-        } catch {
-          /* a host that cannot unsubscribe must not fail the routine's report */
-        }
-      },
-    };
-  }
-
-  /** Shared entry checks for every mode of the tool. */
-  private preflight(spec: GameRunSpec):
-    | {
-        runtime: { runner: SceneRunner; canvas: HTMLCanvasElement; windowRef: Window };
-        spec: NormalizedRunSpec;
-      }
-    | { error: string } {
-    if (!appState.ui.isPlaying) {
-      return { error: 'The game is not running. Call play_start first, then game_run.' };
-    }
-    const runtime = this.playSession.getActiveRuntime();
-    if (!runtime) {
-      return {
-        error: 'Play mode is starting but the runtime is not attached yet; retry in a moment.',
-      };
-    }
-    const validation = validateSpec(spec);
-    if ('error' in validation) return { error: validation.error };
-    return { runtime, spec: validation.spec };
-  }
-
   /**
    * Run one loop under the host-pause discipline documented at the top of this
-   * file, then re-check `leftPaused` against reality. Shared by every mode so a
-   * recording or a replay cannot quietly skip the part that keeps the outcome
+   * file, then re-check `leftPaused` against reality. Shared by the main run and the
+   * negative control so neither can quietly skip the part that keeps the outcome
    * frame inspectable.
    */
-  private async runSession<T extends { result: GameRunResult }>(
-    runner: SceneRunner,
-    execute: (deps: GameRunLoopDeps) => Promise<T>
-  ): Promise<T>;
   private async runSession(
     runner: SceneRunner,
     execute: (deps: GameRunLoopDeps) => Promise<GameRunResult>
-  ): Promise<GameRunResult>;
-  private async runSession(
-    runner: SceneRunner,
-    execute: (deps: GameRunLoopDeps) => Promise<GameRunResult | { result: GameRunResult }>
-  ): Promise<GameRunResult | { result: GameRunResult }> {
+  ): Promise<GameRunResult> {
     const deps = this.buildDeps(runner);
     this.playSession.setFocusPauseSuppressed(true);
-    let outcome: GameRunResult | { result: GameRunResult };
+    let result: GameRunResult;
     try {
-      outcome = await execute(deps);
+      result = await execute(deps);
     } finally {
       // Dropping the suppression makes the host re-evaluate the pause decision,
       // which is exactly the moment the outcome pause used to be lost. It cannot
@@ -1607,7 +1101,6 @@ export class GameTestService {
       // quietly wrong `leftPaused`.
       this.playSession.setFocusPauseSuppressed(false);
     }
-    const result = 'result' in outcome ? outcome.result : outcome;
     if (result.time && result.time.leftPaused !== runner.paused) {
       result.time.leftPaused = runner.paused;
       result.notes = [
@@ -1626,28 +1119,7 @@ export class GameTestService {
         ...sceneIssues.map(issue => `SCENE NOT RENDERABLE — ${issue.message}`),
       ];
     }
-    return outcome;
-  }
-
-  /**
-   * The half of the environment envelope the editor knows: version, canvas size,
-   * active scene, and the seed if the caller supplied one. The rest (tick length,
-   * provider name, the seed a game exposes itself) is filled in by the recorder
-   * from the run.
-   */
-  private envelopeSeed(
-    canvas: HTMLCanvasElement,
-    seed: number | null | undefined
-  ): TraceEnvelopeSeed {
-    return {
-      seed: seed ?? null,
-      runtimeVersion: CURRENT_EDITOR_VERSION.version,
-      viewport: {
-        width: canvas.width || Math.round(canvas.getBoundingClientRect().width),
-        height: canvas.height || Math.round(canvas.getBoundingClientRect().height),
-      },
-      sceneId: appState.scenes.activeSceneId,
-    };
+    return result;
   }
 
   /**
@@ -1718,10 +1190,9 @@ export class GameTestService {
           .map(entry => ({ source: entry.source, message: entry.message })),
       nodeExists: query =>
         (runner.getLiveNodeById(query) ?? runner.findLiveNodeByName(query)) !== null,
-      // The four per-predicate readers, the same live functions the routine world is
-      // built from (`buildRoutineWorld`) — one definition of "where the node is",
+      // The four per-predicate readers — one definition each of "where the node is",
       // "what that property reads", "how many of that type are alive" and "what the
-      // axis says", used by both the frame loop and the routine driver.
+      // axis says".
       snapshotNode: query => snapshotLiveNode(runner, query),
       readNodeProperty: (query, path) => readLiveNodeProperty(runner, query, path),
       countNodesOfType: type => countLiveNodesOfType(runner, type),
@@ -1804,7 +1275,7 @@ function readDeclaredActions(): { commands: string[]; inputActions: string[] } {
 
 function executeMonkeyAction(
   runner: SceneRunner,
-  sink: TraceInputSink,
+  sink: InputSink,
   holdUntil: (frame: number, release: () => void) => void,
   action: MonkeyAction,
   frame: number
@@ -1969,7 +1440,7 @@ function resolveGameReset(): ((seed?: number) => void | Promise<void>) | null {
 }
 
 /** The negative gesture as frame-stamped events: down before frame 1, up when the hold ends. */
-function controlGestureEvents(control: NegativeControlSpec): TraceEvent[] {
+function controlGestureEvents(control: NegativeControlSpec): FrameInputEvent[] {
   const { nx, ny } = control.tap;
   return [
     { frame: 1, kind: 'pointer', phase: 'down', nx, ny },
@@ -2175,7 +1646,7 @@ export class LiveSignalWatcher implements SignalWatcher {
 }
 
 // ---------------------------------------------------------------------------
-// Live-node readers for routine expectations
+// Live-node readers for the per-predicate collectors
 // ---------------------------------------------------------------------------
 
 /** The live node a query names, by id first (unique) and then by name. */
@@ -2215,10 +1686,10 @@ function snapshotLiveNode(runner: SceneRunner, query: string): LiveNodeSnapshot 
 /**
  * A dot path into a live node's own properties (`checked`, `visible`, `position.x`).
  *
- * Read straight off the node rather than through the property schema: a routine's
- * post-condition is about the state the game is in, and the schema's `getValue`
- * closures are an editor-side projection of that state which a headless expectation
- * has no business depending on. `undefined` means "no node, or no such property" —
+ * Read straight off the node rather than through the property schema: a predicate
+ * is about the state the game is in, and the schema's `getValue` closures are an
+ * editor-side projection of that state which a headless assertion has no business
+ * depending on. `undefined` means "no node, or no such property" —
  * the predicate turns those two into different sentences using `presentNodes`.
  */
 function readLiveNodeProperty(runner: SceneRunner, query: string, path: string): Json | undefined {
@@ -2254,10 +1725,10 @@ function countLiveNodesOfType(runner: SceneRunner, type: string): number {
  * `InputService.getAxis` records the names it is asked for while a harness window is
  * open, and that recording is `input.observedPolls` — the one field that separates
  * "the key was never pressed" from "the game never asks". Windows are opened and
- * closed inside `GameInputService`'s own methods, so neither the frame loop (which
- * refuses input steps) nor a routine (which samples after its input batch returned)
- * has one open, and this read cannot pollute the diagnostic. Anything that starts
- * sampling axes *while* a window is open has to bypass `getAxis`, not reuse this.
+ * closed inside `GameInputService`'s own methods, so the frame loop (which refuses
+ * input steps) never has one open, and this read cannot pollute the diagnostic.
+ * Anything that starts sampling axes *while* a window is open has to bypass
+ * `getAxis`, not reuse this.
  */
 function readLiveAxis(runner: SceneRunner, name: string): number | undefined {
   const input = resolveLiveInput(runner) as { getAxis?: (name: string) => number } | null;
@@ -2281,175 +1752,6 @@ function readGameState(): GameStateSample | null {
   } catch (err) {
     return { provider: provider.name, error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Traces: record and replay (§5.2)
-// ---------------------------------------------------------------------------
-
-/** The envelope fields the editor supplies; the recorder fills in the rest. */
-export type TraceEnvelopeSeed = Pick<
-  TraceEnvelope,
-  'seed' | 'runtimeVersion' | 'viewport' | 'sceneId'
->;
-
-export interface GameTraceRecordResult extends GameRunResult {
-  trace?: GameInputTrace;
-  tracePath?: string;
-}
-
-export interface GameTraceReplayResult extends GameRunResult {
-  replay?: TraceComparison;
-  tracePath?: string;
-}
-
-export interface RecordTraceOptions {
-  name: string;
-  env: TraceEnvelopeSeed;
-  /** Where recorded events are heard. */
-  source: TraceEventSource;
-  /** Frame-denominated events to drive while recording (optional). */
-  feed?: readonly TraceEvent[];
-  /** Where `feed` events are dispatched. Required when `feed` is given. */
-  sink?: TraceInputSink;
-  /** Injected in specs; defaults to `globalThis`. */
-  probeTarget?: ProbeTarget;
-  now?: () => Date;
-}
-
-/**
- * Run the loop while recording input in frames and watching for nondeterminism.
- *
- * The probe is installed around the *whole* run and disposed in a `finally`, so
- * neither an assertion throw nor a runner that stops mid-run can leave the
- * wrappers installed. Arming happens per tick (`beforeFrame`/`afterFrame`), which
- * is what keeps the harness's own clock reads out of the counts.
- */
-export async function recordTraceRun(
-  deps: GameRunLoopDeps,
-  spec: NormalizedRunSpec,
-  options: RecordTraceOptions
-): Promise<{ result: GameRunResult; trace: GameInputTrace }> {
-  const recorder = new TraceRecorder(options.source);
-  const probe: NondeterminismProbe = installNondeterminismProbe(options.probeTarget);
-  const feed = options.feed ?? [];
-  const feeder = feed.length && options.sink ? makeTraceFeeder(feed, options.sink) : null;
-  const notes: string[] = [];
-  let ticksPerFrame = 1;
-
-  let result: GameRunResult;
-  try {
-    recorder.start();
-    result = await runGameTestLoop(
-      {
-        ...deps,
-        beforeFrame: frame => {
-          // Order matters: stamp first so anything the feeder dispatches is
-          // recorded on this frame, arm last so the dispatch itself (harness
-          // work) is not counted as the game's.
-          recorder.markFrame(frame);
-          if (frame === 1) ticksPerFrame = deps.runner.getTimeMode().ticksPerFrame;
-          feeder?.before(frame);
-          probe.beginTick();
-        },
-        afterFrame: () => probe.endTick(),
-      },
-      spec
-    );
-  } finally {
-    // Both are idempotent, and both must happen even when the loop throws: a
-    // probe left installed would keep counting into a finished run, and a
-    // recorder left started would keep DOM listeners alive for the session.
-    probe.dispose();
-    recorder.stop();
-  }
-
-  const captured = recorder.stop();
-  let events = captured.events;
-  if (feeder && events.length === 0 && feeder.dispatched > 0) {
-    // The events were dispatched but nothing heard them — a canvas with no
-    // layout box (headless/hidden host) drops pointers on the floor. Store what
-    // was driven rather than an empty trace, and say which one this is: a trace
-    // whose events the game may never have received will diverge on replay, and
-    // that divergence has to be attributable.
-    events = [...feed];
-    notes.push(
-      `Nothing was heard on the recording channel although ${feeder.dispatched} event(s) were dispatched — the events stored here are the ones DRIVEN, not the ones observed reaching the game. Usually the game canvas has no layout box yet.`
-    );
-  } else if (feeder && events.length !== feeder.dispatched) {
-    notes.push(
-      `Recorded ${events.length} event(s) while ${feeder.dispatched} were dispatched (pointer moves are collapsed to one per frame, and events from outside this run's canvas are not heard).`
-    );
-  }
-  if (captured.dropped > 0) {
-    notes.push(
-      `${captured.dropped} event(s) exceeded the recording cap and were dropped; the trace is incomplete after that point.`
-    );
-  }
-
-  const determinism = probe.report();
-  const trace = buildTraceFromRun({
-    name: options.name,
-    env: {
-      ...options.env,
-      seed: options.env.seed ?? readSeed(result.game?.snapshot),
-      fixedDeltaSec: spec.fixedDeltaSec,
-      ticksPerFrame,
-      gameProvider: result.game?.provider ?? null,
-    },
-    events,
-    ...(captured.dropped ? { droppedEvents: captured.dropped } : {}),
-    result,
-    determinism,
-    ...(options.now ? { now: options.now } : {}),
-    notes,
-  });
-  return { result, trace };
-}
-
-export interface ReplayTraceOptions {
-  sink: TraceInputSink;
-  compare?: CompareTraceOptions;
-  /**
-   * Set when the caller supplied no assertions and the replay is only
-   * reproducing the recorded frame budget — the comparison then says so instead
-   * of reporting an outcome mismatch the caller could not have avoided.
-   */
-  noAssertions?: boolean;
-}
-
-/** Replay a trace frame by frame and compare the run against the recording. */
-export async function replayTraceRun(
-  deps: GameRunLoopDeps,
-  trace: GameInputTrace,
-  spec: NormalizedRunSpec,
-  options: ReplayTraceOptions
-): Promise<{ result: GameRunResult; comparison: TraceComparison }> {
-  const feeder = makeTraceFeeder(trace.events, options.sink);
-  const result = await runGameTestLoop(
-    { ...deps, beforeFrame: frame => feeder.before(frame) },
-    spec
-  );
-  const comparison = compareTraceToRun(trace, result, options.compare);
-  const undelivered = feeder.pending(result.outcome?.frame ?? 0);
-  if (undelivered > 0) {
-    comparison.notes.push(
-      `The run ended on frame ${result.outcome?.frame ?? 0} with ${undelivered} trace event(s) still unplayed — the rest of the trace was never delivered.`
-    );
-  }
-  if (options.noAssertions) {
-    comparison.notes.push(
-      'No `until`/`fail` predicates were supplied, so the replay only reproduced the recorded frame budget: the outcome kinds are compared but nothing was asserted about the game.'
-    );
-  }
-  return { result, comparison };
-}
-
-/** A `seed` scalar the game exposes in its debug snapshot, if any. */
-function readSeed(snapshot: Json | undefined): number | null {
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null;
-  const value = (snapshot as { [key: string]: Json }).seed;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2717,17 +2019,6 @@ function outranRealTimeNote(
 }
 
 /**
- * The slug that names the report file. It answers "which run was this" from an
- * `fs_list` alone, so a bot run says which policy played rather than just `run` —
- * three reports of three policies against the same scene are otherwise
- * indistinguishable until each is opened.
- */
-function runSubject(spec: NormalizedRunSpec): string {
-  if (spec.bot) return `bot-${spec.bot.name}`;
-  return spec.monkey ? 'monkey' : 'run';
-}
-
-/**
  * Has the policy ended the run, and how?
  *
  * A crash is checked before a verdict: a policy that threw *after* calling `done`
@@ -2878,7 +2169,7 @@ async function drive(
   // -- what this run's predicates need collected, and nothing else --------------
   //
   // Every list here comes from the assertions themselves via the selectors in
-  // `game-assertions.ts` — the same ones the routine driver uses — so the cost of a
+  // `game-assertions.ts` — so the cost of a
   // reading is paid only by a run that asked for it. A `frames`-only run collects
   // none of the four and walks the scene zero times; a `nodeMoved` run pays for one
   // world-matrix snapshot per frame and still not for a type count.
@@ -2920,7 +2211,7 @@ async function drive(
   let monkey: MonkeySession | null = null;
   if (spec.monkey) {
     if (deps.monkey) {
-      monkey = new MonkeySession(deps.monkey, spec.monkey, deps.protocol);
+      monkey = new MonkeySession(deps.monkey, spec.monkey);
     } else {
       notes.push(
         'A monkey run was asked for, but this runtime supplies no way to list or press the scene’s controls, so NOTHING was pressed — read the outcome as "the game ran untouched", not as a clean monkey run.'
@@ -3045,10 +2336,6 @@ async function drive(
   // Handed out before the first tick: the negative control compares the two runs'
   // frame-0 records, and a baseline captured later would not be one.
   deps.onBaseline?.(baseline);
-  // The recorder's first frame establishes its "previous" values and emits nothing;
-  // feeding it the same record the predicates are judged against is what keeps the
-  // artifact's deltas measured from the frame the report calls frame 0.
-  deps.protocol?.frame(baseline);
 
   const finish = (outcome: GameRunOutcome, unmetNotes: string[] = []): LoopCore => {
     if (monkey) notes.push(...monkey.notes());
@@ -3062,17 +2349,7 @@ async function drive(
     // 9 would otherwise diff the baseline against itself and report "nothing
     // changed" — a report that says the game did nothing because the harness did
     // not look is worse than no report.
-    //
-    // Read into a local and handed to BOTH consumers: the reply and the artifact
-    // must never be able to describe different frames, and a second
-    // `sampleGameState()` for the protocol would be exactly that.
     const outcomeSample = outcome.frame === 0 ? baselineSample : deps.sampleGameState();
-    deps.protocol?.outcome({
-      frame: outcome.frame,
-      provider: outcomeSample?.provider ?? baselineSample?.provider ?? null,
-      baseline: baselineSample?.snapshot ?? null,
-      snapshot: outcomeSample?.snapshot ?? null,
-    });
     return {
       ...(monkey ? { monkey: monkey.report() } : {}),
       outcome,
@@ -3133,8 +2410,8 @@ async function drive(
     // Attach to anything that has spawned, and stamp what the coming frame emits
     // with that frame's number.
     signalWatcher?.sweep(frame + 1);
-    // The monkey presses in the same gap the traces feed input through, and for the
-    // same reason: an event dispatched here is polled by the game on exactly the
+    // The monkey presses in the same gap `beforeFrame` feeds input through, and for
+    // the same reason: an event dispatched here is polled by the game on exactly the
     // coming frame, whereas a wall-clock hold would deliver down and up with zero
     // ticks in between. Awaited because the inventory comes from the live control
     // listing — safe here, since `manual` time schedules no frame of its own.
@@ -3144,17 +2421,9 @@ async function drive(
       error.name = 'AbortError';
       throw error;
     }
-    // The inter-tick gap: input for the coming frame is dispatched here, and the
-    // determinism probe is armed here, so everything counted between the two
-    // hooks belongs to the tick and nothing of the harness can slip in (the loop
-    // is synchronous — its own timers only run once the tick returns).
+    // The inter-tick gap: input for the coming frame is dispatched here.
     deps.beforeFrame?.(frame + 1);
-    let executed: number;
-    try {
-      executed = runner.stepFrames(1);
-    } finally {
-      deps.afterFrame?.(frame + 1);
-    }
+    const executed = runner.stepFrames(1);
     if (executed !== 1) {
       return finish({
         kind: 'error',
@@ -3172,9 +2441,6 @@ async function drive(
     }
     const current = buildFrame(frame, sample);
 
-    // Hoisted out of the two calls below: `errorsSince` copies and slices the whole
-    // captured-error ring, and the timeline and the protocol want the SAME first new
-    // error — two reads could disagree about it if an error landed between them.
     const firstNewError = deps.errorsSince(errorsBefore + previousErrorCount)[0];
     recordTimeline(timeline, frame, {
       previousSample,
@@ -3185,7 +2451,6 @@ async function drive(
       present: current.presentNodes,
       newError: firstNewError,
     });
-    deps.protocol?.frame(current, firstNewError);
     previousSample = sample;
     previousErrorCount = current.newErrorCount;
     previousPresent = current.presentNodes;
@@ -3293,14 +2558,7 @@ class MonkeySession {
 
   constructor(
     private readonly world: MonkeyWorld,
-    spec: NormalizedMonkeySpec,
-    /**
-     * Where the COMPLETE press log goes. The driver's own log keeps a head and a
-     * tail (20 + 40) because the reply has a context budget; the artifact has none,
-     * and the presses in the dropped middle are exactly the ones a reproduction of
-     * a late crash needs.
-     */
-    private readonly protocol?: RunProtocolSink
+    spec: NormalizedMonkeySpec
   ) {
     this.driver = new MonkeyDriver(spec);
     this.monitor = new MonkeyInvariantMonitor(spec.invariants);
@@ -3324,15 +2582,6 @@ class MonkeySession {
       execution = { status: 'error', note: error instanceof Error ? error.message : String(error) };
     }
     this.driver.log(frame, action, execution.status, execution.note);
-    // Recorded as DATA, not as the driver's formatted line: that formatter is
-    // private to `game-monkey.ts`, and a second copy of it here would give the file
-    // and the reply two spellings of the same press.
-    this.protocol?.monkeyAction({
-      frame,
-      action: protocolJson(action),
-      status: execution.status,
-      ...(execution.note ? { note: execution.note } : {}),
-    });
   }
 
   /** Judge the frame that just ran. Returns the violation that ends the run, or null. */

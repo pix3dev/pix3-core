@@ -310,7 +310,7 @@ export interface AxisAssertion {
  * (`scene.commands.dispatch('open-menu')`), so a single tap plus
  * `{kind: 'command', name: 'open-menu'}` proves that wire once. Every later
  * scenario then opens the menu *by dispatching* and never taps a pixel again —
- * which is the whole payoff of the command layer: a trace that survives renaming
+ * which is the whole payoff of the command layer: a scenario that survives renaming
  * the button.
  *
  * **Stateful controls — checkbox, inventory slot — are proven with `signal`.** For

@@ -700,7 +700,7 @@ const hiddenByAncestorName = (node: { parent?: unknown }): string | null => {
  *
  * Exported because {@link LiveNodeSnapshot} is built in two places and an orientation that
  * disagrees between them would be worse than not having one. The vectors are allocated per
- * call rather than shared scratch: the routine layer holds snapshots as baselines, so a
+ * call rather than shared scratch: the run loop holds snapshots as baselines, so a
  * reused Vector3 would rewrite the past.
  */
 export function worldForward(node: NodeBase): { x: number; y: number; z: number } {

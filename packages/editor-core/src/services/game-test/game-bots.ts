@@ -29,10 +29,9 @@
  * };
  * ```
  *
- * It lives in the project — not in the conversation — for the reason every other
- * artifact of this harness does (principle 5 of Flow): it survives context
- * compaction, it is reviewed and committed like code, and the next session reuses it
- * as a regression instead of re-deriving it.
+ * It lives in the project — not in the conversation — (principle 5 of Flow): it
+ * survives context compaction, it is reviewed and committed like code, and the next
+ * session reuses it as a regression instead of re-deriving it.
  *
  * ## The timing contract, and why it is the first thing to state
  *
@@ -132,13 +131,11 @@ export interface StoredBot {
 }
 
 /**
- * The storage seam, same shape and the same reasons as {@link
- * import('./game-routines').RoutineStore}: the tool layer decides whether it is the
- * dev server's evaluated modules (`ModuleBotStore` in `GameBotHost.ts`) or memory, and
- * the driver never knows.
+ * The storage seam: the tool layer decides whether it is the dev server's evaluated
+ * modules (`ModuleBotStore` in `GameBotHost.ts`) or memory, and the driver never knows.
  *
- * Unlike a routine a policy is **not parsed here** — it is TypeScript, and the only
- * thing that can tell whether it is valid is Vite, which compiles it.
+ * A policy is **not parsed here** — it is TypeScript, and the only thing that can tell
+ * whether it is valid is Vite, which compiles it.
  */
 export interface BotStore {
   /** `null` when there is no such policy — not an error; the caller lists what exists. */
@@ -395,8 +392,7 @@ export function resolveBotPolicy(namespace: unknown): { policy: BotPolicy } | { 
 
 /**
  * Everything a session needs from the live editor, injected so the driver is
- * testable without a scene, a renderer or DI — the same split `runGameTestLoop` and
- * the routine driver use.
+ * testable without a scene, a renderer or DI — the same split `runGameTestLoop` uses.
  *
  * **Every actuator answers `null` on delivery or a sentence on refusal.** Not a
  * boolean: a refusal that cannot say why is the silence this whole harness exists to
@@ -457,7 +453,7 @@ export interface BotReport {
   notes: string[];
 }
 
-/** Head and tail kept in the reply. The artifact keeps the whole log. */
+/** Head and tail kept in the reply. */
 const LOG_HEAD = 20;
 const LOG_TAIL = 40;
 /** Hard cap on lines held in memory, so a per-frame `log()` cannot grow unbounded. */
@@ -583,19 +579,6 @@ export class BotSession {
     this.heldActions.clear();
     this.openTaps.clear();
     this.world.releaseAll();
-  }
-
-  /**
-   * The log with no head+tail window applied — everything the policy said.
-   *
-   * Separate from {@link report} because the two have different readers: the reply
-   * has a context budget and the artifact file has none, and for a policy that logs
-   * its decision every frame the lines the reply drops are precisely the ones a late
-   * failure was decided in. (The `LOG_LIMIT` ceiling still applies: it is a
-   * memory guard, not a presentation cap, and `logTruncated` reports it.)
-   */
-  fullLog(): readonly BotLogEntry[] {
-    return this.log;
   }
 
   report(): BotReport {
@@ -834,7 +817,7 @@ export class BotSession {
     const dropped = this.droppedInReply();
     if (dropped > 0) {
       notes.push(
-        `${dropped} log line(s) are not in this reply (head ${LOG_HEAD} + tail ${LOG_TAIL} kept). The full log is in the run's artifact file.`
+        `${dropped} log line(s) are not in this reply (head ${LOG_HEAD} + tail ${LOG_TAIL} kept); the middle is not recorded anywhere — log less per frame, or log only decisions, to see it.`
       );
     }
     return notes;

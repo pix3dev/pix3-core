@@ -55,7 +55,7 @@ export const DEFAULT_CONTROL_HOLD_FRAMES = 40;
 
 /**
  * The negative gesture, in the only denomination that survives a resized
- * viewport: a fraction of the canvas box (the same `nx`/`ny` a trace records) and
+ * viewport: a fraction of the canvas box (the same `nx`/`ny` `frame-input.ts` dispatches) and
  * a hold counted in **frames**, because the game polls the pointer per tick.
  *
  * There is deliberately no default point. A harness-chosen "empty corner" is a
@@ -98,7 +98,7 @@ export function parseNegativeControlSpec(
   ] as const) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
       return {
-        error: `"control.tap.${name}" must be a number in 0..1 — a FRACTION of the canvas box, not a client pixel and not a world coordinate (the same denomination a trace's pointer events use).`,
+        error: `"control.tap.${name}" must be a number in 0..1 — a FRACTION of the canvas box, not a client pixel and not a world coordinate (the same denomination every synthetic pointer event uses).`,
       };
     }
   }

@@ -131,7 +131,7 @@ export class GameFlow extends Script {
       }),
       // `finish` is registered for the same reason `start-game` is: a test (and the
       // rest of the game) must be able to END the run by intent instead of waiting
-      // out the placeholder timer — and a routine that reached in and called
+      // out the placeholder timer — and a test that reached in and called
       // `finish()` directly would prove the method works while skipping the wire
       // from the player to it. Replace the timer with your win/lose condition and
       // dispatch this from there.
@@ -251,7 +251,7 @@ export class GameFlow extends Script {
   /**
    * Intent: arm a fresh run — back at the tap-to-start gate, or straight into play when
    * `skipIntro` is on. A restart that re-raised a gate the project has turned off would
-   * strand every routine that restarts between checks behind a tap nobody is going to make.
+   * strand every test that restarts between checks behind a tap nobody is going to make.
    */
   restart(): void {
     this.phase = 'intro';
@@ -259,7 +259,7 @@ export class GameFlow extends Script {
     this.setNodeVisible(String(this.config.endNode ?? ''), false);
     this.setNodeVisible(String(this.config.introNode ?? ''), true);
     // One intent arms a fresh run everywhere: a restart that puts the gate back but keeps
-    // last run's score is the kind of half-reset that makes a routine's second pass lie.
+    // last run's score is the kind of half-reset that makes a test's second pass lie.
     this.rules()?.resetRun();
     if (this.config.skipIntro === true) {
       this.openTheGate();

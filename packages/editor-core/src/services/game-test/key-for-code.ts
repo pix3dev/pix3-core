@@ -6,7 +6,7 @@
  * carry the value a real keyboard would. The old per-service copies mapped only `Key*`, `Digit*`
  * and `Space`, and a `Minus` step arrived as `key: "Minus"`: a game reading `key` for zoom-out
  * never saw it, and the failure looked like dead game logic. One table, shared by `game_input`
- * and the trace replayer, so the two channels cannot drift apart again.
+ * and the frame-stamped input sink (`frame-input.ts`), so the two channels cannot drift apart again.
  */
 const US_LAYOUT: Readonly<Record<string, string>> = {
   Space: ' ',

@@ -449,7 +449,7 @@ describe('BotSession report', () => {
     expect(same.report().label).toBeUndefined();
   });
 
-  it('keeps a head and a tail of the log, and the full log separately', () => {
+  it('keeps a head and a tail of the log in the reply', () => {
     const session = new BotSession(
       'p',
       policyOf(bot => bot.log(`tick ${bot.frame}`)),
@@ -460,7 +460,6 @@ describe('BotSession report', () => {
     expect(report.log).toHaveLength(60);
     expect(report.log[0].message).toBe('tick 1');
     expect(report.log[report.log.length - 1].message).toBe('tick 200');
-    expect(session.fullLog()).toHaveLength(200);
     expect(report.notes.join(' ')).toContain('not in this reply');
   });
 });
