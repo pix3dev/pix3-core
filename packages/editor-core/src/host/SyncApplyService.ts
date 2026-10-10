@@ -1,5 +1,6 @@
 import { inject, injectable } from '@/fw/di';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { BOT_DIRECTORY } from '@/services/game-test/game-bots';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
@@ -53,9 +54,19 @@ export class SyncApplyService {
     this.scripts.registerRoots(info.roots);
     // The answer means the editor runs the files on disk: live components included.
     await this.scripts.componentsSettled();
-    const { failed } = await this.reloads.apply(changedPaths);
+    // What the rescan found plus what a `pix3:fs` frame reported before the plugin asked: the
+    // watcher broadcasts a settled write on its own, so a sync that comes after that frame finds
+    // nothing changed — yet the frame's entry must not outlive the sync (a play started next
+    // would hold it and answer `stale` for a file the editor already runs).
+    const applied = [
+      ...new Set([
+        ...changedPaths.map(path => toProjectPath(path)),
+        ...this.externalChanges.reportedUpTo(mark),
+      ]),
+    ];
+    const { failed } = await this.reloads.apply(applied);
     this.externalChanges.acknowledge(
-      changedPaths.filter(path => !failed.includes(path)),
+      applied.filter(path => !failed.includes(path)),
       mark
     );
     return failed.length > 0

@@ -186,6 +186,18 @@ export class ExternalChangeService {
   }
 
   /**
+   * Pending paths reported up to `mark` that are not failing (a version that does not parse
+   * keeps its "last good graph" path). A sync applies them along with what its own rescan found:
+   * the plugin's watcher broadcasts a write on its own once it settles, so a sync that comes
+   * later finds nothing changed in its rescan although this tab still holds the frame's entry.
+   */
+  reportedUpTo(mark: number): string[] {
+    return Array.from(this.entries.values())
+      .filter(entry => entry.reportedAt <= mark && entry.failure === null)
+      .map(entry => entry.path);
+  }
+
+  /**
    * The sync barrier applied these paths as they are on disk (plan §B.3): their entries — reported
    * by `pix3:fs` frames up to `mark`, i.e. before the plugin asked this tab to apply — have nothing
    * left to deliver. Without this, a version still settling would be held for a play started right
