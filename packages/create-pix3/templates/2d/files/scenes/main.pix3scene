@@ -19,11 +19,13 @@ root:
         type: ColorRect2D
         name: Background
         properties:
-          width: 1920
-          height: 1080
           color: "#1a1a2e"
-          layout:
+          layout:                  # stretched over the root: the margins size it, no width/height
             enabled: true
             horizontalAlign: stretch
             verticalAlign: stretch
+            left: 0
+            right: 0
+            top: 0
+            bottom: 0
         children: []

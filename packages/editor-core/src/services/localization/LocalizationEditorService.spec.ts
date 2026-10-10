@@ -6,6 +6,7 @@ import { mountEditorWith, type EditorHandle } from '@/host/mount';
 import { FakeHost } from '@/host/testing/fake-host';
 import type { HostWriteOptions } from '@/host/EditorHost';
 import { HostNoticeService } from '@/host/HostNoticeService';
+import { MemoryDraftStore, SceneDraftService } from '@/services/project/SceneDraftService';
 import { appState, resetAppState } from '@/state';
 
 import { LocalizationEditorService } from './LocalizationEditorService';
@@ -28,11 +29,19 @@ let handle: EditorHandle | null = null;
 let host: FakeHost;
 let writes: Array<{ path: string; options: HostWriteOptions }> = [];
 
-async function boot(files: Record<string, string>): Promise<LocalizationEditorService> {
+const drafts = new MemoryDraftStore();
+
+async function boot(
+  files: Record<string, string>,
+  existing: FakeHost | null = null
+): Promise<LocalizationEditorService> {
   resetAppState();
-  host = new FakeHost({
-    files: { 'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n', ...files },
-  });
+  service(SceneDraftService).useStore(drafts);
+  host =
+    existing ??
+    new FakeHost({
+      files: { 'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n', ...files },
+    });
   await host.whenReady();
   writes = [];
   const write = host.files.write.bind(host.files);
@@ -50,11 +59,17 @@ async function boot(files: Record<string, string>): Promise<LocalizationEditorSe
 const strings = (path = EN): Record<string, string> =>
   (JSON.parse(host.text(path) ?? '{}') as { strings?: Record<string, string> }).strings ?? {};
 
-afterEach(async () => {
+/** Close the tab: the service and the editor go, the host (the disk) and the draft store stay. */
+async function closeTab(): Promise<void> {
   service(LocalizationEditorService).dispose();
   await handle?.dispose();
   handle = null;
   service(HostNoticeService).reset();
+}
+
+afterEach(async () => {
+  await closeTab();
+  drafts.records.clear();
 });
 
 describe('LocalizationEditorService — writes', () => {
@@ -170,5 +185,89 @@ describe('LocalizationEditorService — following the disk', () => {
     await loc.flush();
     expect(strings()).toEqual({ bye: 'Bye', hello: 'Hello' });
     error.mockRestore();
+  });
+});
+
+describe('LocalizationEditorService — the draft of a write that got no answer (W22)', () => {
+  const serverDown = (): (() => void) => {
+    const write = host.files.write;
+    host.files.write = () => Promise.reject(new TypeError('Failed to fetch'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    return () => {
+      host.files.write = write;
+      error.mockRestore();
+    };
+  };
+
+  it('a failed write is checkpointed; the next open offers it and "Restore" writes it', async () => {
+    const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
+    const sha = (await host.files.read(EN))!.sha256;
+    const restoreServer = serverDown();
+    await loc.setEntry('en', 'bye', 'Bye');
+    expect(strings()).toEqual({ hello: 'Hello' });
+    expect([...drafts.records.values()]).toMatchObject([{ path: EN, baselineSha: sha }]);
+    expect([...drafts.records.values()][0].text).toContain('"bye": "Bye"');
+    restoreServer();
+    await closeTab(); // the edit lived only in memory — and in the draft
+
+    const again = await boot({}, host);
+    await vi.waitFor(() => expect(appState.project.host.notices).toHaveLength(1));
+    const notice = appState.project.host.notices[0];
+    expect(notice.message).toContain(`Unsaved edits to ${EN}`);
+    expect(notice.actions.map(a => a.label)).toEqual(['Restore', 'Discard']);
+    expect(again.getEntry('en', 'bye')).toBe('');
+    await service(HostNoticeService).runAction(notice.actions[0].id);
+    await vi.waitFor(() => expect(strings()).toEqual({ bye: 'Bye', hello: 'Hello' }));
+    expect(again.getEntry('en', 'bye')).toBe('Bye');
+    expect(drafts.records.size).toBe(0);
+  });
+
+  it('a draft made against an older disk goes to the journal as rejected-draft, not offered', async () => {
+    const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
+    const restoreServer = serverDown();
+    await loc.setEntry('en', 'bye', 'Bye');
+    restoreServer();
+    await closeTab();
+    await host.externalWrite(EN, file({ hello: 'Hello', agent: 'Agent' }));
+
+    await boot({}, host);
+    await vi.waitFor(() => expect(appState.project.host.notices).toHaveLength(1));
+    expect(appState.project.host.notices[0].actions).toEqual([]);
+    expect(host.journal).toHaveLength(1);
+    expect(host.journal[0]).toMatchObject({ author: 'rejected-draft', path: EN });
+    expect(host.journal[0].text).toContain('"bye": "Bye"');
+    expect(strings()).toEqual({ agent: 'Agent', hello: 'Hello' });
+    expect(drafts.records.size).toBe(0);
+  });
+
+  it('a write that lands drops the draft; a declared locale without a file is drafted against no version', async () => {
+    const loc = await boot({
+      'pix3project.yaml':
+        'version: 1.0.0\nmetadata:\n  projectId: p-1\nlocalization:\n  defaultLocale: en\n  locales: [en, de]\n',
+      [EN]: file({ hello: 'Hello' }),
+    });
+    const restoreServer = serverDown();
+    await loc.setEntry('en', 'bye', 'Bye');
+    expect(drafts.records.size).toBe(1);
+    restoreServer();
+    await loc.flush(); // the sync's step 0 writes it
+    expect(strings()).toEqual({ bye: 'Bye', hello: 'Hello' });
+    expect(drafts.records.size).toBe(0);
+
+    // A declared locale whose file does not exist yet (its first write is `createOnly`): the draft
+    // applies as long as the file is still absent.
+    const down = serverDown();
+    await loc.setEntry('de', 'hello', 'Hallo');
+    down();
+    expect([...drafts.records.values()]).toMatchObject([
+      { path: 'locales/de.json', baselineSha: '' },
+    ]);
+    await closeTab();
+    await boot({}, host);
+    await vi.waitFor(() => expect(appState.project.host.notices).toHaveLength(1));
+    expect(appState.project.host.notices[0].actions.map(a => a.label)).toEqual([
+      'Restore',
+      'Discard',
+    ]);
   });
 });

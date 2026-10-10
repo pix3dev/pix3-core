@@ -2,6 +2,7 @@ import { subscribe } from 'valtio/vanilla';
 import { injectable, inject } from '@/fw/di';
 import { appState } from '@/state';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { SceneDraftService, type DraftRecord } from '@/services/project/SceneDraftService';
 import { SceneJournalService } from '@/services/project/SceneJournalService';
 import { SceneWriteConflictError } from '@/services/project/write-errors';
 import { readDiskVersion } from '@/services/project/disk/disk-version';
@@ -86,6 +87,9 @@ export class LocalizationEditorService {
 
   @inject(HostService)
   private readonly hostService!: HostService;
+
+  @inject(SceneDraftService)
+  private readonly drafts!: SceneDraftService;
 
   private preview: LocalizationService | null = null;
   /** In-memory authoring tables keyed by locale id (source of truth while editing). */
@@ -224,6 +228,80 @@ export class LocalizationEditorService {
     }
     this.previewLocale = settings.defaultLocale;
     void preview.setLocale(settings.defaultLocale);
+
+    // Edits of a previous session whose write never got an answer (W22).
+    for (const locale of settings.locales) await this.offerDraft(locale);
+  }
+
+  // ---- the draft of a table whose write got no answer (W22) -----------------
+
+  /**
+   * A write that failed without an answer (the dev server was down) keeps the edit in memory;
+   * closing the tab would lose it. So the text it meant to write is checkpointed in the draft
+   * store, against the disk version it was written on, and offered on the next open of the
+   * project if the disk still holds that version — like a scene's N9 draft; otherwise it goes to
+   * the journal as `rejected-draft`, with a notice. A write that lands drops it.
+   */
+  private async offerDraft(locale: string): Promise<void> {
+    const path = pathOf(locale);
+    const draft = await this.drafts.getFileDraft(path);
+    if (!draft) return;
+    const base = this.baselines.get(locale) ?? null;
+    let drafted: LocaleTable;
+    try {
+      drafted = parseTableFile(locale, draft.text);
+    } catch {
+      await this.drafts.dropFileDraft(path);
+      return;
+    }
+    if (base && diffLocaleTables(base.table, drafted).length === 0) {
+      await this.drafts.dropFileDraft(path);
+      return;
+    }
+    const when = new Date(draft.at).toLocaleTimeString();
+    if (!SceneDraftService.applies(draft, base?.sha ?? '')) {
+      await this.journal.recordRejectedDraft(
+        path,
+        draft.text,
+        `unsaved locale edits from ${when}; the file changed on disk since`
+      );
+      await this.drafts.dropFileDraft(path);
+      this.notices.show({
+        key: `draft:${path}`,
+        tone: 'warn',
+        message: `Unsaved edits to ${path} from ${when} were not restored: the file changed on disk since.`,
+        detail: this.journal.available ? 'They are kept in History.' : undefined,
+      });
+      return;
+    }
+    this.notices.show({
+      key: `draft:${path}`,
+      tone: 'info',
+      message: `Unsaved edits to ${path} from ${when} were found.`,
+      detail: 'They did not reach the disk before the editor closed.',
+      actions: [
+        { label: 'Restore', run: () => this.restoreDraft(locale, draft) },
+        { label: 'Discard', run: () => this.drafts.dropFileDraft(path) },
+      ],
+    });
+  }
+
+  private async restoreDraft(locale: string, draft: DraftRecord): Promise<void> {
+    const path = pathOf(locale);
+    const base = this.baselines.get(locale) ?? null;
+    if (!SceneDraftService.applies(draft, base?.sha ?? '')) {
+      this.notices.show({
+        key: `draft:${path}`,
+        tone: 'warn',
+        message: `The draft of ${path} no longer applies: the file changed on disk.`,
+      });
+      return;
+    }
+    const table = parseTableFile(locale, draft.text);
+    this.tables.set(locale, table);
+    this.preview?.setTable(table);
+    this.mirrorSlice();
+    await this.saveLocale(locale);
   }
 
   /**
@@ -554,12 +632,18 @@ export class LocalizationEditorService {
           )
         );
         this.baselines.set(locale, { sha, table: written });
+        await this.drafts.dropFileDraft(path);
         return;
       } catch (error) {
         if (!(error instanceof SceneWriteConflictError)) {
           // No answer, a read-only tab, …: the edit stays in memory and the next write or sync
-          // retries it.
+          // retries it — and a draft keeps it if the tab closes first (W22).
           console.error(`[Localization] Failed to save locale "${locale}"`, error);
+          await this.drafts
+            .putFileDraft(path, serializeTableFile(written), base?.sha ?? '')
+            .catch(draftError =>
+              console.warn(`[Localization] could not draft ${path}`, draftError)
+            );
           return;
         }
         // The disk moved since the baseline: take it in, keep the edits it did not touch, retry.

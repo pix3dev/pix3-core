@@ -178,6 +178,44 @@ export class SceneDraftService {
     return this.flush.dirtySceneIds().every(id => this.confirmed.get(id) === revision);
   }
 
+  /**
+   * A checkpoint of a project file that is not a scene — a locale table whose write got no answer
+   * (W22): the text the editor meant to write, against the disk sha it was written on (`''` when
+   * the file did not exist). Offered by its owner on the next open the way a scene draft is
+   * ({@link draftApplies}); dropped by a write that landed. Nothing without an open project.
+   */
+  async putFileDraft(path: string, text: string, baselineSha: string): Promise<void> {
+    const projectId = appState.project.id;
+    if (!projectId) return;
+    const key = draftKey(projectId, toProjectPath(path));
+    await this.store.put({
+      key,
+      projectId,
+      path: toProjectPath(path),
+      baselineSha,
+      text,
+      revision: 0,
+      at: Date.now(),
+    });
+  }
+
+  async getFileDraft(path: string): Promise<DraftRecord | null> {
+    const projectId = appState.project.id;
+    if (!projectId) return null;
+    return this.store.get(draftKey(projectId, toProjectPath(path))).catch(() => null);
+  }
+
+  async dropFileDraft(path: string): Promise<void> {
+    const projectId = appState.project.id;
+    if (!projectId) return;
+    await this.store.delete(draftKey(projectId, toProjectPath(path))).catch(() => undefined);
+  }
+
+  /** Whether `draft` was made on the disk version `diskSha` (`''`: no file). */
+  static applies(draft: DraftRecord, diskSha: string): boolean {
+    return draftApplies(draft, diskSha);
+  }
+
   /** Write a checkpoint of every dirty scene now (one run at a time). */
   checkpointAll(): Promise<void> {
     this.checkpointing ??= this.runCheckpoints().finally(() => {
