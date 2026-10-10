@@ -1,0 +1,57 @@
+# Scripts and bot policies through Vite (P1)
+
+Date: 2026-10-10. Derived from `../pix3/.plans/pix3-core.md` §B.1 (the watched set, incl. bot
+policies `design/tests/bots/**` and the transitive local sources of the script roots), §B.2
+«Скрипты» (the two roots, the executed stamp, contract B, `check` warnings, the page check, the
+deletion list), §B.3 (the sync barrier's stamps) and §G.2 P1 row «Скрипты и bot-политики через
+Vite». As-built records it builds on: `.plans/editor-core-port.md` (D7, D8, M3: "script edit → new
+field in the inspector, editor not reloaded"), `.plans/agent-bridge.md`, `.plans/player-build.md`
+(the player's own `virtual:pix3/project-scripts`). Those stay authoritative; where this file
+disagrees it says so.
+
+`VP` = `packages/vite-plugin/src`, `EC` = `packages/editor-core/src`, `CLI` = `packages/cli/src`.
+
+## 1. Audit (start of this work item, then what it closed)
+
+| Plan item | State before | Evidence / what changed |
+|---|---|---|
+| `virtual:pix3/editor-scripts`: eager `import.meta.glob` over `scripts/`, `src/scripts/` minus `*.spec.ts`/`*.test.ts`/`*.d.ts`, exports `__pix3Revision` | done (M3) | `VP/sync/script-graph.ts:25` (dirs), `:31` (patterns), `:45` (`rootModuleSource`); loaded at `VP/index.ts:529` with the file table's `seq` |
+| `virtual:pix3/bot-policies` over `design/tests/bots/**`, same stamp | done (M3), **not tested** | `VP/sync/script-graph.ts:26`; same `load`. Now covered: `VP/plugin.spec.ts` «takes a bot policy added, its helper changed and a policy deleted» |
+| Per-module executed stamp `(globalThis.__pix3Executed ??= {})[path] = sha` | done | `VP/sync/script-graph.ts:97` (`stamp`), `VP/index.ts:601` (`transform`, serve only, every project source). Gap closed: an in-project `cacheDir` (pre-bundled deps) was stamped too — now skipped (`ScriptGraph` `ignored`, `VP/index.ts:289`) |
+| Watched set: scenes, assets, scripts, bot policies, transitive local sources, add/delete (§B.1) | done | the plugin's rescan walks the whole project (`VP/files/scan.ts:15`) — every file is in the revision set, so a helper anywhere is seen; the watcher feeds it (`VP/index.ts:452`); "is this an editor module" = globbed or reachable from a root in the client graph (`VP/sync/script-graph.ts:149`); add/delete of a globbed file re-runs the roots (`VP/sync/barrier.ts:150`, `reloadRoots` `script-graph.ts:174`) |
+| Barrier: hard-invalidate roots, propagate through the client graph, ok only with `rev ≥` and every changed editor module's stamp = disk sha (§B.3) | done (M3) | `VP/sync/barrier.ts` (`run`, `requiredStamps:193`, `judge:202`); proven for bot policies now (spec above, e2e below). The non-ok answer no longer carries the page's whole `executed` map (hundreds of entries) |
+| `GameBotHost` runs policies loaded this way | done (M3), **not proven end to end** | `EC/services/game-test/GameBotHost.ts:60` `ModuleBotStore` over `host.scripts.current().botPolicies.modules` (`:99`); `GameTestService.ts:758`. e2e: a run uses `idle`, an added `rush`, a changed helper, refuses a deleted one |
+| Bot policy changed during play | **gap** | a policy is not part of the game, but every sync during play answered `stale` for it. `EC/host/SyncApplyService.ts:15` `pendingDuringPlay` drops `design/tests/bots/**` from `pending` (both the rescan's and the page's frame queue) |
+| A sync's own changes held for a play started right after it | **gap (found by e2e)** | `ExternalChangeService` kept the synced paths ~600 ms until they settled; a play started inside that window answered `stale` for files the game runs. `SyncApplyService` now `acknowledge`s what it applied, only entries reported before the sync asked (`EC/services/project/disk/ExternalChangeService.ts:195`, `reportMark`) |
+| Inspector shows a field a script gained (M3's claim) | **gap (found by e2e)** | stamps and registry were current, but nothing re-rendered the selected node on `scriptRefreshSignal`; the field appeared only after reselecting. `EC/ui/object-inspector/inspector-panel.ts:242` subscribes |
+| Contract B: no `import.meta.hot`, CSS imports, non-literal `import()` in the editor chain | done for the editor's own `dist/` (`packages/editor-core/scripts/check-dist.mjs`), **not for project scripts** | see the next two rows |
+| `check` warns about the three cases | **not done** | `CLI/check/editor-chain.ts:351` `scanEditorChain`: lexical scan (comments/strings masked, template substitutions kept as code) of the three roots + every local module they import (relative and `/`-rooted, TS `.js`→`.ts`, `index.*`); `W_EDITOR_HMR_API`, `W_EDITOR_CSS_IMPORT` (not `?inline`/`?raw`/`?url`), `W_EDITOR_DYNAMIC_IMPORT` (`import(expr)`, `` import(`…${x}`) ``, `import('a' + x)`), message names the root that reaches the file (`CLI/check/check.ts:82`, `:577`); README table |
+| The page checks `/@vite/client` is absent | partly: one `performance` read at host-module load, `console.error` only | an inline probe in the raw HTML before any module (`VP/editor-page.ts:19`): raises the resource-timing buffer (the default 250 fills with the editor's own modules and later entries are dropped) and a `PerformanceObserver` keeps `__PIX3_VITE_CLIENT__` current for the tab's life — a script added later with a CSS import is caught too. The sync answer carries `viteClient: true` + a warning naming `pix3 check` (`VP/sync/barrier.ts:27`, `:187`); `pix3_status.viteClient` (`EC/host/debug-bridge.ts:346`) |
+| Delete `ScriptCompilerService`, `ProjectDiagnosticsService`, `MonacoIntelliSenseService`, `CodeDocumentService`, `ui/code-editor` | done (M1/M2) | no source references; the stale lines in `docs/architecture.md` and `docs/nodes-and-systems.md` §1 rewritten, the runtime comment marked 1.x |
+| `ProjectScriptLoaderService` 944 → ~200 | done | 180 lines, `registerRoots` (`EC/services/scripting/ProjectScriptLoaderService.ts:69`) |
+| `runtime-import-map.ts`, `lazy-rapier.ts`, `__PIX3_RAPIER_EXPORT_KEYS__`, `vite-plugin-wasm`, esbuild.wasm | done | none in the tree or any `package.json`; `docs/pix3-specification.md` still names esbuild.wasm in 1.x sections (history until the spec is rewritten) |
+| Bridge exposes bot runs | partly: `pix3_game_run` took `bot` (additionalProperties) but did not say so | `EC/host/bridge-tools.ts:116`: `bot: {name, channel?}` in the schema and the description ("write the file, pix3_sync, then run — no restart needed") |
+
+## 2. Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| S1 | The contract-B scan is **lexical**, in the CLI, with no parser and no TypeScript. | `check` must run where TS is not installed yet; the three constructs are lexically unambiguous once comments and string text are masked. A dynamic import is literal only when the argument is one string (or a template without `${}`) followed by `)` or `,` — what Vite's `es-module-lexer` sees as a specifier; anything else gets `__vite__injectQuery`. |
+| S2 | The scan follows local specifiers only (relative, `/`-rooted), not bare packages or tsconfig `paths`. | A package's code is not the project's to fix; aliases are rare in game scripts. Recorded as debt. |
+| S3 | Warnings, not errors. | The game still builds and runs; only the editor tab is at risk (a `full-reload` reaches it). The page alarm makes a miss visible at runtime. |
+| S4 | Bot policies are applied during play; everything else (including a helper outside `design/tests/bots/` a policy imports) still waits for play to stop. | A policy is test code the next `pix3_game_run` reads from the roots — nothing to restart. A helper outside the folder may be the game's too; the page cannot tell, so it stays conservative (debt). |
+| S5 | A sync acknowledges only entries reported **before** the plugin asked the tab (`reportMark`). | Frames of the rescan precede the request on the same socket and are handled synchronously; a newer write's frame comes after and must not be dropped. |
+| S6 | Live components are not re-instantiated on re-registration (1.x parity, D7 kept). The inspector reads schemas from the registry by type, so the new field shows; its value goes through the new class's `getValue` on the old instance. | A play start clones the scene with the new classes; re-instantiating edit-time components touches undo history and selection for no gain in P1. |
+
+## 3. Progress
+
+- 2026-10-10: audit (§1). Closed: `check` contract-B warnings (`ec7f825`); the page probe + `viteClient` in sync and status, bot-policy barrier spec (`3e8706b`, regex fix for `check-dist` `c8888f9`); bot policies during play + `pix3_game_run` `bot` schema (`9cab440`); inspector re-render on re-registration (`b464dd8`); sync acknowledges what it applied (`3452914`); cacheDir not stamped, `executed` out of non-ok answers, stale docs.
+- End to end: `../pix3-core-spikes/scripts-e2e` (`setup.sh` = `pix3 new 2d` outside pix3-core, `node_modules` linked to this checkout, a `scripts/Mover.ts` whose fields come from `src/game/fields.ts`, a policy `design/tests/bots/idle.ts` with a helper in `design/tests/lib/`; `run.mjs` = the project's own Vite on a free port + headless Chrome 155 on a free CDP port, calls through `__PIX3_DEBUG__.call`). **29/29**, three runs in a row: no `/@vite/client` among 68 page resources, `pix3_status.viteClient:false`; script + nested module edited → `pix3_sync {expect}` ok in ~110 ms, both executed stamps = sha on disk, the inspector shows "Jump Height" within 3 ms of the sync, no navigation; agent play → `pix3_game_run {bot:'idle'}` logs `mark-v1`; `rush.ts` added during play → sync ok (26 ms, no restart), its stamp current, a run logs `rush here`; the helper changed during play → `stale, playing:'agent'` → `restart` → sync ok → a run logs `mark-v2`; `rush.ts` deleted → sync ok with `changed: null`, a run refuses it ("No policy stored"); negative control: `scripts/Styled.ts` with a CSS import → `pix3 check` `W_EDITOR_CSS_IMPORT scripts/Styled.ts:1`, the next sync answers `viteClient: true` with the warning, `pix3_status.viteClient` true; no page errors; Vite and Chrome stopped. The first runs failed on the inspector (stale fields) and on `stale` after a fresh sync — the two gaps above.
+
+## 4. Debt
+
+- A helper outside `design/tests/bots/` that only policies import still holds play (S4). The plugin knows the graph (`isEditorModule` per root); the sync request could mark paths reachable only from `bot-policies`.
+- Contract-B scan: tsconfig `paths` / Vite `resolve.alias` specifiers are not followed (S2).
+- `GameBotHost.setDeclarationWriter` has no caller: `design/tests/bots/pix3-test-bot.d.ts` is never written in 2.x (the editor writes no project files by design). The kit (another work item) should ship it, then the writer and `pix3-test-bot-dts.ts` can go.
+- Live component instances keep their old class until the scene reloads or play starts (S6).
+- `docs/pix3-specification.md` 1.x sections (PWA / esbuild.wasm, script compilation) await the spec rewrite.

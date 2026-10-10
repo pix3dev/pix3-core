@@ -296,6 +296,21 @@ const play = {
   },
 };
 
+/**
+ * Whether `/@vite/client` reached this page: the plugin's inline probe sets
+ * `__PIX3_VITE_CLIENT__`; the resource timeline is the fallback for a page without it.
+ */
+/** A regex, so `dist/` never carries the client's path as text (`scripts/check-dist.mjs`). */
+const VITE_CLIENT_PATH = /\/@vite\/client$/;
+
+export function viteClientOnPage(): boolean {
+  if ((globalThis as { __PIX3_VITE_CLIENT__?: boolean }).__PIX3_VITE_CLIENT__ === true) return true;
+  if (typeof performance === 'undefined' || typeof location === 'undefined') return false;
+  return performance
+    .getEntriesByType('resource')
+    .some(entry => VITE_CLIENT_PATH.test(new URL(entry.name, location.href).pathname));
+}
+
 // --- the executes --------------------------------------------------------------------------------
 
 type Execute = (params: Params) => Promise<Record<string, unknown>>;
@@ -327,6 +342,8 @@ const EXECUTES: Record<string, Execute> = {
       selection: selection(),
       errorCount: errors().length,
       keepalive: service(AgentKeepaliveService).isKeepAlive(),
+      // Contract B (plan §B.2): Vite's HMR client must never be on this page.
+      viteClient: viteClientOnPage(),
     };
   },
 

@@ -286,7 +286,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
 
     configResolved(resolved) {
       config = resolved;
-      scripts = new ScriptGraph(resolved.root, () => server);
+      scripts = new ScriptGraph(resolved.root, () => server, [resolved.cacheDir]);
     },
 
     /**

@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
+import { ScriptGraph } from './sync/script-graph.ts';
 import { sleep, startProject, type TestProject } from './test-support/harness.ts';
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
@@ -40,6 +41,9 @@ describe('editor page and discovery', () => {
     const html = await page.text();
     expect(html).toContain('src="/@id/__x00__virtual:pix3/editor-host"');
     expect(html).not.toContain('@vite/client');
+    // The contract-B probe runs before any module (plan §B.2).
+    expect(html.indexOf('__PIX3_VITE_CLIENT__')).toBeGreaterThan(-1);
+    expect(html.indexOf('__PIX3_VITE_CLIENT__')).toBeLessThan(html.indexOf('type="module"'));
   });
 
   it('generates the host module importing both script roots and the page client by /@fs/', async () => {
@@ -369,9 +373,11 @@ describe('sync barrier', () => {
       reason: 'stale',
       playing: 'designer',
       pending: ['scenes/a.pix3scene'],
+      executed: { 'scripts/Foo.ts': sha('x') },
     }));
     const result = await sync(p, { tabId: 'tab-a' });
     expect(result).toMatchObject({ ok: false, reason: 'stale', playing: 'designer' });
+    expect(result.executed).toBeUndefined(); // the stamps are the judge's, not the agent's
   });
 
   it('flushes through the writer tab when the caller is not a tab', async () => {
@@ -410,6 +416,70 @@ describe('sync barrier', () => {
     expect(result).toMatchObject({ ok: false, reason: 'gesture_in_progress', step: 'flush' });
   });
 
+  it('takes a bot policy added, its helper changed and a policy deleted (plan §B.2)', async () => {
+    const BOTS = '/@id/__x00__virtual:pix3/bot-policies';
+    const p = await start({
+      'design/tests/bots/dodge.ts':
+        "import { aim } from '../lib/aim.ts';\nexport default { name: 'dodge', tick: () => aim };\n",
+      'design/tests/lib/aim.ts': 'export const aim = 1;\n',
+      'design/tests/bots/pix3-test-bot.d.ts': 'declare const x: number;\n',
+    });
+    const root = await (await p.fetch(BOTS)).text();
+    expect(root).toContain('export const __pix3Revision');
+    expect(root).toContain('/design/tests/bots/dodge.ts');
+    expect(root).not.toContain('pix3-test-bot.d.ts');
+    await p.fetch('/design/tests/bots/dodge.ts');
+    await p.fetch('/design/tests/lib/aim.ts');
+    const tab = await p.connectTab('tab-a');
+    let executed: Record<string, string> = {};
+    tab.onRequest('sync', request => ({ ok: true, rev: request.rev, executed }));
+
+    // A new policy: the barrier wants its executed stamp, and the root globs it.
+    const rush = "export default { name: 'rush', tick: () => 2 };\n";
+    writeFileSync(join(p.root, 'design/tests/bots/rush.ts'), rush);
+    const added = await sync(p, { tabId: 'tab-a' });
+    expect(added).toMatchObject({ ok: false, reason: 'stale_modules' });
+    expect(added.paths).toEqual(['design/tests/bots/rush.ts']);
+    executed = { 'design/tests/bots/rush.ts': sha(rush) };
+    expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
+    const withRush = await (await p.fetch(BOTS)).text();
+    expect(withRush).toContain('/design/tests/bots/rush.ts');
+    expect(withRush).toMatch(/__pix3Revision = [1-9]/);
+    const rushCode = await (await p.fetch('/design/tests/bots/rush.ts')).text();
+    expect(rushCode).toContain(
+      `(globalThis.__pix3Executed ??= {})["design/tests/bots/rush.ts"] = "${sha(rush)}"`
+    );
+
+    // A helper only a policy imports is part of the chain the editor runs.
+    const aim2 = 'export const aim = 2;\n';
+    writeFileSync(join(p.root, 'design/tests/lib/aim.ts'), aim2);
+    const helper = await sync(p, { tabId: 'tab-a' });
+    expect(helper.paths).toEqual(['design/tests/lib/aim.ts']);
+    executed = { ...executed, 'design/tests/lib/aim.ts': sha(aim2) };
+    expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
+
+    // Deleted: reported as null, nothing to stamp, and the root no longer globs it.
+    rmSync(join(p.root, 'design/tests/bots/rush.ts'));
+    const deleted = await sync(p, { tabId: 'tab-a' });
+    expect(deleted.ok).toBe(true);
+    expect((deleted.changed as Record<string, unknown>)['design/tests/bots/rush.ts']).toBeNull();
+    expect(await (await p.fetch(BOTS)).text()).not.toContain('rush.ts');
+  });
+
+  it('passes the page’s contract-B alarm through (/@vite/client on the editor page)', async () => {
+    const p = await start();
+    const tab = await p.connectTab('tab-a');
+    tab.onRequest('sync', request => ({
+      ok: true,
+      rev: request.rev,
+      executed: {},
+      viteClient: true,
+    }));
+    const result = await sync(p, { tabId: 'tab-a' });
+    expect(result).toMatchObject({ ok: true, viteClient: true });
+    expect(String(result.warning)).toContain('pix3 check');
+  });
+
   it('tells the editor to re-import its scripts when one changes outside a sync', async () => {
     const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' });
     await p.fetch('/@id/__x00__virtual:pix3/editor-scripts');
@@ -419,5 +489,17 @@ describe('sync barrier', () => {
     writeFileSync(join(p.root, 'scripts/Foo.ts'), 'export const foo = 2;\n');
     const frame = await tab.waitFor(f => f.type === 'pix3:scripts', 5_000);
     expect(frame.path).toBe('scripts/Foo.ts');
+  });
+});
+
+describe('the script graph', () => {
+  it('takes project sources, not an in-project cacheDir, node_modules or other files', () => {
+    const graph = new ScriptGraph('/p', () => null, ['/p/.vite-cache/']);
+    expect(graph.wirePathOf('/p/scripts/A.ts?t=1')).toBe('scripts/A.ts');
+    expect(graph.wirePathOf('/p/src/game/x.js')).toBe('src/game/x.js');
+    expect(graph.wirePathOf('/p/.vite-cache/deps/three.js')).toBeNull();
+    expect(graph.wirePathOf('/p/node_modules/x/index.js')).toBeNull();
+    expect(graph.wirePathOf('/p/scenes/a.pix3scene')).toBeNull();
+    expect(graph.wirePathOf('/elsewhere/a.ts')).toBeNull();
   });
 });

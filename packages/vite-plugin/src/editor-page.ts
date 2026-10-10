@@ -9,6 +9,19 @@
 export const EDITOR_HOST_ID = 'virtual:pix3/editor-host';
 export const SPINE_LOADER_ID = 'virtual:pix3/spine-loader';
 
+/**
+ * Contract B's page check (plan §B.2), installed before any module loads: a resource observer sets
+ * `window.__PIX3_VITE_CLIENT__` when Vite's client is fetched, at load or later (a script added
+ * with a CSS import reaches the page on a sync). The resource-timing buffer is raised first — the
+ * default 250 entries fill up with the editor's own modules and later entries would be dropped.
+ * The regex keeps the literal client path out of the page text.
+ */
+const VITE_CLIENT_PROBE =
+  'window.__PIX3_VITE_CLIENT__=false;try{performance.setResourceTimingBufferSize(1e5);' +
+  'new PerformanceObserver(function(list){list.getEntries().forEach(function(e){' +
+  'if(/\\/@vite\\/client$/.test(new URL(e.name,location.href).pathname))window.__PIX3_VITE_CLIENT__=true;' +
+  "})}).observe({type:'resource',buffered:true})}catch(e){}";
+
 const escapeHtml = (text: string): string =>
   text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 
@@ -19,7 +32,8 @@ export const editorPageHtml = (base: string, options: { css?: boolean } = {}): s
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pix3</title>
-    <style>html,body,#pix3-editor{margin:0;height:100%}</style>${
+    <style>html,body,#pix3-editor{margin:0;height:100%}</style>
+    <script>${VITE_CLIENT_PROBE}</script>${
       options.css ? `\n    <link rel="stylesheet" href="${base}__pix3/editor.css" />` : ''
     }
   </head>
@@ -68,7 +82,7 @@ export const editorHostSource = ({ base, clientUrl, editorCore }: EditorHostSour
     `const host = new EditorHostConnection({ base: ${JSON.stringify(base)}, roots: { editorScripts, botPolicies } });`,
     `window.__PIX3_HOST__ = host;`,
     `host.connect();`,
-    `if (viteClientLoaded()) console.error('[pix3] /@vite/client is loaded on the editor page: a non-literal import(), import.meta.hot or a CSS import reached the editor chain (plan §B.2, contract B).');`,
+    `if (viteClientLoaded()) console.error('[pix3] /@vite/client is loaded on the editor page: a non-literal import(), import.meta.hot or a CSS import reached the editor chain (plan §B.2, contract B; \`pix3 check\` names the file).');`,
     `const root = document.getElementById('pix3-editor');`
   );
   if (editorCore) {

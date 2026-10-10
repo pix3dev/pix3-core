@@ -108,9 +108,20 @@ describe('agent bridge', () => {
       dirty: [],
       pending: {},
       play: { playing: false, playOwner: null },
+      viteClient: false,
     });
     expect(statusInline).toEqual(status3p);
     expect(await bridge().status()).toEqual(status3p);
+  });
+
+  it('reports Vite’s client on the page from the plugin’s probe (contract B)', async () => {
+    const probe = globalThis as { __PIX3_VITE_CLIENT__?: boolean };
+    probe.__PIX3_VITE_CLIENT__ = true;
+    try {
+      expect(await bridge().call('pix3_status')).toMatchObject({ ok: true, viteClient: true });
+    } finally {
+      delete probe.__PIX3_VITE_CLIENT__;
+    }
   });
 
   it('refuses an unknown tool and bad params with a reason', async () => {

@@ -59,6 +59,15 @@ server is ignored). Diagnostics are one list, validate's plus:
 | `W_PIX3_VERSION_MISMATCH` | warning | an installed `@pix3/cli`, `@pix3/vite-plugin` or `@pix3/editor-core` is not this CLI's version (lockstep packages) |
 | `W_RUNTIME_NOT_INSTALLED` | warning | own `tsconfig.json`, and no `node_modules/@pix3/runtime` |
 | `W_KIT_OUTDATED` | warning | `metadata.agentKit.version` is not this CLI's version (`pix3 kit --update`) |
+| `W_EDITOR_HMR_API` | warning | `import.meta.hot` in a module the editor runs |
+| `W_EDITOR_CSS_IMPORT` | warning | a stylesheet import (not `?inline`/`?raw`/`?url`) in a module the editor runs |
+| `W_EDITOR_DYNAMIC_IMPORT` | warning | an `import()` whose argument is not one plain string, in a module the editor runs |
+
+"A module the editor runs" = the editor's script chain (plugin contract B): `scripts/**`,
+`src/scripts/**`, `design/tests/bots/**` (`.ts`, minus specs/tests/`.d.ts`) and every local module
+they import, transitively; `message` names the root that reaches it. Each of the three makes Vite
+put `/@vite/client` on the editor page, and then the game's `full-reload` reloads the editor too.
+The scan is lexical (`src/check/editor-chain.ts`), bare packages are not followed.
 
 `--json`:
 

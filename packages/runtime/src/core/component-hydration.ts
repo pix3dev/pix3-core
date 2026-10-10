@@ -104,7 +104,7 @@ function instantiateComponent(
  *
  * A definition whose script type is not registered **yet** is parked in {@link
  * NodeBase.pendingComponents} rather than thrown away. Dropping it used to be silent data loss:
- * the editor compiles project scripts asynchronously (esbuild-wasm, debounced), so a scene that
+ * the 1.x editor compiled project scripts asynchronously (esbuild-wasm, debounced), so a scene that
  * opens first — every recipe project does — loaded with `user:GameRules` unresolved, and the very
  * next scene save wrote the file back **without** it. Measured in 3 of 4 Flow eval runs: the
  * components vanished from `game-root`/`hud` right after the first `create_node`, and the agent

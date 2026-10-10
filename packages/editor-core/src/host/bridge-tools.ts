@@ -44,7 +44,8 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     description:
       'Versions, project, active scene, script status, which tab writes, scenes with edits not ' +
       'on disk yet (`dirty`, `pending` keys per scene), `gestureInProgress`, external versions ' +
-      'not applied yet, play state with its owner, error count.',
+      'not applied yet, play state with its owner, error count, and `viteClient` (true = Vite’s ' +
+      'HMR client reached the editor page; `pix3 check` names the script that did it).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -111,7 +112,9 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       '(`fail`, OR) or a budget runs out; read `verdict` first. Needs a running play session ' +
       '(pix3_play start). Predicates: {kind:"nodeProperty", name, path, op, value}, ' +
       '{kind:"gameState", path, op, value}, {kind:"newErrors"}, {kind:"nodeAppeared"|"nodeGone", name}… ' +
-      'Steps far faster than real time: give async init real time with `settleMs`.',
+      'Steps far faster than real time: give async init real time with `settleMs`. ' +
+      '`bot: {name, channel?}` drives the game with the policy design/tests/bots/<name>.ts ' +
+      '(exports {name, tick(bot)}); write the file, pix3_sync, then run — no restart needed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -123,6 +126,12 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
         settleMs: { type: 'integer', minimum: 0 },
         fixedDeltaSec: { type: 'number' },
         pauseOnOutcome: { type: 'boolean' },
+        bot: {
+          type: 'object',
+          description:
+            'A stored policy: {name: "dodge"} for design/tests/bots/dodge.ts; channel ' +
+            '"physical-input" (default) or "direct-action".',
+        },
       },
       required: ['until'],
       additionalProperties: true,

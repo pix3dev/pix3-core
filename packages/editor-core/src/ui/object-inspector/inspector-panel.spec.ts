@@ -1844,3 +1844,43 @@ describe('InspectorPanel Layout under a flow parent', () => {
     ).toEqual(['vertical top', 'vertical center', 'vertical bottom', 'vertical stretch']);
   });
 });
+
+describe('InspectorPanel and re-registered project scripts', () => {
+  it('rebuilds the selected node’s fields when scripts re-register, and only then', async () => {
+    const { appState } = await import('@/state');
+    const panel = document.createElement('pix3-inspector-panel') as InstanceType<
+      typeof InspectorPanel
+    >;
+    for (const [key, value] of Object.entries({
+      sceneManager: { getSceneGraph: vi.fn(() => null), getActiveSceneGraph: vi.fn(() => null) },
+      commandDispatcher: { execute: vi.fn().mockResolvedValue(undefined) },
+      behaviorPickerService: { showPicker: vi.fn() },
+      scriptRegistry: {
+        getComponentPropertySchema: vi.fn(() => null),
+        getComponentType: vi.fn(() => null),
+      },
+      iconService: { getIcon: vi.fn(() => 'icon') },
+      assetsPreviewService: { requestThumbnail: vi.fn(), subscribe: () => () => undefined },
+      viewportService: { setPreviewAnimation: vi.fn() },
+    })) {
+      Object.defineProperty(panel, key, { value, configurable: true });
+    }
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+    const update = vi.spyOn(
+      panel as unknown as { updateSelectedNodes(): void },
+      'updateSelectedNodes'
+    );
+
+    appState.project.scriptRefreshSignal += 1;
+    await vi.waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    appState.project.scriptsStatus = 'ready';
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(update).toHaveBeenCalledTimes(1);
+
+    panel.remove();
+    appState.project.scriptRefreshSignal += 1;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+});

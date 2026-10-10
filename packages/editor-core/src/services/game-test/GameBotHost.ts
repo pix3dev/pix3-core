@@ -131,7 +131,7 @@ export class GameBotHost {
     }
     if (!stored) {
       return {
-        error: `No policy stored at ${botFilePath(trimmed)}. ${describeAvailableBots(siblings)} Write one with fs_write — it is a single file exporting {name, tick(bot)}.`,
+        error: `No policy stored at ${botFilePath(trimmed)}. ${describeAvailableBots(siblings)} Write one — a single file exporting {name, tick(bot)} — then pix3_sync.`,
       };
     }
     if (!stored.module) {
