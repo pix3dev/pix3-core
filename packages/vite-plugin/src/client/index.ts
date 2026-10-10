@@ -54,6 +54,8 @@ export interface SyncInfo {
   /** `{path: sha256 | null}` — what the rescan found changed (null = deleted). */
   readonly changed: Record<string, string | null>;
   readonly roots: ScriptRoots;
+  /** Project modules only the bot policies import (the game never runs them). */
+  readonly policyOnly: readonly string[];
 }
 
 /** What the editor plugs in. Every hook is optional: an absent one is a no-op that succeeds. */
@@ -558,8 +560,11 @@ export class EditorHostConnection {
         const roots = await this.reimportRoots();
         const changed = (message.changed ?? {}) as Record<string, string | null>;
         const rev = roots.editorScripts.__pix3Revision;
+        const policyOnly = Array.isArray(message.policyOnly)
+          ? message.policyOnly.filter((path): path is string => typeof path === 'string')
+          : [];
         const applied = this.handlers.applySync
-          ? await this.handlers.applySync({ rev, changed, roots })
+          ? await this.handlers.applySync({ rev, changed, roots, policyOnly })
           : { ok: true };
         const viteClient = viteClientLoaded();
         if (viteClient && !this.viteClientReported) {

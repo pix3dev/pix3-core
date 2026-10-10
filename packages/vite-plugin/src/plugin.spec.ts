@@ -528,6 +528,39 @@ describe('sync barrier', () => {
     expect(await (await p.fetch(BOTS)).text()).not.toContain('rush.ts');
   });
 
+  it('tells the page which modules only the bot policies import (S11: applied during play)', async () => {
+    const p = await start({
+      'scripts/Uses.ts':
+        "import { shared } from '../design/tests/lib/shared.ts';\nexport const uses = shared;\n",
+      'design/tests/bots/dodge.ts':
+        "import { aim } from '../lib/aim.ts';\nimport { shared } from '../lib/shared.ts';\nexport default { name: 'dodge', tick: () => aim + shared };\n",
+      'design/tests/lib/aim.ts': 'export const aim = 1;\n',
+      'design/tests/lib/shared.ts': 'export const shared = 1;\n',
+    });
+    const tab = await p.connectTab('tab-a');
+    let policyOnly: unknown = null;
+    tab.onRequest('sync', request => {
+      policyOnly = request.policyOnly;
+      return { ok: true, rev: request.rev, executed: {} };
+    });
+    // Before the editor root is in the graph nothing can be proven policy-only.
+    await p.fetch('/@id/__x00__virtual:pix3/bot-policies');
+    for (const file of [
+      'design/tests/bots/dodge.ts',
+      'design/tests/lib/aim.ts',
+      'design/tests/lib/shared.ts',
+    ]) {
+      await p.fetch(`/${file}`);
+    }
+    await sync(p, { tabId: 'tab-a' });
+    expect(policyOnly).toEqual([]);
+    // The page imports both roots: the helper the game's script shares is not policy-only.
+    await p.fetch('/@id/__x00__virtual:pix3/editor-scripts');
+    await p.fetch('/scripts/Uses.ts');
+    await sync(p, { tabId: 'tab-a' });
+    expect(policyOnly).toEqual(['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts']);
+  });
+
   it('passes the page’s contract-B alarm through (/@vite/client on the editor page)', async () => {
     const p = await start();
     const tab = await p.connectTab('tab-a');

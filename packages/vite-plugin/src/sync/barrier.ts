@@ -172,7 +172,8 @@ export class SyncBarrier {
     const reply = await socket.request(
       tabId,
       'sync',
-      { rev: seq, changed, paths: Object.keys(changed) },
+      // `policyOnly`: modules only bot policies import — applied during play like a policy (S11).
+      { rev: seq, changed, paths: Object.keys(changed), policyOnly: scripts.policyOnlyModules() },
       remaining
     );
     const verdict = this.judge(reply, seq, required);

@@ -195,6 +195,11 @@ export interface SyncInfo {
   /** `{path: sha256 | null}` the rescan found changed (`null` = deleted). */
   readonly changed: Record<string, string | null>;
   readonly roots: ScriptRoots;
+  /**
+   * Project modules only the bot policies import (the plugin reads its module graph): like a
+   * policy, a change to one is applied during play. Absent from an older plugin.
+   */
+  readonly policyOnly?: readonly string[];
 }
 
 export interface HostSyncHandlers {

@@ -11,13 +11,18 @@ import { ExternalReloadService } from './ExternalReloadService';
 /**
  * What a sync during play cannot apply. A bot policy is not part of the game: the page already
  * re-imported `virtual:pix3/bot-policies` for this sync and `GameBotHost` reads the roots on every
- * run, so the next `pix3_game_run {bot}` uses the new file without a restart.
+ * run, so the next `pix3_game_run {bot}` uses the new file without a restart. The same holds for a
+ * module only policies import (`policyOnly`, from the plugin's module graph — `.plans/scripts-vite.md`
+ * S11): a helper under `design/tests/lib/` the game never runs.
  */
 export function pendingDuringPlay(
   changedPaths: readonly string[],
-  externalPending: readonly string[]
+  externalPending: readonly string[],
+  policyOnly: readonly string[] = []
 ): string[] {
-  const applied = (path: string): boolean => path.startsWith(`${BOT_DIRECTORY}/`);
+  const policyModules = new Set(policyOnly);
+  const applied = (path: string): boolean =>
+    path.startsWith(`${BOT_DIRECTORY}/`) || policyModules.has(path);
   return [...new Set([...changedPaths, ...externalPending])].filter(path => !applied(path));
 }
 
@@ -46,7 +51,11 @@ export class SyncApplyService {
     const changedPaths = Object.keys(info.changed);
     if (appState.ui.isPlaying) {
       const playing = appState.ui.playOwner ?? 'designer';
-      const pending = pendingDuringPlay(changedPaths, this.externalChanges.getPendingPaths());
+      const pending = pendingDuringPlay(
+        changedPaths,
+        this.externalChanges.getPendingPaths(),
+        info.policyOnly
+      );
       if (pending.length > 0) return { ok: false, reason: 'stale', playing, pending };
       return { ok: true, playing, staleScenes: [...appState.project.host.staleScenes] };
     }

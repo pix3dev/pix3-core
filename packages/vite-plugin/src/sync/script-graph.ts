@@ -161,6 +161,38 @@ export class ScriptGraph {
     return false;
   }
 
+  /**
+   * Project modules only the bot policies reach (`.plans/scripts-vite.md` S4/S11): reachable from
+   * `virtual:pix3/bot-policies` and not from `virtual:pix3/editor-scripts`, so the game the editor
+   * plays never runs them and a change to one need not wait for play to stop. Read from the client
+   * graph as it is now (after the barrier's propagation); a module the graph has not seen is not
+   * listed, which errs on the side of holding play.
+   */
+  policyOnlyModules(): string[] {
+    const env = this.graph();
+    if (!env) return [];
+    const reach = (rootId: string): Set<string> => {
+      const out = new Set<string>();
+      const root = env.moduleGraph.getModuleById(resolvedId(rootId));
+      if (!root) return out;
+      const seen = new Set<EnvironmentModuleNode>([root]);
+      const queue = [...root.importedModules];
+      while (queue.length > 0) {
+        const mod = queue.shift() as EnvironmentModuleNode;
+        if (seen.has(mod)) continue;
+        seen.add(mod);
+        const wirePath = mod.file ? this.wirePathOf(mod.file) : null;
+        if (wirePath !== null) out.add(wirePath);
+        for (const imported of mod.importedModules) queue.push(imported);
+      }
+      return out;
+    };
+    // No editor root in the graph yet: nothing can be proven policy-only.
+    if (!env.moduleGraph.getModuleById(resolvedId(EDITOR_SCRIPTS_ID))) return [];
+    const game = reach(EDITOR_SCRIPTS_ID);
+    return [...reach(BOT_POLICIES_ID)].filter(path => !game.has(path)).sort();
+  }
+
   /** HMR-propagate one file through the client graph (stamps `lastHMRTimestamp` up the chain). */
   async reload(wirePath: string): Promise<number> {
     const env = this.graph();

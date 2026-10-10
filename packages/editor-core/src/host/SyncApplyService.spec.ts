@@ -20,8 +20,16 @@ describe('pendingDuringPlay', () => {
     expect(
       pendingDuringPlay(['design/tests/bots/dodge.ts'], ['design/tests/bots/dodge.ts'])
     ).toEqual([]);
-    // A helper outside the policy folder may be the game's too: it waits.
+    // A helper outside the policy folder may be the game's too: it waits…
     expect(pendingDuringPlay(['design/tests/lib/aim.ts'], [])).toEqual(['design/tests/lib/aim.ts']);
+    // …unless the plugin's graph says only policies import it (S11), whichever queue holds it.
+    expect(
+      pendingDuringPlay(
+        ['design/tests/lib/aim.ts', 'src/game/rules.ts'],
+        ['design/tests/lib/aim.ts'],
+        ['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts']
+      )
+    ).toEqual(['src/game/rules.ts']);
   });
 });
 
@@ -81,6 +89,39 @@ describe('SyncApplyService', () => {
       roots: h.roots,
     });
     expect(during).toMatchObject({ ok: true, playing: 'agent' });
+    h.externalChanges.dispose();
+  });
+
+  it('during play, a helper only policies import is applied; a game module still waits (S11)', async () => {
+    const h = createSync();
+    appState.ui.isPlaying = true;
+    appState.ui.playOwner = 'agent';
+    // The watcher's frame got there first: the helper sits in the page's queue as well.
+    h.storage.files.set('design/tests/lib/aim.ts', 'v2');
+    h.externalChanges.reportFrame({
+      seq: 2,
+      revision: '2',
+      events: [{ op: 'modify', path: 'design/tests/lib/aim.ts', kind: 'file', author: 'external' }],
+    });
+    const helper = { 'design/tests/lib/aim.ts': 'b'.repeat(64) };
+    const policyOnly = ['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts'];
+    expect(
+      await h.sync.apply({ rev: 3, changed: helper, roots: h.roots, policyOnly })
+    ).toMatchObject({ ok: true, playing: 'agent' });
+    // An older plugin sends no list: the helper waits for play to stop, as before.
+    expect(await h.sync.apply({ rev: 3, changed: helper, roots: h.roots })).toMatchObject({
+      ok: false,
+      reason: 'stale',
+      pending: ['design/tests/lib/aim.ts'],
+    });
+    expect(
+      await h.sync.apply({
+        rev: 4,
+        changed: { 'src/game/rules.ts': 'c'.repeat(64) },
+        roots: h.roots,
+        policyOnly,
+      })
+    ).toMatchObject({ ok: false, reason: 'stale', pending: ['src/game/rules.ts'] });
     h.externalChanges.dispose();
   });
 
