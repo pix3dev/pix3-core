@@ -60,7 +60,7 @@ spike (`../pix3-core-spikes/w-skeleton/editor-patch/skeleton-3p-tools.ts`, `mcp-
 
 ## 3. Debt
 
-- `pix3 check` still reads `.pix3/merge-log.jsonl` (`mergeLog` in `--json`, `describeMergeLogEntry`): nothing in 2.x writes it. Remove with the next `check` pass (its spec covers the format); the kit no longer mentions it.
+- ~~`pix3 check` still reads `.pix3/merge-log.jsonl` (`mergeLog` in `--json`, `describeMergeLogEntry`): nothing in 2.x writes it.~~ Closed `40bf092` (`.plans/editor-core-port.md` §10).
 - `pix3_game_run` passes the spec through to `GameTestService.run` as 1.x did; the input-driven half of the old `game_input` is `click_at` + `pix3_scene.screen`, unexercised by an agent yet (dogfood C1).
 - Chrome on macOS/Windows and `open -na` are untested here (Linux box, no desktop Chrome): `findChrome` and the arg list are covered by specs, the launch by the headless e2e only.
 - `--headless` passes `--headless=new`; chrome-headless-shell accepts it silently. A second launch against a running headless shell starts a second process (no window reuse) — harness only.

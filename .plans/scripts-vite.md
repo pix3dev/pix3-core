@@ -61,3 +61,4 @@ disagrees it says so.
 - A script whose type disappears (file deleted, class renamed) keeps its old live instance until the scene reloads (S7); the 1.x behaviour, unchanged.
 - Policies of a project without a tsconfig of its own (`.pix3/tsconfig.check.json`) are not type-checked (S8).
 - `docs/pix3-specification.md` 1.x sections (PWA / esbuild.wasm, script compilation) await the spec rewrite.
+- `scripts-e2e` "a policy added during play: sync ok without a restart" is flaky (`stale`, `pending: ["scripts/Mover.ts"]`): the editor-scripts root re-reports the earlier Mover edit after play starts. It fails at `1a39458` as well (`.plans/editor-core-port.md` §10).
