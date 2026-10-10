@@ -111,6 +111,15 @@ type Refusal = { readonly status: number; readonly message: string };
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
+/**
+ * Close with a code, and do not wait on the peer: a client that never answers the close frame
+ * (its process is gone) would otherwise keep the owner alive for ws's 30 s close timeout.
+ */
+const hangUp = (socket: WebSocket, code: number, reason: string): void => {
+  socket.close(code, reason);
+  setTimeout(() => socket.terminate(), 1_000).unref();
+};
+
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
 
 export class CdpProxy {
@@ -187,9 +196,13 @@ export class CdpProxy {
   async close(): Promise<void> {
     for (const client of [...this.#clients]) {
       this.#drop(client, !this.#pipeClosed);
-      client.socket.close(1001, 'proxy closing');
+      hangUp(client.socket, 1001, 'proxy closing');
     }
-    await new Promise<void>(resolve => this.#server.close(() => resolve()));
+    await new Promise<void>(resolve => {
+      this.#server.close(() => resolve());
+      // Keep-alive discovery requests (fetch keeps its sockets) would hold close() open.
+      this.#server.closeAllConnections();
+    });
     this.#wss.close();
   }
 
@@ -419,7 +432,7 @@ export class CdpProxy {
     if (!client || client.root !== sessionId) return;
     // The page closed (or Chrome detached the browser session): as Chrome closes its own socket.
     this.#drop(client, false);
-    client.socket.close(1000, 'target closed');
+    hangUp(client.socket, 1000, 'target closed');
   }
 
   #send(client: Client, message: CdpMessage): void {
@@ -451,9 +464,10 @@ export class CdpProxy {
     this.#pending.clear();
     for (const client of [...this.#clients]) {
       this.#drop(client, false);
-      client.socket.close(1001, 'Chrome closed');
+      hangUp(client.socket, 1001, 'Chrome closed');
     }
     this.#server.close();
+    this.#server.closeAllConnections();
     this.#wss.close();
     for (const listener of this.#closeListeners) listener();
   }
