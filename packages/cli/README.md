@@ -316,6 +316,7 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 | `AGENTS.md` | Root rules (read by Codex, Cursor, …). If the project already has its own, it is kept and the kit goes to `AGENTS.pix3.md` (the command prints the line to add). |
 | `CLAUDE.md` | `@AGENTS.md` (plus `@AGENTS.pix3.md` in that case). A `CLAUDE.md` of the project's own is never touched — the command prints the line to add. |
 | `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format |
+| `design/tests/bots/pix3-test-bot.d.ts` | Global types for bot policies (`Pix3TestBot`, `BotPolicy`, …): a policy is `export default { name, tick(bot) { … } } satisfies BotPolicy`, and the starter's `tsconfig.json` includes `design/tests`, so `pix3 check` type-checks it. The editor writes no project files; this is where the 1.x editor-written declaration went |
 | `.gitignore` | `.pix3/` appended when not covered; existing content kept |
 | `tsconfig.json`, `.pix3/tsconfig.check.json`, `.pix3/types/` | Only without a `tsconfig.json` of the project's own (see below) |
 | `pix3project.yaml` | `metadata.agentKit: { version, files }` (everything else as written) |
@@ -341,7 +342,9 @@ no command emits, a node type the loader does not know, a property in the nodes 
 that the disk-format descriptor (`packages/runtime/src/core/scene-disk-format.ts`) does not
 accept, a `core:` component that does not exist, and a `.pix3anim` reference (`pix3anim.md`)
 whose interfaces, fields, optionality, types or "Omitted →" defaults differ from
-`packages/runtime/src/core/AnimationResource.ts` and `normalizeAnimationResource`.
+`packages/runtime/src/core/AnimationResource.ts` and `normalizeAnimationResource`, and bot-policy
+types missing a member of `Pix3TestBot` / `BotPolicy` / `BotNodeView`
+(`packages/editor-core/src/services/game-test/game-bots.ts`).
 
 ### `pix3 kit --migrate` — a 1.x project's kit to 2.x
 

@@ -12,8 +12,8 @@
  * `HostService.host.scripts.current().botPolicies` — so a policy may import a sibling helper,
  * and a policy that does not compile shows Vite's own error in the page.
  *
- * On the first successful load in a project, `design/tests/bots/pix3-test-bot.d.ts` is written
- * next to the policies: completion on `bot.` in whatever editor the file is open in.
+ * The editor writes no project files: the policy types (`design/tests/bots/pix3-test-bot.d.ts`)
+ * come with the agent kit (`packages/cli/kit-src/design/tests/bots/`, `.plans/scripts-vite.md` S8).
  */
 
 import { inject, injectable } from '@/fw/di';
@@ -29,7 +29,6 @@ import {
   type BotStore,
   type StoredBot,
 } from '@/services/game-test/game-bots';
-import { BOT_DTS_FILE_NAME, PIX3_TEST_BOT_DTS } from '@/services/game-test/pix3-test-bot-dts';
 
 export interface BotLoadFailure {
   error: string;
@@ -41,15 +40,6 @@ export interface BotLoaded {
   name: string;
   /** Load warnings, passed through so a policy that loaded oddly says so. */
   warnings: string[];
-}
-
-/** Where the d.ts is written, so the caller can say it happened. */
-export const BOT_DTS_PATH = `${BOT_DIRECTORY}/${BOT_DTS_FILE_NAME}`;
-
-/** The narrow write seam: the host only ever writes the declaration file. */
-export interface BotDeclarationWriter {
-  writeTextFile(path: string, contents: string): Promise<void>;
-  createDirectory(path: string): Promise<void>;
 }
 
 /**
@@ -83,14 +73,10 @@ export class GameBotHost {
   private readonly hostService!: HostService;
 
   private store: BotStore | null = null;
-  private declarations: BotDeclarationWriter | null = null;
-  /** Written once per project swap, not once per run — it is a constant file. */
-  private declarationsWritten = false;
 
   /** Swap the store (specs, or a host-less embedding). */
   setStore(store: BotStore): void {
     this.store = store;
-    this.declarationsWritten = false;
   }
 
   /** The dev server's policies when a host is mounted, else an empty in-memory store. */
@@ -99,17 +85,6 @@ export class GameBotHost {
       ? new ModuleBotStore(() => this.hostService.host.scripts.current().botPolicies.modules)
       : new InMemoryBotStore();
     return this.store;
-  }
-
-  /**
-   * Where the generated `.d.ts` goes; `null` writes nothing (the declarations are an authoring
-   * convenience, never a dependency of a run). Identity-guarded so re-pointing the same writer
-   * does not rewrite the file on every run.
-   */
-  setDeclarationWriter(writer: BotDeclarationWriter | null): void {
-    if (this.declarations === writer) return;
-    this.declarations = writer;
-    this.declarationsWritten = false;
   }
 
   /** Load one policy. Every failure is a sentence the agent can act on, not a throw. */
@@ -140,29 +115,11 @@ export class GameBotHost {
       };
     }
 
-    await this.ensureDeclarations();
-
     const resolved = resolveBotPolicy(stored.module);
     if ('error' in resolved) {
       return { error: `${stored.path}: ${resolved.error}` };
     }
     return { policy: resolved.policy, name: stored.name, warnings: [] };
-  }
-
-  /** Write the ambient declarations next to the policies, at most once per project. */
-  private async ensureDeclarations(): Promise<void> {
-    if (this.declarationsWritten || !this.declarations) return;
-    this.declarationsWritten = true;
-    try {
-      await this.declarations.createDirectory(BOT_DIRECTORY);
-    } catch {
-      /* the write below is the one whose failure would matter, and it is swallowed too */
-    }
-    try {
-      await this.declarations.writeTextFile(BOT_DTS_PATH, PIX3_TEST_BOT_DTS);
-    } catch {
-      /* authoring convenience only — never a precondition of a run */
-    }
   }
 }
 

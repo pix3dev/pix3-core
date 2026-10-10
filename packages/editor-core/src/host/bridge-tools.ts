@@ -115,7 +115,8 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       '{kind:"gameState", path, op, value}, {kind:"newErrors"}, {kind:"nodeAppeared"|"nodeGone", name}… ' +
       'Steps far faster than real time: give async init real time with `settleMs`. ' +
       '`bot: {name, channel?}` drives the game with the policy design/tests/bots/<name>.ts ' +
-      '(exports {name, tick(bot)}); write the file, pix3_sync, then run — no restart needed.',
+      '(exports {name, tick(bot)} satisfies BotPolicy — types in design/tests/bots/' +
+      'pix3-test-bot.d.ts); write the file, pix3_sync, then run — no restart needed.',
     inputSchema: {
       type: 'object',
       properties: {

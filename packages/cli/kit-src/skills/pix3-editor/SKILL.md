@@ -35,7 +35,7 @@ Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
 | `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` one node with `components`, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); with `find` the nodes whose name/type contains it. Read-only |
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
-| `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?` | step the running game until a predicate holds or fails; read `verdict` first |
+| `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails; read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
 
@@ -95,6 +95,12 @@ Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", na
 `{kind:"nodeMoved", name}`, `{kind:"newErrors", min?}`, `{kind:"frames", n}`,
 `{kind:"command", name}`, `{kind:"signal", name}`; `op` is `eq`, `ne`, `gt`, `gte`, `lt`,
 `lte` or `contains`.
+
+`bot: {name}` lets a policy play while the predicates judge: `design/tests/bots/<name>.ts`
+exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit's
+`design/tests/bots/pix3-test-bot.d.ts` (global, no import); a starter's `pix3 check`
+type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
+one. A policy written or changed during play needs only `pix3_sync`, not a restart.
 
 **Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
 works; a run with a stated success condition does:

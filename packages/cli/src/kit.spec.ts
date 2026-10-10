@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -165,6 +166,7 @@ describe('kit drift', () => {
         '.claude/skills/pix3-scripts/reference.md',
         '.claude/skills/pix3-verify/SKILL.md',
         '.claude/skills/pix3-editor/SKILL.md',
+        'design/tests/bots/pix3-test-bot.d.ts',
       ])
     );
     expect(text('CLAUDE.md')).toBe('@AGENTS.md\n');
@@ -586,6 +588,56 @@ describe('kit drift', () => {
     '.claude/skills/pix3-nodes/reference.md',
   ];
 
+  const BOT_DTS = 'design/tests/bots/pix3-test-bot.d.ts';
+
+  /** Member names of `export interface <name> { … }` (brace-matched: the body nests `{ x; y }`). */
+  const interfaceMembers = (source: string, name: string): string[] => {
+    const start = source.indexOf(`export interface ${name} {`);
+    if (start < 0) return [];
+    let depth = 0;
+    let end = start;
+    for (let index = source.indexOf('{', start); index < source.length; index += 1) {
+      if (source[index] === '{') depth += 1;
+      else if (source[index] === '}' && --depth === 0) {
+        end = index;
+        break;
+      }
+    }
+    const members = new Set<string>();
+    // A method (`nodes(query: string)`) or a property (`readonly frame: number`, `name?: string`).
+    for (const match of source
+      .slice(start, end)
+      .matchAll(/^\s*(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[(?:]/gm)) {
+      members.add(match[1]);
+    }
+    return [...members];
+  };
+
+  it('the bot policy types are the harness contract (editor-core game-bots.ts)', () => {
+    // The policy author's completion list: a member missing here is a member nobody calls, and a
+    // policy written without the NEXT-tick rule reads as a game that ignores input.
+    const source = readFileSync(
+      join(repoRootOfCheckout(), 'packages/editor-core/src/services/game-test/game-bots.ts'),
+      'utf8'
+    );
+    const dts = text(BOT_DTS);
+    for (const name of ['Pix3TestBot', 'BotPolicy', 'BotNodeView'] as const) {
+      const members = interfaceMembers(source, name);
+      expect(members.length, `${name} read off game-bots.ts`).toBeGreaterThan(2);
+      expect(dts).toContain(`declare interface ${name} {`);
+      const block = dts.slice(dts.indexOf(`declare interface ${name} {`));
+      const body = block.slice(0, block.indexOf('\n}\n'));
+      expect(
+        members.filter(member => !new RegExp(`^\\s*(?:readonly\\s+)?${member}\\b`, 'm').test(body)),
+        `${BOT_DTS} is missing members of ${name}`
+      ).toEqual([]);
+    }
+    expect(interfaceMembers(source, 'Pix3TestBot').length).toBeGreaterThanOrEqual(11);
+    expect(dts).toContain('NEXT tick');
+    // An import would make the file a module and its interfaces invisible to the policies.
+    expect(dts).not.toMatch(/^\s*(import|export)\s/m);
+  });
+
   it('names only node types the loader knows', () => {
     // Words shaped like a node type (`…2D`, `…3D`, `…Node`, `…Light`, `…Mesh`, `…Player`) that
     // the nodes skill uses for something else: base classes and engine classes.
@@ -849,6 +901,55 @@ describe('pix3 kit', () => {
     expect(owned?.files[edited]).not.toBe(sha256(join(root, edited)));
     expect(existsSync(join(root, KIT_PROJECT_MANIFEST))).toBe(true);
   });
+
+  it("a bot policy in a starter type-checks under pix3 check with the kit's declarations", async () => {
+    const template = listTemplates().find(t => t.id === '2d');
+    if (!template) throw new Error('2d missing');
+    const root = join(scratch, `starter-bots-${++counter}`);
+    createProject({
+      template,
+      dir: root,
+      postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes())],
+    });
+    // The starter's own tsconfig runs against its node_modules: this checkout's.
+    symlinkSync(join(repoRootOfCheckout(), 'node_modules'), join(root, 'node_modules'), 'dir');
+    writeFileSync(
+      join(root, 'design/tests/bots/dodge.ts'),
+      [
+        'export default {',
+        "  name: 'dodge',",
+        '  tick(bot) {',
+        "    const hero = bot.nodes('Hero')[0];",
+        "    if (hero && hero.position.x < 0) bot.press('ArrowRight', 2);",
+        "    bot.axis('move', bot.frame % 2 ? 1 : -1);",
+        "    if (bot.frame > 30) bot.done(true, 'survived 30 ticks');",
+        '  },',
+        '} satisfies BotPolicy;',
+        '',
+      ].join('\n')
+    );
+    const run = () =>
+      checkProject(root, {
+        hydrate: false,
+        offline: true,
+        validate: options => validateProject(options),
+      });
+    const report = await run();
+    expect(report.typecheck).toMatchObject({ mode: 'project', tsconfig: 'tsconfig.json' });
+    expect(report.diagnostics.filter(d => d.code === 'E_TYPE')).toEqual([]);
+    expect(report.files.map(f => f.file)).toEqual(
+      expect.arrayContaining(['design/tests/bots/dodge.ts'])
+    );
+
+    // A call the harness does not have is a type error at the policy, not a silent no-op.
+    writeFileSync(
+      join(root, 'design/tests/bots/typo.ts'),
+      'export default { tick(bot) { bot.fly(); } } satisfies BotPolicy;\n'
+    );
+    const typo = (await run()).diagnostics.filter(d => d.code === 'E_TYPE');
+    expect(typo).toEqual([expect.objectContaining({ file: 'design/tests/bots/typo.ts', line: 1 })]);
+    expect(typo[0].message).toContain("'fly'");
+  }, 120_000);
 
   it('the TypeScript examples in the kit type-check against the shipped runtime types', async () => {
     const root = freshRecipe(true);

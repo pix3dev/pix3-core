@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  BOT_DTS_PATH,
-  GameBotHost,
-  ModuleBotStore,
-  type BotDeclarationWriter,
-} from '@/services/game-test/GameBotHost';
+import { GameBotHost, ModuleBotStore } from '@/services/game-test/GameBotHost';
 import { BOT_DIRECTORY, InMemoryBotStore } from '@/services/game-test/game-bots';
-import { PIX3_TEST_BOT_DTS } from '@/services/game-test/pix3-test-bot-dts';
 import { HostService } from '@/host/HostService';
 import { FakeHost } from '@/host/testing/fake-host';
 
@@ -17,14 +11,10 @@ import { FakeHost } from '@/host/testing/fake-host';
 
 const policyModule = (): Record<string, unknown> => ({ default: { name: 'p', tick: () => {} } });
 
-function buildHost(
-  store: InMemoryBotStore | ModuleBotStore,
-  writer?: BotDeclarationWriter
-): GameBotHost {
+function buildHost(store: InMemoryBotStore | ModuleBotStore): GameBotHost {
   const host = new GameBotHost();
   Object.defineProperty(host, 'hostService', { value: new HostService(), configurable: true });
   host.setStore(store);
-  if (writer) host.setDeclarationWriter(writer);
   return host;
 }
 
@@ -107,48 +97,5 @@ describe('ModuleBotStore', () => {
 
     const result = await host.load('dodge');
     expect('policy' in result && result.policy).toBe(module.default);
-  });
-});
-
-describe('GameBotHost declarations', () => {
-  const makeWriter = () => ({
-    writeTextFile: vi.fn(async () => {}),
-    createDirectory: vi.fn(async () => {}),
-  });
-
-  it('writes the declarations once, on the first loaded policy', async () => {
-    const writer = makeWriter();
-    const host = buildHost(storeWith({ dodge: policyModule(), chase: policyModule() }), writer);
-
-    await host.load('dodge');
-    await host.load('chase');
-
-    expect(writer.createDirectory).toHaveBeenCalledWith(BOT_DIRECTORY);
-    expect(writer.writeTextFile).toHaveBeenCalledTimes(1);
-    expect(writer.writeTextFile).toHaveBeenCalledWith(BOT_DTS_PATH, PIX3_TEST_BOT_DTS);
-  });
-
-  it('does not write them for a policy that is not loaded', async () => {
-    const writer = makeWriter();
-    await buildHost(storeWith({ dodge: 'export default {' }), writer).load('dodge');
-    expect(writer.writeTextFile).not.toHaveBeenCalled();
-  });
-
-  it('is identity-guarded, so re-pointing it at the same project writes nothing new', async () => {
-    const writer = makeWriter();
-    const host = buildHost(storeWith({ dodge: policyModule() }), writer);
-
-    await host.load('dodge');
-    host.setDeclarationWriter(writer);
-    await host.load('dodge');
-
-    expect(writer.writeTextFile).toHaveBeenCalledTimes(1);
-  });
-
-  it('never lets a failed write refuse a runnable policy', async () => {
-    const writer = makeWriter();
-    writer.writeTextFile.mockRejectedValue(new Error('read-only project'));
-    const result = await buildHost(storeWith({ dodge: policyModule() }), writer).load('dodge');
-    expect('policy' in result).toBe(true);
   });
 });
