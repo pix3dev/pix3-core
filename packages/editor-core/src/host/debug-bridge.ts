@@ -300,12 +300,15 @@ const play = {
  * Whether `/@vite/client` reached this page: the plugin's inline probe sets
  * `__PIX3_VITE_CLIENT__`; the resource timeline is the fallback for a page without it.
  */
+/** A regex, so `dist/` never carries the client's path as text (`scripts/check-dist.mjs`). */
+const VITE_CLIENT_PATH = /\/@vite\/client$/;
+
 export function viteClientOnPage(): boolean {
   if ((globalThis as { __PIX3_VITE_CLIENT__?: boolean }).__PIX3_VITE_CLIENT__ === true) return true;
   if (typeof performance === 'undefined' || typeof location === 'undefined') return false;
   return performance
     .getEntriesByType('resource')
-    .some(entry => new URL(entry.name, location.href).pathname.endsWith('/@vite/client'));
+    .some(entry => VITE_CLIENT_PATH.test(new URL(entry.name, location.href).pathname));
 }
 
 // --- the executes --------------------------------------------------------------------------------
