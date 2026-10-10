@@ -200,7 +200,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 
 ## Skills (read the one you need, when you need it)
 
-- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays
+- `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays; `.pix3anim` flipbooks and `pix3 character-compile` in `pix3anim.md` beside it
 - `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every node in `reference.md` beside it
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
 - `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback

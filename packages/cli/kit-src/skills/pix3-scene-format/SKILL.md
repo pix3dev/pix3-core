@@ -1,6 +1,6 @@
 ---
 name: pix3-scene-format
-description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
+description: The .pix3scene YAML format — file header, node shape (id/type/name/properties/children/components), component shape, 2D transform and layout blocks, res:// references, textures, prefab instances and overrides, scenes/ui overlays and the visible/initiallyVisible split; `.pix3anim` flipbooks (and `pix3 character-compile`) in `pix3anim.md` beside it. Use BEFORE creating or editing any .pix3scene file (scene, prefab or overlay) in this project.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -135,6 +135,9 @@ are ignored — `pix3 validate` says so); on an **instance** node they are the o
   `textureNormal`, `textureFill`, …). The saver always writes this form; a bare
   `texturePath: 'res://…'` string is only read for compatibility.
 - **Strings** with `:` `#` `{` or leading spaces: quote them (`label: "SCORE 0"`).
+- **Flipbook**: an `AnimatedSprite2D` points at a `.pix3anim` (`animationResourcePath`) — a JSON
+  file of named clips; its fields and defaults are in `pix3anim.md` beside this file. A character
+  with variants and states is compiled, not hand-written: `pix3 character-compile`.
 
 ### Shader effects (`Sprite2D`, `AnimatedSprite2D`, `Button2D` only)
 

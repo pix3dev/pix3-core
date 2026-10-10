@@ -20,9 +20,11 @@ import {
   resolveSceneNodeType,
   type SceneDiskKeyRule,
 } from '@pix3/runtime';
+import ts from 'typescript';
 import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { compileCharacter } from './character/compiler.ts';
 import { CHECK_CODES, checkProject } from './check/check.ts';
 import { extractCoreComponents, type RuntimeLike } from './kit/core-components.ts';
 import { generateKit, type CoreComponentInfo, type KitManifestFile } from './kit/generate.ts';
@@ -72,7 +74,10 @@ import {
  * - every node type named in the nodes skill is a type the loader knows;
  * - every property in the nodes skill's tables is a key the loader reads (the disk-format
  *   descriptor, `scene-disk-format.ts`) for that node type;
- * - every `core:` component named exists.
+ * - every `core:` component named exists;
+ * - the `.pix3anim` reference (`pix3-scene-format/pix3anim.md`) has exactly the interfaces,
+ *   fields, optionality and types of `runtime/src/core/AnimationResource.ts`, and its "Omitted →"
+ *   column is what `normalizeAnimationResource` fills in; its character example compiles.
  * Then `pix3 kit` behaviour: fresh project, an AGENTS.md of the project's own, `--update` vs user
  * edits, and a smoke run on a copy of DeepCore (skipped when that checkout is absent).
  */
@@ -153,6 +158,7 @@ describe('kit drift', () => {
         'AGENTS.md',
         'CLAUDE.md',
         '.claude/skills/pix3-scene-format/SKILL.md',
+        '.claude/skills/pix3-scene-format/pix3anim.md',
         '.claude/skills/pix3-nodes/SKILL.md',
         '.claude/skills/pix3-nodes/reference.md',
         '.claude/skills/pix3-scripts/SKILL.md',
@@ -400,6 +406,162 @@ describe('kit drift', () => {
     expect(problems).toEqual([]);
     expect(coreComponents.length).toBeGreaterThan(20);
     expect(text('.claude/skills/pix3-scripts/reference.md')).toContain('### `core:PopIn`');
+  });
+
+  const PIX3ANIM = '.claude/skills/pix3-scene-format/pix3anim.md';
+
+  /** `export interface X { … }` of `AnimationResource.ts`: member name → optional + type text. */
+  const runtimeAnimationInterfaces = (): Map<
+    string,
+    Map<string, { optional: boolean; type: string }>
+  > => {
+    const path = join(repoRootOfCheckout(), 'packages/runtime/src/core/AnimationResource.ts');
+    const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest);
+    const out = new Map<string, Map<string, { optional: boolean; type: string }>>();
+    for (const statement of source.statements) {
+      if (!ts.isInterfaceDeclaration(statement)) continue;
+      const exported = statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+      if (!exported) continue;
+      const members = new Map<string, { optional: boolean; type: string }>();
+      for (const member of statement.members) {
+        if (!ts.isPropertySignature(member) || !member.type) continue;
+        members.set(member.name.getText(source), {
+          optional: member.questionToken !== undefined,
+          type: member.type.getText(source).replace(/\s+/g, ' '),
+        });
+      }
+      out.set(statement.name.text, members);
+    }
+    return out;
+  };
+
+  /** The reference's `### \`X\`` tables: field → { optional, type cell, default cell }. */
+  const referenceTables = (): Map<
+    string,
+    Map<string, { optional: boolean; type: string; omitted: string }>
+  > => {
+    const out = new Map<
+      string,
+      Map<string, { optional: boolean; type: string; omitted: string }>
+    >();
+    let current: Map<string, { optional: boolean; type: string; omitted: string }> | null = null;
+    for (const line of text(PIX3ANIM).split('\n')) {
+      const heading = /^### `(\w+)`$/.exec(line);
+      if (heading) {
+        current = new Map();
+        out.set(heading[1], current);
+        continue;
+      }
+      if (/^#{1,3} /.test(line)) current = null;
+      if (!current || !line.startsWith('| `')) continue;
+      const cells = line
+        .split(/(?<!\\)\|/)
+        .slice(1, -1)
+        .map(cell => cell.trim());
+      const field = /^`(\w+)(\?)?`$/.exec(cells[0]);
+      if (!field) continue;
+      current.set(field[1], {
+        optional: field[2] === '?',
+        type: cells[1].replace(/`/g, '').replace(/\\\|/g, '|'),
+        omitted: cells[2],
+      });
+    }
+    return out;
+  };
+
+  it('the .pix3anim reference is the runtime format: every interface, field, type and default', () => {
+    // Fails when `AnimationResource.ts` changes and the kit's reference does not (plan §F.5 (б)).
+    const runtimeInterfaces = runtimeAnimationInterfaces();
+    const reference = referenceTables();
+    expect(runtimeInterfaces.has('AnimationResource')).toBe(true);
+    expect([...reference.keys()].sort()).toEqual([...runtimeInterfaces.keys()].sort());
+    const problems: string[] = [];
+    for (const [name, members] of runtimeInterfaces) {
+      const documented = reference.get(name) ?? new Map();
+      expect([...documented.keys()], name).toEqual([...members.keys()]);
+      for (const [field, member] of members) {
+        const row = documented.get(field);
+        if (!row) continue;
+        if (row.optional !== member.optional)
+          problems.push(`${name}.${field}: ${member.optional ? 'optional' : 'required'} in code`);
+        if (row.type !== member.type)
+          problems.push(`${name}.${field}: type ${member.type} in code, ${row.type} in the kit`);
+      }
+    }
+    // The playback-mode union, spelled out in prose.
+    const union = readFileSync(
+      join(repoRootOfCheckout(), 'packages/runtime/src/core/AnimationResource.ts'),
+      'utf8'
+    ).match(/export type AnimationPlaybackMode = (.+);/)?.[1];
+    expect(union).toBeDefined();
+    expect(text(PIX3ANIM)).toContain(
+      `\`AnimationPlaybackMode\` is \`${union?.replace(/'/g, '"')}\``
+    );
+
+    // "Omitted →": what `normalizeAnimationResource` fills in for an empty file / clip / frame.
+    const empty = runtime.normalizeAnimationResource({ clips: [{ frames: [{}] }] });
+    const actual: Record<string, Record<string, unknown>> = {
+      AnimationResource: { ...empty, clips: [] },
+      AnimationClip: { ...empty.clips[0], frames: [] },
+      AnimationFrame: { ...empty.clips[0].frames[0] },
+    };
+    expect(runtime.normalizeAnimationResource({}).clips).toEqual([]);
+    expect(empty.clips[0].name).toBe('clip-1');
+    expect(reference.get('AnimationClip')?.get('name')?.omitted).toContain('clip-<n>');
+    expect(empty.clips[0].frames[0].sourceSize).toEqual({ width: 0, height: 0 });
+    expect(reference.get('AnimationFrame')?.get('sourceSize')?.omitted).toContain('boundingBox');
+    for (const [name, values] of Object.entries(actual)) {
+      for (const [field, value] of Object.entries(values)) {
+        if ((name === 'AnimationClip' && field === 'name') || field === 'sourceSize') continue;
+        const cell = reference.get(name)?.get(field)?.omitted.replace(/`/g, '') ?? '';
+        let documented: unknown;
+        try {
+          documented = JSON.parse(cell);
+        } catch {
+          problems.push(`${name}.${field}: "Omitted →" is not JSON (${cell})`);
+          continue;
+        }
+        if (JSON.stringify(documented) !== JSON.stringify(value))
+          problems.push(
+            `${name}.${field}: loader fills ${JSON.stringify(value)}, kit says ${cell}`
+          );
+      }
+    }
+    expect(problems).toEqual([]);
+    // The skill and AGENTS.md lead to it.
+    expect(text('.claude/skills/pix3-scene-format/SKILL.md')).toContain('pix3anim.md');
+    expect(text('AGENTS.md')).toContain('pix3anim.md');
+  });
+
+  it('the character in the .pix3anim reference is what pix3 character-compile writes', () => {
+    // The example spec in the reference compiles, and the clip names and component it describes
+    // are the compiler's.
+    const yaml = /```yaml\n(# art\/goblin\.yaml[\s\S]*?)```/.exec(text(PIX3ANIM))?.[1];
+    expect(yaml).toBeDefined();
+    const spec = parse(yaml ?? '') as {
+      name: string;
+      anchor: { x: number; y: number };
+      clips: { variant?: string; state: string; fps?: number }[];
+    };
+    const compiled = compileCharacter({
+      name: spec.name,
+      slug: spec.name.toLowerCase(),
+      anchor: spec.anchor,
+      clips: spec.clips.map(clip => ({
+        variant: clip.variant ?? '',
+        state: clip.state,
+        frames: [{ path: 'f.png', width: 8, height: 8 }],
+        ...(clip.fps !== undefined ? { fps: clip.fps } : {}),
+      })),
+    });
+    expect(compiled.animation.clips.map(clip => clip.name)).toEqual([
+      'sword.idle',
+      'sword.attack',
+      'die',
+    ]);
+    expect(compiled.prefabPath).toBe('scenes/prefabs/Goblin.pix3scene');
+    expect(text(PIX3ANIM)).toContain(`instance: res://${compiled.prefabPath}`);
+    expect(compiled.prefabYaml).toContain('core:CharacterVisual2D');
   });
 
   const NODES_FILES = [
