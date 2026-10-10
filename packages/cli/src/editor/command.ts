@@ -6,14 +6,13 @@ import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { chooseCdpPort } from './cdp-port.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
 import { ensureCdpToken } from './cdp-token.ts';
+import { describeChromeNotFound, ensureProfileDir, findChrome } from './chrome.ts';
 import {
-  describeChromeNotFound,
-  ensureProfileDir,
-  findChrome,
-  handoffArgs,
-  launchDetached,
-} from './chrome.ts';
-import { proxyCall, startChromeOwner, stopChromeOwner } from './chrome-owner.ts';
+  ensureEditorTab,
+  FIRST_TAB_WAIT_MS,
+  startChromeOwner,
+  stopChromeOwner,
+} from './chrome-owner.ts';
 import { readChromeState } from './chrome-state.ts';
 import {
   findDevServer,
@@ -323,8 +322,10 @@ const runRemoteEditor = async (
 };
 
 /**
- * Chrome with `editorUrl`, behind the token proxy: reused, a new window in it, or launched.
- * Returns the proxy's port, or null after printing why it could not.
+ * Chrome with `editorUrl`, behind the token proxy: reused or launched — and then, either way, an
+ * editor tab checked in the proxy's `/json/list` and opened through the proxy
+ * (`Target.createTarget`) when it is not there. Returns the proxy's port, or null after printing
+ * why it could not.
  */
 const openInChrome = async (
   editorUrl: string,
@@ -361,28 +362,10 @@ const openInChrome = async (
   const profile =
     recorded?.profile && choice.state.kind === 'ours' ? recorded.profile : ensureProfileDir(env);
   if (choice.state.kind === 'ours') {
-    // Our Chrome with this editor already open: nothing to launch (a second window on the same
-    // URL would be a second editor tab competing for the writer). Otherwise: a window in the
-    // running Chrome — handed over by a short launch of the same profile, or (headless, no
-    // windows) a new tab through the proxy.
-    const alreadyOpen = choice.state.pages.some(url => url.startsWith(editorUrl));
-    if (!alreadyOpen) {
-      try {
-        if (parsed.headless) {
-          await proxyCall(choice.port, token, 'Target.createTarget', { url: editorUrl });
-        } else {
-          launchDetached(launch, handoffArgs({ url: editorUrl, profile }));
-        }
-      } catch (error) {
-        io.stderr(
-          `pix3 editor: could not open the editor in the running Chrome: ${(error as Error).message}\n`
-        );
-        return null;
-      }
-    }
-    io.stdout(
-      `Chrome:     ${choice.state.browser} already behind ${cdpWsEndpoint(choice.port)}; ${alreadyOpen ? 'the editor tab is open there' : 'opened the editor in a new window'}.\n`
-    );
+    // Our Chrome: never a second launch of the profile (a desktop Chrome hands it over, a headless
+    // one starts a second process nobody owns) — the tab goes through the proxy, if it is not
+    // already open (a second tab on the same URL would compete for the writer).
+    io.stdout(`Chrome:     ${choice.state.browser} already behind ${cdpWsEndpoint(choice.port)}\n`);
   } else {
     try {
       await startChromeOwner({
@@ -402,6 +385,16 @@ const openInChrome = async (
       `Chrome:     launched behind the CDP proxy ${cdpWsEndpoint(choice.port)} (token in ~/.pix3/cdp-token; profile ${profile})\n`
     );
   }
+  const tab = await ensureEditorTab(choice.port, token, editorUrl, {
+    // A fresh launch opens the URL itself (an app window, or a tab under --headless) — unless
+    // the binary ignores --app (a headless shell): give it a moment before opening one here.
+    waitMs: choice.state.kind === 'ours' ? 0 : FIRST_TAB_WAIT_MS,
+  });
+  if (!tab.ok) {
+    io.stderr(`pix3 editor: ${tab.detail}\n`);
+    return null;
+  }
+  io.stdout(`Editor tab: ${tab.detail}\n`);
   // Without a project (Remote SSH) the agent's config lives on the other host.
   if (root && choice.port !== preferred) {
     io.stdout(

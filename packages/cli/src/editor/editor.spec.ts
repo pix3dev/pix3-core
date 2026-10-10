@@ -18,7 +18,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { chooseCdpPort, inspectCdpPort, isEditorPageUrl } from './cdp-port.ts';
 import { CdpProxy } from './cdp-proxy.ts';
 import { ensureCdpToken, readCdpToken } from './cdp-token.ts';
-import { chromeArgs, findChrome, handoffArgs } from './chrome.ts';
+import { chromeArgs, findChrome } from './chrome.ts';
 import { readChromeState, writeChromeState } from './chrome-state.ts';
 import { parseEditorArgs, runEditorCli } from './command.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
@@ -278,12 +278,6 @@ describe('Chrome', () => {
     const headless = chromeArgs({ url: 'http://x/', profile: '/p', headless: true });
     expect(headless.slice(-2)).toEqual(['--headless=new', 'http://x/']);
     expect(headless.some(a => a.startsWith('--app='))).toBe(false);
-    // The handoff to a running Chrome carries no debugging flag at all.
-    expect(handoffArgs({ url: 'http://x/', profile: '/p' })).toEqual([
-      '--user-data-dir=/p',
-      ...args.slice(2, -1),
-      '--app=http://x/',
-    ]);
   });
 
   it('PIX3_CHROME wins; an empty PATH finds nothing on linux; macOS looks for the binary', () => {
@@ -397,10 +391,14 @@ describe('pix3 editor', () => {
     const log = join(scratch, `${name}.args`);
     writeFileSync(
       path,
-      `#!/bin/sh\nprintf '%s\\n' "$@" > ${log}\nexec ${process.execPath} ${join(SRC, 'editor', 'fake-chrome.ts')} ${extra} "$@"\n`,
+      `#!/bin/sh\nprintf '%s\\n' "$@" > ${log}\necho $$ >> ${log}.launches\nexec ${process.execPath} ${join(SRC, 'editor', 'fake-chrome.ts')} ${extra} "$@"\n`,
       { mode: 0o755 }
     );
-    return { path, args: () => readFileSync(log, 'utf8').trim().split('\n') };
+    return {
+      path,
+      args: () => readFileSync(log, 'utf8').trim().split('\n'),
+      launches: () => readFileSync(`${log}.launches`, 'utf8').trim().split('\n').length,
+    };
   };
   const liveProject = async () => {
     const port = await serve({ '/__pix3/api/hello': { ok: true } });
@@ -484,6 +482,43 @@ describe('pix3 editor', () => {
       expect(await runEditorCli(['--stop-chrome'], stop.io)).toBe(0);
       expect(stop.out()).toContain('Stopped Chrome and its CDP proxy');
       expect(existsSync(chromeStatePath(env))).toBe(false);
+      expect(await inspectCdpPort(cdp, { token })).toEqual({ kind: 'free' });
+    },
+    30_000
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'a Chrome that ignores --app (a headless shell): the editor tab is opened through the proxy; a second project never launches Chrome again',
+    async () => {
+      // fake-chrome.ts opens only a positional URL, like chrome-headless-shell, which drops --app.
+      const first = await liveProject();
+      const fake = fakeChrome('fake-chrome-noapp');
+      const cdp = await freePort();
+      const env = { PIX3_CHROME: fake.path, PIX3_HOME: join(scratch, 'home-noapp') };
+      const entry = join(SRC, 'index.ts');
+      const run = io(first.root, env);
+      expect(await runEditorCli(['--cdp-port', String(cdp)], { ...run.io, entry }), run.err()).toBe(
+        0
+      );
+      expect(fake.args().at(-1)).toBe(`--app=${first.editorUrl}`);
+      const token = readCdpToken(env) as string;
+      const pages = async () => {
+        const state = await inspectCdpPort(cdp, { token });
+        return state.kind === 'ours' ? state.pages : [];
+      };
+      expect(await pages()).toContain(first.editorUrl);
+      expect(run.out()).toContain('opened the editor in a new window through the proxy');
+
+      // A second project: a tab through the proxy, no second launch of the profile.
+      const second = await liveProject();
+      const other = io(second.root, env);
+      expect(await runEditorCli(['--cdp-port', String(cdp)], { ...other.io, entry })).toBe(0);
+      expect(other.out()).toContain('opened the editor in a new window through the proxy');
+      expect(await pages()).toEqual(expect.arrayContaining([first.editorUrl, second.editorUrl]));
+      expect(fake.launches()).toBe(1);
+
+      const stop = io(first.root, env);
+      expect(await runEditorCli(['--stop-chrome'], stop.io)).toBe(0);
       expect(await inspectCdpPort(cdp, { token })).toEqual({ kind: 'free' });
     },
     30_000

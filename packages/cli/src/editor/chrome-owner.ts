@@ -206,11 +206,69 @@ export const startChromeOwner = async (options: StartChromeOwnerOptions): Promis
   );
 };
 
+/** How long a fresh launch may take to show the URL it was given before a tab is opened here. */
+export const FIRST_TAB_WAIT_MS = 4_000;
+/** How long a tab opened through the proxy may take to show up in `/json/list`. */
+const NEW_TAB_WAIT_MS = 5_000;
+
 /**
- * One CDP command through the proxy (browser level), for `pix3 editor` itself: a new tab in a
- * headless Chrome, where there is no window to hand a URL to.
+ * Make sure the Chrome behind the proxy on `port` has a tab on `editorUrl`: wait up to `waitMs`
+ * for one (a fresh launch opens its URL itself — unless the binary ignores `--app`, as a headless
+ * shell does), else open one through the proxy (`Target.createTarget`, a new window unless the
+ * browser is headless) and wait for it to be listed. Never a second launch of the profile: a
+ * desktop Chrome would hand it over, but a headless one starts a second process that nobody
+ * owns and `--stop-chrome` never ends.
  */
-export const proxyCall = (
+export const ensureEditorTab = async (
+  port: number,
+  token: string,
+  editorUrl: string,
+  options: { readonly waitMs?: number } = {}
+): Promise<{ readonly ok: boolean; readonly detail: string }> => {
+  const listed = async (waitMs: number) => {
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      const state = await inspectCdpPort(port, { token });
+      if (state.kind !== 'ours') return null;
+      const open = state.pages.some(url => url.startsWith(editorUrl));
+      if (open || Date.now() >= deadline) return { open, browser: state.browser };
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  };
+  const before = await listed(options.waitMs ?? 0);
+  if (!before) return { ok: false, detail: `the CDP proxy on port ${port} stopped answering` };
+  if (before.open) {
+    return {
+      ok: true,
+      detail: options.waitMs ? `${editorUrl}` : `${editorUrl} — the editor tab is open there`,
+    };
+  }
+  const headless = /headless/i.test(before.browser);
+  try {
+    await proxyCall(port, token, 'Target.createTarget', {
+      url: editorUrl,
+      ...(headless ? {} : { newWindow: true }),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `could not open the editor in the running Chrome: ${(error as Error).message}`,
+    };
+  }
+  const after = await listed(NEW_TAB_WAIT_MS);
+  return after?.open
+    ? {
+        ok: true,
+        detail: `${editorUrl} — opened the editor in a new ${headless ? 'tab' : 'window'} through the proxy`,
+      }
+    : {
+        ok: false,
+        detail: `Chrome took Target.createTarget for ${editorUrl}, but no such tab is listed by the proxy (/json/list)`,
+      };
+};
+
+/** One CDP command through the proxy (browser level), for `pix3 editor` itself. */
+const proxyCall = (
   port: number,
   token: string,
   method: string,

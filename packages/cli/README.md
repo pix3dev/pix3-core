@@ -490,10 +490,14 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`). The owner lives
    exactly as long as Chrome: Chrome gone → the owner closes every client, removes
    `~/.pix3/chrome.json` and exits; the owner gone (killed) → the pipe closes and Chrome exits
-   with it. `--stop-chrome` asks the owner to close Chrome. A second project opens another app
-   window in the running Chrome (a short launch of the same profile, no debugging flag; with
-   `--headless`, a new tab through the proxy). `--headless` opens the URL as a plain tab with
-   `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
+   with it. `--stop-chrome` asks the owner to close Chrome. Then, launched or reused, the editor
+   tab is checked in the proxy's `/json/list` and, when it is not there, opened through the proxy
+   (`Target.createTarget`: a new window, a tab in a headless Chrome) and checked again — a binary
+   that ignores `--app` (`PIX3_CHROME` pointing at a `chrome-headless-shell`) still gets its tab,
+   and `pix3 editor` fails rather than print success without one. A second project gets its tab
+   the same way: the profile is never launched a second time (a headless one would start a
+   second Chrome that nobody owns and `--stop-chrome` would not end). `--headless` opens the URL
+   as a plain tab with `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
    under `SSH_CONNECTION` Chrome is not launched — see [Remote SSH](#remote-ssh--vs-code-on-a-remote-host-chrome-on-your-machine).
 3. **The token proxy (9333).** The owner serves `ws://127.0.0.1:9333/pix3` (the browser target;
    `…/pix3/page/<targetId>` for one page) and `GET /json/version`, `/json/list` (`/json`) on
