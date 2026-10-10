@@ -1,4 +1,5 @@
 import { html } from '@/fw';
+import { nothing } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { PropertyDefinition } from '@/fw';
 import { appState } from '@/state';
@@ -1424,12 +1425,19 @@ export class InspectorPropertyRenderers {
         <span class="property-label">${label}</span>
         <input
           type="text"
-          class="property-input property-input--text"
+          class="property-input property-input--text ${state.isValid
+            ? ''
+            : 'property-input--invalid'}"
           .value=${state.value}
+          title=${state.error ?? nothing}
+          aria-invalid=${state.isValid ? 'false' : 'true'}
           ?disabled=${readOnly}
           @input=${(e: Event) => this.host.handleComponentPropertyInput(component.id, prop, e)}
           @blur=${(e: Event) => this.host.handleComponentPropertyBlur(component.id, prop, e)}
         />
+        ${state.error
+          ? html`<div class="property-input-error" role="alert">${state.error}</div>`
+          : nothing}
       </div>
     `;
   }
@@ -2030,12 +2038,19 @@ export class InspectorPropertyRenderers {
           ${labelTemplate}
           <input
             type="text"
-            class="property-input property-input--text"
+            class="property-input property-input--text ${state.isValid
+              ? ''
+              : 'property-input--invalid'}"
             .value=${state.value}
+            title=${state.error ?? nothing}
+            aria-invalid=${state.isValid ? 'false' : 'true'}
             ?disabled=${readOnly}
             @input=${(e: Event) => this.host.handlePropertyInput(prop.name, e)}
             @blur=${(e: Event) => this.host.handlePropertyBlur(prop.name, e)}
           />
+          ${state.error
+            ? html`<div class="property-input-error" role="alert">${state.error}</div>`
+            : nothing}
         </div>
       `;
     }

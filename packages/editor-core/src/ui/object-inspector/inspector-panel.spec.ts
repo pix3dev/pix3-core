@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import {
   AmbientLightNode,
   AudioPlayer,
+  Button2D,
   Camera3D,
   Group2D,
   NodeBase,
@@ -10,6 +11,7 @@ import {
   type PropertyDefinition,
   type PropertySchema,
 } from '@pix3/runtime';
+import { installCanvas2DStub, type Canvas2DStubHandle } from '@pix3/runtime/testing';
 
 type DragLike = Pick<DragEvent, 'dataTransfer'>;
 let InspectorPanel: typeof import('./inspector-panel').InspectorPanel;
@@ -302,6 +304,84 @@ describe('InspectorPanel color property editor', () => {
     };
     expect(command.params?.propertyPath).toBe('color');
     expect(command.params?.value).toBe('#123abc');
+  });
+});
+
+describe('InspectorPanel emoji-as-art guard (E_EMOJI_AS_ART)', () => {
+  // Button2D draws its label into a canvas texture.
+  let canvas: Canvas2DStubHandle;
+  beforeEach(() => {
+    canvas = installCanvas2DStub();
+  });
+  afterEach(() => canvas.uninstall());
+
+  const labelInput = (panel: HTMLElement): HTMLInputElement => {
+    const row = [...panel.querySelectorAll('.property-group')].find(group =>
+      group.textContent?.includes('Label')
+    );
+    const input = [...(row?.querySelectorAll('input[type="text"]') ?? [])].find(
+      candidate => (candidate as HTMLInputElement).value === 'Play'
+    );
+    expect(input).toBeDefined();
+    return input as HTMLInputElement;
+  };
+  const type = async (panel: HTMLElement, input: HTMLInputElement, value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await Promise.resolve();
+    await (panel as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+  };
+  const params = (execute: ReturnType<typeof vi.fn>) =>
+    execute.mock.calls.map(
+      call => (call[0] as { params?: { propertyPath: string; value: unknown } }).params
+    );
+
+  it('refuses an emoji-only label: nothing is dispatched and the field says why', async () => {
+    const execute = vi.fn().mockResolvedValue(undefined);
+    const { panel } = await setupInspectorForNode(
+      new Button2D({ id: 'coin', name: 'Coin', label: 'Play' }),
+      execute
+    );
+    const input = labelInput(panel);
+
+    await type(panel, input, '🪙');
+    expect(execute).not.toHaveBeenCalled();
+    expect(input.classList.contains('property-input--invalid')).toBe(true);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const error = input.parentElement?.querySelector('.property-input-error');
+    expect(error?.textContent).toContain('E_EMOJI_AS_ART');
+    expect(error?.textContent).toContain('ColorRect2D');
+
+    input.dispatchEvent(new Event('blur'));
+    await Promise.resolve();
+    expect(execute).not.toHaveBeenCalled();
+
+    // An emoji inside a sentence is text: previewed as usual.
+    await type(panel, input, 'Coins 🪙');
+    expect(params(execute)).toEqual([
+      { nodeId: 'coin', propertyPath: 'label', value: 'Coins 🪙', historyMode: 'preview' },
+    ]);
+    expect(input.classList.contains('property-input--invalid')).toBe(false);
+  });
+
+  it('takes back the preview of an earlier keystroke when the field ends refused', async () => {
+    const execute = vi.fn().mockResolvedValue(undefined);
+    const { panel } = await setupInspectorForNode(
+      new Button2D({ id: 'coin', name: 'Coin', label: 'Play' }),
+      execute
+    );
+    const input = labelInput(panel);
+    await type(panel, input, 'Pl');
+    await type(panel, input, '⭐');
+    input.dispatchEvent(new Event('blur'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const calls = execute.mock.calls.map(
+      call => call[0] as { params?: { value: unknown; historyMode?: string } }
+    );
+    expect(calls.map(c => [c.params?.value, c.params?.historyMode])).toEqual([
+      ['Pl', 'preview'],
+      ['Play', 'preview'],
+    ]);
   });
 });
 

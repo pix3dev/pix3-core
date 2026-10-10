@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { describeEmojiAsArt } from '@pix3/runtime';
+
 import {
-  emojiAsArtError,
+  emojiAsArtFieldError,
   findEmojiArtInSceneYaml,
   isEmojiOnlyText,
   isTextProperty,
@@ -61,24 +63,30 @@ describe('isTextProperty', () => {
   });
 });
 
-describe('emojiAsArtError', () => {
-  it('refuses an emoji-only label and says what to do instead', () => {
-    const error = emojiAsArtError('label', '🪙');
-    expect(error).toMatch(/generate_asset/);
+describe('emojiAsArtFieldError', () => {
+  it('refuses an emoji-only label with the words of E_EMOJI_AS_ART', () => {
+    const error = emojiAsArtFieldError('label', '🪙');
+    const finding = describeEmojiAsArt('label', '🪙');
+    expect(finding).not.toBeNull();
+    expect(error).toContain('E_EMOJI_AS_ART');
+    expect(error).toContain(finding?.message);
+    expect(error).toContain(finding?.fix);
     expect(error).toMatch(/ColorRect2D/);
+    // The 1.x agent tools are gone: the refusal names none of them.
+    expect(error).not.toMatch(/generate_asset|set_property/);
   });
 
   it('says nothing for real text, a non-text property, or a non-string value', () => {
-    expect(emojiAsArtError('label', 'Счёт: 10 🪙')).toBeNull();
-    expect(emojiAsArtError('name', '🪙')).toBeNull();
-    expect(emojiAsArtError('label', 42)).toBeNull();
+    expect(emojiAsArtFieldError('label', 'Счёт: 10 🪙')).toBeNull();
+    expect(emojiAsArtFieldError('name', '🪙')).toBeNull();
+    expect(emojiAsArtFieldError('label', 42)).toBeNull();
   });
 });
 
 describe('findEmojiArtInSceneYaml', () => {
   /**
-   * Scene YAML is the path around every property setter: `fs_write` of a whole `.pix3scene` never
-   * touches `set_property`. This is the measured shape of the defect that started the rule.
+   * Scene YAML is the path around every property setter: a file write of a whole `.pix3scene` never
+   * touches the inspector. This is the measured shape of the defect that started the rule.
    */
   it('finds emoji art written straight into a scene file, all of it', () => {
     const yaml = `

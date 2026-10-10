@@ -40,6 +40,7 @@ import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';
 import { normalizeAnimationAssetPath } from '@/features/scene/animation-asset-utils';
+import { emojiAsArtFieldError } from '@/services/scene/emoji-as-art';
 import { InspectorResourcePreview } from './inspector-resource-preview';
 import { InspectorSectionRenderers } from './inspector-section-renderers';
 import {
@@ -66,6 +67,8 @@ const LIVE_REFRESH_INTERVAL_MS = 80;
 interface PropertyUIState {
   value: string;
   isValid: boolean;
+  /** Why the typed value is refused (shown under the field); nothing was written. */
+  error?: string;
 }
 
 const DEFAULT_ANIMATION_ASSET_DIRECTORY = 'res://animations';
@@ -757,12 +760,14 @@ export class InspectorPanel extends ComponentBase {
 
     const numericValue = parseFloat(rawValue);
     const parsedValue: unknown = expectsNumber ? numericValue : rawValue;
-    const isValid = expectsNumber ? !isNaN(numericValue) : true;
+    // Emoji-only text is refused here, before it reaches the scene (`E_EMOJI_AS_ART`).
+    const error = expectsNumber ? null : emojiAsArtFieldError(propName, rawValue);
+    const isValid = expectsNumber ? !isNaN(numericValue) : error === null;
 
     // Update local state
     this.propertyValues = {
       ...this.propertyValues,
-      [propName]: { value: rawValue, isValid },
+      [propName]: { value: rawValue, isValid, ...(error ? { error } : {}) },
     };
 
     if (isValid) {
@@ -781,6 +786,17 @@ export class InspectorPanel extends ComponentBase {
       value = parseFloat(num.toFixed(4)).toString();
     }
 
+    const error = input.type === 'number' ? null : emojiAsArtFieldError(propName, value);
+    if (error) {
+      // Refused: nothing is written, and a preview of an earlier keystroke is taken back.
+      this.propertyValues = {
+        ...this.propertyValues,
+        [propName]: { value, isValid: false, error },
+      };
+      await this.revertPropertyPreview(propName);
+      return;
+    }
+
     // Update local state
     this.propertyValues = {
       ...this.propertyValues,
@@ -788,6 +804,14 @@ export class InspectorPanel extends ComponentBase {
     };
 
     await this.commitPropertyChange(propName, value);
+  }
+
+  /** Put back the value a preview started from, without a history entry. */
+  private async revertPropertyPreview(propertyName: string): Promise<void> {
+    if (!this.propertyPreviewStartValues.has(propertyName)) return;
+    const start = this.propertyPreviewStartValues.get(propertyName);
+    await this.previewPropertyChange(propertyName, start);
+    this.propertyPreviewStartValues.delete(propertyName);
   }
 
   private normalizeColorValue(value: string): string | null {
@@ -970,11 +994,12 @@ export class InspectorPanel extends ComponentBase {
     const expectsNumber = prop.type === 'number' || input.type === 'number';
     const numericValue = parseFloat(rawValue);
     const parsedValue: unknown = expectsNumber ? numericValue : rawValue;
-    const isValid = expectsNumber ? !Number.isNaN(numericValue) : true;
+    const error = expectsNumber ? null : emojiAsArtFieldError(prop.name, rawValue);
+    const isValid = expectsNumber ? !Number.isNaN(numericValue) : error === null;
 
     this.componentPropertyValues = {
       ...this.componentPropertyValues,
-      [key]: { value: rawValue, isValid },
+      [key]: { value: rawValue, isValid, ...(error ? { error } : {}) },
     };
 
     if (isValid) {
@@ -991,6 +1016,20 @@ export class InspectorPanel extends ComponentBase {
       let num = parseFloat(value);
       if (Number.isNaN(num)) num = 0;
       value = parseFloat(num.toFixed(4)).toString();
+    }
+
+    const error = input.type === 'number' ? null : emojiAsArtFieldError(prop.name, value);
+    if (error) {
+      this.componentPropertyValues = {
+        ...this.componentPropertyValues,
+        [key]: { value, isValid: false, error },
+      };
+      if (this.componentPropertyPreviewStartValues.has(key)) {
+        const start = this.componentPropertyPreviewStartValues.get(key);
+        await this.previewComponentPropertyChange(componentId, prop, start);
+        this.componentPropertyPreviewStartValues.delete(key);
+      }
+      return;
     }
 
     this.componentPropertyValues = {

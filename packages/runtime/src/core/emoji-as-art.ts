@@ -15,9 +15,10 @@
  * so the guard can be enforced by the harness instead of hoped for in a prompt: a rule the harness
  * does not enforce is a rule that holds only when the model feels like it.
  *
- * This module is the detection only — pure string work, no DOM, no editor imports — so the two
- * enforcers share one definition: the editor's agent tools (`src/services/agent/emoji-as-art.ts`,
- * which owns the tool-facing refusal wording) and `pix3 validate` (`E_EMOJI_AS_ART`).
+ * This module is the detection and the wording — pure string work, no DOM, no editor imports — so
+ * the two enforcers share one definition: `pix3 validate` / `pix3 check` (`E_EMOJI_AS_ART`, over
+ * every scene file an agent or a person wrote) and the editor's inspector, which refuses the same
+ * value in a text field before it reaches the scene (`editor-core/src/services/scene/emoji-as-art.ts`).
  */
 
 /**
@@ -87,4 +88,27 @@ export const findEmojiArtInSceneYaml = (
     if (isEmojiOnlyText(value)) found.push({ property: match[1], value: value.trim() });
   }
   return found;
+};
+
+/** The rule in words, shared by `E_EMOJI_AS_ART` and the inspector's refusal. */
+export interface EmojiAsArtFinding {
+  /** What is wrong with `<property>: <value>`. */
+  readonly message: string;
+  /** What to use instead. */
+  readonly fix: string;
+}
+
+/**
+ * `null` for a value the rule allows; otherwise why `property` may not be `value`. Judges only the
+ * properties {@link isTextProperty} covers and only string values.
+ */
+export const describeEmojiAsArt = (property: string, value: unknown): EmojiAsArtFinding | null => {
+  if (typeof value !== 'string' || !isTextProperty(property) || !isEmojiOnlyText(value)) {
+    return null;
+  }
+  const key = property.split('.').pop() ?? property;
+  return {
+    message: `${key} is ${value.trim()} — nothing but emoji, i.e. a picture standing in for art. It draws differently on every platform, cannot be recoloured, atlased or animated, and is a hollow box where the font lacks it.`,
+    fix: 'use a Sprite2D with a real sprite (or a ColorRect2D placeholder); an emoji inside a sentence is fine',
+  };
 };

@@ -1,11 +1,10 @@
 import * as runtime from '@pix3/runtime';
 import {
   CURRENT_SCENE_FORMAT_VERSION,
+  describeEmojiAsArt,
   describeUnknownNodeType,
   getSceneNodeDiskFormat,
   INSTANCE_TRANSFORM_KEYS,
-  isEmojiOnlyText,
-  isTextProperty,
   normalizeNodeTypeName,
   resolveSceneDiskKey,
   resolveSceneNodeType,
@@ -601,14 +600,9 @@ class SceneChecker {
       const key = [...at]
         .reverse()
         .find((segment): segment is string => typeof segment === 'string');
-      if (key && isTextProperty(key) && isEmojiOnlyText(value)) {
-        this.report({
-          code: 'E_EMOJI_AS_ART',
-          nodeId,
-          message: `${key} is ${value.trim()} — nothing but emoji, i.e. a picture standing in for art. It draws differently on every platform, cannot be recoloured, atlased or animated, and is a hollow box where the font lacks it.`,
-          fix: 'use a Sprite2D with a generated sprite (or a ColorRect2D placeholder); an emoji inside a sentence is fine',
-          at,
-        });
+      const emoji = key ? describeEmojiAsArt(key, value) : null;
+      if (emoji) {
+        this.report({ code: 'E_EMOJI_AS_ART', nodeId, message: emoji.message, fix: emoji.fix, at });
       }
       return;
     }
