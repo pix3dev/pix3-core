@@ -74,6 +74,37 @@ describe('editor page and discovery', () => {
     expect(existsSync(devJson)).toBe(false);
   });
 
+  it('records the address a tab reached the server at as publicUrl (a port forward that is not 1:1)', async () => {
+    const p = await start();
+    const devJson = join(p.root, '.pix3', 'dev.json');
+    const read = () => JSON.parse(readFileSync(devJson, 'utf8')) as Record<string, unknown>;
+    const open = async (origin: string): Promise<WebSocket> => {
+      const host = new URL(origin).host;
+      const socket = new WebSocket(`ws://127.0.0.1:${p.port}/__pix3/ws`, {
+        headers: { Host: host, Origin: origin },
+      });
+      await new Promise<void>((resolve, reject) => {
+        socket.once('message', () => resolve());
+        socket.once('error', reject);
+        socket.once('open', () =>
+          socket.send(JSON.stringify({ type: 'hello', tabId: `tab-${host.replace(':', '-')}` }))
+        );
+      });
+      return socket;
+    };
+    // A tab on the server's own address says nothing new.
+    const local = await open(`http://localhost:${p.port}`);
+    expect(read().publicUrl).toBeUndefined();
+    // VS Code forwarded the port to another local one: the page's Origin is that address.
+    const forwarded = await open('http://localhost:15999');
+    await sleep(50);
+    expect(read().publicUrl).toBe('http://localhost:15999/');
+    expect(read().publicEditorUrl).toBe('http://localhost:15999/__pix3/');
+    expect(read().editorUrl).toBe(`http://localhost:${p.port}/__pix3/`);
+    local.close();
+    forwarded.close();
+  });
+
   it('answers hello with the revision, seq and versions', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const hello = await json(await p.fetch('/__pix3/api/hello'));

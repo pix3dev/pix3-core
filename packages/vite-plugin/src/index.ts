@@ -79,7 +79,9 @@ import {
   installedVersion,
   pluginVersion,
   versionMismatch,
+  publicUrlOf,
   writeDevInfo,
+  type DevInfo,
   type Versions,
 } from './dev-info.ts';
 import {
@@ -606,6 +608,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           guard.checkPeer(req);
           guard.checkSameOrigin(req);
         },
+        onTabsChanged: () => notePublicUrl(),
         welcome: tab => ({
           tabId: tab.tabId,
           seq: projectFiles.currentSeq,
@@ -619,6 +622,24 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         log,
       });
       socket = editorSocket;
+      // `dev.json`'s `publicUrl` (Remote SSH, plan §E.3): `PIX3_PUBLIC_URL`, else the newest
+      // tab's `Origin` when the browser reached this server through another address (a VS Code
+      // port forward that is not 1:1). The agent finds its tab by that prefix.
+      let devInfo: DevInfo | null = null;
+      const notePublicUrl = (): void => {
+        if (!devInfo) return;
+        const newest = editorSocket.tabs().at(-1);
+        const publicUrl = publicUrlOf({
+          env: process.env.PIX3_PUBLIC_URL,
+          tabOrigin: newest?.origin ?? null,
+          port: devInfo.port,
+          base,
+        });
+        if (!publicUrl || publicUrl === devInfo.publicUrl) return;
+        devInfo = { ...devInfo, publicUrl, publicEditorUrl: `${publicUrl}__pix3/` };
+        writeDevInfo(projectRoot, devInfo);
+        log(`the browser reaches this server at ${publicUrl} (dev.json publicUrl)`);
+      };
       const syncBarrier = new SyncBarrier({
         files: projectFiles,
         scripts,
@@ -672,14 +693,16 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         const protocol = devServer.config.server.https ? 'https' : 'http';
         const url = `${protocol}://localhost:${port}${base}`;
         const editorUrl = `${url}__pix3/`;
-        writeDevInfo(projectRoot, {
+        devInfo = {
           url,
           editorUrl,
           port,
           pid: process.pid,
           versions: versions as Versions,
           startedAt: new Date().toISOString(),
-        });
+        };
+        writeDevInfo(projectRoot, devInfo);
+        notePublicUrl();
         config?.logger.info(`\n  Pix3 editor: ${editorUrl}\n`);
         if (gate) config?.logger.warn(`[pix3] ${gate}`);
       });

@@ -20,6 +20,8 @@ import { isRecord } from './http.ts';
 export interface EditorTab {
   readonly tabId: string;
   readonly connectedAt: number;
+  /** The page's `Origin` (the address the browser reached the server at), when it sent one. */
+  readonly origin?: string;
 }
 
 export type RequestReply = Record<string, unknown> & { readonly ok: boolean };
@@ -32,6 +34,7 @@ interface Pending {
 
 interface Connection {
   readonly socket: WebSocket;
+  readonly origin: string | null;
   tab: EditorTab | null;
 }
 
@@ -69,7 +72,8 @@ export class EditorSocket {
       socket.destroy();
       return true;
     }
-    this.wss.handleUpgrade(req, socket, head, ws => this.adopt(ws));
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : null;
+    this.wss.handleUpgrade(req, socket, head, ws => this.adopt(ws, origin));
     return true;
   }
 
@@ -125,8 +129,8 @@ export class EditorSocket {
     this.wss.close();
   }
 
-  private adopt(socket: WebSocket): void {
-    const connection: Connection = { socket, tab: null };
+  private adopt(socket: WebSocket, origin: string | null): void {
+    const connection: Connection = { socket, origin, tab: null };
     this.connections.add(connection);
     socket.on('message', (raw: RawData) => this.onMessage(connection, raw));
     socket.on('close', () => this.drop(connection));
@@ -158,7 +162,11 @@ export class EditorSocket {
     if (message.type === 'hello') {
       const tabId = message.tabId;
       if (connection.tab || typeof tabId !== 'string' || !TAB_ID_PATTERN.test(tabId)) return;
-      connection.tab = { tabId, connectedAt: Date.now() };
+      connection.tab = {
+        tabId,
+        connectedAt: Date.now(),
+        ...(connection.origin ? { origin: connection.origin } : {}),
+      };
       connection.socket.send(
         JSON.stringify({ type: 'welcome', ...this.options.welcome(connection.tab) })
       );
