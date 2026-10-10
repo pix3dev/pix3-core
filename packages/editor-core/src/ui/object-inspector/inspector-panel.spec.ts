@@ -315,12 +315,12 @@ describe('InspectorPanel emoji-as-art guard (E_EMOJI_AS_ART)', () => {
   });
   afterEach(() => canvas.uninstall());
 
-  const labelInput = (panel: HTMLElement): HTMLInputElement => {
+  const labelInput = (panel: HTMLElement, value = 'Play'): HTMLInputElement => {
     const row = [...panel.querySelectorAll('.property-group')].find(group =>
       group.textContent?.includes('Label')
     );
     const input = [...(row?.querySelectorAll('input[type="text"]') ?? [])].find(
-      candidate => (candidate as HTMLInputElement).value === 'Play'
+      candidate => (candidate as HTMLInputElement).value === value
     );
     expect(input).toBeDefined();
     return input as HTMLInputElement;
@@ -382,6 +382,18 @@ describe('InspectorPanel emoji-as-art guard (E_EMOJI_AS_ART)', () => {
       ['Pl', 'preview'],
       ['Play', 'preview'],
     ]);
+    // The revert is a command, and every command resyncs the panel from the node: the refusal
+    // must survive that, or the field would quietly show the old value with no reason.
+    (panel as unknown as { syncValuesFromNode: () => void }).syncValuesFromNode();
+    await (panel as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    const refused = labelInput(panel, '⭐');
+    expect(refused.classList.contains('property-input--invalid')).toBe(true);
+    expect(refused.parentElement?.querySelector('.property-input-error')).not.toBeNull();
+    // A value the rule accepts clears it.
+    await type(panel, refused, 'Go');
+    (panel as unknown as { syncValuesFromNode: () => void }).syncValuesFromNode();
+    await (panel as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(labelInput(panel, 'Play').classList.contains('property-input--invalid')).toBe(false);
   });
 });
 

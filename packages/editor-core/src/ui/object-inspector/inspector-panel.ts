@@ -201,6 +201,15 @@ export class InspectorPanel extends ComponentBase {
   readonly propertyRenderers = new InspectorPropertyRenderers(this);
   private readonly propertyPreviewStartValues = new Map<string, unknown>();
   private readonly componentPropertyPreviewStartValues = new Map<string, unknown>();
+  /**
+   * Text fields showing a refused value (`E_EMOJI_AS_ART`), keyed like `propertyValues` /
+   * `componentPropertyValues`. Nothing was written for them, so a resync from the node (any
+   * command, including the revert of a preview) would put the old value back and hide why; the
+   * refusal is laid over the synced values until the field gets a value it accepts or the
+   * selection moves.
+   */
+  private readonly refusedPropertyValues = new Map<string, PropertyUIState>();
+  private readonly refusedComponentValues = new Map<string, PropertyUIState>();
 
   private readonly onDocumentPointerDown = (event: PointerEvent) => {
     if (!this.isGroupsEditorOpen) {
@@ -379,6 +388,8 @@ export class InspectorPanel extends ComponentBase {
     if (previousPrimaryNodeId !== nextPrimaryNodeId) {
       this.propertyPreviewStartValues.clear();
       this.componentPropertyPreviewStartValues.clear();
+      this.refusedPropertyValues.clear();
+      this.refusedComponentValues.clear();
       this.isGroupsEditorOpen = false;
     }
 
@@ -429,6 +440,8 @@ export class InspectorPanel extends ComponentBase {
       this.componentPropertyValues = {};
       this.propertyPreviewStartValues.clear();
       this.componentPropertyPreviewStartValues.clear();
+      this.refusedPropertyValues.clear();
+      this.refusedComponentValues.clear();
       this.isGroupsEditorOpen = false;
       return;
     }
@@ -450,6 +463,9 @@ export class InspectorPanel extends ComponentBase {
         value: displayValue,
         isValid: true,
       };
+    }
+    for (const [name, refused] of this.refusedPropertyValues) {
+      if (values[name]) values[name] = refused;
     }
     this.propertyValues = values;
     this.syncComponentValuesFromNode(valueSource);
@@ -485,6 +501,9 @@ export class InspectorPanel extends ComponentBase {
         };
       }
     });
+    for (const [key, refused] of this.refusedComponentValues) {
+      if (values[key]) values[key] = refused;
+    }
     this.componentPropertyValues = values;
   }
 
@@ -765,10 +784,10 @@ export class InspectorPanel extends ComponentBase {
     const isValid = expectsNumber ? !isNaN(numericValue) : error === null;
 
     // Update local state
-    this.propertyValues = {
-      ...this.propertyValues,
-      [propName]: { value: rawValue, isValid, ...(error ? { error } : {}) },
-    };
+    const next: PropertyUIState = { value: rawValue, isValid, ...(error ? { error } : {}) };
+    if (error) this.refusedPropertyValues.set(propName, next);
+    else this.refusedPropertyValues.delete(propName);
+    this.propertyValues = { ...this.propertyValues, [propName]: next };
 
     if (isValid) {
       await this.previewPropertyChange(propName, parsedValue);
@@ -789,13 +808,13 @@ export class InspectorPanel extends ComponentBase {
     const error = input.type === 'number' ? null : emojiAsArtFieldError(propName, value);
     if (error) {
       // Refused: nothing is written, and a preview of an earlier keystroke is taken back.
-      this.propertyValues = {
-        ...this.propertyValues,
-        [propName]: { value, isValid: false, error },
-      };
+      const refused: PropertyUIState = { value, isValid: false, error };
+      this.refusedPropertyValues.set(propName, refused);
+      this.propertyValues = { ...this.propertyValues, [propName]: refused };
       await this.revertPropertyPreview(propName);
       return;
     }
+    this.refusedPropertyValues.delete(propName);
 
     // Update local state
     this.propertyValues = {
@@ -997,10 +1016,10 @@ export class InspectorPanel extends ComponentBase {
     const error = expectsNumber ? null : emojiAsArtFieldError(prop.name, rawValue);
     const isValid = expectsNumber ? !Number.isNaN(numericValue) : error === null;
 
-    this.componentPropertyValues = {
-      ...this.componentPropertyValues,
-      [key]: { value: rawValue, isValid, ...(error ? { error } : {}) },
-    };
+    const next: PropertyUIState = { value: rawValue, isValid, ...(error ? { error } : {}) };
+    if (error) this.refusedComponentValues.set(key, next);
+    else this.refusedComponentValues.delete(key);
+    this.componentPropertyValues = { ...this.componentPropertyValues, [key]: next };
 
     if (isValid) {
       await this.previewComponentPropertyChange(componentId, prop, parsedValue);
@@ -1020,10 +1039,9 @@ export class InspectorPanel extends ComponentBase {
 
     const error = input.type === 'number' ? null : emojiAsArtFieldError(prop.name, value);
     if (error) {
-      this.componentPropertyValues = {
-        ...this.componentPropertyValues,
-        [key]: { value, isValid: false, error },
-      };
+      const refused: PropertyUIState = { value, isValid: false, error };
+      this.refusedComponentValues.set(key, refused);
+      this.componentPropertyValues = { ...this.componentPropertyValues, [key]: refused };
       if (this.componentPropertyPreviewStartValues.has(key)) {
         const start = this.componentPropertyPreviewStartValues.get(key);
         await this.previewComponentPropertyChange(componentId, prop, start);
@@ -1031,6 +1049,7 @@ export class InspectorPanel extends ComponentBase {
       }
       return;
     }
+    this.refusedComponentValues.delete(key);
 
     this.componentPropertyValues = {
       ...this.componentPropertyValues,
