@@ -129,36 +129,6 @@ pix3-editor-settings-dialog .pane-description {
   color: var(--fg-3);
 }
 
-pix3-editor-settings-dialog .settings-subtabs {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1.1rem;
-  border-bottom: 1px solid var(--line-1);
-}
-
-pix3-editor-settings-dialog .settings-subtab {
-  padding: 0.4rem 0.8rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--fg-2);
-  cursor: pointer;
-  font-size: 0.88rem;
-  margin-bottom: -1px;
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-
-pix3-editor-settings-dialog .settings-subtab:hover {
-  color: var(--fg-0);
-}
-
-pix3-editor-settings-dialog .settings-subtab.is-active {
-  color: var(--fg-0);
-  border-bottom-color: var(--accent);
-}
-
 pix3-editor-settings-dialog .settings-form {
   display: flex;
   flex-direction: column;

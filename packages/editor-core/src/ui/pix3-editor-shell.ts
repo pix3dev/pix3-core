@@ -8,10 +8,6 @@ import { CommandRegistry } from '@/services/core/CommandRegistry';
 import { KeybindingService } from '@/services/editor/KeybindingService';
 import { DialogService, type DialogInstance } from '@/services/editor/DialogService';
 import {
-  AnimationAutoSliceDialogService,
-  type AnimationAutoSliceDialogInstance,
-} from '@/services/animation/AnimationAutoSliceDialogService';
-import {
   AssetImportDialogService,
   type AssetImportDialogInstance,
 } from '@/services/assets/AssetImportDialogService';
@@ -90,7 +86,6 @@ import './shared/pix3-behavior-picker';
 import './shared/pix3-effect-picker';
 import './shared/pix3-host-banner';
 import './shared/pix3-editor-settings-dialog';
-import './shared/pix3-animation-auto-slice-dialog';
 import './shared/pix3-asset-import-dialog';
 import './shared/pix3-node-type-picker';
 import './shared/pix3-status-bar';
@@ -151,9 +146,6 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(EffectPickerService)
   private readonly effectPickerService!: EffectPickerService;
 
-  @inject(AnimationAutoSliceDialogService)
-  private readonly animationAutoSliceDialogService!: AnimationAutoSliceDialogService;
-
   @inject(AssetImportDialogService)
   private readonly assetImportDialogService!: AssetImportDialogService;
 
@@ -178,7 +170,6 @@ export class Pix3EditorShell extends ComponentBase {
   @state() private componentPickers: ComponentPickerInstance[] = [];
   @state() private effectPickers: EffectPickerInstance[] = [];
   @state() private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
-  @state() private activeAnimationAutoSliceDialog: AnimationAutoSliceDialogInstance | null = null;
   @state() private activeAssetImportDialog: AssetImportDialogInstance | null = null;
   @state() private activeNodeTypePicker: NodeTypePickerInstance | null = null;
 
@@ -202,9 +193,6 @@ export class Pix3EditorShell extends ComponentBase {
       }),
       this.editorSettingsService.subscribe(dialog => {
         this.activeEditorSettingsDialog = dialog;
-      }),
-      this.animationAutoSliceDialogService.subscribe(dialog => {
-        this.activeAnimationAutoSliceDialog = dialog;
       }),
       this.assetImportDialogService.subscribe(dialog => {
         this.activeAssetImportDialog = dialog;
@@ -395,8 +383,8 @@ export class Pix3EditorShell extends ComponentBase {
         <pix3-status-bar></pix3-status-bar>
         <pix3-host-banner></pix3-host-banner>
         ${this.renderDialogHost()} ${this.renderPickerHost()} ${this.renderEffectPickerHost()}
-        ${this.renderEditorSettingsHost()} ${this.renderAnimationAutoSliceHost()}
-        ${this.renderAssetImportHost()} ${this.renderNodeTypePickerHost()}
+        ${this.renderEditorSettingsHost()} ${this.renderAssetImportHost()}
+        ${this.renderNodeTypePickerHost()}
       </div>
     `;
   }
@@ -533,59 +521,6 @@ export class Pix3EditorShell extends ComponentBase {
         </div>`
       : null;
   }
-
-  private renderAnimationAutoSliceHost() {
-    const dialog = this.activeAnimationAutoSliceDialog;
-    if (!dialog) {
-      return null;
-    }
-    const { params } = dialog;
-    return html`
-      <div
-        class="animation-auto-slice-host"
-        @animation-auto-slice-confirmed=${this.onAnimationAutoSliceConfirmed}
-        @animation-auto-slice-cancelled=${(event: CustomEvent<{ dialogId?: string }>) => {
-          if (typeof event.detail.dialogId === 'string') {
-            this.animationAutoSliceDialogService.cancel(event.detail.dialogId);
-          }
-        }}
-      >
-        <pix3-animation-auto-slice-dialog
-          .dialogId=${dialog.id}
-          .texturePath=${params.texturePath}
-          .contextLabel=${params.contextLabel}
-          .contextCaption=${params.contextCaption ?? 'Active clip'}
-          .confirmNote=${params.confirmNote ??
-          'Confirm to append the generated frame sequence to the active clip.'}
-          .confirmLabel=${params.confirmLabel ?? 'Slice Frames'}
-          .cancelLabel=${params.cancelLabel ?? 'Keep Without Slicing'}
-          .defaultColumns=${params.defaultColumns || 1}
-          .defaultRows=${params.defaultRows || 1}
-        ></pix3-animation-auto-slice-dialog>
-      </div>
-    `;
-  }
-
-  private onAnimationAutoSliceConfirmed = (
-    event: CustomEvent<{ dialogId?: string; columns?: number; rows?: number }>
-  ): void => {
-    const { dialogId, columns, rows } = event.detail;
-    if (
-      typeof dialogId !== 'string' ||
-      typeof columns !== 'number' ||
-      typeof rows !== 'number' ||
-      !Number.isFinite(columns) ||
-      !Number.isFinite(rows) ||
-      columns <= 0 ||
-      rows <= 0
-    ) {
-      return;
-    }
-    this.animationAutoSliceDialogService.confirm(dialogId, {
-      columns: Math.max(1, Math.round(columns)),
-      rows: Math.max(1, Math.round(rows)),
-    });
-  };
 
   private renderAssetImportHost() {
     const dialog = this.activeAssetImportDialog;

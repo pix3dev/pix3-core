@@ -17,9 +17,8 @@ export interface AssetImportDialogInstance {
 }
 
 /**
- * Tracks the single active "Import assets" dialog and exposes a Promise-based API,
- * mirroring {@link AnimationAutoSliceDialogService}. The dialog component performs
- * the actual file copy and reports the imported paths back via {@link confirm}.
+ * Tracks the single active "Import assets" dialog and exposes a Promise-based API.
+ * The dialog component performs the actual file copy and reports the imported paths back via {@link confirm}.
  */
 @injectable()
 export class AssetImportDialogService {

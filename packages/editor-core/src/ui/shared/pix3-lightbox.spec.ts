@@ -128,37 +128,12 @@ describe('pix3-lightbox', () => {
     expect(element.querySelector('.lightbox__counter')).toBeNull();
   });
 
-  it('renders markdown and text as a pre block', async () => {
+  it('says so honestly when an image has no url', async () => {
     const element = await mount();
-    lightbox().open([
-      { kind: 'markdown', title: 'gdd.md', text: '# Ant Strategy', path: 'design/gdd.md' },
-    ]);
-    await settle(element);
-    expect(element.querySelector('.lightbox__text')?.textContent).toBe('# Ant Strategy');
-
-    lightbox().close();
-    lightbox().open([{ kind: 'text', title: 'notes.txt', text: 'line one\nline two' }]);
-    await settle(element);
-    expect(element.querySelector('.lightbox__text')?.textContent).toBe('line one\nline two');
-  });
-
-  it('says so honestly when a file has no preview', async () => {
-    const element = await mount();
-    lightbox().open([
-      {
-        kind: 'other',
-        title: 'sprites.zip',
-        path: 'references/sprites.zip',
-        sizeBytes: 2048,
-        mimeType: 'application/zip',
-      },
-    ]);
+    lightbox().open([{ kind: 'image', title: 'hero.png', path: 'sprites/hero.png' }]);
     await settle(element);
 
-    expect(element.querySelector('.lightbox__plaque-name')?.textContent?.trim()).toBe(
-      'sprites.zip'
-    );
-    expect(element.querySelector('.lightbox__plaque-meta')?.textContent?.trim()).toBe('2.0 KB');
+    expect(element.querySelector('.lightbox__plaque-name')?.textContent?.trim()).toBe('hero.png');
     expect(element.querySelector('.lightbox__plaque-note')?.textContent?.trim()).toBe(
       'Preview not available'
     );

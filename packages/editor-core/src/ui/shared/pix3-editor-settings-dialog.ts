@@ -16,11 +16,6 @@ import type { Navigation2DSettings } from '@/state/AppState';
 import { CURRENT_EDITOR_VERSION } from '@/version';
 import './pix3-editor-settings-dialog.ts.css';
 
-interface SettingsSubtab {
-  id: string;
-  label: string;
-}
-
 /**
  * Public product links surfaced in Settings → About: the one place in the editor that says where
  * Pix3 lives outside this tab.
@@ -47,13 +42,10 @@ interface SettingsSectionDef {
   icon: string;
   /** Optional one-line description shown under the pane title. */
   description?: string;
-  /** Sub-tabs rendered at the top of the pane; omit for single-view sections. */
-  subtabs?: readonly SettingsSubtab[];
 }
 
 /**
- * Godot-style layout: the sidebar lists the main sections; a section with a lot
- * of content splits into sub-tabs rendered at the top of the content pane.
+ * Godot-style layout: the sidebar lists the sections, the pane shows the active one.
  */
 const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'general', label: 'General', icon: 'sliders' },
@@ -111,11 +103,6 @@ export class EditorSettingsDialog extends ComponentBase {
   @state()
   private openKeys: readonly string[] = [];
 
-  /** Active sub-tab id within the current section (empty when the section has none). */
-  @state()
-  private activeSubtab = '';
-
-  @state()
   @state()
   private pauseRenderingOnUnfocus = true;
 
@@ -149,7 +136,6 @@ export class EditorSettingsDialog extends ComponentBase {
   connectedCallback(): void {
     super.connectedCallback();
     this.activeSection = this.editorSettingsService.getInitialTab();
-    this.activeSubtab = this.defaultSubtab(this.activeSection);
     this.pauseRenderingOnUnfocus = appState.ui.pauseRenderingOnUnfocus;
     this.keepEditorRunningForAgent = appState.ui.keepEditorRunningForAgent;
     this.navigation2D = { ...appState.ui.navigation2D };
@@ -192,7 +178,6 @@ export class EditorSettingsDialog extends ComponentBase {
                   ? html`<p class="pane-description">${section.description}</p>`
                   : null}
               </div>
-              ${section.subtabs ? this.renderSubtabs(section.subtabs) : null}
               <div class="settings-form">${this.renderSectionContent(section)}</div>
             </div>
           </div>
@@ -262,25 +247,6 @@ export class EditorSettingsDialog extends ComponentBase {
       : [...this.openKeys, key];
   }
 
-  private renderSubtabs(subtabs: readonly SettingsSubtab[]) {
-    return html`
-      <div class="settings-subtabs" role="tablist">
-        ${subtabs.map(
-          tab => html`
-            <button
-              class="settings-subtab ${tab.id === this.activeSubtab ? 'is-active' : ''}"
-              role="tab"
-              aria-selected=${tab.id === this.activeSubtab}
-              @click=${() => this.selectSubtab(tab.id)}
-            >
-              ${tab.label}
-            </button>
-          `
-        )}
-      </div>
-    `;
-  }
-
   private renderSectionContent(section: SettingsSectionDef) {
     switch (section.id) {
       case 'general':
@@ -330,19 +296,8 @@ export class EditorSettingsDialog extends ComponentBase {
     `;
   }
 
-  /** First sub-tab id of a section, or '' when the section has none. */
-  private defaultSubtab(sectionId: EditorSettingsTab): string {
-    const section = SETTINGS_SECTIONS.find(s => s.id === sectionId);
-    return section?.subtabs?.[0]?.id ?? '';
-  }
-
   private selectSection(sectionId: EditorSettingsTab): void {
     this.activeSection = sectionId;
-    this.activeSubtab = this.defaultSubtab(sectionId);
-  }
-
-  private selectSubtab(subtabId: string): void {
-    this.activeSubtab = subtabId;
   }
 
   /** What the dev server reports it is running (`EditorHost.info.versions`). */

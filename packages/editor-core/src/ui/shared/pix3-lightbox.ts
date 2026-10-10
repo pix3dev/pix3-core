@@ -366,37 +366,23 @@ export class Pix3Lightbox extends ComponentBase {
   }
 
   private renderItem(item: LightboxItem) {
-    switch (item.kind) {
-      case 'image':
-        // A url-less image is a broken caller, not a picture — say so instead of showing a void.
-        return item.url
-          ? html`<img
-              class="lightbox__image"
-              src=${item.url}
-              alt=${item.title}
-              draggable="false"
-              @dragstart=${(event: Event) => event.preventDefault()}
-            />`
-          : this.renderUnavailable(item);
-      case 'markdown':
-      case 'text':
-        return html`<pre class="lightbox__text">${item.text ?? ''}</pre>`;
-      case 'other':
-        return this.renderUnavailable(item);
-    }
+    // A url-less image is a broken caller, not a picture — say so instead of showing a void.
+    return item.url
+      ? html`<img
+          class="lightbox__image"
+          src=${item.url}
+          alt=${item.title}
+          draggable="false"
+          @dragstart=${(event: Event) => event.preventDefault()}
+        />`
+      : this.renderUnavailable(item);
   }
 
-  /** The honest no-preview case: what the file is, how big it is, and that we cannot show it. */
   private renderUnavailable(item: LightboxItem) {
     return html`
       <div class="lightbox__plaque">
-        <span class="lightbox__plaque-icon">
-          ${this.icons.getIcon(iconForMime(item.mimeType), IconSize.XLARGE)}
-        </span>
+        <span class="lightbox__plaque-icon">${this.icons.getIcon('image', IconSize.XLARGE)}</span>
         <span class="lightbox__plaque-name">${item.title}</span>
-        ${item.sizeBytes !== undefined
-          ? html`<span class="lightbox__plaque-meta">${formatBytes(item.sizeBytes)}</span>`
-          : null}
         <span class="lightbox__plaque-note">Preview not available</span>
       </div>
     `;
@@ -427,44 +413,6 @@ export function ensureLightboxHost(): Pix3Lightbox | null {
 }
 
 ensureLightboxHost();
-
-/** Feather icon that matches a mime type, for the no-preview plaque. */
-function iconForMime(mimeType: string | undefined): string {
-  if (!mimeType) {
-    return 'file';
-  }
-  if (mimeType.startsWith('image/')) {
-    return 'image';
-  }
-  if (mimeType.startsWith('audio/')) {
-    return 'music';
-  }
-  if (mimeType.startsWith('video/')) {
-    return 'film';
-  }
-  if (mimeType.startsWith('text/') || mimeType === 'application/json') {
-    return 'file-text';
-  }
-  if (/zip|compressed|tar|gzip/.test(mimeType)) {
-    return 'archive';
-  }
-  return 'file';
-}
-
-/** Compact byte label. Local on purpose — importing one from a service would drag the service in. */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '0 B';
-  }
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
 
 declare global {
   interface HTMLElementTagNameMap {

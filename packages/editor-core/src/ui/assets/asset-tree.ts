@@ -905,9 +905,9 @@ export class AssetTree extends ComponentBase {
   }
 
   /**
-   * Folder rows accept two drops, both copies into that folder: files from the OS (through
-   * {@link AssetImportService}, the same path as the Import… dialog) and a generated image from
-   * the Generate panel. Nothing is moved: files are reorganised by the agent or the IDE.
+   * Folder rows accept one drop, a copy into that folder: files from the OS (through
+   * {@link AssetImportService}, the same path as the Import… dialog). Nothing is moved: files are
+   * reorganised by the agent or the IDE.
    */
   private onDragOver(event: DragEvent, node: Node): void {
     if (node.nodeType === 'category' || node.kind !== 'directory' || !isAcceptedDrop(event)) {
