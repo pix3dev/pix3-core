@@ -16,6 +16,8 @@ export interface EditorHost {
   readonly writer: HostWriter;
   /** Version journal `.pix3/history/` (plan §C.4); absent on a host without one. */
   readonly history?: HostHistory;
+  /** Image-generation keys and proxy (plan §B.1); absent on a host without them. */
+  readonly imageGen?: HostImageGen;
 }
 
 export interface HostVersions {
@@ -276,4 +278,32 @@ export interface HostHistory {
     id: string,
     options?: { readonly ifMatch?: string }
   ): Promise<HostWriteResult>;
+}
+
+export type HostImageProvider = 'gemini' | 'openai';
+
+export interface HostImageKeyStatus {
+  readonly set: boolean;
+  /** The key's last four characters (keys of 12+ characters only). */
+  readonly last4?: string;
+}
+
+/**
+ * Image-generation API keys live on the dev server's machine (`~/.pix3/keys.json`, 0600, or the
+ * project's `.pix3/local/keys.json` when `~` is not writable) and the plugin adds them to the
+ * provider call. The page sets a key and learns only whether one is there — never its value —
+ * because its origin (the dev server's port) is shared with the game and every other project.
+ */
+export interface HostImageGen {
+  keys(): Promise<Record<HostImageProvider, HostImageKeyStatus>>;
+  /** Store (`null` / `''` removes) a key; answers its status, not the key. */
+  setKey(
+    provider: HostImageProvider,
+    key: string | null
+  ): Promise<HostImageKeyStatus & { readonly where: 'home' | 'project' }>;
+  /**
+   * POST `path` (e.g. `v1beta/models/<m>:generateContent`, `v1/images/generations`) to the
+   * provider through the plugin's proxy. A missing key answers 409 `{error: 'no_key'}`.
+   */
+  fetch(provider: HostImageProvider, path: string, init?: RequestInit): Promise<Response>;
 }

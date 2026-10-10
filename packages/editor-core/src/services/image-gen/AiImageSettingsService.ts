@@ -1,8 +1,16 @@
 import { inject, injectable } from '@/fw/di';
-import { SecretStorageService } from '@/services/core/SecretStorageService';
+import type { HostImageGen, HostImageKeyStatus } from '@/host/EditorHost';
+import { HostService } from '@/host/HostService';
 import { ImageGenProviderRegistry } from '@/services/image-gen/ImageGenProviderRegistry';
-import type { AspectRatio, ImageGenProvider } from '@/services/image-gen/ImageGenTypes';
-import { appState } from '@/state';
+import type {
+  AspectRatio,
+  ImageGenProvider,
+  ImageGenTransport,
+} from '@/services/image-gen/ImageGenTypes';
+import {
+  deleteLegacyBrowserKeys,
+  readLegacyBrowserKeys,
+} from '@/services/image-gen/legacy-browser-keys';
 
 export interface AiImagePreferences {
   selectedProviderId: string;
@@ -26,17 +34,20 @@ const isAspectRatio = (value: unknown): value is AspectRatio =>
 /**
  * Non-secret preferences for AI image generation (selected provider/model, default size/aspect).
  * Persisted in localStorage — this is app configuration, not scene state, so it deliberately does
- * NOT flow through appState / the undo history. API keys are NOT stored here; they live encrypted
- * in {@link SecretStorageService}, keyed by project id + provider secret id (per project until the
- * dev server's key proxy exists — plan §8.7).
+ * NOT flow through appState / the undo history.
+ *
+ * API keys are not in the browser at all (plan §B.1): the dev server keeps them in
+ * `~/.pix3/keys.json` and adds them to the provider call (`EditorHost.imageGen`). The page sets a
+ * key and learns only whether one is set (and its last four characters). A key an earlier editor
+ * stored in the browser (`legacy-browser-keys.ts`) is moved to the dev server once and deleted.
  */
 @injectable()
 export class AiImageSettingsService {
   @inject(ImageGenProviderRegistry)
   private readonly registry!: ImageGenProviderRegistry;
 
-  @inject(SecretStorageService)
-  private readonly secrets!: SecretStorageService;
+  @inject(HostService)
+  private readonly hostService!: HostService;
 
   private prefs: AiImagePreferences | null = null;
   private readonly listeners = new Set<(prefs: AiImagePreferences) => void>();
@@ -81,15 +92,27 @@ export class AiImageSettingsService {
     return () => this.listeners.delete(listener);
   }
 
-  // -- API keys (delegated to encrypted secret storage) ----------------------
+  // -- API keys (kept by the dev server, plan §B.1) ---------------------------
 
-  async setApiKey(providerId: string, apiKey: string): Promise<void> {
+  private migration: Promise<void> | null = null;
+
+  /** Whether the dev server has a key for the provider (never the key itself). */
+  async keyStatus(providerId: string): Promise<HostImageKeyStatus> {
+    const provider = this.registry.get(providerId);
+    if (!provider) return { set: false };
+    const imageGen = this.imageGen();
+    await (this.migration ??= this.migrateBrowserKeys(imageGen));
+    return (await imageGen.keys())[provider.id];
+  }
+
+  async setApiKey(providerId: string, apiKey: string): Promise<HostImageKeyStatus> {
     const provider = this.registry.get(providerId);
     if (!provider) {
       throw new Error(`Unknown image provider: ${providerId}`);
     }
-    await this.secrets.setSecret(this.secretIdFor(provider), apiKey);
+    const status = await this.imageGen().setKey(provider.id, apiKey);
     this.notify();
+    return status;
   }
 
   async clearApiKey(providerId: string): Promise<void> {
@@ -97,35 +120,55 @@ export class AiImageSettingsService {
     if (!provider) {
       return;
     }
-    await this.secrets.deleteSecret(this.secretIdFor(provider));
+    await this.imageGen().setKey(provider.id, null);
     this.notify();
   }
 
-  async hasApiKey(providerId: string): Promise<boolean> {
-    const provider = this.registry.get(providerId);
-    if (!provider) {
-      return false;
-    }
-    return this.secrets.hasSecret(this.secretIdFor(provider));
+  /** The provider's calls, through the dev server's proxy. */
+  transportFor(provider: ImageGenProvider): ImageGenTransport {
+    const imageGen = this.imageGen();
+    return (path, init) => imageGen.fetch(provider.id, path, init);
   }
 
-  async getApiKey(providerId: string): Promise<string | null> {
-    const provider = this.registry.get(providerId);
-    if (!provider) {
-      return null;
+  private imageGen(): HostImageGen {
+    const imageGen = HostService.isInstalled() ? this.hostService.host.imageGen : undefined;
+    if (!imageGen) {
+      throw new Error('This dev server has no image-generation proxy (update @pix3/vite-plugin).');
     }
-    return this.secrets.getSecret(this.secretIdFor(provider));
+    return imageGen;
   }
 
-  /** The provider's key, scoped to the open project (`project:<id>:<secret id>`). */
-  private secretIdFor(provider: ImageGenProvider): string {
-    const projectId = appState.project.id;
-    return projectId ? `project:${projectId}:${provider.apiKeySecretId}` : provider.apiKeySecretId;
+  /**
+   * Once per tab: a key an earlier editor kept in the browser (per project, encrypted in
+   * IndexedDB) moves to the dev server unless the server already has one for that provider; then
+   * the browser database is deleted. A failed hand-over keeps it for the next tab to try.
+   */
+  private async migrateBrowserKeys(imageGen: HostImageGen): Promise<void> {
+    try {
+      const stored = await readLegacyBrowserKeys();
+      if (!stored) return;
+      if (stored.size > 0) {
+        const status = await imageGen.keys();
+        for (const provider of this.registry.list()) {
+          if (status[provider.id].set) continue;
+          const value = [...stored].find(
+            ([id, key]) =>
+              key.trim() &&
+              (id === provider.apiKeySecretId || id.endsWith(`:${provider.apiKeySecretId}`))
+          )?.[1];
+          if (value) await imageGen.setKey(provider.id, value);
+        }
+      }
+      await deleteLegacyBrowserKeys();
+    } catch (error) {
+      console.warn('[pix3] could not move a browser-stored image-gen key to the dev server', error);
+    }
   }
 
   dispose(): void {
     this.listeners.clear();
     this.prefs = null;
+    this.migration = null;
   }
 
   // -- internals -------------------------------------------------------------

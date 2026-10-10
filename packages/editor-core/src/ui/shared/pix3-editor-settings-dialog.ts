@@ -124,6 +124,10 @@ export class EditorSettingsDialog extends ComponentBase {
   @state()
   private aiKeyConfigured = false;
 
+  /** Last four characters of the dev server's key, when it says (never the key). */
+  @state()
+  private aiKeyLast4: string | null = null;
+
   @state()
   private aiKeyInput = '';
 
@@ -470,7 +474,9 @@ export class EditorSettingsDialog extends ComponentBase {
         <input
           type="password"
           autocomplete="off"
-          placeholder=${this.aiKeyConfigured ? '•••••••• stored' : 'Paste API key'}
+          placeholder=${this.aiKeyConfigured
+            ? `Set${this.aiKeyLast4 ? ` (…${this.aiKeyLast4})` : ''} — paste a new key to replace it`
+            : 'Paste API key'}
           .value=${this.aiKeyInput}
           @input=${this.onAiKeyInput}
         />
@@ -499,8 +505,8 @@ export class EditorSettingsDialog extends ComponentBase {
               ? html` (get one from
                   <a href=${helpUrl} target="_blank" rel="noreferrer">the provider console</a>)`
               : ''}.
-            Stored encrypted in this browser, per project — never synced, and only sent to the
-            selected provider (OpenAI goes through the dev server's proxy).`}
+            The dev server keeps it in ~/.pix3/keys.json (one file for every project on this
+            machine) and adds it to the provider call; this page never sees it.`}
       </div>
     `;
   }
@@ -509,12 +515,16 @@ export class EditorSettingsDialog extends ComponentBase {
     const provider = this.imageProviders.get(this.aiProviderId);
     if (!provider) {
       this.aiKeyConfigured = false;
+      this.aiKeyLast4 = null;
       return;
     }
     try {
-      this.aiKeyConfigured = await this.aiImageSettings.hasApiKey(this.aiProviderId);
+      const status = await this.aiImageSettings.keyStatus(this.aiProviderId);
+      this.aiKeyConfigured = status.set;
+      this.aiKeyLast4 = status.last4 ?? null;
     } catch {
       this.aiKeyConfigured = false;
+      this.aiKeyLast4 = null;
     }
   }
 
@@ -546,10 +556,11 @@ export class EditorSettingsDialog extends ComponentBase {
     }
     this.aiKeyBusy = true;
     try {
-      await this.aiImageSettings.setApiKey(this.aiProviderId, key);
-      this.aiKeyConfigured = true;
+      const status = await this.aiImageSettings.setApiKey(this.aiProviderId, key);
+      this.aiKeyConfigured = status.set;
+      this.aiKeyLast4 = status.last4 ?? null;
       this.aiKeyInput = '';
-      this.aiKeyMessage = 'API key saved.';
+      this.aiKeyMessage = 'API key saved on the dev server.';
     } catch (error) {
       this.aiKeyMessage = `Failed to save key: ${error instanceof Error ? error.message : 'unknown error'}`;
     } finally {
@@ -565,6 +576,7 @@ export class EditorSettingsDialog extends ComponentBase {
     try {
       await this.aiImageSettings.clearApiKey(this.aiProviderId);
       this.aiKeyConfigured = false;
+      this.aiKeyLast4 = null;
       this.aiKeyInput = '';
       this.aiKeyMessage = 'API key removed.';
     } catch (error) {
