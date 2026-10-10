@@ -29,6 +29,6 @@ says so (AGENTS.md rule 13).
 
 ## Left
 
-- The kit itself is still the 1.x one (`.mcp.json` with `pix3 mcp --workspace`, the live-channel section, `pix3-verify`): its rework is plan §F.5 and the bridge work, not this change.
+- The kit itself is still the 1.x one (`.mcp.json` with `pix3 mcp --workspace`, the live-channel section, `pix3-verify`): its rework is plan §F.5 and the bridge work, not this change. (Done: `.plans/agent-bridge.md` A11, `.plans/kit.md`.)
 - `create-pix3` is not linted (ESLint covers runtime, cli, vite-plugin, editor-core); `tsc --checkJs` covers it.
-- The starters do not ship `pix3 editor` / `agent-setup` scripts; they arrive with the bridge.
+- The starters do not ship `pix3 editor` / `agent-setup` scripts; they arrive with the bridge. (Done: `npm run editor`, `.plans/kit.md` K4; `agent-setup` stays a one-time `npx pix3 agent-setup`.)
