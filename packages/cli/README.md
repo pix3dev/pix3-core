@@ -36,6 +36,12 @@ plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` / `{{PAC
 `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent kit. Nothing in it plays a
 game. Record: `.plans/templates.md`.
 
+Two things a first run trips on: **2.0.0-alpha packages are not published yet** — a new
+project's `npm install` fails until they are; the starter's README says how to link a pix3-core
+checkout meanwhile (`node_modules` → the checkout's, `node <checkout>/packages/cli/src/index.ts`
+for `pix3`). And **the dev port is Vite's**, 5173 only when free: `pix3 editor`, the kit and every
+harness read `.pix3/dev.json` (`editorUrl`, `publicEditorUrl`), never a fixed port.
+
 `new`, `kit`, `editor` and `agent-setup` load neither TypeScript nor the kit generator: the kit
 and the runtime types are prebuilt into the package (`kit/`, `dist/runtime-types.json`, at
 `prepack`).
@@ -382,7 +388,7 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 | `CLAUDE.md` | `@AGENTS.md` (plus `@AGENTS.pix3.md` in that case). A `CLAUDE.md` of the project's own is never touched — the command prints the line to add. |
 | `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format |
 | `design/tests/bots/pix3-test-bot.d.ts` | Global types for bot policies (`Pix3TestBot`, `BotPolicy`, …): a policy is `export default { name, tick(bot) { … } } satisfies BotPolicy`, and the starter's `tsconfig.json` includes `design/tests`, so `pix3 check` type-checks it. The editor writes no project files; this is where the 1.x editor-written declaration went |
-| `.gitignore` | `.pix3/` appended when not covered; existing content kept |
+| `.gitignore` | `.pix3/*` with `!.pix3/kit-manifest.json` and `!.pix3/template.json` appended when no line ignores `.pix3` yet; existing content kept |
 | `tsconfig.json`, `.pix3/tsconfig.check.json`, `.pix3/types/` | Only without a `tsconfig.json` of the project's own (see below) |
 | `pix3project.yaml` | `metadata.agentKit: { version, files }` (everything else as written) |
 | `.pix3/kit-manifest.json` | sha256 of every file the kit wrote |
@@ -390,8 +396,10 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 Without `--update`, existing files are never replaced (missing ones are written; an unchanged file
 from an older kit is reported `outdated`). `--update` replaces every kit file whose bytes still
 match the hash in `.pix3/kit-manifest.json` and **skips** (and reports) every file edited since.
-`.pix3/` is gitignored, so on a fresh clone the manifest is gone and every differing kit file counts
-as edited.
+The starters ignore `.pix3/*` but not `.pix3/kit-manifest.json` (nor `.pix3/template.json`), so a
+clone keeps the manifest. A project whose `.gitignore` ignores all of `.pix3/` (an older starter, or by
+hand) loses it on a fresh clone, and every differing kit file then counts as
+edited — replace that line with the three of the starter.
 
 **Generated, not copied.** `scripts/build-kit.mjs` (run at `prepack`; a repo checkout regenerates
 `kit/` automatically whenever an input changed) expands the templates in `kit-src/`: hand-written

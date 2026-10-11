@@ -1,7 +1,10 @@
 node_modules/
 dist/
-# Pix3 editor + CLI bookkeeping (dev server, version journal, build record)
-.pix3/
+# Pix3 editor + CLI bookkeeping (dev server, version journal, keys fallback, gaps) — ignored, except
+# the kit's record of the files it wrote (pix3 kit --update) and the template the project came from
+.pix3/*
+!.pix3/kit-manifest.json
+!.pix3/template.json
 # pix3 agent-setup: the MCP config names a file in this machine's home (~/.pix3/cdp-mcp.json);
 # an older one carried the CDP token itself
 .mcp.json

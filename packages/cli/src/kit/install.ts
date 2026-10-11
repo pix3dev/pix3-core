@@ -24,7 +24,8 @@ import type { KitSource } from './kit-source.ts';
  *   except that a project which already has an `AGENTS.md` of its own keeps it and gets
  *   `AGENTS.pix3.md` instead (and a `CLAUDE.md` of its own is never touched: the report says which
  *   line to add);
- * - `.pix3/` in `.gitignore` (existing content kept);
+ * - `.pix3/*` in `.gitignore` but for `.pix3/kit-manifest.json` and `.pix3/template.json`, which a
+ *   clone needs (existing content kept; a line that already ignores `.pix3` is left as it is);
  * - without a `tsconfig.json` of the project's own: `.pix3/types/`, `.pix3/tsconfig.check.json`
  *   and a root `tsconfig.json` that extends it (see `types/project-types.ts`);
  * - `metadata.agentKit: { version, files }` in `pix3project.yaml`;
@@ -38,7 +39,14 @@ export const AGENTS_FILE = 'AGENTS.md';
 export const AGENTS_ALT_FILE = 'AGENTS.pix3.md';
 export const CLAUDE_FILE = 'CLAUDE.md';
 const GITIGNORE = '.gitignore';
-const GITIGNORE_ENTRY = '.pix3/';
+/** Bookkeeping ignored; the kit's record and the template record travel with the checkout. */
+const GITIGNORE_BLOCK = [
+  "# Pix3 editor + CLI bookkeeping — ignored, except the kit's record of the files it wrote",
+  '# (pix3 kit --update) and the template the project came from',
+  '.pix3/*',
+  `!${KIT_PROJECT_MANIFEST}`,
+  '!.pix3/template.json',
+].join('\n');
 
 export interface ProjectKitManifest {
   readonly format: 1;
@@ -101,7 +109,7 @@ const writeAtomic = (path: string, contents: string): void => {
   renameSync(temp, path);
 };
 
-/** Add `.pix3/` to `.gitignore` unless an equivalent line is there. Returns true when written. */
+/** Add {@link GITIGNORE_BLOCK} unless a line already ignores `.pix3`. Returns true when written. */
 export const ensureGitignore = (projectRoot: string): boolean => {
   const path = join(projectRoot, GITIGNORE);
   const current = readText(path) ?? '';
@@ -111,10 +119,7 @@ export const ensureGitignore = (projectRoot: string): boolean => {
     .some(line => ['.pix3', '.pix3/', '/.pix3', '/.pix3/', '.pix3/*', '/.pix3/*'].includes(line));
   if (covered) return false;
   const prefix = current.length === 0 || current.endsWith('\n') ? current : `${current}\n`;
-  writeAtomic(
-    path,
-    `${prefix}${prefix ? '\n' : ''}# Pix3 editor + CLI bookkeeping (recovery journal, merge log, script types)\n${GITIGNORE_ENTRY}\n`
-  );
+  writeAtomic(path, `${prefix}${prefix ? '\n' : ''}${GITIGNORE_BLOCK}\n`);
   return true;
 };
 

@@ -1076,7 +1076,9 @@ describe('pix3 kit', () => {
     );
     expect(existsSync(join(root, '.pix3/types/@pix3/runtime/index.d.ts'))).toBe(true);
     expect(existsSync(join(root, '.pix3/types/@types/three/index.d.ts'))).toBe(true);
-    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toMatch(/^\.pix3\/$/m);
+    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toMatch(
+      /^\.pix3\/\*\n!\.pix3\/kit-manifest\.json\n!\.pix3\/template\.json$/m
+    );
     // The agent's MCP config is `pix3 agent-setup`, not the kit.
     expect(existsSync(join(root, '.mcp.json'))).toBe(false);
     const manifest = parse(readFileSync(join(root, 'pix3project.yaml'), 'utf8')) as {
@@ -1110,7 +1112,9 @@ describe('pix3 kit', () => {
       expect(tsconfig).not.toContain('.pix3/tsconfig.check.json');
       expect(existsSync(join(root, '.pix3/types'))).toBe(false);
       // The template's .gitignore already covers .pix3/: not appended twice.
-      expect(readFileSync(join(root, '.gitignore'), 'utf8').match(/^\.pix3\/$/gm)).toHaveLength(1);
+      expect(readFileSync(join(root, '.gitignore'), 'utf8').match(/^\.pix3\/\*$/gm)).toHaveLength(
+        1
+      );
     }
   });
 
@@ -1129,7 +1133,7 @@ describe('pix3 kit', () => {
     expect(alt).toContain(PRECEDENCE_SENTENCE);
     expect(alt).toContain('See AGENTS.pix3.md for the Pix3 engine rules.');
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toMatch(
-      /^node_modules\/\n[\s\S]*^\.pix3\/$/m
+      /^node_modules\/\n[\s\S]*^\.pix3\/\*$/m
     );
     expect(report.instructions.join('\n')).toContain('AGENTS.pix3.md');
     expect(report.instructions.join('\n')).toContain('@AGENTS.pix3.md');

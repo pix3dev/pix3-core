@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -142,7 +143,19 @@ describe('pix3 new', () => {
         "import { startGame } from '@pix3/vite-plugin/player';"
       );
       expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('<title>My Game!</title>');
-      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.pix3\/$/m);
+      // .pix3/ bookkeeping is ignored, the kit's and the template's records are not: a clone
+      // keeps what pix3 kit --update and the template id need.
+      const git = (...args: string[]) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+      if (git('init', '-q').status === 0) {
+        const ignored = (path: string) => git('check-ignore', '-q', path).status === 0;
+        expect(ignored('.pix3/kit-manifest.json')).toBe(false);
+        expect(ignored('.pix3/template.json')).toBe(false);
+        expect(ignored('.pix3/dev.json')).toBe(true);
+        expect(ignored('.pix3/local/keys.json')).toBe(true);
+        expect(ignored('.pix3/types/x.d.ts')).toBe(true);
+        expect(ignored('.mcp.json')).toBe(true);
+        rmSync(join(dir, '.git'), { recursive: true, force: true });
+      }
       // pix3 agent-setup writes the CDP token into these.
       expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.mcp\.json$/m);
       expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toMatch(/^\.codex\/config\.toml$/m);
