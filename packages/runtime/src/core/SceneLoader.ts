@@ -935,6 +935,28 @@ export class SceneLoader {
     return JSON.parse(JSON.stringify(value)) as T;
   }
 
+  /**
+   * A 2D node's placement, read the same way for every 2D type: position / scale / rotation from
+   * `transform:` (or the flat keys), then the anchor layout and the flow.
+   */
+  private readNode2DPlacement(props: Record<string, unknown>): {
+    position: Vector2;
+    scale: Vector2;
+    rotation: number;
+    layout: ReturnType<SceneLoader['parseNode2DLayout']>;
+    flow: ReturnType<SceneLoader['parseNode2DFlow']>;
+  } {
+    const transform = this.asRecord(props.transform);
+    const rotation = transform?.rotation ?? props.rotation;
+    return {
+      position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
+      scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
+      rotation: typeof rotation === 'number' ? rotation : 0,
+      layout: this.parseNode2DLayout(props),
+      flow: this.parseNode2DFlow(props),
+    };
+  }
+
   async createNodeFromDefinition(definition: SceneNodeDefinition): Promise<NodeBase> {
     const baseProps: NodeBaseProps = {
       id: definition.id,
@@ -950,18 +972,10 @@ export class SceneLoader {
     switch (resolveSceneNodeType(definition.type) ?? definition.type) {
       case 'ColorRect2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         return new ColorRect2D({
           ...baseProps,
           properties: props,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           width: this.asNumber(props.width, undefined),
           height: this.asNumber(props.height, undefined),
           color: typeof props.color === 'string' ? props.color : undefined,
@@ -970,7 +984,6 @@ export class SceneLoader {
       }
       case 'AnimatedSprite2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const animationResourcePath =
           typeof props.animationResourcePath === 'string' &&
           props.animationResourcePath.trim().length > 0
@@ -980,14 +993,7 @@ export class SceneLoader {
         const sprite = new AnimatedSprite2D({
           ...baseProps,
           properties: props,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           animationResourcePath,
           currentClip: typeof props.currentClip === 'string' ? props.currentClip : undefined,
@@ -1009,19 +1015,11 @@ export class SceneLoader {
       }
       case 'SpineSkeleton2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
 
         const skeleton = new SpineSkeleton2D({
           ...baseProps,
           properties: props,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           skeletonPath: this.asString(props.skeletonPath) ?? null,
           atlasPath: this.asString(props.atlasPath) ?? null,
@@ -1045,20 +1043,12 @@ export class SceneLoader {
       }
       case 'Sprite2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const texture = coerceTextureResource(props.texture ?? props.texturePath ?? null);
 
         const sprite = new Sprite2D({
           ...baseProps,
           properties: props,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           texture,
           textureKey: this.asString(props.textureKey),
@@ -1088,21 +1078,13 @@ export class SceneLoader {
       }
       case 'TiledSprite2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const texture = coerceTextureResource(props.texture ?? props.texturePath ?? null);
         const texturePath = texture?.url ?? null;
 
         const node = new TiledSprite2D({
           ...baseProps,
           properties: props,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           texture,
           width: this.asNumber(props.width, undefined),
@@ -1183,24 +1165,12 @@ export class SceneLoader {
       }
       case 'Node2D': {
         const props = baseProps.properties as Node2DProperties;
-        // `SceneSaver` writes a 2D node's placement ONLY inside `properties.transform`.
-        // Reading just the flat keys here (the one 2D branch that used to) meant a plain
-        // `Node2D` survived its first load and was then silently reset to the origin by the
-        // first save/load round trip — reopening the scene, entering play mode, or
-        // instantiating it as a prefab. Every sibling 2D branch reads `transform` first;
-        // this one has to as well.
-        const record = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(record.transform);
-        const rotation = transform?.rotation ?? props.rotation;
+        // `SceneSaver` writes a 2D node's placement ONLY inside `properties.transform` (and its
+        // `flow` like every 2D node's): reading only the flat keys here, as this branch once did,
+        // reset a plain `Node2D` to the origin on the first save/load round trip.
         return new Node2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation: typeof rotation === 'number' ? rotation : 0,
-          layout: this.parseNode2DLayout(record),
-          // `SceneSaver` writes `flow` for a plain Node2D like for every 2D node; reading it back
-          // here too keeps a flow container from losing its stacking on the first round trip.
-          flow: this.parseNode2DFlow(record),
+          ...this.readNode2DPlacement(baseProps.properties as Record<string, unknown>),
           opacity: this.asNumber(props.opacity, undefined),
         });
       }
@@ -1211,18 +1181,10 @@ export class SceneLoader {
       }
       case 'Group2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
 
         return new Group2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
@@ -1230,18 +1192,10 @@ export class SceneLoader {
       }
       case 'CanvasLayer2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
 
         return new CanvasLayer2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
@@ -1249,19 +1203,11 @@ export class SceneLoader {
       }
       case 'Camera2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const d = CAMERA2D_DEFAULTS;
 
         return new Camera2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           priority: this.asNumber(props.priority, d.priority),
           zoom: this.asNumber(props.zoom, d.zoom),
@@ -1284,21 +1230,13 @@ export class SceneLoader {
       }
       case 'ScrollContainer2D': {
         const props = baseProps.properties as ScrollContainer2DProperties & Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
 
         const thumbTexture = coerceTextureResource(props.scrollbarThumbTexture ?? null);
         const trackTexture = coerceTextureResource(props.scrollbarTrackTexture ?? null);
 
         const container = new ScrollContainer2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
@@ -1351,17 +1289,9 @@ export class SceneLoader {
       }
       case 'Joystick2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         return new Joystick2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           radius: this.asNumber(props.radius, undefined),
           handleRadius: this.asNumber(props.handleRadius, undefined),
@@ -1374,7 +1304,6 @@ export class SceneLoader {
       }
       case 'Button2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
 
         const stateRefs: Array<[Button2DSpriteState, TextureResourceRef | null]> = [
           ['normal', coerceTextureResource(props.textureNormal ?? null)],
@@ -1394,14 +1323,7 @@ export class SceneLoader {
 
         const button = new Button2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, undefined),
           height: this.asNumber(props.height, undefined),
@@ -1443,17 +1365,9 @@ export class SceneLoader {
       }
       case 'Label2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         return new Label2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           label: this.asString(props.label),
           labelKey: this.asString(props.labelKey),
@@ -1472,17 +1386,9 @@ export class SceneLoader {
       }
       case 'Slider2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const slider = new Slider2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, undefined),
           height: this.asNumber(props.height, undefined),
@@ -1527,17 +1433,9 @@ export class SceneLoader {
       }
       case 'Bar2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const bar = new Bar2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, undefined),
           height: this.asNumber(props.height, undefined),
@@ -1577,17 +1475,9 @@ export class SceneLoader {
       }
       case 'Checkbox2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         const checkbox = new Checkbox2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           size: this.asNumber(props.size, undefined),
           checked: typeof props.checked === 'boolean' ? props.checked : undefined,
@@ -1627,17 +1517,9 @@ export class SceneLoader {
       }
       case 'InventorySlot2D': {
         const props = baseProps.properties as Record<string, unknown>;
-        const transform = this.asRecord(props.transform);
         return new InventorySlot2D({
           ...baseProps,
-          position: this.readVector2(transform?.position ?? props.position, ZERO_VECTOR2),
-          scale: this.readVector2(transform?.scale ?? props.scale, UNIT_VECTOR2),
-          rotation:
-            typeof (transform?.rotation ?? props.rotation) === 'number'
-              ? ((transform?.rotation ?? props.rotation) as number)
-              : 0,
-          layout: this.parseNode2DLayout(props),
-          flow: this.parseNode2DFlow(props),
+          ...this.readNode2DPlacement(props),
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, undefined),
           height: this.asNumber(props.height, undefined),
