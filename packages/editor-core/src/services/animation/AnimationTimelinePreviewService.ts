@@ -42,9 +42,9 @@ import {
 } from '@pix3/runtime';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { OperationService, type OperationEvent } from '@/services/core/OperationService';
+import { FlushService } from '@/services/project/FlushService';
 import { UPDATE_ANIMATION_CLIPS_OPERATION_ID } from '@/features/animation-timeline/UpdateAnimationPlayerClipsOperation';
 
-const SAVE_OPERATION_IDS = new Set(['scene.save', 'scene.save-as-prefab']);
 const ALLOWED_OPERATION_IDS = new Set([UPDATE_ANIMATION_CLIPS_OPERATION_ID, 'scene.select-object']);
 const REFLOW_2D_PROPERTIES = new Set([
   'layoutEnabled',
@@ -95,14 +95,17 @@ export class AnimationTimelinePreviewService {
   @inject(OperationService)
   private readonly operations!: OperationService;
 
+  @inject(FlushService)
+  private readonly flush!: FlushService;
+
   private session: PreviewSession | null = null;
   private playing = false;
   private rafHandle: number | null = null;
   private lastFrameTs: number | null = null;
-  private suspendedForSave = false;
   private readonly listeners = new Set<AnimationPreviewListener>();
   private readonly audioHandles = new Set<AudioPlayback>();
   private disposeOperationListener: (() => void) | null = null;
+  private disposeAuthoredGuard: (() => void) | null = null;
 
   get isActive(): boolean {
     return this.session !== null;
@@ -242,6 +245,8 @@ export class AnimationTimelinePreviewService {
     this.stopAndRestoreInternal();
     this.disposeOperationListener?.();
     this.disposeOperationListener = null;
+    this.disposeAuthoredGuard?.();
+    this.disposeAuthoredGuard = null;
     this.listeners.clear();
   }
 
@@ -293,7 +298,6 @@ export class AnimationTimelinePreviewService {
     this.stopAudioPlayback();
     this.restoreSnapshotValues();
     this.session = null;
-    this.suspendedForSave = false;
     return session.time;
   }
 
@@ -318,7 +322,7 @@ export class AnimationTimelinePreviewService {
 
   private applyAtCurrentTime(): void {
     const session = this.session;
-    if (!session || this.suspendedForSave) {
+    if (!session) {
       return;
     }
     applyClipAtTime(session.binding, session.time);
@@ -488,7 +492,22 @@ export class AnimationTimelinePreviewService {
       return;
     }
     this.disposeOperationListener = this.operations.addListener(this.onOperationEvent);
+    this.disposeAuthoredGuard = this.flush.guardAuthored(this.readAuthored);
   }
+
+  /**
+   * The pose is a preview, not an edit: whatever reads the graph to write it (a flush, a draft, a
+   * merge) reads the authored values, and the pose is put back right after.
+   */
+  private readonly readAuthored = <T>(read: () => T): T => {
+    if (!this.session) return read();
+    this.restoreSnapshotValues();
+    try {
+      return read();
+    } finally {
+      this.applyAtCurrentTime();
+    }
+  };
 
   private readonly onOperationEvent = (event: OperationEvent): void => {
     if (!this.session) {
@@ -502,13 +521,6 @@ export class AnimationTimelinePreviewService {
     // restore — and its undo records the authored value, not the preview
     // sample. Our own clip edits and selection keep the session alive.
     if (event.type === 'operation:invoked') {
-      // Scene saves serialize the live graph: restore authored values before
-      // the save performs, re-apply the preview pose afterwards.
-      if (SAVE_OPERATION_IDS.has(event.metadata.id)) {
-        this.restoreSnapshotValues();
-        this.suspendedForSave = true;
-        return;
-      }
       if (
         event.metadata.id === UPDATE_ANIMATION_CLIPS_OPERATION_ID ||
         ALLOWED_OPERATION_IDS.has(event.metadata.id)
@@ -521,13 +533,6 @@ export class AnimationTimelinePreviewService {
     }
 
     if (event.type === 'operation:completed') {
-      if (SAVE_OPERATION_IDS.has(event.metadata.id)) {
-        if (this.suspendedForSave) {
-          this.suspendedForSave = false;
-          this.applyAtCurrentTime();
-        }
-        return;
-      }
       // Re-resolve bindings after our own clip edits so scrubbing stays live
       // while keys are added/moved (including autokey recording).
       if (event.didMutate && event.metadata.id === UPDATE_ANIMATION_CLIPS_OPERATION_ID) {

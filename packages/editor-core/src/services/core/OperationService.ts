@@ -33,7 +33,7 @@ export type OperationEvent =
       /** True when the operation changed local state. */
       readonly metadata: OperationMetadata;
       readonly didMutate: boolean;
-      /** True when the mutation was committed through history and is safe to sync in collaboration. */
+      /** True when the mutation was committed through history (undoable). */
       readonly pushedToHistory: boolean;
       /** Scene active when execution began, before any asynchronous work or tab switch. */
       readonly sceneId?: string | null;
@@ -77,24 +77,22 @@ interface ExecutionResult {
 
 const READ_ONLY_ALLOWED_OPERATIONS = new Set([
   'scene.select-object',
-  'viewport.toggle-grid',
-  'viewport.toggle-layer-2d',
-  'viewport.toggle-layer-3d',
-  'viewport.toggle-lighting',
   'viewport.set-editor-camera-projection',
   'viewport.set-preview-camera',
-  'viewport.toggle-ui-flag',
-  // Peek is a per-user view mask that never reaches the document, so a read-only collab session
-  // must still be able to look behind something.
+  // Peek is a per-user view mask that never reaches the document, so a read-only tab must still
+  // be able to look behind something.
   'viewport.set-peek-visibility',
-  'scripts.set-play-mode',
-  'scripts.set-game-popout-window-open',
+  'scene.set-play-mode',
+  'scene.set-play-paused',
+  'scene.set-game-popout-window-open',
   'editor.update-settings',
   // Following the disk is not an edit: a read-only tab must show what the writer tab (or an
   // agent) wrote — the external-version path reloads its scenes and refreshes prefab instances.
   'scene.reload',
   'scene.refresh-prefab-instances',
 ]);
+/** `ToggleUIFlagOperation` (grid, layers, gizmos): view state only. */
+const READ_ONLY_ALLOWED_PREFIXES = ['ui.toggle-'];
 
 const NO_SCENE_HISTORY_KEY = '__none__';
 
@@ -119,7 +117,6 @@ export class OperationService {
   // to the active scene's stack; buckets for closed scenes are pruned.
   private readonly histories = new Map<string, HistoryManager>();
   private readonly historyVersions = new WeakMap<HistoryManager, number>();
-  private historyCapacity: number | undefined;
   private readonly seedHistory?: HistoryManager;
   private subscribedHistory: HistoryManager | null = null;
   private disposeHistorySubscription: () => void = () => {};
@@ -152,11 +149,7 @@ export class OperationService {
       // Reuse the injected/seed manager for the very first bucket so tests and
       // DI wiring that pass a specific HistoryManager keep working.
       manager =
-        this.seedHistory && this.histories.size === 0
-          ? this.seedHistory
-          : new HistoryManager(
-              this.historyCapacity != null ? { capacity: this.historyCapacity } : undefined
-            );
+        this.seedHistory && this.histories.size === 0 ? this.seedHistory : new HistoryManager();
       this.histories.set(key, manager);
     }
     return manager;
@@ -171,8 +164,6 @@ export class OperationService {
     this.disposeHistorySubscription();
     this.subscribedHistory = manager;
     this.disposeHistorySubscription = manager.subscribe(snapshot => {
-      const lastEntry = snapshot.undoEntries[snapshot.undoEntries.length - 1];
-      this.state.operations.lastUndoableCommandId = lastEntry?.metadata.commandId ?? null;
       this.emit({
         type: 'history:changed',
         snapshot,
@@ -303,22 +294,12 @@ export class OperationService {
       return false;
     }
 
-    this.state.operations.isExecuting = true;
-
-    try {
-      const undone = await this.history.undo();
-      if (undone) {
-        this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
-        this.emit({ type: 'operation:undone', entry, timestamp: Date.now() });
-        const nextSnapshot = this.history.snapshot();
-        const nextUndoEntry = nextSnapshot.undoEntries[nextSnapshot.undoEntries.length - 1] ?? null;
-        this.state.operations.lastUndoableCommandId = nextUndoEntry?.metadata.commandId ?? null;
-        this.state.operations.lastCommandId = entry.metadata.commandId ?? null;
-      }
-      return undone;
-    } finally {
-      this.state.operations.isExecuting = false;
+    const undone = await this.history.undo();
+    if (undone) {
+      this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
+      this.emit({ type: 'operation:undone', entry, timestamp: Date.now() });
     }
+    return undone;
   }
 
   async redo(): Promise<boolean> {
@@ -335,22 +316,12 @@ export class OperationService {
       return false;
     }
 
-    this.state.operations.isExecuting = true;
-
-    try {
-      const redone = await this.history.redo();
-      if (redone) {
-        this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
-        this.emit({ type: 'operation:redone', entry, timestamp: Date.now() });
-        const nextSnapshot = this.history.snapshot();
-        const nextUndoEntry = nextSnapshot.undoEntries[nextSnapshot.undoEntries.length - 1] ?? null;
-        this.state.operations.lastUndoableCommandId = nextUndoEntry?.metadata.commandId ?? null;
-        this.state.operations.lastCommandId = entry.metadata.commandId ?? null;
-      }
-      return redone;
-    } finally {
-      this.state.operations.isExecuting = false;
+    const redone = await this.history.redo();
+    if (redone) {
+      this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
+      this.emit({ type: 'operation:redone', entry, timestamp: Date.now() });
     }
+    return redone;
   }
 
   /** Clear one scene's history, returning whether it had undo/redo entries. */
@@ -361,22 +332,12 @@ export class OperationService {
     if (history) {
       this.invalidateHistory(history);
     }
-    if (sceneId === this.state.scenes.activeSceneId) {
-      this.state.operations.lastUndoableCommandId = null;
-    }
     return hadHistory;
   }
 
   private invalidateHistory(history: HistoryManager): void {
     this.historyVersions.set(history, (this.historyVersions.get(history) ?? 0) + 1);
     history.clear();
-  }
-
-  setHistoryCapacity(capacity: number): void {
-    this.historyCapacity = Math.max(1, capacity);
-    for (const manager of this.histories.values()) {
-      manager.setCapacity(capacity);
-    }
   }
 
   private async executeOperation<TInvokeResult extends OperationInvokeResult>(
@@ -386,14 +347,14 @@ export class OperationService {
   ): Promise<ExecutionResult> {
     const sceneId = context.state.scenes.activeSceneId;
     const metadata = operation.metadata;
-    this.beginOperation(metadata, context.state);
+    this.beginOperation(metadata);
 
     try {
       const result = await operation.perform(context);
       const normalized = this.normalizeInvokeResult(result, options);
       return { context, sceneId, metadata, result: normalized as OperationInvokeResult };
     } catch (error) {
-      this.failOperation(metadata, context.state, error);
+      this.failOperation(metadata, error);
       throw error;
     }
   }
@@ -495,15 +456,11 @@ export class OperationService {
     };
   }
 
-  private beginOperation(metadata: OperationMetadata, state: AppState): void {
+  private beginOperation(metadata: OperationMetadata): void {
     this.logger.debug('beginOperation: Starting', {
       operationId: metadata.id,
       operationTitle: metadata.title,
-      pendingCount: state.operations.pendingCommandCount + 1,
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount + 1);
-    state.operations.isExecuting = true;
-    state.operations.lastCommandId = metadata.id;
     this.emit({ type: 'operation:invoked', metadata, timestamp: Date.now() });
   }
 
@@ -520,12 +477,8 @@ export class OperationService {
       operationTitle: metadata.title,
       didMutate,
       pushedToHistory,
-      pendingCount: Math.max(0, state.operations.pendingCommandCount - 1),
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount - 1);
-    state.operations.isExecuting = state.operations.pendingCommandCount > 0;
     if (didMutate) {
-      state.operations.lastCommandId = metadata.id;
       state.scenes.nodeDataChangeSignal = state.scenes.nodeDataChangeSignal + 1;
     }
     this.emit({
@@ -539,15 +492,12 @@ export class OperationService {
     });
   }
 
-  private failOperation(metadata: OperationMetadata, state: AppState, error: unknown): void {
+  private failOperation(metadata: OperationMetadata, error: unknown): void {
     this.logger.error('failOperation: Operation failed', {
       operationId: metadata.id,
       operationTitle: metadata.title,
       error,
-      pendingCount: Math.max(0, state.operations.pendingCommandCount - 1),
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount - 1);
-    state.operations.isExecuting = state.operations.pendingCommandCount > 0;
     this.emit({ type: 'operation:failed', metadata, error, timestamp: Date.now() });
   }
 
@@ -563,7 +513,11 @@ export class OperationService {
 
   /** A tab that is not the writer (another tab took over) only follows the disk. */
   private ensureWritable(actionId: string): void {
-    if (appState.project.host.writer !== 'other' || READ_ONLY_ALLOWED_OPERATIONS.has(actionId)) {
+    if (
+      appState.project.host.writer !== 'other' ||
+      READ_ONLY_ALLOWED_OPERATIONS.has(actionId) ||
+      READ_ONLY_ALLOWED_PREFIXES.some(prefix => actionId.startsWith(prefix))
+    ) {
       return;
     }
 

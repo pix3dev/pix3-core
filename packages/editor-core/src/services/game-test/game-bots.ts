@@ -89,6 +89,7 @@
  */
 
 import type { Json } from '@/core/agent-introspection';
+import { describeError } from '@/services/game-test/report-format';
 
 // ---------------------------------------------------------------------------
 // Storage
@@ -886,10 +887,6 @@ function describeThrown(thrown: unknown): { message: string; stack?: string } {
     };
   }
   return { message: String(thrown) };
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Shared by every "no such policy" answer, so the model always sees what exists. */

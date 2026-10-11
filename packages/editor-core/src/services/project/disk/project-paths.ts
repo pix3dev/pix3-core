@@ -18,6 +18,17 @@ export function toProjectPath(path: string): string {
     .replace(/\/+$/, '');
 }
 
+/** {@link toProjectPath} with `.` for the project root — the folder form of the asset views and the wire. */
+export function toFolderPath(path: string): string {
+  return toProjectPath(path) || '.';
+}
+
+/** `scenes/a.pix3scene`, `./scenes\\a.pix3scene`, `res://scenes/a.pix3scene` → `res://scenes/a.pix3scene`. */
+export function toResourcePath(path: string): string {
+  const projectPath = toProjectPath(path);
+  return projectPath && projectPath !== '.' ? `res://${projectPath}` : 'res://';
+}
+
 /** True for `.pix3` itself and anything under it (in any spelling of the path). */
 export function isPix3InternalPath(path: string): boolean {
   const normalized = toProjectPath(path);

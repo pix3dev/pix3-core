@@ -115,22 +115,11 @@ export class EditorTabComponent extends ComponentBase {
   tabId: string = '';
 
   /**
-   * Tab-less mode: this viewport is the only one on screen and owns the shared canvas outright.
-   *
-   * Vibe (`pix3-flow-scene-view`) has no Golden Layout, no tabs and therefore no entry in
-   * `appState.tabs` — every "am I the active tab?" gate would answer `false` there and the surface
-   * would ignore every pointer, wheel and key event. Standalone answers `true` instead, and drops
-   * the top toolbar (there is no room for editor chrome on the Vibe stage).
-   */
-  @property({ type: Boolean })
-  standalone = false;
-
-  /**
    * Whether this viewport is the one the user is driving. The shared canvas, the navigation lock
    * and the input handlers all key off it, so background Studio tabs never fight over them.
    */
   private get isActiveTab(): boolean {
-    return this.standalone || appState.tabs.activeTabId === this.tabId;
+    return appState.tabs.activeTabId === this.tabId;
   }
 
   @state()
@@ -164,11 +153,6 @@ export class EditorTabComponent extends ComponentBase {
   private editorCameraProjection: EditorCameraProjection = 'perspective';
 
   private canvasHost?: HTMLElement;
-  /**
-   * Whether the standalone viewport has framed its scene once (see `syncActiveState`). Not reset on
-   * re-attach: framing is a first-impression fix, not something to redo behind the user's back.
-   */
-  private hasFramedStandalone = false;
   private disposeUiSubscription?: () => void;
   private disposeTabsSubscription?: () => void;
   private disposeScenesSubscription?: () => void;
@@ -366,9 +350,7 @@ export class EditorTabComponent extends ComponentBase {
 
   protected render() {
     const tab = appState.tabs.tabs.find(t => t.id === this.tabId);
-    // Standalone has no tab to classify: it exists only to edit the active scene, so it is always
-    // a scene viewport — without this the transform overlay and the zoom controls would be gone.
-    const isSceneTab = this.standalone || tab?.type === 'scene';
+    const isSceneTab = tab?.type === 'scene';
 
     return html`
       <section
@@ -382,7 +364,7 @@ export class EditorTabComponent extends ComponentBase {
         @drop=${this.handleDrop}
         @dragleave=${this.handleDragLeave}
       >
-        ${this.standalone ? null : this.renderToolbarShell(isSceneTab)}
+        ${this.renderToolbarShell(isSceneTab)}
 
         <div
           class="viewport-host"
@@ -418,10 +400,7 @@ export class EditorTabComponent extends ComponentBase {
               )
             : null}
           <!-- Peek's branch chips: a bottom-left column INSIDE the canvas, like the transform and
-               zoom overlays beside it, not toolbar chrome. Deliberately outside the standalone
-               guard above, so Vibe's scene view gets it from here rather than mounting its own
-               copy; Studio has to carry it too (not a later PR) because the mask persists per
-               scene FILE and is therefore shared between the two workspaces. -->
+               zoom overlays beside it, not toolbar chrome. -->
           ${isSceneTab ? html`<pix3-peek-strip></pix3-peek-strip>` : null}
         </div>
       </section>
@@ -431,11 +410,6 @@ export class EditorTabComponent extends ComponentBase {
   /**
    * The top chrome bar: transform modes, grid/snap/lighting toggles, layer and camera pickers, the
    * alignment cluster and the locale preview.
-   *
-   * Standalone renders none of it. Vibe's scene view is a small stage beside a chat column with no
-   * room for a toolbar, and every switch in here has a Studio home; what standalone keeps are the
-   * overlays painted INSIDE the canvas (transform modes, zoom, the marquee), which is what you
-   * actually need to navigate and pick.
    */
   private renderToolbarShell(isSceneTab: boolean) {
     const {
@@ -691,9 +665,7 @@ export class EditorTabComponent extends ComponentBase {
   }
 
   private syncActiveState(): void {
-    // Standalone has no tab id by design — the check is "do I know which tab I am?", and standalone
-    // knows it is the only one.
-    if (!this.standalone && !this.tabId) return;
+    if (!this.tabId) return;
     if (!this.isActiveTab) return;
     if (!this.canvasHost) return;
     this.viewportRenderer.attachToHost(this.canvasHost);
@@ -718,15 +690,6 @@ export class EditorTabComponent extends ComponentBase {
       } else {
         this.viewportRenderer.resize(rect.width, rect.height);
       }
-    }
-
-    // A scene reached through Vibe never went through a tab, so no editor-camera context was ever
-    // saved or restored for it: the default camera can be aimed at empty space and the user's first
-    // impression of the scene view is a blank canvas. Frame it once, on the first attach only —
-    // re-framing on every re-attach would throw away wherever they navigated to.
-    if (this.standalone && !this.hasFramedStandalone) {
-      this.hasFramedStandalone = true;
-      this.zoomAll();
     }
   }
 

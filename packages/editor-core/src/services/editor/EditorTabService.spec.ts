@@ -21,7 +21,7 @@ describe('EditorTabService', () => {
 
   const createService = () => {
     const service = new EditorTabService();
-    const sceneWrite = { saveScene: vi.fn(async () => 'saved' as const) };
+    const flush = { saveScene: vi.fn(async () => 'saved' as const) };
 
     Object.defineProperty(service, 'layoutManager', {
       value: {
@@ -54,13 +54,13 @@ describe('EditorTabService', () => {
     Object.defineProperty(service, 'projectScriptLoader', {
       value: { ensureReady: vi.fn(async () => undefined) },
     });
-    Object.defineProperty(service, 'sceneWrite', { value: sceneWrite });
+    Object.defineProperty(service, 'flush', { value: flush });
     Object.defineProperty(service, 'storage', {
       value: { getLastModified: vi.fn(async () => 1) },
       configurable: true,
     });
 
-    return { service, sceneWrite };
+    return { service, flush };
   };
 
   const describeScene = (resourcePath: string, isDirty: boolean) => {
@@ -77,7 +77,7 @@ describe('EditorTabService', () => {
   };
 
   it('opens a scene tab, mirrors its dirty state, and saves through FlushService', async () => {
-    const { service, sceneWrite } = createService();
+    const { service, flush } = createService();
 
     await service.openResourceTab('scene', SCENE);
     expect(appState.tabs.activeTabId).toBe(`scene:${SCENE}`);
@@ -90,7 +90,7 @@ describe('EditorTabService', () => {
     expect(appState.tabs.tabs[0]?.title).toBe('main.pix3scene');
 
     await service.saveActiveTab();
-    expect(sceneWrite.saveScene).toHaveBeenCalledWith(sceneId);
+    expect(flush.saveScene).toHaveBeenCalledWith(sceneId);
   });
 
   it('reports every dirty tab as dirty', () => {

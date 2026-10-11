@@ -107,14 +107,6 @@ export class LoggingService {
   }
 
   /**
-   * Get logs filtered by level
-   */
-  getLogsByLevel(...levels: LogLevel[]): LogEntry[] {
-    const levelSet = new Set(levels);
-    return this.logs.filter(log => levelSet.has(log.level));
-  }
-
-  /**
    * Clear all logs
    */
   clearLogs(): void {
@@ -133,14 +125,6 @@ export class LoggingService {
   }
 
   /**
-   * Set enabled log levels
-   */
-  setEnabledLevels(levels: LogLevel[]): void {
-    this.enabledLevels.clear();
-    levels.forEach(level => this.enabledLevels.add(level));
-  }
-
-  /**
    * Get enabled log levels
    */
   getEnabledLevels(): LogLevel[] {
@@ -156,13 +140,6 @@ export class LoggingService {
     } else {
       this.enabledLevels.add(level);
     }
-  }
-
-  /**
-   * Check if a log level is enabled
-   */
-  isLevelEnabled(level: LogLevel): boolean {
-    return this.enabledLevels.has(level);
   }
 
   dispose(): void {

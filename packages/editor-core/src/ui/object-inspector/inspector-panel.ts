@@ -11,18 +11,12 @@ import { BehaviorPickerService } from '@/services/editor/BehaviorPickerService';
 import { EffectPickerService } from '@/services/editor/EffectPickerService';
 import { ScriptRegistry } from '@pix3/runtime';
 import { IconService } from '@/services/editor/IconService';
-import { AnimationEditorService } from '@/services/animation/AnimationEditorService';
 import {
   AssetsPreviewService,
   type AssetPreviewItem,
 } from '@/services/assets/AssetsPreviewService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { LightboxService } from '@/services/editor/LightboxService';
-import { HostService } from '@/host/HostService';
-import type {
-  AnimationInspectorController,
-  AnimationInspectorSnapshot,
-} from '@/services/animation/AnimationEditorService';
+import { AssetFileActivationService } from '@/services/assets/AssetFileActivationService';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { SpineSkeleton2D } from '@pix3/runtime';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
@@ -49,6 +43,7 @@ import './inspector-panel.ts.css';
 import './inspector-controls.ts.css';
 import './model-asset-preview';
 import './property-editors';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
  * Poll cadence for the play-mode live read-out (~12.5 Hz). Fast enough to feel
@@ -92,9 +87,6 @@ export class InspectorPanel extends ComponentBase {
   @inject(AssetsPreviewService)
   private readonly assetsPreviewService!: AssetsPreviewService;
 
-  @inject(AnimationEditorService)
-  readonly animationEditorService!: AnimationEditorService;
-
   @inject(ViewportRendererService)
   readonly viewportService!: ViewportRendererService;
 
@@ -104,11 +96,8 @@ export class InspectorPanel extends ComponentBase {
   @inject(Polygon2DEditController)
   private readonly polygonEditor!: Polygon2DEditController;
 
-  @inject(LightboxService)
-  private readonly lightbox!: LightboxService;
-
-  @inject(HostService)
-  private readonly hostService!: HostService;
+  @inject(AssetFileActivationService)
+  private readonly assetActivation!: AssetFileActivationService;
 
   @state()
   selectedNodes: NodeBase[] = [];
@@ -159,9 +148,6 @@ export class InspectorPanel extends ComponentBase {
   @state()
   isGroupsEditorOpen = false;
 
-  @state()
-  activeAnimationState: AnimationInspectorSnapshot | null = null;
-
   /**
    * Collapsed inspector sections, keyed `(nodeTypeId, sectionName)` and read
    * once on connect from the single `pix3.inspector.collapsed` localStorage key.
@@ -178,13 +164,6 @@ export class InspectorPanel extends ComponentBase {
   /** `appState.project.scriptRefreshSignal` this panel last rendered against. */
   private lastScriptRefreshSignal = appState.project.scriptRefreshSignal;
   private disposeAssetPreviewSubscription?: () => void;
-  private disposeAnimationEditorSubscription?: () => void;
-  disposeAnimationControllerSubscription?: () => void;
-  activeAnimationController: AnimationInspectorController | null = null;
-
-  /** `${clipName}#${frameIndex}` of the last rendered animation selection (scroll-into-view guard). */
-  private lastAnimationSelectionKey: string | null = null;
-  private lastAnimationClipName: string | undefined = undefined;
 
   readonly resourcePreview = new InspectorResourcePreview(this);
   readonly sectionRenderers = new InspectorSectionRenderers(this);
@@ -251,11 +230,7 @@ export class InspectorPanel extends ComponentBase {
       }
       this.requestUpdate();
     });
-    this.disposeAnimationEditorSubscription = this.animationEditorService.subscribe(() => {
-      this.sectionRenderers.syncActiveAnimationContext();
-    });
     this.updateSelectedNodes();
-    this.sectionRenderers.syncActiveAnimationContext();
     if (appState.ui.isPlaying) {
       this.startLiveTimer();
     }
@@ -332,10 +307,6 @@ export class InspectorPanel extends ComponentBase {
     this.isLivePlayMode = false;
     this.disposeAssetPreviewSubscription?.();
     this.disposeAssetPreviewSubscription = undefined;
-    this.disposeAnimationEditorSubscription?.();
-    this.disposeAnimationEditorSubscription = undefined;
-    this.disposeAnimationControllerSubscription?.();
-    this.disposeAnimationControllerSubscription = undefined;
     this.removeEventListener('locate-resource', this.onLocateResource as EventListener);
     document.removeEventListener('pointerdown', this.onDocumentPointerDown);
 
@@ -653,13 +624,10 @@ export class InspectorPanel extends ComponentBase {
   /** Double-clicking a texture property previews that image full-screen. */
   onOpenTextureResource(resourcePath: string): void {
     const trimmedResourcePath = resourcePath.trim();
-    if (!trimmedResourcePath || !HostService.isInstalled()) {
-      return;
+    if (trimmedResourcePath) {
+      const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
+      this.assetActivation.previewImage(trimmedResourcePath, title);
     }
-
-    const url = this.hostService.host.files.url(this.hostService.wirePath(trimmedResourcePath));
-    const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
-    this.lightbox.open([{ kind: 'image', title, url, path: trimmedResourcePath }]);
   }
 
   onComponentAudioResourceDrop(
@@ -1069,8 +1037,7 @@ export class InspectorPanel extends ComponentBase {
 
   /**
    * Trace an outline from the node's own texture alpha and write it into the
-   * polygon — the same marching-squares + Ramer-Douglas-Peucker pipeline the
-   * Sprite Editor uses on animation frames, reused here for a static sprite.
+   * polygon — marching squares + Ramer-Douglas-Peucker (`core/contour-trace.ts`).
    */
   async onPolygonTrace(componentId: string, prop: PropertyDefinition): Promise<void> {
     const node = this.primaryNode;
@@ -1081,9 +1048,7 @@ export class InspectorPanel extends ComponentBase {
 
     this.tracingPolygonComponentIds = [...this.tracingPolygonComponentIds, componentId];
     try {
-      const blob = await this.projectStorage.readBlob(
-        texturePath.startsWith('res://') ? texturePath.substring(6) : texturePath
-      );
+      const blob = await this.projectStorage.readBlob(toProjectPath(texturePath));
       const mask = await readAlphaMask(blob);
       if (!mask) {
         return;
@@ -1237,40 +1202,9 @@ export class InspectorPanel extends ComponentBase {
     }
   }
 
-  /**
-   * Bring the Animation Inspector's clip/frame section into view when the *editor*
-   * moves the selection (timeline scrub, clips rail, canvas). Keyed on the
-   * clip name + frame index only, so editing a value in the Inspector never
-   * scrolls; `block: 'nearest'` makes it a no-op when the section is already
-   * visible.
-   */
-  protected updated(): void {
-    const state = this.activeAnimationState;
-    const key = state ? `${state.activeClipName}#${state.selectedFrameIndex}` : null;
-    if (key === this.lastAnimationSelectionKey) {
-      return;
-    }
-
-    const clipChanged = state?.activeClipName !== this.lastAnimationClipName;
-    this.lastAnimationSelectionKey = key;
-    this.lastAnimationClipName = state?.activeClipName;
-
-    if (!state) {
-      return;
-    }
-
-    const target =
-      this.querySelector<HTMLElement>('.animation-frame-indicator') ??
-      (clipChanged ? this.querySelector<HTMLElement>('.animation-clip-button.is-selected') : null);
-    if (target && typeof target.scrollIntoView === 'function') {
-      target.scrollIntoView({ block: 'nearest' });
-    }
-  }
-
   protected render() {
     const hasSelection = this.selectedNodes.length > 0;
-    const hasAnimationSelection = this.activeAnimationState !== null;
-    const hasAssetSelection = this.selectedAssetItem !== null && !hasAnimationSelection;
+    const hasAssetSelection = this.selectedAssetItem !== null;
 
     return html`
       <pix3-panel
@@ -1279,13 +1213,11 @@ export class InspectorPanel extends ComponentBase {
         actions-label="Inspector actions"
       >
         <div class="inspector-body ${this.isPlaying ? 'is-play-mode' : ''}">
-          ${hasAnimationSelection
-            ? this.sectionRenderers.renderAnimationProperties()
-            : hasAssetSelection
-              ? this.sectionRenderers.renderAssetProperties()
-              : hasSelection
-                ? this.propertyRenderers.renderProperties()
-                : ''}
+          ${hasAssetSelection
+            ? this.sectionRenderers.renderAssetProperties()
+            : hasSelection
+              ? this.propertyRenderers.renderProperties()
+              : ''}
         </div>
       </pix3-panel>
     `;

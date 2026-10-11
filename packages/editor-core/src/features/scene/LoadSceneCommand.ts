@@ -152,9 +152,6 @@ export class LoadSceneCommand extends CommandBase<LoadSceneCommandPayload, void>
       };
       state.scenes.loadState = 'ready';
       state.scenes.lastLoadedAt = Date.now();
-      state.scenes.pendingScenePaths = state.scenes.pendingScenePaths.filter(
-        (p: string) => p !== filePath
-      );
       state.project.lastOpenedScenePath = filePath;
 
       return {

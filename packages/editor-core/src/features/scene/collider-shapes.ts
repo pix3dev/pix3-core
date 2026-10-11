@@ -48,7 +48,7 @@ export interface ColliderShape {
   /**
    * True when dragging a vertex is meaningful: a `polygon` shape whose vertices
    * come from `points`. A `polygonSource: 'frame'` outline belongs to the
-   * animation frame and is edited in the Sprite Editor, not here.
+   * animation frame and is authored in its `.pix3anim`, not here.
    */
   editable: boolean;
   /** Raw authored vertices for an editable polygon (no offset applied). */

@@ -41,6 +41,17 @@ export interface MergePlan {
   readonly dropped: readonly DroppedKey[];
 }
 
+/** A leaf's value in a document; a whole `components` list is compared as one value. */
+const valueAt = (
+  nodeId: string | null,
+  path: LeafPath,
+  leaves: Map<string, unknown>,
+  index: ReturnType<typeof indexNodes>
+): unknown =>
+  path.length === 1 && path[0] === 'components' && nodeId !== null
+    ? index.get(nodeId)?.def.components
+    : leaves.get(leafKey(nodeId, path));
+
 export function planMerge(
   B: SavedSceneDocument,
   E: SavedSceneDocument,
@@ -66,14 +77,9 @@ export function planMerge(
       dropped.push({ op, key, nodeId: op.nodeId, reason: 'node-gone' });
       continue;
     }
-    const wholeComponents = op.path.length === 1 && op.path[0] === 'components';
-    const valueIn = (
-      leaves: Map<string, unknown>,
-      index: ReturnType<typeof indexNodes>
-    ): unknown => (wholeComponents ? index.get(op.nodeId!)?.def.components : leaves.get(key));
-    const eValue = valueIn(le, ie);
-    if (deepEqual(eValue, valueIn(lg, ig))) continue;
-    if (deepEqual(eValue, valueIn(lb, ib))) accepted.push(op);
+    const eValue = valueAt(op.nodeId, op.path, le, ie);
+    if (deepEqual(eValue, valueAt(op.nodeId, op.path, lg, ig))) continue;
+    if (deepEqual(eValue, valueAt(op.nodeId, op.path, lb, ib))) accepted.push(op);
     else dropped.push({ op, key, nodeId: op.nodeId, reason: 'same-key' });
   }
   return { accepted, dropped };
@@ -95,16 +101,6 @@ export type FlushLedger = ReadonlyMap<string, FlushedKey>;
 
 /** How many replaced values a key remembers (oldest dropped first). */
 const MAX_REPLACED = 16;
-
-const valueAt = (
-  nodeId: string | null,
-  path: LeafPath,
-  leaves: Map<string, unknown>,
-  index: ReturnType<typeof indexNodes>
-): unknown =>
-  path.length === 1 && path[0] === 'components' && nodeId !== null
-    ? index.get(nodeId)?.def.components
-    : leaves.get(leafKey(nodeId, path));
 
 /** The ledger after a flush that turned `before` into `after`. */
 export function recordFlushedKeys(

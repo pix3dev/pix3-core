@@ -40,16 +40,6 @@ pix3-toolbar {
   position: relative;
 }
 
-.product-title {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  text-transform: none;
-  color: var(--fg-0);
-}
-
 .toolbar-content {
   display: flex;
   align-items: center;

@@ -33,6 +33,14 @@ export interface LocaleMergeResult {
 const valueOf = (table: LocaleTable, section: LocaleSection, key: string): string | null =>
   Object.prototype.hasOwnProperty.call(table[section], key) ? table[section][key] : null;
 
+/** A copy whose entry maps can be edited without touching `table`. */
+export const cloneLocaleTable = (table: LocaleTable): LocaleTable => ({
+  locale: table.locale,
+  strings: { ...table.strings },
+  sprites: { ...table.sprites },
+  ...(table.meta ? { meta: { ...table.meta } } : {}),
+});
+
 /** Keys whose value differs between `a` and `b` (added, removed or changed). */
 export function diffLocaleTables(a: LocaleTable, b: LocaleTable): LocaleKeyRef[] {
   const changed: LocaleKeyRef[] = [];
@@ -54,12 +62,7 @@ export function mergeLocaleTables(
   external: LocaleTable,
   local: LocaleTable
 ): LocaleMergeResult {
-  const merged: LocaleTable = {
-    locale: external.locale,
-    strings: { ...external.strings },
-    sprites: { ...external.sprites },
-    ...(external.meta ? { meta: { ...external.meta } } : {}),
-  };
+  const merged = cloneLocaleTable(external);
   const kept: LocaleKeyRef[] = [];
   const dropped: DroppedLocaleKey[] = [];
   for (const { section, key } of diffLocaleTables(base, local)) {

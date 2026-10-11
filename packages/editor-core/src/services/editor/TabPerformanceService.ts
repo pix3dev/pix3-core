@@ -68,10 +68,6 @@ export class TabPerformanceService {
     };
   }
 
-  getLastSample(): TabPerformanceSample {
-    return this.lastSample;
-  }
-
   private ensureRunning(): void {
     if (this.timer !== null) return;
     this.expectedAt = performance.now() + TabPerformanceService.PROBE_MS;

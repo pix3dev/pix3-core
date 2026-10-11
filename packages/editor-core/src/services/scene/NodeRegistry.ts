@@ -502,13 +502,6 @@ export class NodeRegistry {
   }
 
   /**
-   * Get a specific node type by ID
-   */
-  public getNodeType(id: string): NodeTypeInfo | undefined {
-    return this.nodeTypes.get(id);
-  }
-
-  /**
    * Create a command instance for node creation by registry ID.
    */
   public createCommand(id: string): Command<unknown, unknown> | null {
@@ -517,13 +510,6 @@ export class NodeRegistry {
       return null;
     }
     return new nodeType.commandClass();
-  }
-
-  /**
-   * Get node types for a specific category
-   */
-  public getNodeTypesByCategoryId(category: '2D' | '3D' | 'Audio'): NodeTypeInfo[] {
-    return this.getAllNodeTypes().filter(nodeType => nodeType.category === category);
   }
 
   /**
@@ -537,25 +523,6 @@ export class NodeRegistry {
         nodeType.description.toLowerCase().includes(lowercaseQuery) ||
         nodeType.keywords.some(keyword => keyword.toLowerCase().includes(lowercaseQuery))
     );
-  }
-
-  /**
-   * Create dropdown items for UI consumption
-   */
-  public getDropdownItems(): Array<{
-    id: string;
-    label: string;
-    icon: string;
-    color: string;
-    category: '2D' | '3D' | 'Audio';
-  }> {
-    return this.getAllNodeTypes().map(nodeType => ({
-      id: nodeType.id,
-      label: nodeType.displayName,
-      icon: nodeType.icon,
-      color: nodeType.color,
-      category: nodeType.category,
-    }));
   }
 
   /**

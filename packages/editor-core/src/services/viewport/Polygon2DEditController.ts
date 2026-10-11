@@ -87,8 +87,7 @@ export class Polygon2DEditController {
     const points = shape.points.map(p => ({ x: p.x, y: p.y }));
 
     if (hit.kind === 'vertex') {
-      // Alt-click removes, matching the Sprite Editor's polygon overlay. Three
-      // vertices is the floor: fewer is not a polygon and the collider would
+      // Alt-click removes. Three vertices is the floor: fewer is not a polygon and the collider would
       // silently stop registering.
       if (event.altKey) {
         if (points.length <= 3) {

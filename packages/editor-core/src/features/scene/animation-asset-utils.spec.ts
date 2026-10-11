@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  deriveAnimationAssetStem,
   getAnimationAssetDirectory,
   isManagedSpriteFolder,
   normalizeAnimationAssetPath,
@@ -17,10 +16,9 @@ describe('animation asset utils', () => {
     );
   });
 
-  it('preserves explicit pix3anim paths and derives a stable stem', () => {
+  it('preserves explicit pix3anim paths', () => {
     const explicitPath = 'res://src/assets/animations/player/player.pix3anim';
     expect(normalizeAnimationAssetPath(explicitPath)).toBe(explicitPath);
-    expect(deriveAnimationAssetStem(explicitPath)).toBe('player');
     expect(getAnimationAssetDirectory(explicitPath)).toBe('res://src/assets/animations/player');
   });
 

@@ -63,63 +63,6 @@ export class IconService {
       `<svg viewBox="0 0 2000 2000" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><g><path d="M9315 19985 c-83 -18 -138 -39 -215 -81 -56 -32 -273 -244 -1623 -1593 -3936 -3932 -5449 -5451 -5583 -5606 -1218 -1400 -1884 -3179 -1884 -5030 0 -1214 274 -2365 825 -3465 491 -981 1219 -1865 2120 -2577 1167 -922 2652 -1495 4155 -1605 227 -16 894 -16 1120 0 1009 74 1977 344 2910 812 544 272 1037 604 1555 1045 147 126 1656 1628 5621 5597 1679 1681 1589 1585 1650 1763 24 70 28 96 28 205 1 142 -18 222 -81 342 -49 94 -121 174 -429 478 -148 145 -854 848 -1569 1561 -878 875 -1321 1310 -1365 1339 -220 148 -473 169 -708 60 -46 -22 -102 -54 -125 -71 -23 -18 -1430 -1419 -3127 -3114 -1697 -1695 -3103 -3095 -3125 -3112 -151 -112 -379 -221 -584 -277 -175 -48 -264 -60 -476 -60 -213 0 -325 15 -510 69 -467 135 -888 482 -1101 907 -88 175 -135 315 -176 518 -32 164 -32 471 1 640 51 263 176 553 318 740 43 57 561 578 3123 3145 1125 1128 2286 2293 2581 2590 529 533 536 541 577 625 60 122 76 194 76 325 0 133 -13 192 -69 310 -30 65 -63 114 -117 175 -130 146 -3190 3196 -3241 3230 -165 110 -376 154 -552 115z m1205 -2770 l1055 -1055 -300 -302 c-165 -167 -619 -622 -1008 -1013 l-707 -710 -1060 1060 -1060 1060 1007 1007 c555 555 1010 1008 1013 1008 3 0 480 -475 1060 -1055z m-3028 -3032 l1057 -1058 -1320 -1325 c-899 -903 -1343 -1356 -1394 -1421 -420 -546 -654 -1211 -669 -1898 -20 -898 319 -1740 950 -2367 213 -212 417 -371 644 -501 546 -314 1109 -460 1720 -447 677 14 1331 242 1885 657 51 38 566 546 1418 1396 l1337 1336 1063 -1063 1062 -1062 -1700 -1698 c-1771 -1770 -1800 -1797 -2144 -2056 -813 -612 -1830 -1033 -2841 -1176 -587 -83 -1218 -82 -1805 4 -1249 183 -2433 759 -3358 1631 -778 734 -1333 1616 -1667 2650 -285 883 -364 1859 -226 2800 150 1021 562 2006 1186 2835 241 320 314 396 2049 2133 927 928 1688 1687 1691 1687 3 0 481 -476 1062 -1057z m9562 -3511 c495 -494 973 -969 1061 -1055 l160 -156 -1010 -1011 -1010 -1010 -1062 1062 -1063 1063 1002 1002 c552 552 1007 1003 1012 1003 4 0 414 -404 910 -898z" transform="matrix(.1 0 0 -.1 0 2000)" stroke="none"></path></g></svg>`
     );
 
-    // Bundle icon (status bar, project size) — an isometric crate with a lid seam. Authored at
-    // 2000x2000 with the Y-flipping transform its exporter emits; `currentColor` on the root and
-    // `stroke="none"` on the path is what makes it follow the theme instead of shipping a fixed
-    // grey, which is the whole reason it replaced the 📦 that used to sit here.
-    this.customIcons.set(
-      'bundle',
-      `<svg viewBox="0 0 2000 2000" fill="currentColor" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><g><path d="M9855 19985 c-33 -8 -91 -27 -130 -43 -38 -16 -855 -483 -1815 -1037 -960 -554 -1860 -1074 -2000 -1155 -1335 -768 -4091 -2362 -4150 -2401 -142 -92 -243 -221 -298 -384 l-27 -80 0 -4885 0 -4885 27 -80 c55 -163 148 -282 293 -380 131 -88 7894 -4565 7970 -4597 184 -77 366 -77 550 0 80 33 7909 4551 8000 4617 124 89 212 209 263 360 l27 80 0 4885 0 4885 -27 80 c-52 152 -147 282 -270 366 -105 72 -7922 4581 -7993 4611 -136 57 -288 72 -420 43z m703 -1847 c306 -176 892 -515 1302 -751 1188 -686 1768 -1021 3208 -1852 743 -429 1351 -782 1352 -785 0 -3 -219 -132 -487 -287 -269 -155 -821 -473 -1228 -708 -407 -235 -749 -432 -760 -437 -18 -8 -542 291 -3215 1834 -1757 1015 -3203 1849 -3213 1854 -15 9 128 95 820 494 461 267 1023 591 1248 722 226 130 411 237 413 238 2 0 254 -145 560 -322z m-1277 -3798 c1762 -1018 3205 -1853 3206 -1858 2 -4 -223 -137 -500 -296 -276 -160 -836 -483 -1244 -718 l-743 -429 -1747 1009 c-962 554 -2406 1388 -3210 1852 -805 464 -1463 847 -1463 850 1 5 2481 1439 2491 1440 4 0 1448 -833 3210 -1850z m-3028 -2789 l3037 -1753 0 -3919 c0 -2412 -4 -3919 -9 -3919 -5 0 -1150 658 -2543 1463 -1393 805 -2836 1638 -3205 1851 l-673 389 0 3923 0 3923 178 -102 c97 -57 1544 -892 3215 -1856z m10887 -1965 l0 -3923 -1027 -594 c-566 -326 -2008 -1159 -3206 -1851 -1198 -692 -2183 -1258 -2188 -1258 -5 0 -9 1525 -9 3919 l0 3919 1248 720 1247 720 5 -1641 c6 -1541 7 -1646 24 -1702 38 -128 77 -200 164 -303 199 -237 578 -306 862 -156 174 91 311 266 361 462 18 73 19 133 19 2122 l0 2047 1248 720 c686 397 1248 722 1250 722 1 1 2 -1765 2 -3923z" transform="matrix(.1 0 0 -.1 0 2000)" stroke="none"></path></g></svg>`
-    );
-
-    // Flip-horizontal icon (asset generator) — two triangles mirrored across a dashed vertical axis
-    this.customIcons.set(
-      'flip-horizontal',
-      `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="1.5 3"/>
-  <path d="M9 6 L3 12 L9 18 Z" fill="currentColor"/>
-  <path d="M15 6 L21 12 L15 18 Z" fill="currentColor"/>
-</svg>`
-    );
-
-    // Flip-vertical icon (asset generator) — two triangles mirrored across a dashed horizontal axis
-    this.customIcons.set(
-      'flip-vertical',
-      `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="1.5 3"/>
-  <path d="M6 9 L12 3 L18 9 Z" fill="currentColor"/>
-  <path d="M6 15 L12 21 L18 15 Z" fill="currentColor"/>
-</svg>`
-    );
-
-    // Close/cross icon (welcome screen)
-    this.customIcons.set(
-      'x-close',
-      `<svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M1 1L11 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`
-    );
-
-    // Plus circle outline (welcome screen)
-    this.customIcons.set(
-      'plus-circle-outline',
-      `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" />
-  <path d="M10 6V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-  <path d="M6 10H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-</svg>`
-    );
-
-    // Folder icon (welcome screen, asset browser)
-    this.customIcons.set(
-      'folder-outline',
-      `<svg viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M1 3.5C1 2.67157 1.67157 2 2.5 2H6.5L8 4H15.5C16.3284 4 17 4.67157 17 5.5V11.5C17 12.3284 16.3284 13 15.5 13H2.5C1.67157 13 1 12.3284 1 11.5V3.5Z"
-      stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </svg>`
-    );
-
     // Folder icon with fill for asset tree
     this.customIcons.set(
       'folder-solid',
@@ -179,6 +122,12 @@ export class IconService {
 </svg>`
     );
 
+    // Collapse all (runtime panel): two chevrons pointing at each other.
+    this.customIcons.set(
+      'collapse-all',
+      `<svg viewBox="0 0 2000 2000" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path transform="matrix(.1 0 0 -.1 0 2000)" d="M3425 19984 c-93 -20 -235 -91 -312 -154 -197 -163 -292 -440 -238 -695 18 -87 77 -211 138 -290 72 -95 6040 -6052 6127 -6117 353 -261 795 -350 1210 -243 199 51 374 137 534 262 77 60 5939 5913 6062 6052 208 235 252 533 119 802 -73 148 -186 258 -339 329 -151 71 -339 88 -486 44 -60 -18 -173 -71 -223 -105 -18 -12 -1379 -1368 -3024 -3013 l-2993 -2991 -2992 2991 c-1646 1645 -3007 3001 -3025 3013 -50 34 -163 87 -223 105 -79 24 -248 29 -335 10z"/><path transform="matrix(.1 0 0 -.1 0 2000)" d="M9795 7545 c-247 -39 -458 -127 -655 -273 -87 -65 -6055 -6022 -6127 -6117 -202 -265 -203 -613 -3 -879 93 -123 268 -230 430 -262 98 -19 232 -15 320 12 60 18 173 71 223 105 18 12 1379 1368 3025 3013 l2992 2991 2993 -2991 c1645 -1645 3006 -3001 3024 -3013 50 -34 163 -87 223 -105 251 -75 563 23 733 231 233 285 222 662 -27 944 -41 46 -1410 1419 -3042 3050 -2063 2061 -2994 2984 -3052 3027 -300 222 -703 323 -1057 267z"/></svg>`
+    );
+
     // Zoom to default icon (reset zoom to 100%)
     this.customIcons.set(
       'zoom-default',
@@ -187,19 +136,6 @@ export class IconService {
   <path d="M21 21L16.65 16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M8 11H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <path d="M11 8V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`
-    );
-
-    // Zoom all icon (fit all content in view)
-    this.customIcons.set(
-      'zoom-all',
-      `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="14" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="3" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="14" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10 12H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M12 10V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`
     );
 
@@ -374,35 +310,6 @@ export class IconService {
 </svg>`
     );
 
-    // Workspace-mode glyphs for `pix3-mode-switch`: an isometric cube over a monitor for Studio,
-    // a chat bubble with a prompt caret for Vibe. Solid shapes (no strokes), so they take their
-    // colour from `fill: currentColor` on the group rather than the stroke the Feather set uses.
-    this.customIcons.set(
-      'mode-studio',
-      `<svg viewBox="0 0 2000 2000" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><g transform="matrix(.1 0 0 -.1 0 2000)" fill="currentColor" stroke="none"><path d="M14785 19980 c-38 -10 -91 -27 -116 -38 -26 -11 -429 -241 -895 -511 -467 -269 -1456 -841 -2199 -1269 -742 -429 -1375 -800 -1405 -824 -77 -61 -146 -150 -190 -243 -76 -163 -70 85 -70 -2808 0 -2525 1 -2596 19 -2669 40 -156 119 -284 232 -377 41 -33 855 -510 2219 -1298 1185 -685 2191 -1265 2236 -1289 200 -108 449 -114 647 -14 85 42 4373 2520 4433 2561 105 72 199 191 250 317 57 142 54 -22 54 2772 0 2819 4 2631 -60 2781 -16 38 -42 88 -59 112 -39 56 -131 149 -183 185 -55 38 -4333 2509 -4415 2551 -157 79 -345 102 -498 61z m1638 -2370 c785 -453 1424 -827 1420 -831 -7 -7 -2815 -1628 -2870 -1658 -21 -10 -75 18 -565 302 -299 172 -951 549 -1450 837 -720 416 -904 526 -890 534 9 5 598 344 1307 754 710 410 1355 782 1434 828 130 75 147 82 165 71 12 -8 663 -384 1449 -837z m-3641 -2896 c788 -455 1439 -832 1446 -838 9 -9 12 -354 10 -1684 l-3 -1672 -650 375 c-357 206 -1011 583 -1452 838 l-803 462 0 1673 c0 1025 4 1672 9 1672 5 0 655 -372 1443 -826z m5788 -847 l0 -1674 -1427 -823 c-786 -453 -1438 -830 -1450 -838 l-23 -14 0 1678 1 1679 1442 832 c793 458 1445 832 1450 833 4 0 7 -753 7 -1673z"/><path d="M1295 17849 c-338 -28 -638 -161 -871 -386 -230 -222 -368 -507 -414 -856 -7 -53 -10 -1949 -10 -5895 0 -4990 2 -5831 15 -5917 48 -337 173 -595 395 -816 237 -234 521 -365 869 -399 67 -6 1179 -10 3167 -10 1685 0 3064 -3 3064 -8 0 -4 -191 -484 -424 -1067 l-424 -1060 -533 -5 -534 -6 -80 -25 c-124 -38 -209 -90 -305 -188 -219 -221 -270 -529 -135 -806 78 -160 178 -259 340 -336 158 -75 -257 -69 4585 -69 4842 0 4427 -6 4585 69 162 77 262 176 340 336 135 277 84 585 -135 806 -96 98 -181 150 -305 188 l-80 25 -534 6 -533 5 -424 1060 c-233 583 -424 1063 -424 1067 0 5 1379 8 3064 8 2020 0 3099 3 3167 10 350 35 637 167 869 400 230 231 358 503 400 850 8 68 10 529 8 1625 l-3 1530 -23 70 c-34 100 -85 192 -145 263 -250 296 -686 335 -992 89 -110 -88 -193 -213 -237 -357 l-23 -75 -3 -1487 -2 -1488 -8570 0 -8570 0 0 5715 0 5715 3193 2 3192 3 80 27 c115 39 199 92 285 179 136 137 199 278 207 464 6 139 -11 224 -70 348 -103 216 -313 365 -562 397 -88 12 -6320 10 -6460 -1z m10074 -15336 c233 -582 425 -1064 428 -1070 4 -10 -359 -13 -1797 -13 -1438 0 -1801 3 -1797 13 3 6 195 488 428 1070 l423 1057 946 0 946 0 423 -1057z"/></g></svg>`
-    );
-
-    this.customIcons.set(
-      'mode-vibe',
-      `<svg viewBox="0 0 2000 2000" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><g transform="matrix(.1 0 0 -.1 0 2000)" fill="currentColor" stroke="none"><path d="M1945 19989 c-328 -27 -712 -163 -991 -349 -216 -144 -450 -378 -591 -590 -197 -297 -324 -662 -353 -1013 -14 -179 -14 -12327 0 -12504 22 -270 87 -502 211 -758 271 -561 789 -983 1393 -1135 260 -66 204 -63 1499 -67 l1177 -4 0 -1473 c0 -1436 0 -1475 20 -1552 57 -228 208 -400 431 -492 213 -88 468 -59 660 74 31 22 1011 804 2178 1739 l2122 1700 4182 5 c3960 5 4188 6 4286 23 482 83 872 282 1207 614 228 226 409 522 513 840 58 176 86 313 101 486 14 177 14 12325 0 12504 -29 351 -155 715 -353 1013 -139 209 -377 447 -591 590 -105 70 -319 178 -442 223 -205 74 -365 110 -567 127 -156 12 -15939 12 -16092 -1z m16063 -1435 c266 -54 491 -281 547 -549 13 -66 15 -746 15 -6219 0 -5575 -1 -6151 -16 -6221 -53 -255 -242 -457 -509 -544 -46 -14 -427 -16 -4380 -21 -4122 -5 -4333 -6 -4390 -23 -78 -23 -175 -69 -222 -104 -21 -15 -781 -623 -1690 -1351 l-1653 -1323 0 1089 c0 1056 -1 1091 -20 1168 -64 252 -223 419 -491 516 l-64 23 -1565 5 c-1396 5 -1570 7 -1615 22 -266 85 -456 288 -509 543 -15 70 -16 646 -16 6221 0 6726 -5 6213 56 6351 91 206 289 372 499 416 62 14 1000 15 8008 16 7206 1 7945 0 8015 -15z"/><path d="M9913 16778 c-285 -29 -530 -246 -603 -532 -19 -75 -20 -112 -20 -663 l0 -583 -1282 0 c-764 0 -1330 -4 -1398 -10 -359 -31 -694 -145 -984 -334 -529 -344 -874 -886 -963 -1511 -17 -123 -18 -241 -18 -2245 0 -2235 -1 -2194 45 -2415 84 -398 290 -778 579 -1065 354 -352 788 -562 1276 -619 126 -15 6784 -15 6910 0 251 29 483 99 724 217 385 189 736 535 929 916 104 204 162 363 202 551 46 221 45 180 45 2415 0 2004 -1 2122 -18 2245 -79 550 -360 1044 -786 1384 -340 270 -726 423 -1161 461 -68 6 -634 10 -1397 10 l-1283 0 0 583 c0 551 -1 588 -20 663 -89 350 -410 570 -777 532z m3522 -3241 c242 -85 413 -273 477 -522 20 -77 19 -4152 -1 -4245 -54 -251 -271 -471 -528 -538 -64 -16 -258 -17 -3378 -17 -3152 0 -3314 1 -3384 18 -93 23 -199 74 -273 132 -123 96 -230 264 -260 405 -19 94 -20 4169 0 4245 59 231 217 417 426 502 132 54 -76 51 3511 50 l3330 -2 80 -28z"/><path d="M8085 12333 c-328 -59 -617 -277 -769 -581 -38 -74 -83 -215 -96 -297 -14 -88 -15 -270 -1 -356 32 -196 133 -396 276 -548 96 -101 180 -163 310 -227 314 -155 675 -151 975 13 263 143 454 389 531 687 27 103 37 314 19 424 -94 586 -663 991 -1245 885z"/><path d="M11542 12334 c-418 -76 -738 -375 -854 -799 -29 -104 -35 -333 -13 -449 63 -336 272 -611 580 -762 427 -210 916 -124 1241 219 216 227 318 521 292 840 -29 356 -252 683 -578 847 -211 106 -453 144 -668 104z"/></g></svg>`
-    );
-
-    // Keyframe diamond (outline) — timeline keys, generic keyframe affordance.
-    this.customIcons.set(
-      'diamond',
-      `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M12 3L21 12L12 21L3 12L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-</svg>`
-    );
-
-    // Keyframe diamond (filled) — selected/eased key affordance.
-    this.customIcons.set(
-      'diamond-filled',
-      `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <path d="M12 3L21 12L12 21L3 12L12 3Z" fill="currentColor"/>
-</svg>`
-    );
-
     // Add keyframe — a diamond with a small plus, distinct from "Add Track" (+).
     this.customIcons.set(
       'key-add',
@@ -466,19 +373,6 @@ export class IconService {
     }
     // Otherwise, resolve as icon name
     return this.getIcon(iconName, size);
-  }
-
-  /**
-   * Register a custom icon at runtime
-   * @param name - Unique icon name
-   * @param svgContent - SVG content string
-   */
-  registerIcon(name: string, svgContent: string): void {
-    this.customIcons.set(name, svgContent);
-    // Clear cached entries for this icon
-    Array.from(this.iconCache.keys())
-      .filter(key => key.startsWith(`${name}-`))
-      .forEach(key => this.iconCache.delete(key));
   }
 
   /**
@@ -554,13 +448,6 @@ export class IconService {
     }
 
     return svg;
-  }
-
-  /**
-   * Clear the icon cache (useful for testing or memory management)
-   */
-  clearCache(): void {
-    this.iconCache.clear();
   }
 
   dispose(): void {

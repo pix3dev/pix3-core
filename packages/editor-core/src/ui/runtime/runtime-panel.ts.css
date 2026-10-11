@@ -59,6 +59,24 @@ pix3-runtime-panel .runtime-refresh {
   white-space: nowrap;
 }
 
+pix3-runtime-panel .runtime-live-toggle,
+pix3-runtime-panel .runtime-refresh,
+pix3-runtime-panel .runtime-collapse-all,
+pix3-runtime-panel .runtime-twisty,
+pix3-runtime-panel .runtime-detail-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+pix3-runtime-panel .runtime-live-toggle svg,
+pix3-runtime-panel .runtime-refresh svg,
+pix3-runtime-panel .runtime-twisty svg,
+pix3-runtime-panel .runtime-detail-close svg {
+  display: block;
+}
+
 pix3-runtime-panel .runtime-live-toggle.is-live {
   color: var(--accent);
   border-color: var(--accent-line);
@@ -97,9 +115,9 @@ pix3-runtime-panel .runtime-collapse-all:hover {
 }
 
 pix3-runtime-panel .runtime-collapse-all svg {
+  display: block;
   width: 0.78rem;
   height: 0.78rem;
-  fill: currentcolor;
 }
 
 pix3-runtime-panel .runtime-root-filter {

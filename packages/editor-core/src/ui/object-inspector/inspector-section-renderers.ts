@@ -2,21 +2,9 @@ import { html } from '@/fw';
 import type { PropertyDefinition } from '@/fw';
 import { appState } from '@/state';
 import { MeshInstance, getPropertiesByGroup, isShaderEffectHost } from '@pix3/runtime';
-import type { AnimationClip, AnimationFrame, ScriptComponent } from '@pix3/runtime';
-import type {
-  AnimationInspectorController,
-  AnimationInspectorSnapshot,
-} from '@/services/animation/AnimationEditorService';
-import {
-  ANIMATION_CLIP_PROPERTIES,
-  ANIMATION_FRAME_PROPERTIES,
-  ANIMATION_RESOURCE_PROPERTIES,
-  type AnimationClipPropertyTarget,
-  type AnimationFramePropertyTarget,
-  type AnimationResourcePropertyTarget,
-} from './animation-inspector-properties';
+import type { ScriptComponent } from '@pix3/runtime';
 import { IconSize } from '@/services/editor/IconService';
-import { getNodeVisuals } from '@/ui/scene-tree/node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 import { isPrefabChildNode, isPrefabNode } from '@/features/scene/prefab-utils';
 import { AddNodeToGroupCommand } from '@/features/scene/AddNodeToGroupCommand';
 import { RemoveNodeFromGroupCommand } from '@/features/scene/RemoveNodeFromGroupCommand';
@@ -26,317 +14,17 @@ import { ToggleScriptEnabledCommand } from '@/features/scripts/ToggleScriptEnabl
 import { AddEffectCommand } from '@/features/effects/AddEffectCommand';
 import { RemoveEffectCommand } from '@/features/effects/RemoveEffectCommand';
 import type { InspectorPanel } from './inspector-panel';
-import type { DetachedPropertyOptions } from './inspector-property-renderers';
 import { isReadOnlyTab } from '@/services/editor/read-only';
+import { toResourcePath } from '@/services/project/disk/project-paths';
+import { formatBytes } from '@/ui/shared/format-bytes';
 
 /**
- * Per-row overrides for the frame property rows: the bounding-box size takes the
- * W/H chips the Size group uses (X/Y would read as a position), and the override
- * field keeps its "optional" placeholder.
- */
-const ANIMATION_FRAME_PROPERTY_OPTIONS: Readonly<Record<string, DetachedPropertyOptions>> = {
-  animationFrameTexturePath: { placeholder: 'Optional per-frame texture' },
-  animationFrameBoundingBoxSize: { axes: ['w', 'h'] },
-};
-
-/**
- * Renders the inspector's top-level sections (animation/asset inspectors,
- * summary + groups, editor flags, animations, scripts, effects) and owns their
- * command-dispatching actions. Reads panel state/services through the host
+ * Renders the inspector's top-level sections (asset inspector, summary + groups, editor flags,
+ * animations, scripts, effects) and owns their command-dispatching actions. Reads panel state/services through the host
  * reference and delegates per-property rendering back to the panel.
  */
 export class InspectorSectionRenderers {
   constructor(private readonly host: InspectorPanel) {}
-
-  syncActiveAnimationContext(): void {
-    const controller = this.host.animationEditorService.getActiveController();
-    if (controller !== this.host.activeAnimationController) {
-      this.host.disposeAnimationControllerSubscription?.();
-      this.host.disposeAnimationControllerSubscription = undefined;
-      this.host.activeAnimationController = controller;
-
-      if (controller) {
-        this.host.disposeAnimationControllerSubscription = controller.subscribeInspector(() => {
-          this.host.activeAnimationState = controller.getInspectorSnapshot();
-        });
-      }
-    }
-
-    this.host.activeAnimationState = controller?.getInspectorSnapshot() ?? null;
-  }
-
-  /**
-   * Animation Inspector (a `.pix3anim` document bound by the Sprite Editor shell).
-   *
-   * Built on the same property machinery as a node section: clip/frame editors are
-   * {@link PropertyDefinition}s rendered through `renderDetachedProperty`, sections
-   * come from `renderPropertySection`, and the current clip/frame carry the
-   * accent-token selected treatment the rest of the editor's lists use. The only
-   * bespoke rows are read-only identity values (Name/Path) and the action buttons —
-   * neither is an editable property.
-   */
-  renderAnimationProperties() {
-    const controller = this.host.activeAnimationController;
-    const animationState = this.host.activeAnimationState;
-    if (!controller || !animationState) {
-      return '';
-    }
-
-    const assetPath = animationState.assetPath;
-    const activeClip = animationState.activeClip;
-    const selectedFrame = animationState.selectedFrame;
-
-    return html`
-      <div class="property-section property-section--animation">
-        <div class="section-header">
-          <h3 class="section-title">Animation Inspector</h3>
-          <p class="node-type">PIX3ANIM</p>
-        </div>
-
-        ${assetPath ? this.renderAnimationResourceSection(assetPath) : ''}
-        ${this.renderAnimationImportSection(controller, animationState)}
-        ${this.renderAnimationClipsSection(controller, animationState)}
-        ${activeClip
-          ? this.renderAnimationClipSection(controller, activeClip)
-          : this.host.propertyRenderers.renderPropertySection(
-              'Clip',
-              html`<div class="asset-text-preview-state">No active clip selected.</div>`,
-              { hideTitle: true }
-            )}
-        ${selectedFrame
-          ? this.renderAnimationFrameSection(controller, animationState, selectedFrame)
-          : this.host.propertyRenderers.renderPropertySection(
-              'Frame',
-              html`<div class="asset-text-preview-state">
-                Pick a frame in the timeline to edit delay, anchor, bounding box, and polygon data.
-              </div>`,
-              { hideTitle: true }
-            )}
-      </div>
-    `;
-  }
-
-  private renderAnimationResourceSection(assetPath: string) {
-    return this.host.propertyRenderers.renderPropertySection(
-      'Resource',
-      html`
-        <div class="property-group">
-          <span class="property-label">Name</span>
-          <span class="asset-value">${this.getAnimationAssetTitle(assetPath)}</span>
-        </div>
-        <div class="property-group">
-          <span class="property-label">Path</span>
-          <span class="asset-value asset-path">${assetPath}</span>
-        </div>
-      `
-    );
-  }
-
-  private renderAnimationImportSection(
-    controller: AnimationInspectorController,
-    animationState: AnimationInspectorSnapshot
-  ) {
-    const texturePath = animationState.resource?.texturePath?.trim() ?? '';
-    const target: AnimationResourcePropertyTarget = { controller, texturePath };
-
-    return this.host.propertyRenderers.renderPropertySection(
-      'Spritesheet Import',
-      html`
-        <div class="group-header">
-          <h4 class="group-title">Spritesheet Import</h4>
-          ${texturePath ? html`<span class="animation-chip">Source</span>` : ''}
-        </div>
-        ${ANIMATION_RESOURCE_PROPERTIES.map(prop =>
-          this.host.propertyRenderers.renderDetachedProperty(prop, target, {
-            placeholder: 'res://textures/spritesheet.png',
-          })
-        )}
-        <div class="inspector-btn-row">
-          <button
-            class="inspector-btn inspector-btn--primary"
-            type="button"
-            ?disabled=${texturePath.length === 0 || !animationState.activeClipName}
-            @click=${() => void controller.openTextureSlicer()}
-          >
-            ${this.host.iconService.getIcon('grid', IconSize.SMALL)}
-            <span>Generate Frames</span>
-          </button>
-          <button
-            class="inspector-btn"
-            type="button"
-            ?disabled=${texturePath.length === 0}
-            @click=${() => void controller.updateTexturePath('')}
-          >
-            ${this.host.iconService.getIcon('x', IconSize.SMALL)}
-            <span>Clear Texture</span>
-          </button>
-        </div>
-        <p class="panel-note">
-          Use this only as a one-time import source. The editor stores sequence frames as separate
-          files after slicing.
-        </p>
-      `,
-      { hideTitle: true }
-    );
-  }
-
-  private renderAnimationClipsSection(
-    controller: AnimationInspectorController,
-    animationState: AnimationInspectorSnapshot
-  ) {
-    const clips = animationState.clips;
-
-    return this.host.propertyRenderers.renderPropertySection(
-      'Clips',
-      html`
-        <div class="group-header">
-          <h4 class="group-title">Clips</h4>
-          <div class="animation-clip-actions">
-            <button
-              class="inspector-btn inspector-btn--icon inspector-btn--primary"
-              type="button"
-              title="Add clip"
-              aria-label="Add clip"
-              @click=${() => void controller.addClip()}
-            >
-              ${this.host.iconService.getIcon('plus', IconSize.SMALL)}
-            </button>
-            <button
-              class="inspector-btn inspector-btn--icon inspector-btn--danger"
-              type="button"
-              title="Remove active clip"
-              aria-label="Remove active clip"
-              ?disabled=${!animationState.activeClip}
-              @click=${() => void controller.removeClip()}
-            >
-              ${this.host.iconService.getIcon('trash-2', IconSize.SMALL)}
-            </button>
-          </div>
-        </div>
-        <div class="animation-clip-list">
-          ${clips.map(clip => {
-            const isSelected = clip.name === animationState.activeClipName;
-            return html`
-              <button
-                class="animation-clip-button ${isSelected ? 'is-selected' : ''}"
-                type="button"
-                data-clip-name=${clip.name}
-                aria-current=${isSelected ? 'true' : 'false'}
-                @click=${() => void controller.selectClip(clip.name)}
-              >
-                <span class="animation-clip-marker" aria-hidden="true">
-                  ${isSelected ? this.host.iconService.getIcon('check', 12) : ''}
-                </span>
-                <span class="animation-clip-name">${clip.name}</span>
-                <span class="animation-clip-meta"
-                  >${clip.frames.length} ${clip.frames.length === 1 ? 'frame' : 'frames'}</span
-                >
-              </button>
-            `;
-          })}
-          ${clips.length === 0
-            ? html`<div class="asset-text-preview-state">No clips in this resource yet.</div>`
-            : ''}
-        </div>
-      `,
-      { hideTitle: true }
-    );
-  }
-
-  private renderAnimationClipSection(
-    controller: AnimationInspectorController,
-    activeClip: AnimationClip
-  ) {
-    const target: AnimationClipPropertyTarget = { controller, clip: activeClip };
-
-    return this.host.propertyRenderers.renderPropertySection(
-      'Clip',
-      html`
-        <div class="group-header">
-          <h4 class="group-title">Clip</h4>
-          <span class="animation-chip animation-chip--selected">${activeClip.name}</span>
-        </div>
-        ${ANIMATION_CLIP_PROPERTIES.map(prop =>
-          this.host.propertyRenderers.renderDetachedProperty(prop, target)
-        )}
-      `,
-      { className: 'animation-clip-section', hideTitle: true }
-    );
-  }
-
-  private renderAnimationFrameSection(
-    controller: AnimationInspectorController,
-    animationState: AnimationInspectorSnapshot,
-    selectedFrame: AnimationFrame
-  ) {
-    const target: AnimationFramePropertyTarget = { controller, frame: selectedFrame };
-    const frameNumber = animationState.selectedFrameIndex + 1;
-    const frameCount = animationState.activeClip?.frames.length ?? 0;
-    const vertexCount = selectedFrame.collisionPolygon.length;
-
-    return this.host.propertyRenderers.renderPropertySection(
-      'Frame',
-      html`
-        <div
-          class="animation-frame-indicator"
-          data-frame-index=${animationState.selectedFrameIndex}
-        >
-          <span class="animation-frame-indicator-text">
-            <span class="animation-frame-indicator-title"
-              >Frame ${frameNumber} of ${frameCount}</span
-            >
-            <span class="animation-frame-indicator-sub">${animationState.activeClipName}</span>
-          </span>
-        </div>
-        ${ANIMATION_FRAME_PROPERTIES.map(prop =>
-          this.host.propertyRenderers.renderDetachedProperty(
-            prop,
-            target,
-            ANIMATION_FRAME_PROPERTY_OPTIONS[prop.name] ?? {}
-          )
-        )}
-        <div class="group-header group-header--sub">
-          <h5 class="group-subtitle">Collision Polygon</h5>
-          <span class="animation-clip-meta">
-            ${vertexCount ? `${vertexCount} vertices` : 'none authored'}
-          </span>
-        </div>
-        <div class="inspector-btn-row">
-          <button
-            class="inspector-btn"
-            type="button"
-            @click=${() => void controller.addPolygonVertex()}
-          >
-            ${this.host.iconService.getIcon('plus', IconSize.SMALL)}
-            <span>Add Vertex</span>
-          </button>
-          <button
-            class="inspector-btn"
-            type="button"
-            ?disabled=${vertexCount === 0}
-            @click=${() => void controller.clearPolygon()}
-          >
-            ${this.host.iconService.getIcon('x', IconSize.SMALL)}
-            <span>Clear Polygon</span>
-          </button>
-          <button
-            class="inspector-btn"
-            type="button"
-            @click=${() => void controller.resetBoundingBox()}
-          >
-            ${this.host.iconService.getIcon('rotate-ccw', IconSize.SMALL)}
-            <span>Reset Box</span>
-          </button>
-        </div>
-      `,
-      { className: 'animation-frame-section', hideTitle: true }
-    );
-  }
-
-  getAnimationAssetTitle(assetPath: string): string {
-    const segments = assetPath.replace(/\\/g, '/').split('/').filter(Boolean);
-    return segments[segments.length - 1] ?? assetPath;
-  }
 
   renderAssetProperties() {
     if (!this.host.selectedAssetItem) {
@@ -351,7 +39,7 @@ export class InspectorSectionRenderers {
     const textPreview = isText
       ? this.host.resourcePreview.getTextAssetPreview(asset.path, asset.previewText)
       : null;
-    const resourceUrl = asset.path === '.' ? 'res://' : `res://${asset.path}`;
+    const resourceUrl = toResourcePath(asset.path);
 
     return html`
       <div class="property-section">
@@ -483,26 +171,13 @@ ${textPreview?.content || 'Empty file'}</pre
             : ''}
           <div class="property-group">
             <span class="property-label">Size</span>
-            <span class="asset-value">${this.formatFileSize(asset.sizeBytes)}</span>
+            <span class="asset-value"
+              >${asset.sizeBytes === null ? '-' : formatBytes(asset.sizeBytes)}</span
+            >
           </div>
         </div>
       </div>
     `;
-  }
-
-  formatFileSize(sizeBytes: number | null): string {
-    if (sizeBytes === null) {
-      return '-';
-    }
-    if (sizeBytes < 1024) {
-      return `${sizeBytes} B`;
-    }
-    const kb = sizeBytes / 1024;
-    if (kb < 1024) {
-      return `${kb.toFixed(1)} KB`;
-    }
-    const mb = kb / 1024;
-    return `${mb.toFixed(2)} MB`;
   }
 
   formatDuration(durationSeconds: number | null): string {
@@ -995,11 +670,9 @@ ${textPreview?.content || 'Empty file'}</pre
 
     const component = await this.host.behaviorPickerService.showPicker();
     if (component) {
-      const componentId = `${component.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const command = new AddComponentCommand({
         nodeId: this.host.primaryNode.nodeId,
         componentType: component.id,
-        componentId,
       });
       void this.host.commandDispatcher.execute(command);
     }

@@ -8,7 +8,7 @@ import {
 } from 'golden-layout';
 import { injectable, inject } from '@/fw/di';
 import { subscribe } from 'valtio/vanilla';
-import { appState, type AppState, type EditorTab, type PanelVisibilityState } from '@/state';
+import { appState, type AppState, type EditorTab } from '@/state';
 import { IconService, IconSize } from '@/services/editor/IconService';
 
 export const PANEL_COMPONENT_TYPES = {
@@ -124,15 +124,6 @@ const PANEL_HOME_NEIGHBOURS: Partial<Record<PanelComponentType, readonly PanelCo
   ],
 };
 
-const DEFAULT_PANEL_VISIBILITY: PanelVisibilityState = {
-  sceneTree: true,
-  viewport: true,
-  inspector: true,
-  assets: true,
-  animationTimeline: true,
-  logs: true,
-};
-
 const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   settings: {
     hasHeaders: true,
@@ -246,10 +237,6 @@ export class LayoutManagerService {
   private editorTabItems = new Map<string, ContentItem>();
   private editorTabFocusedListeners = new Set<(tabId: string) => void>();
   private editorTabCloseRequestedListeners = new Set<(tabId: string) => void>();
-  private editorTabContextMenuListeners = new Set<
-    (tabId: string, at: { x: number; y: number }) => void
-  >();
-  private handleTabContextMenu?: (e: MouseEvent) => void;
   private handleTabCloseClick?: (e: MouseEvent) => void;
   private tabDecorationHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -302,31 +289,8 @@ export class LayoutManagerService {
     };
     container.addEventListener('mousedown', this.handleTabCloseClick, true);
 
-    // Right-click on an editor tab: the shell opens the tab's context menu (e.g. "Restore my
-    // version…" for scenes). Other tabs keep the browser's default.
-    this.handleTabContextMenu = (e: MouseEvent) => {
-      const tabEl = (e.target as HTMLElement | null)?.closest?.('.lm_tab') as HTMLElement | null;
-      if (!tabEl || this.editorTabContextMenuListeners.size === 0) return;
-      const tabId = this.resolveEditorTabId(tabEl);
-      if (!tabId) return;
-      e.preventDefault();
-      for (const listener of this.editorTabContextMenuListeners) {
-        try {
-          listener(tabId, { x: e.clientX, y: e.clientY });
-        } catch {
-          // ignore
-        }
-      }
-    };
-    container.addEventListener('contextmenu', this.handleTabContextMenu);
-
     this.registerComponents(this.layout);
     await this.loadDefaultLayout();
-  }
-
-  /** Re-measure the layout against its container (e.g. after the host was resized while hidden). */
-  refreshSize(): void {
-    this.layout?.updateRootSize(true);
   }
 
   async resetLayout(): Promise<void> {
@@ -342,28 +306,9 @@ export class LayoutManagerService {
     await this.loadDefaultLayout();
   }
 
-  /**
-   * Backwards compatible method for the (single-tab) viewport.
-   * With multi-tab, prefer updateEditorTabTitle(tabId, title).
-   */
-  setViewportTitle(title: string): void {
-    // If there is an active editor tab, update that title.
-    const activeTabId = appState.tabs.activeTabId;
-    if (activeTabId) {
-      this.updateEditorTabTitle(activeTabId, title);
-    }
-  }
-
   subscribeEditorTabFocused(listener: (tabId: string) => void): () => void {
     this.editorTabFocusedListeners.add(listener);
     return () => this.editorTabFocusedListeners.delete(listener);
-  }
-
-  subscribeEditorTabContextMenu(
-    listener: (tabId: string, at: { x: number; y: number }) => void
-  ): () => void {
-    this.editorTabContextMenuListeners.add(listener);
-    return () => this.editorTabContextMenuListeners.delete(listener);
   }
 
   /** The editor tab id a Golden Layout `.lm_tab` element belongs to (matched by title). */
@@ -491,52 +436,6 @@ export class LayoutManagerService {
     }
   }
 
-  /**
-   * Re-key an open editor tab in place: same Golden Layout component, same DOM
-   * element, new tab id / title (a remove + re-add would tear the panel down).
-   *
-   * The tab id lives in three places GL and we both read: the container's
-   * `componentState`, our two bookkeeping maps, and the element's `tab-id`
-   * attribute (which is how the Lit component learns it moved).
-   */
-  rebindEditorTab(previousTabId: string, nextTabId: string, title: string): void {
-    if (previousTabId === nextTabId) {
-      this.updateEditorTabTitle(nextTabId, title);
-      return;
-    }
-
-    const container = this.editorTabContainers.get(previousTabId);
-    const item = this.editorTabItems.get(previousTabId);
-    if (container) {
-      this.editorTabContainers.delete(previousTabId);
-      this.editorTabContainers.set(nextTabId, container);
-    }
-    if (item) {
-      this.editorTabItems.delete(previousTabId);
-      this.editorTabItems.set(nextTabId, item);
-    }
-
-    const stateHolder = container as unknown as {
-      state?: { tabId?: string };
-      setState?: (state: unknown) => void;
-      element?: HTMLElement;
-    };
-    try {
-      if (typeof stateHolder?.setState === 'function') {
-        stateHolder.setState({ ...(stateHolder.state ?? {}), tabId: nextTabId });
-      } else if (stateHolder?.state) {
-        stateHolder.state.tabId = nextTabId;
-      }
-    } catch {
-      // ignore — the element attribute below is what the component actually reads
-    }
-
-    const host = stateHolder?.element?.firstElementChild as HTMLElement | undefined;
-    host?.setAttribute('tab-id', nextTabId);
-
-    this.updateEditorTabTitle(nextTabId, title);
-  }
-
   removeEditorTab(tabId: string): void {
     const item = this.editorTabItems.get(tabId);
     if (!item) {
@@ -656,27 +555,6 @@ export class LayoutManagerService {
     if (parentStack && typeof parentStack.setActiveComponentItem === 'function') {
       parentStack.setActiveComponentItem(item as ComponentItem, true);
     }
-  }
-
-  /**
-   * The `componentType` of the currently-active tab in the stack that hosts `componentType` — e.g.
-   * pass `history` to learn which of {Inspector, History} is front-most in that shared stack.
-   * Returns null when the panel or its stack can't be found.
-   */
-  getActivePanelInStackOf(componentType: PanelComponentType): string | null {
-    if (!this.layout) {
-      return null;
-    }
-    const rootItem = (this.layout as unknown as { rootItem?: ContentItem }).rootItem;
-    const item = this.findPanelByComponentType(rootItem, componentType);
-    if (!item) {
-      return null;
-    }
-    const stack = this.findClosestStack(item) as
-      | (Stack & { getActiveComponentItem?: () => ContentItem | undefined })
-      | null;
-    const active = stack?.getActiveComponentItem?.() as { componentType?: unknown } | undefined;
-    return typeof active?.componentType === 'string' ? active.componentType : null;
   }
 
   /**
@@ -968,8 +846,6 @@ export class LayoutManagerService {
           const componentType = itemInfo?.componentType;
           if (!componentType) return;
 
-          this.state.ui.focusedPanelId = componentType;
-
           if (!this.isEditorTabComponentType(componentType)) {
             return;
           }
@@ -1013,33 +889,7 @@ export class LayoutManagerService {
       this.lastIsPlaying = playing;
     });
 
-    // Inline logic from InitializeLayoutCommand
-    const previousLayoutReady = this.state.ui.isLayoutReady;
-    const previousPanelVisibility = { ...this.state.ui.panelVisibility };
-    const previousFocusedPanelId = this.state.ui.focusedPanelId;
-
-    const nextPanelVisibility = { ...DEFAULT_PANEL_VISIBILITY };
-    const nextFocusedPanelId = 'viewport';
-
-    const didMutate =
-      previousLayoutReady === false ||
-      !(
-        previousPanelVisibility.sceneTree === nextPanelVisibility.sceneTree &&
-        previousPanelVisibility.viewport === nextPanelVisibility.viewport &&
-        previousPanelVisibility.inspector === nextPanelVisibility.inspector &&
-        previousPanelVisibility.assets === nextPanelVisibility.assets &&
-        previousPanelVisibility.animationTimeline === nextPanelVisibility.animationTimeline &&
-        previousPanelVisibility.logs === nextPanelVisibility.logs
-      ) ||
-      previousFocusedPanelId !== nextFocusedPanelId;
-
-    if (!didMutate) {
-      return;
-    }
-
     this.state.ui.isLayoutReady = true;
-    this.state.ui.panelVisibility = nextPanelVisibility;
-    this.state.ui.focusedPanelId = nextFocusedPanelId;
   }
 
   dispose(): void {
@@ -1052,10 +902,6 @@ export class LayoutManagerService {
     if (this.container && this.handleTabCloseClick) {
       this.container.removeEventListener('mousedown', this.handleTabCloseClick, true);
       this.handleTabCloseClick = undefined;
-    }
-    if (this.container && this.handleTabContextMenu) {
-      this.container.removeEventListener('contextmenu', this.handleTabContextMenu);
-      this.handleTabContextMenu = undefined;
     }
     if (this.layout) {
       try {

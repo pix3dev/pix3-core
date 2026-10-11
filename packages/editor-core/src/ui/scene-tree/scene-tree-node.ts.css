@@ -76,16 +76,10 @@ pix3-scene-tree-node {
   border-radius: var(--radius-1);
 }
 
-.tree-node__expander::before {
-  content: '';
-}
-
-.tree-node__expander--visible::before {
-  content: '▾';
-}
-
-.tree-node__expander--collapsed::before {
-  content: '▸';
+.tree-node__expander svg {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
 .tree-node__icon {
@@ -201,32 +195,19 @@ pix3-scene-tree-node {
 }
 
 .script-popover__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--accent);
-  font-weight: 600;
-  font-size: 0.8rem;
   min-width: 1rem;
-  text-align: center;
+}
+
+.script-popover__item-icon svg {
+  display: block;
 }
 
 .script-popover__item-label {
   min-width: 0;
-}
-
-.script-popover__empty {
-  font-size: 0.85rem;
-  color: var(--fg-2);
-}
-
-.tree-node__type {
-  display: inline-block;
-  padding: 0.1rem 0.35rem;
-  border-radius: 999px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: var(--bg-3);
-  color: var(--fg-1);
-  align-self: flex-start;
 }
 
 .tree-node__instance-inline {
@@ -330,12 +311,7 @@ pix3-scene-tree-node {
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
-.tree-node__prefab-badge {
-  font-size: 0.7rem;
-  opacity: 0.85;
-  line-height: 1;
-}
-
+.tree-node__prefab-badge,
 .tree-node__prefab-lock {
   display: inline-flex;
   align-items: center;
@@ -346,6 +322,7 @@ pix3-scene-tree-node {
   flex-shrink: 0;
 }
 
+.tree-node__prefab-badge svg,
 .tree-node__prefab-lock svg {
   display: block;
   width: 100%;

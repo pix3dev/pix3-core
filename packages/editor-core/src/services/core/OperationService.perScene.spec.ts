@@ -88,7 +88,7 @@ describe('OperationService per-scene history', () => {
     expect(service.history.canUndo).toBe(true);
   });
 
-  it('clears an inactive scene without clearing the active stack or undo metadata', () => {
+  it('clears an inactive scene without clearing the active stack', () => {
     appState.scenes.activeSceneId = 'scene-A';
     const service = createService();
     const historyA = service.history;
@@ -101,7 +101,6 @@ describe('OperationService per-scene history', () => {
     expect(service.clearHistory('scene-A')).toBe(true);
     expect(historyA.canUndo).toBe(false);
     expect(historyB.canUndo).toBe(true);
-    expect(appState.operations.lastUndoableCommandId).toBe('edit-B');
     expect(service.clearHistory('scene-A')).toBe(false);
   });
 
@@ -122,7 +121,6 @@ describe('OperationService per-scene history', () => {
     expect(await result).toBe(true);
     expect(historyA.snapshot().undoEntries.map(e => e.metadata.commandId)).toEqual(['edit.async']);
     expect(historyB.snapshot().undoEntries.map(e => e.metadata.commandId)).toEqual(['edit-B']);
-    expect(appState.operations.lastUndoableCommandId).toBe('edit-B');
     expect(listener).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'operation:completed',
@@ -172,7 +170,6 @@ describe('OperationService per-scene history', () => {
     expect(await result).toBe(false);
     expect(historyA.canUndo).toBe(false);
     expect(historyB.canUndo).toBe(true);
-    expect(appState.operations.lastUndoableCommandId).toBe('edit-B');
   });
 
   it('drops an async commit when its scene closes before it finishes', async () => {

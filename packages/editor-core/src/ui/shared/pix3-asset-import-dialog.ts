@@ -4,6 +4,7 @@ import { createRef, ref } from 'lit/directives/ref.js';
 import { AssetImportService } from '@/services/assets/AssetImportService';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import './pix3-asset-import-dialog.ts.css';
+import { formatBytes } from '@/ui/shared/format-bytes';
 
 interface StagedFile {
   readonly id: number;
@@ -432,19 +433,6 @@ function extractFilesFromDataTransfer(dataTransfer: DataTransfer | null): File[]
     }
   }
   return files;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) {
-    return '—';
-  }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function fileExtension(name: string): string {

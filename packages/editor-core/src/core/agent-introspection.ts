@@ -197,11 +197,8 @@ export function nodeToDTO(
 export function componentToDTO(component: unknown, index: number): ComponentDTO {
   const rec = component as Record<string, unknown>;
   const ctor = (component as { constructor?: { name?: string } }).constructor;
-  const scriptId =
-    (typeof rec.scriptId === 'string' && rec.scriptId) ||
-    (typeof rec.typeId === 'string' && rec.typeId) ||
-    (typeof rec.id === 'string' && rec.id) ||
-    null;
+  // The registry type (`core:spin`, `user:Foo`); `id` is the instance id on the node.
+  const scriptId = typeof rec.type === 'string' && rec.type ? rec.type : null;
 
   // Serialise only the component's own data fields (skip framework refs).
   const skip = new Set(['node', 'input', 'scene', 'constructor']);

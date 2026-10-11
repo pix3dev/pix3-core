@@ -1,6 +1,6 @@
-import { injectable } from '@/fw/di';
+import { injectable, ServiceContainer } from '@/fw/di';
 import { LoggingService } from '@/services/core/LoggingService';
-import { ServiceContainer } from '@/fw/di';
+import { optionalService } from '@/services/project/disk/optional-service';
 import { appState, type HostNotice } from '@/state';
 
 export interface NoticeAction {
@@ -16,6 +16,15 @@ export interface NoticeInput {
   readonly actions?: readonly NoticeAction[];
   /** Replace an earlier notice with the same key (one per scene and kind). */
   readonly key?: string;
+}
+
+/** How many names a notice lists before "and N more". */
+const NOTICE_NAMES = 4;
+
+/** `a; b; c; d; and 2 more` — the keys or nodes a notice names. */
+export function listNoticeNames(names: readonly string[]): string {
+  const more = names.length - NOTICE_NAMES;
+  return `${names.slice(0, NOTICE_NAMES).join('; ')}${more > 0 ? `; and ${more} more` : ''}`;
 }
 
 /**
@@ -72,8 +81,6 @@ export class HostNoticeService {
   }
 
   private logger(): LoggingService | null {
-    const container = ServiceContainer.getInstance();
-    const token = container.getOrCreateToken(LoggingService);
-    return container.hasService(token) ? container.getService<LoggingService>(token) : null;
+    return optionalService(ServiceContainer.getInstance(), LoggingService);
   }
 }

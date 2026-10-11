@@ -8,7 +8,6 @@ import type { FileDescriptor } from './file-descriptor';
 import { ReadOnlyTabError, SceneWriteConflictError } from './write-errors';
 
 export type { FileDescriptor } from './file-descriptor';
-export type StorageBackendKind = 'host';
 
 /**
  * The project's files for the editor (plan §F.1 `ProjectStorageService` → ~250), over
@@ -30,10 +29,6 @@ export class ProjectStorageService {
   /** Open {@link batchMutations} scopes; while > 0 listing refresh signals are coalesced. */
   private mutationBatchDepth = 0;
   private batchedDirectories: string[] = [];
-
-  getBackend(): StorageBackendKind {
-    return 'host';
-  }
 
   /** Forget the cached listing and hashes (the host they came from is gone: unmount). */
   reset(): void {
@@ -173,23 +168,6 @@ export class ProjectStorageService {
     return entry.sha256 ?? undefined;
   }
 
-  /** sha256 → project paths (sorted) of every file in the manifest, `.pix3/` excluded. */
-  async getContentHashIndex(): Promise<ReadonlyMap<string, readonly string[]>> {
-    const index = new Map<string, string[]>();
-    const entries = [...(await this.ensureManifest()).values()].sort((a, b) =>
-      a.path.localeCompare(b.path)
-    );
-    for (const entry of entries) {
-      const projectPath = this.hostService.projectPath(entry.path);
-      if (entry.kind !== 'file' || !entry.sha256 || !projectPath || projectPath.startsWith('.pix3'))
-        continue;
-      const paths = index.get(entry.sha256);
-      if (paths) paths.push(projectPath);
-      else index.set(entry.sha256, [projectPath]);
-    }
-    return index;
-  }
-
   // --- Writes --------------------------------------------------------------------------------
 
   /**
@@ -278,18 +256,6 @@ export class ProjectStorageService {
     return sha;
   }
 
-  async deleteEntry(path: string): Promise<void> {
-    const wirePath = this.wire(path);
-    try {
-      await this.files.delete(wirePath, { recursive: true });
-    } catch (error) {
-      throw this.translate(wirePath, error);
-    }
-    this.knownHashes.delete(wirePath);
-    const normalized = HostService.normalize(path);
-    this.signalDirectories([this.parentOf(normalized), normalized]);
-  }
-
   async createDirectory(path: string): Promise<void> {
     try {
       await this.files.mkdir(this.wire(path));
@@ -298,24 +264,6 @@ export class ProjectStorageService {
     }
     const normalized = HostService.normalize(path);
     this.signalDirectories([this.parentOf(normalized), normalized]);
-  }
-
-  async moveEntry(sourcePath: string, targetPath: string): Promise<void> {
-    const from = this.wire(sourcePath);
-    const to = this.wire(targetPath);
-    if (from === to) return;
-    try {
-      await this.files.move(from, to);
-    } catch (error) {
-      throw this.translate(from, error);
-    }
-    const known = this.knownHashes.get(from);
-    this.knownHashes.delete(from);
-    if (known) this.knownHashes.set(to, known);
-    this.signalDirectories([
-      this.parentOf(HostService.normalize(sourcePath)),
-      this.parentOf(HostService.normalize(targetPath)),
-    ]);
   }
 
   /**

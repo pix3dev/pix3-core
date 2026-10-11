@@ -88,16 +88,6 @@ describe('ProjectStorageService over EditorHost', () => {
     await expect(storage.writeTextFile('a.txt', 'x')).rejects.toBeInstanceOf(ReadOnlyTabError);
   });
 
-  it('moves a file and keeps its known hash under the new path', async () => {
-    const { host, storage } = await setup({ files: { 'a/one.png': 'png' } });
-    await storage.readBlob('a/one.png');
-    const hash = storage.getKnownContentHash('a/one.png');
-    await storage.moveEntry('a/one.png', 'b/one.png');
-    expect(host.text('b/one.png')).toBe('png');
-    expect(storage.getKnownContentHash('b/one.png')).toBe(hash);
-    expect(storage.getKnownContentHash('a/one.png')).toBeNull();
-  });
-
   it('hands blobs to the browser with their MIME type (an SVG without one does not decode)', async () => {
     const host = new FakeHost({
       files: { 'sprites/a.svg': '<svg/>', 'sprites/b.png': 'png', 'x.bin': 'x' },

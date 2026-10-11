@@ -8,6 +8,7 @@ import { SceneStateUpdater } from '@/core/SceneStateUpdater';
 import { NodeBase, SceneManager } from '@pix3/runtime';
 import { parse, stringify } from 'yaml';
 import { isPrefabChildNode } from '@/features/scene/prefab-utils';
+import { newComponentId, uniqueId } from '@/core/unique-id';
 
 export interface DuplicateNodesOperationParams {
   nodeIds: string[];
@@ -322,7 +323,7 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
           typeof component.type === 'string' && component.type.length > 0
             ? component.type
             : 'component';
-        component.id = `${node.id}-${componentType}-${Math.random().toString(36).slice(2, 9)}`;
+        component.id = newComponentId(node.id, componentType);
       }
     }
 
@@ -336,9 +337,9 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
   private generateUniqueNodeId(typeHint: string, reservedIds: Set<string>): string {
     const prefix = typeHint.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'node';
 
-    let nextId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    let nextId = uniqueId(prefix);
     while (reservedIds.has(nextId)) {
-      nextId = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      nextId = uniqueId(prefix);
     }
 
     reservedIds.add(nextId);

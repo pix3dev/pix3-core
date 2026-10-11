@@ -35,8 +35,8 @@
   --danger-line: oklch(0.7 0.18 25 / 0.42);
   --warn: oklch(0.82 0.15 80);
   --warn-soft: oklch(0.82 0.15 80 / 0.16);
-  /* Healthy/connected status. Distinct from --presence-* (collaborator identity,
-     which starts at amber) so an "all good" indicator never reads as a warning. */
+  /* Healthy/connected status. Distinct from --presence-* (which starts at amber) so an "all
+     good" indicator never reads as a warning. */
   --ok: oklch(0.76 0.17 150);
   --ok-soft: oklch(0.76 0.17 150 / 0.16);
   --ok-line: oklch(0.76 0.17 150 / 0.42);
@@ -47,7 +47,7 @@
   --axis-y: oklch(0.76 0.17 145);
   --axis-z: oklch(0.68 0.15 250);
 
-  /* Presence (collaborator cursors/avatars) */
+  /* Identity palette: the 2D/3D navigation borders, runtime-panel accents */
   --presence-1: oklch(0.8 0.15 75); /* amber (you) — matches --accent */
   --presence-2: oklch(0.74 0.16 30); /* coral */
   --presence-3: oklch(0.78 0.15 280); /* violet */
@@ -377,7 +377,7 @@ body > pix3-editor {
 }
 
 /* Document-tab type icon (§4.2): a small vector glyph left of the tab title so the tab type
-   (scene / code / game / sprite editor / home) reads at a glance. Injected by LayoutManager. */
+   (scene / game) reads at a glance. Injected by LayoutManager. */
 .lm_header .lm_tab .pix3-tab-icon {
   display: inline-flex;
   align-items: center;

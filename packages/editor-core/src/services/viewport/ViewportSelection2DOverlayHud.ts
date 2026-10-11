@@ -3,7 +3,7 @@ import { MathUtils } from 'three';
 import { NodeBase, Node2D, type SceneGraph } from '@pix3/runtime';
 import type { PropertyDefinition } from '@pix3/runtime';
 import type { Selection2DOverlay, TwoDHandle } from '@/services/viewport/TransformTool2d';
-import { getNodeVisuals } from '@/ui/scene-tree/node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 import { appState } from '@/state';
 
 /**

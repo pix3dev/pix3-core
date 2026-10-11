@@ -10,6 +10,7 @@ import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { OperationService } from '@/services/core/OperationService';
 import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlayModeOperation';
 import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-workspace';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
  * Starts the game from the project's entry scene (`defaultExportScenePath` in
@@ -127,6 +128,6 @@ export class StartMainSceneGameCommand extends CommandBase<void, void> {
       return null;
     }
 
-    return configured.replace(/^res:\/\//i, '');
+    return toProjectPath(configured);
   }
 }

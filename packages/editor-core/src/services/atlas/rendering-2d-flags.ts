@@ -4,8 +4,8 @@ import { appState } from '@/state';
  * Resolution of the two Phase-2/3 render toggles — pre-launch texture atlasing
  * and 2D quad batching. Each resolves, in priority order:
  *
- *   1. URL query param (`?pix3Atlas2D=off` / `?pix3Batch2D=off`, in search or
- *      the hash route) — for MCP-driven A/B without a rebuild.
+ *   1. URL query param (`?pix3Atlas2D=off` / `?pix3Batch2D=off`) — for an A/B
+ *      without a rebuild.
  *   2. `window.__PIX3_RENDER2D__` global override (settable from the console).
  *   3. Project manifest `rendering2D` block.
  *   4. Default (`'auto'` = on).
@@ -34,18 +34,7 @@ function readQueryParam(name: string): string | null {
   if (typeof window === 'undefined') {
     return null;
   }
-  const search = new URLSearchParams(window.location.search);
-  const direct = search.get(name);
-  if (direct !== null) {
-    return direct;
-  }
-  // Hash route (`#editor?local=…&pix3Atlas2D=off`) carries its own query string.
-  const hash = window.location.hash;
-  const queryStart = hash.indexOf('?');
-  if (queryStart >= 0) {
-    return new URLSearchParams(hash.slice(queryStart + 1)).get(name);
-  }
-  return null;
+  return new URLSearchParams(window.location.search).get(name);
 }
 
 function normalize(value: string | null | undefined): Rendering2DFlag | null {

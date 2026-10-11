@@ -4,7 +4,20 @@ import type { CommandContext } from '@/core/command';
 import { appState, resetAppState } from '@/state';
 import { OperationService } from '@/services/core/OperationService';
 import { ReloadSceneCommand } from '@/features/scene/ReloadSceneCommand';
-import { ReloadSceneOperation } from '@/features/scene/ReloadSceneOperation';
+import {
+  ReloadSceneOperation,
+  type ReloadSceneOperationParams,
+} from '@/features/scene/ReloadSceneOperation';
+import type { SceneBaseline } from '@/services/project/SceneBaselineService';
+import type { SceneGraph } from '@pix3/runtime';
+
+/** `perform` is stubbed in every case: the graph and the baseline are never read. */
+const reloadOfA: ReloadSceneOperationParams = {
+  sceneId: 'scene-A',
+  filePath: 'res://scene-A.pix3scene',
+  graph: {} as SceneGraph,
+  baseline: {} as SceneBaseline,
+};
 
 describe('ReloadSceneCommand history', () => {
   let operations: OperationService;
@@ -58,10 +71,7 @@ describe('ReloadSceneCommand history', () => {
       });
       vi.spyOn(ReloadSceneOperation.prototype, 'perform').mockReturnValue(pendingReload);
       appState.scenes.activeSceneId = initialActiveScene;
-      const command = new ReloadSceneCommand({
-        sceneId: 'scene-A',
-        filePath: 'res://scene-A.pix3scene',
-      });
+      const command = new ReloadSceneCommand(reloadOfA);
       const result = command.execute(context);
       appState.scenes.activeSceneId = 'scene-B';
       finish({ didMutate: true });
@@ -69,17 +79,13 @@ describe('ReloadSceneCommand history', () => {
       expect((await result).didMutate).toBe(true);
       expect(historyA.canUndo).toBe(false);
       expect(historyB.canUndo).toBe(true);
-      expect(appState.operations.lastUndoableCommandId).toBe('edit-B');
     }
   );
 
   it('keeps history when the reload did not replace the graph', async () => {
     operations.history.push({ metadata: {}, undo: vi.fn(), redo: vi.fn() });
     vi.spyOn(ReloadSceneOperation.prototype, 'perform').mockResolvedValue({ didMutate: false });
-    const command = new ReloadSceneCommand({
-      sceneId: 'scene-A',
-      filePath: 'res://scene-A.pix3scene',
-    });
+    const command = new ReloadSceneCommand(reloadOfA);
 
     expect((await command.execute(context)).didMutate).toBe(false);
     expect(operations.history.canUndo).toBe(true);
@@ -90,10 +96,7 @@ describe('ReloadSceneCommand history', () => {
     vi.spyOn(ReloadSceneOperation.prototype, 'perform').mockRejectedValue(
       new Error('Invalid scene')
     );
-    const command = new ReloadSceneCommand({
-      sceneId: 'scene-A',
-      filePath: 'res://scene-A.pix3scene',
-    });
+    const command = new ReloadSceneCommand(reloadOfA);
 
     await expect(command.execute(context)).rejects.toThrow('Invalid scene');
     expect(operations.history.canUndo).toBe(true);

@@ -14,6 +14,7 @@ import {
   type ProjectManifest,
 } from '@/core/ProjectManifest';
 import { loadProjectFonts, setProjectAODefault, setProjectTextureFiltering } from '@pix3/runtime';
+import { toProjectPath, toResourcePath } from '@/services/project/disk/project-paths';
 
 const PROJECT_MANIFEST_PATH = 'pix3project.yaml';
 const ASSET_BROWSER_STORAGE_PREFIX = 'pix3.assetBrowser:v1:';
@@ -45,7 +46,6 @@ export interface AssetBrowserPersistedState {
 @injectable()
 export class ProjectService {
   static readonly STARTUP_SCENE_PATH = 'scenes/main.pix3scene';
-  static readonly STARTUP_SCENE_RESOURCE_PATH = `res://${ProjectService.STARTUP_SCENE_PATH}`;
 
   @inject(HostService)
   private readonly hostService!: HostService;
@@ -55,12 +55,6 @@ export class ProjectService {
       ServiceContainer.getInstance().getOrCreateToken(ProjectStorageService)
     );
   }
-
-  /**
-   * sha256 of the `pix3project.yaml` bytes the editor last read or wrote (null: none read). The
-   * sync barrier re-reads the manifest when the disk holds another one.
-   */
-  private loadedManifestHash: string | null = null;
 
   /**
    * Open the dev server's project: read (and id-backfill) the manifest, publish it to `appState`.
@@ -80,7 +74,6 @@ export class ProjectService {
       const persisted = this.loadAssetBrowserState();
       if (persisted) {
         appState.project.assetBrowserExpandedPaths = persisted.expandedPaths;
-        appState.project.assetBrowserSelectedPath = persisted.selectedPath;
         appState.project.assetBrowserViewMode = persisted.viewMode;
         appState.project.assetBrowserGroupedExpandedKeys = persisted.groupedExpandedKeys;
         appState.project.assetsThumbnailSize = persisted.thumbnailSize ?? 104;
@@ -98,7 +91,7 @@ export class ProjectService {
   /** `res://` path of the scene the editor opens first. */
   entryScenePath(manifest: ProjectManifest | null = appState.project.manifest): string {
     const path = manifest?.defaultExportScenePath || ProjectService.STARTUP_SCENE_PATH;
-    return `res://${path.replace(/^res:\/\//i, '')}`;
+    return toResourcePath(path);
   }
 
   saveAssetBrowserState(patch: Partial<AssetBrowserPersistedState>): void {
@@ -181,7 +174,6 @@ export class ProjectService {
         throw new Error('no manifest');
       }
       const yaml = await this.storage.readTextFile(PROJECT_MANIFEST_PATH);
-      this.loadedManifestHash = await this.manifestHashOf(yaml);
       const parsed = parse(yaml);
       const manifest = normalizeProjectManifest(parsed);
       // Push the project-tier AO default so scenes set to `inherit` resolve it.
@@ -193,8 +185,7 @@ export class ProjectService {
       // system substitute in the editor while the game (which loads them in `SceneRunner`)
       // draws it correctly — the two would disagree on the same scene.
       void loadProjectFonts(manifest.fonts, {
-        readBlob: (resourcePath: string) =>
-          this.storage.readBlob(resourcePath.replace(/^res:\/\//, '')),
+        readBlob: (resourcePath: string) => this.storage.readBlob(toProjectPath(resourcePath)),
       }).then(report => {
         if (report.failed.length > 0) {
           console.warn(
@@ -204,7 +195,6 @@ export class ProjectService {
       });
       return manifest;
     } catch {
-      this.loadedManifestHash = null;
       const fallback = createDefaultProjectManifest();
       setProjectAODefault(fallback.ambientOcclusion);
       setProjectTextureFiltering(fallback.textureFiltering);
@@ -289,13 +279,7 @@ export class ProjectService {
     };
     const yaml = stringify(payload, { indent: 2 });
     await this.storage.writeTextFile(PROJECT_MANIFEST_PATH, yaml);
-    this.loadedManifestHash = await this.manifestHashOf(yaml);
     appState.project.manifest = normalized;
-  }
-
-  /** sha256 of the manifest bytes the editor last read or wrote (see `loadedManifestHash`). */
-  getLoadedManifestHash(): string | null {
-    return this.loadedManifestHash;
   }
 
   /** Re-read `pix3project.yaml` into `appState.project.manifest` (it changed on disk). */
@@ -303,64 +287,8 @@ export class ProjectService {
     appState.project.manifest = await this.loadProjectManifest();
   }
 
-  /** The workspace ETag of the exchange that just happened (the exact bytes), else the text's hash. */
-  private async manifestHashOf(yaml: string): Promise<string | null> {
-    try {
-      return this.storage.getKnownContentHash?.(PROJECT_MANIFEST_PATH) ?? (await sha256(yaml));
-    } catch {
-      return null;
-    }
-  }
-
   public dispose(): void {
     // ProjectService holds no subscriptions or event listeners
-  }
-
-  async openStartupScene(): Promise<void> {
-    const editorTabService = ServiceContainer.getInstance().getService(
-      ServiceContainer.getInstance().getOrCreateToken(
-        (await import('@/services/editor/EditorTabService')).EditorTabService
-      )
-    ) as import('@/services/editor/EditorTabService').EditorTabService;
-
-    appState.scenes.pendingScenePaths = [ProjectService.STARTUP_SCENE_RESOURCE_PATH];
-    appState.project.lastOpenedScenePath = ProjectService.STARTUP_SCENE_RESOURCE_PATH;
-    await editorTabService.focusOrOpenScene(ProjectService.STARTUP_SCENE_RESOURCE_PATH);
-  }
-
-  /**
-   * Drop every per-project document: loaded scenes, open tabs, selection, camera memory.
-   *
-   * Scene ids are derived from the scene's PATH, so two different projects both have a
-   * `scenes-main`. Leaving the previous project's descriptors in place made the next project
-   * "already have" that scene and reuse the stale graph — a pinball generated on top of a snake
-   * opened the snake's board, with the right recipe docs on disk and the wrong game on screen.
-   */
-  clearOpenDocumentState(): void {
-    // A game cannot keep playing into a project whose scenes just went away. Left on, `isPlaying`
-    // makes the play session re-attach the runtime to the NEXT project's stage the moment its host
-    // registers — with no active scene yet, which is the "Cannot start the game: no active scene is
-    // open." the Flow prompt path showed on its first frame — and then blocks that project's own
-    // launch with "Game is already running". Shell routing, not an editing action, hence a direct
-    // write like everything else this method resets.
-    appState.ui.isPlaying = false;
-    appState.ui.playModeStatus = 'stopped';
-    appState.scenes.activeSceneId = null;
-    appState.scenes.descriptors = {};
-    appState.scenes.hierarchies = {};
-    appState.scenes.loadState = 'idle';
-    appState.scenes.loadError = null;
-    appState.scenes.lastLoadedAt = null;
-    appState.scenes.pendingScenePaths = [];
-    appState.scenes.nodeDataChangeSignal = 0;
-    appState.scenes.editorCameraStates = {};
-    appState.scenes.navigation2DCameraStates = {};
-    appState.scenes.previewCameraNodeIds = {};
-    appState.tabs.tabs = [];
-    appState.tabs.activeTabId = null;
-    appState.selection.nodeIds = [];
-    appState.selection.primaryNodeId = null;
-    appState.selection.hoveredNodeId = null;
   }
 }
 

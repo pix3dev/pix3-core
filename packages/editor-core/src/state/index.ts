@@ -19,11 +19,9 @@ export const resetAppState = (): void => {
   const defaults = createInitialAppState();
   appState.project = defaults.project;
   appState.scenes = defaults.scenes;
-  appState.animations = defaults.animations;
   appState.tabs = defaults.tabs;
   appState.selection = defaults.selection;
   appState.ui = defaults.ui;
-  appState.operations = defaults.operations;
   appState.localization = defaults.localization;
   appState.editorContext = defaults.editorContext;
 };
@@ -36,7 +34,6 @@ export type {
   HostNotice,
   EditorTabType,
   NavigationMode,
-  PanelVisibilityState,
   SceneDescriptor,
   TransformMode,
 } from './AppState';

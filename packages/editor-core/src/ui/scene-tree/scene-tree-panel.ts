@@ -4,7 +4,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { ComponentBase, customElement, html, state, inject } from '@/fw';
 import { appState, type SceneDescriptor } from '@/state';
 import { NodeBase, describeUnknownNodeType, isInertNode } from '@pix3/runtime';
-import { getNodeVisuals } from './node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 import type { SceneTreeNode } from './scene-tree-node';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { KeybindingService } from '@/services/editor/KeybindingService';
@@ -176,8 +176,8 @@ export class SceneTreePanel extends ComponentBase {
       this.syncSceneState();
       this.syncPeekState();
     });
-    // The mask also moves without `appState.scenes` moving with it — a re-parsed graph (a collab
-    // update, a prefab refresh) re-stamps the same ids onto fresh nodes, and a solo is cleared
+    // The mask also moves without `appState.scenes` moving with it — a re-parsed graph (a reload,
+    // a prefab refresh) re-stamps the same ids onto fresh nodes, and a solo is cleared
     // through the service. The service's own signal is the one that covers all of those.
     this.disposePeekSubscription = this.peek.subscribe(() => {
       this.syncPeekState();

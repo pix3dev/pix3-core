@@ -13,6 +13,7 @@ import {
   resolvePlacementParent,
 } from '@/features/scene/node-placement';
 import { SceneStateUpdater } from '@/core/SceneStateUpdater';
+import { uniqueId } from '@/core/unique-id';
 
 export interface AddModelOperationParams {
   modelPath: string; // res:// path to .glb/.gltf file
@@ -55,7 +56,7 @@ export class AddModelOperation implements Operation<OperationInvokeResult> {
     }
 
     // Generate a unique node ID
-    const nodeId = `model-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const nodeId = uniqueId('model');
 
     // Load the model using AssetLoader to get the actual geometry
     const assetLoader = container.getService<AssetLoader>(container.getOrCreateToken(AssetLoader));

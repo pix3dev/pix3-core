@@ -181,11 +181,6 @@ pix3-effect-picker .behavior-name {
   color: var(--fg-0);
 }
 
-pix3-behavior-picker .behavior-desc,
-pix3-effect-picker .behavior-desc {
-  display: none;
-}
-
 pix3-behavior-picker .selected-description-panel,
 pix3-effect-picker .selected-description-panel {
   padding: 12px 16px;

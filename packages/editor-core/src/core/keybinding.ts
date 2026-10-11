@@ -35,7 +35,7 @@ export type KeybindingDescriptor = string;
  * Examples:
  * - `'viewportFocused'`
  * - `'!isInputFocused'`
- * - `'viewportFocused && !isModalOpen'`
+ * - `'viewportFocused && !isInputFocused'`
  * - `'(viewportFocused || sceneTreeFocused) && !isInputFocused'`
  *
  * Supported context keys:
@@ -44,7 +44,6 @@ export type KeybindingDescriptor = string;
  * - `inspectorFocused` - Inspector panel has focus
  * - `assetsFocused` - Assets browser has focus
  * - `isInputFocused` - An input element has focus
- * - `isModalOpen` - A modal dialog is open
  */
 export type KeybindingContext = string;
 
@@ -290,7 +289,7 @@ export function formatKeybindingForDisplay(
 /**
  * Evaluate a context clause against the current editor context.
  *
- * @param whenClause - Context clause to evaluate (e.g., 'viewportFocused && !isModalOpen')
+ * @param whenClause - Context clause to evaluate (e.g., 'viewportFocused && !isInputFocused')
  * @param context - Current editor context state
  * @returns True if the context clause is satisfied
  */
@@ -304,7 +303,7 @@ export function evaluateContext(
 
   // Simple boolean expression parser
   // Supported operators: !, &&, ||, ()
-  // Context keys: viewportFocused, sceneTreeFocused, inspectorFocused, assetsFocused, isInputFocused, isModalOpen
+  // Context keys: viewportFocused, sceneTreeFocused, inspectorFocused, assetsFocused, isInputFocused
 
   const contextValues: Record<string, boolean> = {
     viewportFocused: context.focusedArea === 'viewport',
@@ -312,7 +311,6 @@ export function evaluateContext(
     inspectorFocused: context.focusedArea === 'inspector',
     assetsFocused: context.focusedArea === 'assets',
     isInputFocused: context.isInputFocused,
-    isModalOpen: context.isModalOpen,
   };
 
   // Replace context keys with their boolean values

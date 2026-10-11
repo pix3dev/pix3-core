@@ -51,13 +51,6 @@ pix3-inspector-panel pix3-panel {
   color: var(--fg-0);
 }
 
-.node-id {
-  font-size: 0.72rem;
-  color: var(--fg-3);
-  margin: 0;
-  font-weight: 600;
-}
-
 .selection-info {
   font-size: 0.75rem;
   color: var(--fg-2);
@@ -128,169 +121,12 @@ pix3-inspector-panel pix3-panel {
   color: var(--fg-0);
 }
 
-.panel-note {
-  margin: 0;
-  font-size: 0.74rem;
-  line-height: 1.4;
-  color: var(--fg-2);
-}
-
-.animation-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 1.4rem;
-  padding: 0 0.45rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.68rem;
-}
-
-.animation-chip--selected {
-  border: 1px solid var(--accent-line);
-  font-weight: 600;
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-block;
-  line-height: 1.4rem;
-}
-
-.animation-clip-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.animation-clip-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.animation-clip-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.4rem 0.55rem;
-  border: 1px solid var(--line-1);
-  border-left: 3px solid transparent;
-  border-radius: var(--radius-2);
-  background: var(--bg-2);
-  color: var(--fg-0);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
-}
-
-.animation-clip-button:hover {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-}
-
-/* Same selected treatment as every other Pix3 list (scene tree, timeline):
-   accent-soft fill, accent text, and an accent bar on the leading edge. */
-.animation-clip-button.is-selected {
-  border-color: var(--accent-line);
-  border-left-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.animation-clip-marker {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  min-width: 12px;
-  color: var(--accent);
-}
-
-.animation-clip-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-
-.animation-clip-button.is-selected .animation-clip-name {
-  font-weight: 600;
-}
-
-.animation-clip-meta {
-  color: var(--fg-2);
-  font-size: 0.72rem;
-}
-
-.animation-clip-button.is-selected .animation-clip-meta {
-  color: var(--accent);
-}
-
-/* The clip/frame the editor is pointed at: an accent rail down the section so the
-   Inspector reads as "this frame", not "some frame". */
-.animation-clip-section,
-.animation-frame-section {
-  border-left: 2px solid var(--accent-line);
-  padding-left: 0.55rem;
-}
-
-.animation-frame-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--radius-2);
-  background: var(--accent-soft);
-}
-
-.animation-frame-indicator-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.animation-frame-indicator-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.animation-frame-indicator-sub {
-  font-size: 0.7rem;
-  color: var(--fg-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   min-width: 0;
-}
-
-.group-header--sub {
-  margin-top: 0.15rem;
-}
-
-.group-subtitle {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  margin: 0;
-  color: var(--fg-1);
 }
 
 .property-group-section--titleless {
@@ -454,53 +290,6 @@ pix3-inspector-panel pix3-panel {
   transition: all 0.14s ease;
 }
 
-.anchor-preview.is-disabled {
-  opacity: 0.45;
-  border-style: dashed;
-}
-
-.anchor-preview--h-left {
-  left: 12%;
-  width: 44%;
-}
-
-.anchor-preview--h-center {
-  left: 28%;
-  width: 44%;
-}
-
-.anchor-preview--h-right {
-  right: 12%;
-  width: 44%;
-}
-
-.anchor-preview--h-stretch {
-  left: 12%;
-  right: 12%;
-  width: auto;
-}
-
-.anchor-preview--v-top {
-  top: 12%;
-  height: 44%;
-}
-
-.anchor-preview--v-center {
-  top: 28%;
-  height: 44%;
-}
-
-.anchor-preview--v-bottom {
-  bottom: 12%;
-  height: 44%;
-}
-
-.anchor-preview--v-stretch {
-  top: 12%;
-  bottom: 12%;
-  height: auto;
-}
-
 .anchor-controls {
   display: flex;
   flex-direction: column;
@@ -543,47 +332,6 @@ pix3-inspector-panel pix3-panel {
 .anchor-preview-edge:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.anchor-preview-edge--left {
-  left: 0.15rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0.24rem;
-  height: 0.7rem;
-}
-
-.anchor-preview-edge--right {
-  right: 0.15rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0.24rem;
-  height: 0.7rem;
-}
-
-.anchor-preview-edge--top {
-  top: 0.15rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0.7rem;
-  height: 0.24rem;
-}
-
-.anchor-preview-edge--bottom {
-  bottom: 0.15rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0.7rem;
-  height: 0.24rem;
-}
-
-.anchor-preview-edge--center {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 0.34rem;
-  height: 0.34rem;
-  border-radius: 999px;
 }
 
 .property-group {
@@ -668,10 +416,6 @@ pix3-inspector-panel pix3-panel {
   min-width: 0;
 }
 
-.property-input--number {
-  width: 4.75rem;
-}
-
 .property-input--color-text {
   width: 10ch;
   min-width: 10ch;
@@ -736,10 +480,6 @@ pix3-inspector-panel pix3-panel {
   margin-top: 0.5rem;
 }
 
-.groups-section {
-  margin-top: 0.5rem;
-}
-
 .group-chip-list {
   display: flex;
   flex-wrap: wrap;
@@ -759,15 +499,6 @@ pix3-inspector-panel pix3-panel {
 
 .group-chip--readonly {
   gap: 0;
-}
-
-.group-chip-remove {
-  border: none;
-  background: transparent;
-  color: var(--fg-0);
-  cursor: pointer;
-  line-height: 1;
-  padding: 0;
 }
 
 .groups-empty {
@@ -836,23 +567,6 @@ pix3-inspector-panel pix3-panel {
   color: var(--accent);
   display: flex;
   align-items: center;
-}
-
-.script-foldout-btn {
-  background: transparent;
-  border: none;
-  color: var(--fg-2);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 3px;
-}
-
-.script-foldout-btn:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .script-info {
@@ -927,23 +641,6 @@ pix3-inspector-panel pix3-panel {
   min-width: 0;
 }
 
-.transform-single-axis-label {
-  min-width: 0.95rem;
-  height: 1.9rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.transform-single-axis-label--z {
-  color: var(--fg-3);
-}
-
 .component-property-group {
   padding: 0.12rem 0;
 }
@@ -989,17 +686,6 @@ pix3-inspector-panel pix3-panel {
   flex: 1;
 }
 
-.size-inline-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.size-inline-axis {
-  font-size: 12px;
-  color: var(--fg-2);
-}
-
 /* Width comes from the shared number cap above; only the shrink behaviour is
    local to the size row. */
 .size-inline-input {
@@ -1018,55 +704,10 @@ pix3-inspector-panel pix3-panel {
   color: var(--fg-2);
 }
 
-.size-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.size-group-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
 .size-fields {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-}
-
-.size-field {
-  display: grid;
-  grid-template-columns: 4rem 1fr auto;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.size-field-label {
-  font-size: 13px;
-  color: var(--fg-2);
-}
-
-.size-field-input {
-  background: var(--bg-2);
-  color: var(--fg-0);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-1);
-  padding: 0.25rem 0.5rem;
-  height: 30px;
-  font-size: 13px;
-  box-sizing: border-box;
-}
-
-.size-field-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.size-field-unit {
-  font-size: 0.8rem;
-  color: var(--fg-2);
 }
 
 .property-input:disabled {
@@ -1084,152 +725,10 @@ pix3-inspector-panel pix3-panel {
   gap: 0.35rem;
 }
 
-.transform-fields {
-  display: grid;
-  grid-template-columns: 1rem 1fr 1rem 1fr 1rem 1fr;
-  align-items: center;
-  border-radius: var(--radius-1);
-}
-
-.transform-field-label {
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  height: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.transform-field-label:nth-child(1) {
-  color: var(--fg-3);
-}
-
-.transform-field-label:nth-child(3) {
-  color: var(--fg-3);
-}
-
-.transform-field-label:nth-child(5) {
-  color: var(--fg-3);
-}
-
-.transform-field-input {
-  background: var(--bg-2);
-  color: var(--fg-0);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-1);
-  padding: 0.35rem 0.5rem;
-  height: 30px;
-  font-size: 13px;
-  box-sizing: border-box;
-  width: 100%;
-}
-
-.transform-field-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.transform-field-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.reset-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  padding: 0;
-  background: none;
-  border: none;
-  color: var(--fg-2);
-  cursor: pointer;
-  font-size: 0.75rem;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.reset-button:hover {
-  opacity: 1;
-}
-
-.reset-button:active {
-  opacity: 0.8;
-}
-
-.vector-input {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex: 1;
-}
-
-.unit-label {
-  font-size: 0.7rem;
-  color: var(--fg-3);
-  margin-left: 0.25rem;
-}
-
 /* Layout Section with Presets */
 .layout-section {
   border-top: 1px solid var(--line-1);
   padding-top: 0.75rem;
-}
-
-.layout-presets {
-  margin-bottom: 0.75rem;
-}
-
-.preset-label {
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--fg-2);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 0.5rem;
-}
-
-.preset-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  background: var(--bg-1);
-  border-radius: 4px;
-  border: 1px solid var(--line-1);
-}
-
-.preset-row {
-  display: flex;
-  gap: 2px;
-  justify-content: center;
-}
-
-.preset-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-3);
-  border: 1px solid transparent;
-  border-radius: 3px;
-  color: var(--fg-3);
-  cursor: pointer;
-  font-size: 0.75rem;
-  transition: all 0.15s ease;
-}
-
-.preset-btn:hover {
-  background: var(--bg-3);
-  border-color: var(--accent);
-  color: var(--fg-0);
-}
-
-.preset-btn:active {
-  background: var(--accent-soft);
 }
 
 .asset-section {

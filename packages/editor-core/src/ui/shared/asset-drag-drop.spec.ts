@@ -7,15 +7,9 @@ import {
   deriveAssetNodeName,
   getDroppedAssetResourcePath,
   hasAssetDragData,
-  toProjectResourcePath,
 } from './asset-drag-drop';
 
 describe('asset-drag-drop', () => {
-  it('normalizes project paths into res:// resource paths', () => {
-    expect(toProjectResourcePath('./assets/hero.png')).toBe('res://assets/hero.png');
-    expect(toProjectResourcePath('\\assets\\hero.png')).toBe('res://assets/hero.png');
-  });
-
   it('extracts the preferred dropped asset resource path from data transfer payloads', () => {
     const transfer = {
       types: [ASSET_RESOURCE_MIME, ASSET_PATH_MIME],

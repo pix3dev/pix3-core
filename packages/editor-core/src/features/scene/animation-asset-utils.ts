@@ -12,25 +12,12 @@ export function normalizeAnimationAssetPath(path: string): string {
 
   const normalizedRelativePath = withScheme
     .replace(/^res:\/\//i, '')
-    .replace(/^templ:\/\//i, '')
-    .replace(/^collab:\/\//i, '')
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
   const pathSegments = normalizedRelativePath.split('/').filter(Boolean);
   const stem = pathSegments[pathSegments.length - 1] ?? 'animation';
 
   return `res://${normalizedRelativePath}/${stem}.pix3anim`;
-}
-
-export function deriveAnimationAssetStem(resourcePath: string): string {
-  const normalizedPath = normalizeAnimationAssetPath(resourcePath)
-    .replace(/^res:\/\//i, '')
-    .replace(/^templ:\/\//i, '')
-    .replace(/^collab:\/\//i, '')
-    .replace(/\\/g, '/');
-  const segments = normalizedPath.split('/').filter(Boolean);
-  const fileName = segments[segments.length - 1] ?? 'animation.pix3anim';
-  return fileName.replace(/\.pix3anim$/i, '') || 'animation';
 }
 
 export function getAnimationAssetDirectory(resourcePath: string): string {
@@ -70,26 +57,6 @@ export function isManagedSpriteFolder(
   });
 }
 
-export function deriveAnimationDocumentId(resourcePath: string): string {
-  const normalizedPath = normalizeAnimationAssetPath(resourcePath)
-    .replace(/^res:\/\//i, '')
-    .replace(/^templ:\/\//i, '')
-    .replace(/^collab:\/\//i, '')
-    .replace(/\.[^./]+$/i, '');
-
-  const normalizedId = normalizedPath
-    .replace(/[^a-z0-9]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-
-  return normalizedId || 'animation';
-}
-
 export function parseAnimationResourceText(source: string): AnimationResource {
   return normalizeAnimationResource(JSON.parse(source));
-}
-
-export function serializeAnimationResource(resource: AnimationResource): string {
-  const normalized = normalizeAnimationResource(resource);
-  return `${JSON.stringify(normalized, null, 2)}\n`;
 }

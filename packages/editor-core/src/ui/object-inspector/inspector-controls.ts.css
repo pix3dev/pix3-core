@@ -58,15 +58,6 @@ pix3-inspector-panel .inspector-btn:disabled {
   cursor: not-allowed;
 }
 
-/* Row container for a set of `.inspector-btn`s. Named after the primitive
-   (`.inspector-btn-row`), not after the old `.inspector-button` idiom it
-   replaced, so the row and the buttons in it read as one system. */
-pix3-inspector-panel .inspector-btn-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
 /* ── --icon — icon only, 24×24. `aria-label` + `title` are mandatory. ─────── */
 pix3-inspector-panel .inspector-btn--icon {
   width: 24px;
@@ -545,12 +536,9 @@ pix3-inspector-panel .section-title,
 pix3-inspector-panel .node-type,
 pix3-inspector-panel .script-name,
 pix3-inspector-panel .asset-value,
-pix3-inspector-panel .animation-clip-name,
 pix3-inspector-panel .inspector-btn,
 pix3-inspector-panel .property-input,
-pix3-inspector-panel .property-select,
-pix3-inspector-panel .size-field-input,
-pix3-inspector-panel .transform-field-input {
+pix3-inspector-panel .property-select {
   font-size: var(--inspector-font-size);
 }
 
@@ -559,9 +547,7 @@ pix3-inspector-panel .group-toggle {
 }
 
 pix3-inspector-panel .property-input,
-pix3-inspector-panel .property-select,
-pix3-inspector-panel .size-field-input,
-pix3-inspector-panel .transform-field-input {
+pix3-inspector-panel .property-select {
   height: var(--inspector-control-height);
   padding: 0 6px;
   font-family: var(--font-ui);
@@ -570,10 +556,6 @@ pix3-inspector-panel .transform-field-input {
 pix3-inspector-panel .property-color-picker {
   width: var(--inspector-control-height);
   min-width: var(--inspector-control-height);
-  height: var(--inspector-control-height);
-}
-
-pix3-inspector-panel .transform-single-axis-label {
   height: var(--inspector-control-height);
 }
 

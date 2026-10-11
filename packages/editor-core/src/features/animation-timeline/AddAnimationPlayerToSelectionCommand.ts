@@ -8,6 +8,7 @@ import { OperationService } from '@/services/core/OperationService';
 import { AddComponentOperation } from '@/features/scripts/AddComponentOperation';
 import { createDefaultClip, SceneManager } from '@pix3/runtime';
 import { ANIMATION_PLAYER_COMPONENT_TYPE } from './UpdateAnimationPlayerClipsOperation';
+import { newComponentId } from '@/core/unique-id';
 
 /**
  * Adds a `core:AnimationPlayer` component (seeded with one empty clip) to the
@@ -62,7 +63,7 @@ export class AddAnimationPlayerToSelectionCommand extends CommandBase<void, void
       return { didMutate: false, payload: undefined };
     }
 
-    const componentId = `${nodeId}-animation-player-${Date.now()}`;
+    const componentId = newComponentId(nodeId, ANIMATION_PLAYER_COMPONENT_TYPE);
     const pushed = await operations.invokeAndPush(
       new AddComponentOperation({
         nodeId,

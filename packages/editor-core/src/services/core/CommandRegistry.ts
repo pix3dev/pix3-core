@@ -229,13 +229,6 @@ export class CommandRegistry {
   }
 
   /**
-   * Get all registered commands.
-   */
-  getAllCommands(): Command[] {
-    return Array.from(this.commands.values());
-  }
-
-  /**
    * Checked state of a *checkable* command (a view toggle, a transform mode).
    *
    * `undefined` means the command declares no `checked` predicate and therefore is not a checkable
@@ -341,18 +334,6 @@ export class CommandRegistry {
     const regOrderB = this.registrationOrder.get(b.commandId) ?? Number.MAX_SAFE_INTEGER;
 
     return regOrderA - regOrderB;
-  }
-
-  /**
-   * Get a command by its menu item ID.
-   */
-  getCommandByMenuItemId(menuItemId: string): Command | undefined {
-    const [, commandId] = menuItemId.split('-', 2);
-    if (!commandId) return undefined;
-
-    // Re-construct the full command ID by taking everything after the first dash
-    const fullCommandId = menuItemId.substring(menuItemId.indexOf('-') + 1);
-    return this.getCommand(fullCommandId);
   }
 
   dispose(): void {

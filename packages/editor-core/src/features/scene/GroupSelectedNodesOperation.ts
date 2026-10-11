@@ -10,6 +10,7 @@ import { Matrix4, Quaternion, Vector3 } from 'three';
 import { isPrefabChildNode } from '@/features/scene/prefab-utils';
 import { computeUnionLocalRect, sizeGroupToRect } from '@/features/scene/group2d-resize-utils';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
+import { uniqueId } from '@/core/unique-id';
 
 export interface GroupSelectedNodesOperationParams {
   nodeIds: string[];
@@ -260,9 +261,9 @@ export class GroupSelectedNodesOperation implements Operation<OperationInvokeRes
   }
 
   private generateNodeId(prefix: string, nodeMap: Map<string, NodeBase>): string {
-    let id = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    let id = uniqueId(prefix);
     while (nodeMap.has(id)) {
-      id = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      id = uniqueId(prefix);
     }
     return id;
   }

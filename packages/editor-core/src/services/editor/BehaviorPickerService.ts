@@ -1,87 +1,36 @@
 import { injectable } from '@/fw/di';
 import type { ComponentTypeInfo } from '@pix3/runtime';
+import { ModalRequests, type ModalRequest } from '@/services/editor/modal-requests';
 
-export interface ComponentPickerInstance {
-  id: string;
-  resolve: (result: ComponentTypeInfo | null) => void;
-  reject: (error: Error) => void;
-}
+export type ComponentPickerInstance = ModalRequest<object, ComponentTypeInfo>;
 
 @injectable()
 export class BehaviorPickerService {
-  private pickers = new Map<string, ComponentPickerInstance>();
-  private nextId = 0;
-  private listeners = new Set<(pickers: ComponentPickerInstance[]) => void>();
+  private readonly requests = new ModalRequests<object, ComponentTypeInfo>('picker');
 
-  /**
-   * Show the component picker modal and return a promise that resolves to the selected component or null if cancelled.
-   */
-  public async showPicker(): Promise<ComponentTypeInfo | null> {
-    return new Promise((resolve, reject) => {
-      const id = `picker-${this.nextId++}`;
-      const instance: ComponentPickerInstance = {
-        id,
-        resolve: (result: ComponentTypeInfo | null) => {
-          this.pickers.delete(id);
-          this.notifyListeners();
-          resolve(result);
-        },
-        reject: (error: Error) => {
-          this.pickers.delete(id);
-          this.notifyListeners();
-          reject(error);
-        },
-      };
-
-      this.pickers.set(id, instance);
-      this.notifyListeners();
-    });
+  /** Show the component picker; resolves to the chosen component, or null if cancelled. */
+  showPicker(): Promise<ComponentTypeInfo | null> {
+    return this.requests.request({});
   }
 
-  /**
-   * Get all active pickers for rendering
-   */
-  public getPickers(): ComponentPickerInstance[] {
-    return Array.from(this.pickers.values());
+  /** The open pickers, for rendering. */
+  getPickers(): ComponentPickerInstance[] {
+    return this.requests.list();
   }
 
-  /**
-   * Subscribe to picker changes
-   */
-  public subscribe(listener: (pickers: ComponentPickerInstance[]) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  subscribe(listener: (pickers: ComponentPickerInstance[]) => void): () => void {
+    return this.requests.onChange(() => listener(this.requests.list()));
   }
 
-  /**
-   * Select a component by ID
-   */
-  public select(pickerId: string, component: ComponentTypeInfo): void {
-    const instance = this.pickers.get(pickerId);
-    if (instance) {
-      instance.resolve(component);
-    }
+  select(pickerId: string, component: ComponentTypeInfo): void {
+    this.requests.settle(pickerId, component);
   }
 
-  /**
-   * Cancel a picker by ID
-   */
-  public cancel(pickerId: string): void {
-    const instance = this.pickers.get(pickerId);
-    if (instance) {
-      instance.resolve(null);
-    }
+  cancel(pickerId: string): void {
+    this.requests.settle(pickerId, null);
   }
 
-  private notifyListeners(): void {
-    const pickers = this.getPickers();
-    for (const listener of this.listeners) {
-      listener(pickers);
-    }
-  }
-
-  public dispose(): void {
-    this.pickers.clear();
-    this.listeners.clear();
+  dispose(): void {
+    this.requests.dispose();
   }
 }

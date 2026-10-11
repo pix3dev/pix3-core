@@ -63,7 +63,7 @@ export class SceneBaselineService {
     this.notify();
   }
 
-  /** Baseline from text whose bytes were not kept (a spec, a merge result just written). */
+  /** Baseline from text whose bytes were not kept. @internal Only specs call it. */
   async setFromText(path: string, text: string, norm: SavedSceneDocument): Promise<SceneBaseline> {
     const baseline = { sha: await sha256(text), text, norm };
     this.set(path, baseline);

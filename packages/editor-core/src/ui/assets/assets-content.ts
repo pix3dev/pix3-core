@@ -16,12 +16,13 @@ import {
   ASSET_PATH_MIME,
   ASSET_RESOURCE_LIST_MIME,
   ASSET_RESOURCE_MIME,
-  toProjectResourcePath,
 } from '@/ui/shared/asset-drag-drop';
 import { DropdownPortal } from '@/ui/shared/dropdown-portal';
 import { appState } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import './assets-content.ts.css';
+import { toResourcePath } from '@/services/project/disk/project-paths';
+import { formatBytes } from '@/ui/shared/format-bytes';
 
 /** Content-pane layout mode. */
 type ContentView = 'grid' | 'list';
@@ -349,7 +350,7 @@ export class AssetsContent extends ComponentBase {
       return html`<span class="assets-folder-stats is-placeholder" aria-hidden="true"></span>`;
     }
     const itemLabel = `${folderItemCount} ${folderItemCount === 1 ? 'item' : 'items'}`;
-    const sizeLabel = folderSizeBytes !== null ? ` · ${this.formatFileSize(folderSizeBytes)}` : '';
+    const sizeLabel = folderSizeBytes !== null ? ` · ${formatBytes(folderSizeBytes)}` : '';
     return html`<span class="assets-folder-stats">${itemLabel}${sizeLabel}</span>`;
   }
 
@@ -500,7 +501,7 @@ export class AssetsContent extends ComponentBase {
       name: item.name,
       path: item.path,
       kind: item.kind,
-      resourcePath: toProjectResourcePath(item.path),
+      resourcePath: toResourcePath(item.path),
       extension: item.extension,
     };
   }
@@ -557,7 +558,7 @@ export class AssetsContent extends ComponentBase {
     if (item.kind !== 'file') {
       return null;
     }
-    const sizeLabel = item.sizeBytes !== null ? this.formatFileSize(item.sizeBytes) : '';
+    const sizeLabel = item.sizeBytes !== null ? formatBytes(item.sizeBytes) : '';
     const timeLabel =
       item.previewType === 'audio'
         ? this.buildAudioTimeLabel(item)
@@ -609,7 +610,7 @@ export class AssetsContent extends ComponentBase {
         <span class="row-dim">${dimensions}</span>
         <span class="row-size"
           >${item.kind === 'file' && item.sizeBytes !== null
-            ? this.formatFileSize(item.sizeBytes)
+            ? formatBytes(item.sizeBytes)
             : ''}</span
         >
         ${isPlaying ? this.renderAudioProgress('row-audio-progress') : null}
@@ -963,7 +964,7 @@ export class AssetsContent extends ComponentBase {
     // read to create nodes, and a folder is not an asset resource.
     const resourcePaths = itemsToDrag
       .filter(candidate => candidate.kind === 'file')
-      .map(candidate => toProjectResourcePath(candidate.path));
+      .map(candidate => toResourcePath(candidate.path));
     // Every drop target (viewport, scene tree, inspector slots) copies a reference; nothing moves.
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('text/plain', plainPaths.join('\n'));
@@ -1110,22 +1111,10 @@ export class AssetsContent extends ComponentBase {
     }
 
     if (item.sizeBytes !== null) {
-      lines.push(`Size: ${this.formatFileSize(item.sizeBytes)}`);
+      lines.push(`Size: ${formatBytes(item.sizeBytes)}`);
     }
 
     return lines.join('\n');
-  }
-
-  private formatFileSize(sizeBytes: number): string {
-    if (sizeBytes < 1024) {
-      return `${sizeBytes} B`;
-    }
-    const kb = sizeBytes / 1024;
-    if (kb < 1024) {
-      return `${kb.toFixed(1)} KB`;
-    }
-    const mb = kb / 1024;
-    return `${mb.toFixed(2)} MB`;
   }
 
   private formatDuration(durationSeconds: number): string {

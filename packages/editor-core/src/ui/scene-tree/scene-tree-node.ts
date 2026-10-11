@@ -202,8 +202,6 @@ export class SceneTreeNodeComponent extends ComponentBase {
 
     const expanderClasses = classMap({
       'tree-node__expander': true,
-      'tree-node__expander--visible': hasChildren,
-      'tree-node__expander--collapsed': hasChildren && this.isCollapsed,
       'tree-node__expander--button': hasChildren,
     });
 
@@ -213,7 +211,12 @@ export class SceneTreeNodeComponent extends ComponentBase {
           class=${expanderClasses}
           aria-label=${this.getToggleLabel(this.node.name, this.isCollapsed)}
           @click=${(event: Event) => this.onToggleNode(event)}
-        ></button>`
+        >
+          ${this.iconService.getIcon(
+            this.isCollapsed ? 'chevron-right-caret' : 'chevron-down-caret',
+            IconSize.SMALL
+          )}
+        </button>`
       : html`<span class=${expanderClasses} aria-hidden="true"></span>`;
 
     return html`
@@ -278,7 +281,12 @@ export class SceneTreeNodeComponent extends ComponentBase {
                   >`
                 : null}
               ${this.node.isPrefabRoot
-                ? html`<span class="tree-node__prefab-badge" title="Prefab instance root">🔗</span>`
+                ? html`<span
+                    class="tree-node__prefab-badge"
+                    title="Prefab instance root"
+                    aria-label="Prefab instance root"
+                    >${this.renderToggleIcon('link')}</span
+                  >`
                 : null}
               ${this.node.isPrefabChild
                 ? html`<span
@@ -458,7 +466,10 @@ export class SceneTreeNodeComponent extends ComponentBase {
       item.className = 'script-popover__item';
       const icon = document.createElement('span');
       icon.className = 'script-popover__item-icon';
-      icon.textContent = this.isUserScriptType(script) ? '<>' : '⚡';
+      icon.innerHTML = this.iconService.getIconSvg(
+        this.isUserScriptType(script) ? 'code' : 'zap',
+        IconSize.SMALL
+      );
       icon.setAttribute('aria-hidden', 'true');
 
       const label = document.createElement('span');

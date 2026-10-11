@@ -33,10 +33,6 @@ export class GenerationHistoryService {
 
   private readonly listeners = new Set<() => void>();
 
-  static isSupported(): boolean {
-    return typeof indexedDB !== 'undefined';
-  }
-
   async add(
     record: Omit<GenerationRecord, 'id' | 'createdAt'> &
       Partial<Pick<GenerationRecord, 'id' | 'createdAt'>>

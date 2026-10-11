@@ -690,12 +690,6 @@ export class ViewportRendererService {
     });
     this.disposers.push(unsubscribeUi);
 
-    const unsubscribeAnimations = subscribe(appState.animations, () => {
-      this.syncAnimatedSprite2DVisuals();
-      this.requestRender();
-    });
-    this.disposers.push(unsubscribeAnimations);
-
     const unsubscribeProject = subscribe(appState.project, () => {
       this.syncBaseViewportFrame();
       if (this.viewportSize.width > 0 && this.viewportSize.height > 0) {
@@ -1819,7 +1813,7 @@ export class ViewportRendererService {
     // Reflow root-anchored 2D nodes against the authored base viewport frame.
     // The orthographic camera can expand beyond the yellow frame for previewing,
     // but authored root anchors stay relative to the base frame itself.
-    this.sceneManager.resizeRoot(viewportBaseSize.width, viewportBaseSize.height, true);
+    this.sceneManager.resizeRoot(viewportBaseSize.width, viewportBaseSize.height);
 
     // Sync all 2D visuals after layout recalculation
     this.syncAll2DVisuals();
@@ -1902,6 +1896,7 @@ export class ViewportRendererService {
    */
   reapply2DTextureFiltering(): void {
     this.proxyRegistry.reapplyTextureFiltering();
+    this.requestRender();
   }
 
   /**
@@ -1983,7 +1978,7 @@ export class ViewportRendererService {
    * Mark the viewport dirty so the render loop paints a frame on the next
    * animation frame. When the loop is not running (paused, window unfocused,
    * or a hidden tab where rAF never fires), the frame is rendered
-   * synchronously instead so on-demand consumers (resize, collab updates,
+   * synchronously instead so on-demand consumers (resize, external versions,
    * agent-driven edits in a background tab) still get a fresh canvas.
    */
   requestRender(): void {
@@ -3166,7 +3161,9 @@ export class ViewportRendererService {
 
   /**
    * Repaint every 2D proxy drawn from a texture file whose pixels just changed on
-   * disk (the sprite editor's frame write-back / overwrite paths, §9.5 step 4).
+   * disk. Nothing calls it in 2.x yet (its caller was the 1.x Sprite Editor): an
+   * image an agent overwrites is not followed, which also needs the AssetLoader's
+   * decoded copy evicted.
    * The registry forgets its decoded copy; the standard per-node visual sync then
    * reloads it, exactly as {@link refreshLocalizedLabels} does for a locale swap.
    *
@@ -3896,27 +3893,6 @@ export class ViewportRendererService {
     );
   }
 
-  private syncAnimatedSprite2DVisuals(): void {
-    const sceneGraph = this.sceneManager.getActiveSceneGraph();
-    if (!sceneGraph) {
-      return;
-    }
-
-    const visit = (nodes: NodeBase[]) => {
-      for (const node of nodes) {
-        if (node instanceof AnimatedSprite2D) {
-          this.updateNodeTransform(node);
-        }
-
-        if (node.children.length > 0) {
-          visit(node.children);
-        }
-      }
-    };
-
-    visit(sceneGraph.rootNodes);
-  }
-
   private findNodeById(nodeId: string, nodes: NodeBase[]): NodeBase | null {
     for (const node of nodes) {
       if (node.nodeId === nodeId) {
@@ -4344,10 +4320,6 @@ export class ViewportRendererService {
     this.requestRender();
   }
 
-  getPolygonEditTarget(): PolygonEditTarget | null {
-    return this.colliderGizmos.getEditTarget();
-  }
-
   /** The vertex/edge handle under the pointer, in CSS pixels. */
   getPolygonHandleAt(screenX: number, screenY: number): PolygonHandleHit | null {
     return this.colliderGizmos.getHandleAt(screenX, screenY);
@@ -4358,14 +4330,6 @@ export class ViewportRendererService {
     const changed = this.colliderGizmos.setHoveredHandle(
       this.colliderGizmos.getHandleAt(screenX, screenY)
     );
-    if (changed) {
-      this.requestRender();
-    }
-    return changed;
-  }
-
-  clearPolygonHandleHover(): boolean {
-    const changed = this.colliderGizmos.setHoveredHandle(null);
     if (changed) {
       this.requestRender();
     }
@@ -4414,13 +4378,6 @@ export class ViewportRendererService {
       this.orthographicCamera,
       this.viewportSize
     );
-  }
-
-  /**
-   * Clear handle hover state (e.g., when cursor leaves viewport)
-   */
-  clearHandleHover(): boolean {
-    return this.transformTool2d.clearHover(this.selection2DOverlay);
   }
 
   /**

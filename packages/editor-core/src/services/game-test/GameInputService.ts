@@ -1,5 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
-import { keepaliveTimer } from '@/services/core/background-ticker';
+import { keepaliveSleep } from '@/services/core/background-ticker';
+import { describeError, diffJsonPaths, fmtScalar } from '@/services/game-test/report-format';
 import { injectable, inject } from '@/fw/di';
 import { appState } from '@/state';
 import { errors as capturedErrors, safeSerialize, type Json } from '@/core/agent-introspection';
@@ -529,53 +530,10 @@ const MAX_SCANNED_NODES = 4000;
 const OBSERVED_POLLS_NOTE =
   'observedPolls is an OBSERVATION, not proof that input was handled: it lists the names the game passed to getAxis/getButton during the window. Proof is an assert on the effect.';
 
-/**
- * Real-time wait that is not throttled in a hidden tab while an agent keeps the editor alive
- * (`keepaliveTimer` runs off a worker then). A plain `setTimeout` is clamped to >=1 s — and to one
- * wake-up a minute under Chrome's intensive throttling — in a background tab, which stretched a
- * 3-tap script to ~40 s of wall time and let longer ones time out as `no_editor`.
- */
-const sleep = (ms: number): Promise<void> =>
-  new Promise(resolve => {
-    keepaliveTimer(resolve, ms);
-  });
 const isNonEmptyString = (value: string | undefined): value is string =>
   typeof value === 'string' && value.length > 0;
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 const round1 = (n: number): number => Math.round(n * 10) / 10;
-
-/** Max scalar paths reported by a game-snapshot diff (payload discipline). */
-const MAX_GAME_DIFF_PATHS = 20;
-
-const isPlainObject = (value: Json): value is { [key: string]: Json } =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** Short display form of a Json scalar for one-line verdicts. */
-const fmtScalar = (value: Json): string =>
-  typeof value === 'string' ? value : JSON.stringify(value);
-
-/**
- * Dot-path diff between two Json snapshots down to `depth` object levels; scalar
- * (and array) leaves that differ become `path -> [before, after]`. Capped so a
- * big game snapshot can't blow up the tool payload.
- */
-function diffJsonPaths(before: Json, after: Json, depth = 2): Record<string, [Json, Json]> {
-  const out: Record<string, [Json, Json]> = {};
-  const walk = (a: Json, b: Json, path: string, d: number): void => {
-    if (Object.keys(out).length >= MAX_GAME_DIFF_PATHS) return;
-    if (d > 0 && isPlainObject(a) && isPlainObject(b)) {
-      for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-        walk(a[key] ?? null, b[key] ?? null, path ? `${path}.${key}` : key, d - 1);
-      }
-      return;
-    }
-    if (JSON.stringify(a) !== JSON.stringify(b)) {
-      out[path || '(root)'] = [a, b];
-    }
-  };
-  walk(before, after, '', depth);
-  return out;
-}
 
 /** Longest text reported per node — a HUD line, not a dialogue script. */
 const MAX_SNAPSHOT_TEXT_CHARS = 200;
@@ -731,10 +689,6 @@ const readControlState = (
     pressed: candidate.isPressed,
   };
 };
-
-/** Error text for a note, without leaking a stack into a tool result. */
-const describeError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /**
  * World position of a live node, via three.js' own accessor. Duck-typed: a spec fake that only
@@ -967,7 +921,7 @@ export class GameInputService {
         stepsRun += 1;
       }
 
-      await sleep(Math.max(0, options?.settleMs ?? DEFAULT_SETTLE_MS));
+      await keepaliveSleep(Math.max(0, options?.settleMs ?? DEFAULT_SETTLE_MS));
       const input = this.collectObservedPolls(inputService);
 
       const activities = recorder ? recorder.stop() : new Map<string, NodeActivity>();
@@ -1146,7 +1100,7 @@ export class GameInputService {
           frameMs
         );
       } else {
-        await sleep(clampedMs);
+        await keepaliveSleep(clampedMs);
       }
       const input = this.collectObservedPolls(inputService);
       const activities = recorder.stop();
@@ -1817,7 +1771,7 @@ export class GameInputService {
     const durationOf = (s: GameInputStep): number => this.stepDurationMs(s, frameMs);
     switch (step.type) {
       case 'wait':
-        await sleep(durationOf(step));
+        await keepaliveSleep(durationOf(step));
         return null;
       case 'key':
         if (!step.code) return "A 'key' step needs a `code` (KeyboardEvent.code, e.g. 'KeyW').";
@@ -1829,7 +1783,7 @@ export class GameInputService {
         const point = this.resolveClientPoint(runtime, step.target, step.x, step.y, step.space);
         if (typeof point === 'string') return point;
         this.dispatchPointer(runtime.canvas, 'pointerdown', point);
-        await sleep(durationOf(step));
+        await keepaliveSleep(durationOf(step));
         // Read the witness while the finger is still down: by now the control has ticked, so its
         // own bounds check has decided whether the point actually landed on it.
         this.notePhysicalReach(runtime, step.target);
@@ -1840,7 +1794,7 @@ export class GameInputService {
         const point = this.resolveClientPoint(runtime, step.target, step.x, step.y, step.space);
         if (typeof point === 'string') return point;
         this.dispatchPointer(runtime.canvas, 'pointermove', point, { buttons: 0 });
-        await sleep(durationOf(step));
+        await keepaliveSleep(durationOf(step));
         this.notePhysicalReach(runtime, step.target);
         return null;
       }
@@ -1861,7 +1815,7 @@ export class GameInputService {
           step.args
         );
         if (refusal) return refusal;
-        await sleep(durationOf(step));
+        await keepaliveSleep(durationOf(step));
         return null;
       }
       case 'drag': {
@@ -1884,7 +1838,7 @@ export class GameInputService {
         const moves = Math.max(2, Math.min(20, requested));
         this.dispatchPointer(runtime.canvas, 'pointerdown', from);
         for (let i = 1; i <= moves; i++) {
-          await sleep(durationMs / moves);
+          await keepaliveSleep(durationMs / moves);
           this.dispatchPointer(runtime.canvas, 'pointermove', {
             x: from.x + ((to.x - from.x) * i) / moves,
             y: from.y + ((to.y - from.y) * i) / moves,
@@ -1902,7 +1856,7 @@ export class GameInputService {
     for (const code of codes) {
       this.dispatchKey('keydown', code);
     }
-    await sleep(ms);
+    await keepaliveSleep(ms);
     for (const code of codes) {
       this.dispatchKey('keyup', code);
     }
@@ -2309,7 +2263,7 @@ export class GameInputService {
       observed: number,
       why: string
     ): Promise<ObserveFrameBudget & { elapsedMs: number }> => {
-      await sleep(Math.max(0, nominalMs - (Date.now() - startedAt)));
+      await keepaliveSleep(Math.max(0, nominalMs - (Date.now() - startedAt)));
       return {
         requested: frames,
         observed,

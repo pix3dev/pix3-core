@@ -40,6 +40,7 @@ import {
   type AssertionBaseline,
   type GameAssertion,
 } from '@/services/game-test/game-assertions';
+import { describeError } from '@/services/game-test/report-format';
 
 // ---------------------------------------------------------------------------
 // The gesture a run declares as its control
@@ -179,7 +180,7 @@ export async function isolateForControl(
       return {
         method: 'reset',
         ok: false,
-        detail: `the game's reset() threw (${messageOf(error)}), so the control gesture would have run on top of the main run's leftovers`,
+        detail: `the game's reset() threw (${describeError(error)}), so the control gesture would have run on top of the main run's leftovers`,
       };
     }
   }
@@ -196,7 +197,7 @@ export async function isolateForControl(
       return {
         method: 'scene-restart',
         ok: false,
-        detail: `restarting the scene threw (${messageOf(error)}), so the starting state could not be restored`,
+        detail: `restarting the scene threw (${describeError(error)}), so the starting state could not be restored`,
       };
     }
   }
@@ -510,8 +511,5 @@ const describeMethod = (isolation: ControlIsolationReport): string =>
     : isolation.method === 'scene-restart'
       ? 'the scene restarted'
       : 'no isolation';
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;

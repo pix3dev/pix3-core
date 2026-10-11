@@ -153,11 +153,9 @@ describe('LocalizationEditorService — following the disk', () => {
     expect(loc.getLocales()).toEqual(['de', 'en']);
     expect(loc.getDefaultLocale()).toBe('en');
     expect(loc.getEntry('de', 'hello')).toBe('Hallo');
-    expect(appState.localization.locales).toEqual(['de', 'en']);
 
     host.externalDelete('locales/de.json');
     await vi.waitFor(() => expect(loc.getLocales()).toEqual(['en']));
-    expect(appState.localization.locales).toEqual(['en']);
   });
 
   it('a read that fails keeps the table: only a missing file is a deletion', async () => {
@@ -171,7 +169,6 @@ describe('LocalizationEditorService — following the disk', () => {
     host.files.read = read;
     expect(loc.getLocales()).toEqual(['en']);
     expect(loc.getEntry('en', 'hello')).toBe('Hello');
-    expect(appState.localization.locales).toEqual(['en']);
     expect(warn.mock.calls.flat().join(' ')).toContain('not readable');
     warn.mockRestore();
     // The version arrives again once the read works.

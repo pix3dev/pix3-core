@@ -3,15 +3,11 @@ import { appState, type EditorTab, type EditorTabType } from '@/state';
 import { LayoutManagerService } from '@/core/LayoutManager';
 import { DialogService } from '@/services/editor/DialogService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
-import { LoadAnimationCommand } from '@/features/scene/LoadAnimationCommand';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
-import { SaveAnimationCommand } from '@/features/scene/SaveAnimationCommand';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
-import { deriveAnimationDocumentId } from '@/features/scene/animation-asset-utils';
 import { deriveSceneIdFromResourcePath } from '@/core/scene-id';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { OperationService } from '@/services/core/OperationService';
-import { AnimationEditorService } from '@/services/animation/AnimationEditorService';
 import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { SceneManager } from '@pix3/runtime';
 import { subscribe } from 'valtio/vanilla';
@@ -23,12 +19,7 @@ import { SceneDraftService } from '@/services/project/SceneDraftService';
 export type DirtyCloseDecision = 'save' | 'dont-save' | 'cancel';
 
 /** Tab types a stored session may reopen — see `isPersistableTab`. */
-const PERSISTABLE_TAB_TYPES: ReadonlySet<string> = new Set<EditorTabType>([
-  'scene',
-  'prefab',
-  'script',
-  'texture',
-]);
+const PERSISTABLE_TAB_TYPES: ReadonlySet<string> = new Set<EditorTabType>(['scene']);
 
 @injectable()
 export class EditorTabService {
@@ -50,9 +41,6 @@ export class EditorTabService {
   @inject(OperationService)
   private readonly operationService!: OperationService;
 
-  @inject(AnimationEditorService)
-  private readonly animationEditorService!: AnimationEditorService;
-
   @inject(ProjectScriptLoaderService)
   private readonly projectScriptLoader!: ProjectScriptLoaderService;
 
@@ -60,19 +48,17 @@ export class EditorTabService {
   private readonly storage!: ProjectStorageService;
 
   @inject(FlushService)
-  private readonly sceneWrite!: FlushService;
+  private readonly flush!: FlushService;
 
   @inject(SceneDraftService)
   private readonly drafts!: SceneDraftService;
 
   private disposeSceneSubscription?: () => void;
-  private disposeAnimationSubscription?: () => void;
   private disposeLayoutSubscription?: () => void;
   private disposeTabsSubscription?: () => void;
   private disposeProjectSubscription?: () => void;
   private handleBeforeUnload?: (e: BeforeUnloadEvent) => void;
   private readonly sceneLoadInFlight = new Map<string, Promise<void>>();
-  private readonly animationLoadInFlight = new Map<string, Promise<void>>();
   private previousActiveTabIdBeforeGame: string | null = null; // Track tab active before game tab
   private isRestoringProjectSession = false;
   // Project that owns the tabs currently in `appState.tabs`. Persistence writes only while this
@@ -90,10 +76,6 @@ export class EditorTabService {
 
     // Keep tab titles in sync with resource descriptor dirty state.
     this.disposeSceneSubscription = subscribe(appState.scenes, () => {
-      this.syncResourceTabsFromDescriptors();
-    });
-
-    this.disposeAnimationSubscription = subscribe(appState.animations, () => {
       this.syncResourceTabsFromDescriptors();
     });
 
@@ -159,14 +141,10 @@ export class EditorTabService {
     this.handleBeforeUnload = (e: BeforeUnloadEvent) => {
       this.captureActiveContextState();
 
-      // Warn only when closing would lose something: a dirty animation, or a dirty scene whose
-      // current state is not in a durable draft checkpoint yet (plan §C.1). A last checkpoint is
+      // Warn only when closing would lose something: a dirty scene whose current state is not in
+      // a durable draft checkpoint yet (plan §C.1). A last checkpoint is
       // started on `pagehide` anyway.
-      const scenesCovered = this.drafts.isCovered();
-      const hasDirty = appState.tabs.tabs.some(
-        t => t.isDirty && (t.type !== 'scene' || !scenesCovered)
-      );
-      if (hasDirty) {
+      if (appState.tabs.tabs.some(t => t.isDirty) && !this.drafts.isCovered()) {
         e.preventDefault();
       }
     };
@@ -176,8 +154,6 @@ export class EditorTabService {
   dispose(): void {
     this.disposeSceneSubscription?.();
     this.disposeSceneSubscription = undefined;
-    this.disposeAnimationSubscription?.();
-    this.disposeAnimationSubscription = undefined;
     this.disposeLayoutSubscription?.();
     this.disposeLayoutSubscription = undefined;
     this.disposeTabsSubscription?.();
@@ -410,13 +386,6 @@ export class EditorTabService {
     return appState.tabs.tabs.filter(tab => tab.isDirty);
   }
 
-  async saveDirtyTabs(): Promise<void> {
-    const dirtyTabs = this.getDirtyTabs();
-    for (const tab of dirtyTabs) {
-      await this.saveTabResource(tab);
-    }
-  }
-
   /**
    * Close every tab. This only ever runs as part of project teardown (closing or replacing the
    * project), so session ownership is released first: the emptying tab set must not be written
@@ -468,8 +437,9 @@ export class EditorTabService {
 
   /**
    * Session-persistable tabs are real project resources only. Game and template tabs are
-   * editor-local, and sessions stored by 1.x may name tab types 2.x no longer has (code,
-   * sprite-editor, model-lab, uikit-forge, asset-generator): none of those is restored.
+   * editor-local, and sessions stored by 1.x may name tab types 2.x no longer has (prefab,
+   * script, texture, animation, code, sprite-editor, model-lab, uikit-forge, asset-generator):
+   * none of those is restored.
    */
   private isPersistableTab(tab: { type: string; resourceId: string }): boolean {
     if (tab.resourceId.startsWith('templ://')) return false;
@@ -477,8 +447,8 @@ export class EditorTabService {
   }
 
   /**
-   * Whether a `res://` resource still exists in the project. Non-`res://` ids (collab scenes,
-   * synthetic editor ids) have no backing file and are always `present`.
+   * Whether a `res://` resource still exists in the project. Non-`res://` ids (synthetic editor
+   * ids) have no backing file and are always `present`.
    *
    * Three-valued on purpose. `unknown` (the read threw) is NOT the same as `missing`: storage that
    * is not pointed at the newly opened project directory yet throws, and collapsing the two let a
@@ -559,17 +529,12 @@ export class EditorTabService {
       case 'scene':
         await this.activateSceneTab(tab);
         return;
-      case 'animation':
-        await this.activateAnimationTab(tab);
-        return;
       default:
         return;
     }
   }
 
   private async activateSceneTab(tab: EditorTab): Promise<void> {
-    this.animationEditorService.setActiveAssetPath(null);
-
     const sceneId = this.deriveSceneIdFromResource(tab.resourceId);
 
     // Seed the 2D camera before the load: the viewport restores it as soon as the scene content
@@ -649,36 +614,6 @@ export class EditorTabService {
     this.syncResourceTabsFromDescriptors();
   }
 
-  private async activateAnimationTab(tab: EditorTab): Promise<void> {
-    this.animationEditorService.setActiveAssetPath(tab.resourceId);
-
-    const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
-    const alreadyLoaded = Boolean(appState.animations.descriptors[animationId]);
-
-    if (!alreadyLoaded) {
-      let loadPromise = this.animationLoadInFlight.get(animationId);
-      if (!loadPromise) {
-        const command = new LoadAnimationCommand({
-          filePath: tab.resourceId,
-          animationId,
-        });
-        loadPromise = this.commandDispatcher
-          .execute(command)
-          .then(() => undefined)
-          .finally(() => {
-            this.animationLoadInFlight.delete(animationId);
-          });
-        this.animationLoadInFlight.set(animationId, loadPromise);
-      }
-
-      await loadPromise;
-    } else {
-      appState.animations.activeAnimationId = animationId;
-    }
-
-    this.syncResourceTabsFromDescriptors();
-  }
-
   private captureActiveContextState(): void {
     const activeTabId = appState.tabs.activeTabId;
     if (!activeTabId) return;
@@ -715,12 +650,7 @@ export class EditorTabService {
       case 'scene': {
         // Ctrl+S, the dirty-close prompt and the sync barrier all write through one seam (plan D4).
         const sceneId = this.deriveSceneIdFromResource(tab.resourceId);
-        await this.sceneWrite.saveScene(sceneId);
-        return;
-      }
-      case 'animation': {
-        const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
-        await this.commandDispatcher.execute(new SaveAnimationCommand({ animationId }));
+        await this.flush.saveScene(sceneId);
         return;
       }
       default:
@@ -864,19 +794,11 @@ export class EditorTabService {
     return deriveSceneIdFromResourcePath(resourcePath);
   }
 
-  private deriveAnimationIdFromResource(resourcePath: string): string {
-    return deriveAnimationDocumentId(resourcePath);
-  }
-
   private getResourceDescriptor(tab: EditorTab): { filePath: string; isDirty: boolean } | null {
     switch (tab.type) {
       case 'scene': {
         const sceneId = this.deriveSceneIdFromResource(tab.resourceId);
         return appState.scenes.descriptors[sceneId] ?? null;
-      }
-      case 'animation': {
-        const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
-        return appState.animations.descriptors[animationId] ?? null;
       }
       default:
         return null;
@@ -895,25 +817,9 @@ export class EditorTabService {
         appState.scenes.activeSceneId = null;
         appState.selection.nodeIds = [];
         appState.selection.primaryNodeId = null;
-        appState.selection.hoveredNodeId = null;
       }
 
       this.sceneManager.removeSceneGraph(sceneId);
-      return;
-    }
-
-    if (tab.type === 'animation') {
-      if (this.animationEditorService.getActiveAssetPath() === tab.resourceId) {
-        this.animationEditorService.setActiveAssetPath(null);
-      }
-
-      const animationId = this.deriveAnimationIdFromResource(tab.resourceId);
-      delete appState.animations.descriptors[animationId];
-      delete appState.animations.resources[animationId];
-
-      if (appState.animations.activeAnimationId === animationId) {
-        appState.animations.activeAnimationId = null;
-      }
     }
   }
 

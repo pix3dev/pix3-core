@@ -21,6 +21,7 @@ export interface AssetActivation {
  * a tab, an image opens in the lightbox, a model is added to the active scene. Other files have no
  * editor-side action.
  */
+@injectable()
 export class AssetFileActivationService {
   /** Image formats a double-click previews full-screen. */
   static readonly SUPPORTED_IMAGE_EXTENSIONS = new Set([
@@ -87,11 +88,17 @@ export class AssetFileActivationService {
    * {@link createSpriteFromImage}).
    */
   private async handleImageAsset(payload: AssetActivation): Promise<void> {
-    if (!payload.resourcePath || !HostService.isInstalled()) {
-      return;
-    }
-    const url = this.hostService.host.files.url(this.hostService.wirePath(payload.resourcePath));
-    this.lightbox.open([{ kind: 'image', title: payload.name, url, path: payload.path }]);
+    if (payload.resourcePath) this.previewImage(payload.resourcePath, payload.name, payload.path);
+  }
+
+  /**
+   * Full-screen preview of a project image (an asset's double-click, a texture field's). `path`
+   * is shown under the title.
+   */
+  previewImage(resourcePath: string, title: string, path: string = resourcePath): void {
+    if (!HostService.isInstalled()) return;
+    const url = this.hostService.host.files.url(this.hostService.wirePath(resourcePath));
+    this.lightbox.open([{ kind: 'image', title, url, path }]);
   }
 
   /**
@@ -136,5 +143,3 @@ export class AssetFileActivationService {
     return stripped || 'Sprite2D';
   }
 }
-
-injectable()(AssetFileActivationService);

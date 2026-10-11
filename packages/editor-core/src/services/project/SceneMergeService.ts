@@ -11,9 +11,9 @@ import {
 } from '@/core/scene-patch/scene-diff';
 import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
-import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
-import { HostNoticeService } from '@/host/HostNoticeService';
+import { HostNoticeService, listNoticeNames } from '@/host/HostNoticeService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { readDiskVersion } from '@/services/project/disk/disk-version';
 import { toProjectPath } from '@/services/project/disk/project-paths';
@@ -30,9 +30,6 @@ import { appState, type SceneDescriptor } from '@/state';
  * - `missing`: the file is gone — the scene stays in memory, listed in `staleScenes`.
  */
 export type ExternalApplyOutcome = 'unchanged' | 'reloaded' | 'merged' | 'missing';
-
-/** How many dropped keys a notice names before "and N more". */
-const NOTICE_KEYS = 4;
 
 /**
  * An external version E of an open scene (plan §C.3): a settled batch from `ExternalChangeService`
@@ -105,14 +102,16 @@ export class SceneMergeService {
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending =
-      B && graph && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graph, B.norm)) : [];
+      B && graph && descriptor.isDirty
+        ? diffScenes(B.norm, this.flush.editorNorm(graph, B.norm))
+        : [];
     if (B) this.highlightChanges(descriptor.id, B.norm, E.norm);
     let outcome: ExternalApplyOutcome;
     if (!B || !graph || pending.length === 0) {
-      await this.install(descriptor, E, version.text, eGraph, false);
+      await this.install(descriptor, E, eGraph, false);
       outcome = 'reloaded';
     } else {
-      outcome = await this.merge(descriptor, path, B, E, version.text, eGraph, graph);
+      outcome = await this.merge(descriptor, path, B, E, eGraph, graph);
     }
     this.baselines.takeFlushLedger(path);
     if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, E.norm);
@@ -169,11 +168,10 @@ export class SceneMergeService {
     path: string,
     B: SceneBaseline,
     E: SceneBaseline,
-    eText: string,
     eGraph: SceneGraph,
     graph: SceneGraph
   ): Promise<ExternalApplyOutcome> {
-    const G = editorNormOfGraph(graph, B.norm);
+    const G = this.flush.editorNorm(graph, B.norm);
     const editorText = this.flush.snapshot(descriptor.id)?.text ?? null;
     if (editorText !== null) {
       await this.journal.recordRejectedDraft(
@@ -183,17 +181,19 @@ export class SceneMergeService {
       );
     }
     const plan = planMerge(B.norm, E.norm, G);
-    let accepted = plan.accepted;
-    let mergedText = eText;
-    if (accepted.length > 0) {
+    let mergedText: string | null = null;
+    if (plan.accepted.length > 0) {
       try {
         // E may still be a legacy file: the accepted keys land with its conversion (W21).
-        mergedText = applySceneOps(E.text, withLegacyAnchorConversion(E.text, E.norm, accepted));
+        mergedText = applySceneOps(
+          E.text,
+          withLegacyAnchorConversion(E.text, E.norm, plan.accepted)
+        );
       } catch (error) {
         if (!(error instanceof ScenePatchError)) throw error;
-        accepted = [];
       }
     }
+    const accepted = mergedText === null ? [] : plan.accepted;
     const dropped: DroppedKey[] =
       accepted.length === plan.accepted.length
         ? [...plan.dropped]
@@ -206,14 +206,14 @@ export class SceneMergeService {
               reason: 'same-key' as const,
             })),
           ];
-    if (accepted.length === 0) {
-      await this.install(descriptor, E, eText, eGraph, false);
+    if (mergedText === null) {
+      await this.install(descriptor, E, eGraph, false);
     } else {
       const merged = await this.sceneManager.parseScene(mergedText, {
         filePath: descriptor.filePath,
       });
       disposeGraph(eGraph);
-      await this.install(descriptor, E, mergedText, merged, true);
+      await this.install(descriptor, E, merged, true);
     }
     if (dropped.length > 0) {
       const names = dropped.map(d => this.describe(d, G));
@@ -222,18 +222,17 @@ export class SceneMergeService {
         tone: 'warn',
         message: `${path} changed on disk while you were editing it: ${dropped.length} of your change${dropped.length === 1 ? ' was' : 's were'} dropped.`,
         detail:
-          `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''}. ` +
+          `${listNoticeNames(names)}. ` +
           (this.journal.available ? 'Your version is in History.' : ''),
       });
     }
     return 'merged';
   }
 
-  /** Build the graph from `text` (or install `graph`), with `baseline` as the disk version. */
+  /** Install `graph`, with `baseline` as the disk version. */
   private async install(
     descriptor: SceneDescriptor,
     baseline: SceneBaseline,
-    text: string,
     graph: SceneGraph,
     markDirty: boolean
   ): Promise<void> {
@@ -241,7 +240,6 @@ export class SceneMergeService {
       new ReloadSceneCommand({
         sceneId: descriptor.id,
         filePath: descriptor.filePath,
-        sceneText: text,
         graph,
         baseline,
         markDirty,
@@ -263,7 +261,7 @@ export class SceneMergeService {
       key: `clobber:${path}`,
       tone: 'warn',
       message: `An agent overwrote your edit in ${path}.`,
-      detail: `${labels.slice(0, NOTICE_KEYS).join('; ')}${labels.length > NOTICE_KEYS ? `; and ${labels.length - NOTICE_KEYS} more` : ''} — it wrote a file it read before you saved them.`,
+      detail: `${listNoticeNames(labels)} — it wrote a file it read before you saved them.`,
       actions: [
         { label: 'Restore my edit', run: () => this.restoreKeys(descriptor, path, clobbered) },
       ],
@@ -279,7 +277,9 @@ export class SceneMergeService {
     if (!B) return;
     const graphNow = this.sceneManager.getSceneGraph(descriptor.id);
     const editorOps =
-      graphNow && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graphNow, B.norm)) : [];
+      graphNow && descriptor.isDirty
+        ? diffScenes(B.norm, this.flush.editorNorm(graphNow, B.norm))
+        : [];
     // Pending edits of the editor ride along (structure included); the restored keys win.
     const keyed = new Map<string, SceneOp>();
     for (const [index, op] of [...editorOps, ...ops].entries()) {
@@ -338,7 +338,7 @@ export class SceneMergeService {
     const B = this.baselines.get(toProjectPath(descriptor.filePath));
     if (!B) throw new Error(`${descriptor.filePath} has no disk baseline`);
     const graph = await this.sceneManager.parseScene(text, { filePath: descriptor.filePath });
-    await this.install(descriptor, B, text, graph, true);
+    await this.install(descriptor, B, graph, true);
   }
 
   private describe(dropped: DroppedKey, doc: SavedSceneDocument): string {
