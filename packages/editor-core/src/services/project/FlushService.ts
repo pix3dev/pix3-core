@@ -1,4 +1,4 @@
-import { SceneManager } from '@pix3/runtime';
+import { SceneManager, type SavedSceneDocument, type SceneGraph } from '@pix3/runtime';
 import { subscribe } from 'valtio/vanilla';
 import { inject, injectable } from '@/fw/di';
 import type { HookReply } from '@/host/EditorHost';
@@ -46,6 +46,12 @@ export interface FlushSnapshot {
   readonly text: string;
   readonly fallback: boolean;
 }
+
+/**
+ * Reads the live graph as authored: a preview that poses it (the animation timeline's scrub)
+ * puts the authored values back around `read`, synchronously, and its pose after.
+ */
+export type AuthoredGuard = <T>(read: () => T) => T;
 
 /**
  * When and how the editor writes scenes (plan §C.1 "Когда пишется диск", §C.2 "Flush = один патч
@@ -101,6 +107,7 @@ export class FlushService {
   /** One flush per scene at a time; a second request waits for the first. */
   private readonly chains = new Map<string, Promise<FlushOutcome>>();
   private readonly listeners = new Set<(sceneId: string, outcome: FlushOutcome) => void>();
+  private readonly authoredGuards = new Set<AuthoredGuard>();
 
   /** Start the idle/upper-bound timer (called once by `mountEditor`). */
   start(): void {
@@ -120,6 +127,29 @@ export class FlushService {
   onFlushed(listener: (sceneId: string, outcome: FlushOutcome) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** A preview that poses the live graph registers here (see {@link AuthoredGuard}). */
+  guardAuthored(guard: AuthoredGuard): () => void {
+    this.authoredGuards.add(guard);
+    return () => this.authoredGuards.delete(guard);
+  }
+
+  /**
+   * The norm of the live graph compared with `baseline` (`editorNormOfGraph`) as authored: a
+   * preview pose is never pending, flushed, drafted or merged.
+   */
+  editorNorm(graph: SceneGraph, baseline: SavedSceneDocument): SavedSceneDocument {
+    return this.readAuthored(() => editorNormOfGraph(graph, baseline));
+  }
+
+  private readAuthored<T>(read: () => T): T {
+    let run = read;
+    for (const guard of this.authoredGuards) {
+      const inner = run;
+      run = () => guard(inner);
+    }
+    return run();
   }
 
   dirtySceneIds(): string[] {
@@ -253,7 +283,7 @@ export class FlushService {
     const baseline = this.baselines.get(path);
     if (!baseline) return null;
     const revision = appState.scenes.nodeDataChangeSignal;
-    const norm = editorNormOfGraph(graph, baseline.norm);
+    const norm = this.editorNorm(graph, baseline.norm);
     const ops = diffScenes(baseline.norm, norm);
     if (ops.length === 0) {
       return { path, baseline, revision, norm, ops, text: baseline.text, fallback: false };
@@ -272,7 +302,8 @@ export class FlushService {
       };
     } catch (error) {
       if (!(error instanceof ScenePatchError)) throw error;
-      return { path, baseline, revision, norm, ops, text: serializeGraph(graph), fallback: true };
+      const text = this.readAuthored(() => serializeGraph(graph));
+      return { path, baseline, revision, norm, ops, text, fallback: true };
     }
   }
 

@@ -25,7 +25,7 @@ import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLo
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
-import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 import { appState } from '@/state';
 
@@ -152,7 +152,9 @@ const graphOf = (path: string | undefined) => {
 const savedNodesOf = (found: NonNullable<ReturnType<typeof graphOf>>) => {
   const { graph, descriptor } = found;
   const baseline = service(SceneBaselineService).get(descriptor.filePath);
-  const norm = baseline ? editorNormOfGraph(graph, baseline.norm) : normOfGraph(graph);
+  const norm = baseline
+    ? service(FlushService).editorNorm(graph, baseline.norm)
+    : normOfGraph(graph);
   return indexNodes(norm);
 };
 
@@ -228,7 +230,7 @@ const pendingKeys = (): Record<string, string[]> => {
     const graph = manager.getSceneGraph(descriptor.id);
     const baseline = baselines.get(descriptor.filePath);
     if (!graph || !baseline) continue;
-    const ops = diffScenes(baseline.norm, editorNormOfGraph(graph, baseline.norm));
+    const ops = diffScenes(baseline.norm, service(FlushService).editorNorm(graph, baseline.norm));
     if (ops.length === 0) continue;
     out[toProjectPath(descriptor.filePath)] = ops.map(op =>
       op.kind === 'set' || op.kind === 'delete'

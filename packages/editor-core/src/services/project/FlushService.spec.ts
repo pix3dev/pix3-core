@@ -12,7 +12,8 @@ import { OperationService } from '@/services/core/OperationService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { appState, resetAppState } from '@/state';
-import { SceneManager } from '@pix3/runtime';
+import { SceneManager, type Group2D } from '@pix3/runtime';
+import { AnimationTimelinePreviewService } from '@/services/animation/AnimationTimelinePreviewService';
 
 /**
  * `FlushService` against a real editor boot (`mountEditorWith` + `FakeHost`) and real operations:
@@ -377,5 +378,67 @@ describe('FlushService — several dirty scenes are one changeset (§C.2, §C.4)
     expect(baselines.isPendingExternal(PATH)).toBe(false);
     expect(baselines.isPendingExternal(OTHER)).toBe(false);
     expect(flush.dirtySceneIds()).toEqual([]);
+  });
+});
+
+describe('FlushService — a timeline preview pose is not an edit', () => {
+  const ANIMATED = SCENE.replace(
+    '      height: 50\n',
+    [
+      '      height: 50',
+      '    components:',
+      '      - id: player',
+      '        type: core:AnimationPlayer',
+      '        enabled: true',
+      '        config:',
+      '          animations:',
+      '            version: "1.0.0"',
+      '            clips:',
+      '              - name: grow',
+      '                duration: 1',
+      '                loop: false',
+      '                tracks:',
+      '                  - id: grow-width',
+      '                    kind: property',
+      '                    targetPath: ""',
+      '                    property: width',
+      '                    valueType: number',
+      '                    enabled: true',
+      '                    keys:',
+      '                      - { time: 0, value: 100, easing: linear }',
+      '                      - { time: 1, value: 300, easing: linear }',
+      '',
+    ].join('\n')
+  );
+
+  // 2.x writes by flush, not by a `scene.save` operation, and the preview only knew the
+  // operation: a flush while scrubbed wrote the sampled pose (width 300) into the file.
+  it('writes the authored values while the preview is posed, then puts the pose back', async () => {
+    resetAppState();
+    host = new FakeHost({
+      files: {
+        'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n',
+        [PATH]: ANIMATED,
+      },
+    });
+    await host.whenReady();
+    handle = await mountEditorWith(document.createElement('div'), host, { shell: false });
+    await service(CommandDispatcher).execute(new LoadSceneCommand({ filePath: `res://${PATH}` }));
+    const flush = service(FlushService);
+    const preview = service(AnimationTimelinePreviewService);
+    const box = service(SceneManager).getActiveSceneGraph()!.nodeMap.get('box') as Group2D;
+
+    // An unflushed edit, then a scrub (an edit ends the preview; clip edits keep it, dirty).
+    await setWidth(77, 'other');
+    expect(preview.begin('box', 'player', 'grow')).toBe(true);
+    preview.setTime(1);
+    expect(box.width).toBe(300);
+
+    expect(await flush.flushDirty(0)).toMatchObject({ ok: true, saved: [PATH] });
+    expect(disk()).toContain('width: 77');
+    expect(disk()).toContain('      width: 100\n');
+    expect(disk()).not.toContain('width: 300');
+    expect(box.width).toBe(300);
+    expect(flush.snapshot(appState.scenes.activeSceneId!)!.ops).toEqual([]);
   });
 });

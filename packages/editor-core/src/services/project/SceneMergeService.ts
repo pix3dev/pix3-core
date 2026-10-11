@@ -11,7 +11,7 @@ import {
 } from '@/core/scene-patch/scene-diff';
 import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
-import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
+import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { HostNoticeService, listNoticeNames } from '@/host/HostNoticeService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
@@ -102,7 +102,9 @@ export class SceneMergeService {
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending =
-      B && graph && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graph, B.norm)) : [];
+      B && graph && descriptor.isDirty
+        ? diffScenes(B.norm, this.flush.editorNorm(graph, B.norm))
+        : [];
     if (B) this.highlightChanges(descriptor.id, B.norm, E.norm);
     let outcome: ExternalApplyOutcome;
     if (!B || !graph || pending.length === 0) {
@@ -170,7 +172,7 @@ export class SceneMergeService {
     eGraph: SceneGraph,
     graph: SceneGraph
   ): Promise<ExternalApplyOutcome> {
-    const G = editorNormOfGraph(graph, B.norm);
+    const G = this.flush.editorNorm(graph, B.norm);
     const editorText = this.flush.snapshot(descriptor.id)?.text ?? null;
     if (editorText !== null) {
       await this.journal.recordRejectedDraft(
@@ -276,7 +278,9 @@ export class SceneMergeService {
     if (!B) return;
     const graphNow = this.sceneManager.getSceneGraph(descriptor.id);
     const editorOps =
-      graphNow && descriptor.isDirty ? diffScenes(B.norm, editorNormOfGraph(graphNow, B.norm)) : [];
+      graphNow && descriptor.isDirty
+        ? diffScenes(B.norm, this.flush.editorNorm(graphNow, B.norm))
+        : [];
     // Pending edits of the editor ride along (structure included); the restored keys win.
     const keyed = new Map<string, SceneOp>();
     for (const [index, op] of [...editorOps, ...ops].entries()) {
