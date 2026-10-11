@@ -52,6 +52,10 @@ export const narrowTo0600 = (path: string): void => {
   }
 };
 
+/** The last `lines` lines of a log file (empty when there is none) — what a failed start shows. */
+export const logTail = (path: string, lines: number): string =>
+  (readTextOrNull(path) ?? '').trimEnd().split('\n').slice(-lines).join('\n');
+
 /** `join(dir, relativePath)` for the nearest `dir` (from `start` up) where it exists, or null. */
 export const findUp = (start: string, relativePath: string): string | null => {
   for (let dir = resolve(start); ; dir = dirname(dir)) {

@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-import { findUp } from '../fs-util.ts';
+import { findUp, logTail } from '../fs-util.ts';
 
 /**
  * The dev server half of `pix3 editor` (plan §D.3, §D.4 step 1): `.pix3/dev.json` is where the
@@ -77,8 +78,6 @@ export const findDevServer = async (
 export const findViteBin = (root: string): string | null =>
   findUp(root, join('node_modules', 'vite', 'bin', 'vite.js'));
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 export interface StartDevServerOptions {
   readonly port?: number;
   readonly timeoutMs?: number;
@@ -125,12 +124,7 @@ export const startDevServer = async (
     }
     await sleep(200);
   }
-  let tail = '';
-  try {
-    tail = readFileSync(join(root, DEV_LOG), 'utf8').split('\n').slice(-15).join('\n');
-  } catch {
-    // no log
-  }
+  const tail = logTail(join(root, DEV_LOG), 15);
   throw new Error(
     child.exitCode !== null
       ? `vite exited with code ${child.exitCode} (see ${DEV_LOG}):\n${tail}`
