@@ -1,7 +1,12 @@
 import type { SavedSceneDocument } from '@pix3/runtime';
 import { injectable } from '@/fw/di';
 import { sha256 } from '@/core/hash';
-import { recordFlushedKeys, type FlushLedger } from '@/core/scene-patch/scene-merge';
+import {
+  EMPTY_FLUSH_LEDGER,
+  mergeFlushLedgers,
+  recordFlushedKeys,
+  type FlushLedger,
+} from '@/core/scene-patch/scene-merge';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
@@ -34,8 +39,8 @@ export interface UnconfirmedFlush {
  *
  * - the **baseline** of every open scene — `If-Match` of the next flush, B of the §C.3 merge, and
  *   the hash an own write is recognised by;
- * - the **flush ledger** per path: the keys the editor's flushes changed since the last external
- *   version, for "the agent overwrote your edit" (§C.3);
+ * - the **flush ledger** per path: the keys the editor's flushes changed and the nodes they added,
+ *   removed or moved since the last external version, for "the agent overwrote your edit" (§C.3);
  * - the flushes per path whose outcome is **unconfirmed** (no answer), adopted if the disk shows
  *   one of them;
  * - paths with a **pending external version** (seen on disk, not applied yet: settling, unparsable,
@@ -48,6 +53,7 @@ export class SceneBaselineService {
   private readonly unconfirmed = new Map<string, UnconfirmedFlush[]>();
   private readonly pending = new Set<string>();
   private readonly listeners = new Set<() => void>();
+  private readonly ledgerListeners = new Set<(path: string) => void>();
 
   /** The exact text of raw bytes, BOM included (the hash is over the bytes). */
   static decode(bytes: Uint8Array): string {
@@ -75,14 +81,32 @@ export class SceneBaselineService {
     const key = toProjectPath(path);
     this.ledgers.set(
       key,
-      recordFlushedKeys(this.ledgers.get(key) ?? new Map(), previous.norm, next.norm)
+      recordFlushedKeys(this.ledgers.get(key) ?? EMPTY_FLUSH_LEDGER, previous.norm, next.norm)
     );
     this.set(key, next);
+    this.notifyLedger(key);
+  }
+
+  /**
+   * A ledger kept from an earlier session of this tab's browser, on a disk that still holds the
+   * version it ended with: the flushes of this session (if any) go on top of it.
+   */
+  adoptFlushLedger(path: string, ledger: FlushLedger): void {
+    const key = toProjectPath(path);
+    const current = this.ledgers.get(key);
+    this.ledgers.set(key, current ? mergeFlushLedgers(ledger, current) : ledger);
+    this.notifyLedger(key);
+  }
+
+  /** `listener(path)` after a flush recorded into the ledger of `path`, or an external version spent it. */
+  onLedgerChange(listener: (path: string) => void): () => void {
+    this.ledgerListeners.add(listener);
+    return () => this.ledgerListeners.delete(listener);
   }
 
   /** The keys flushed since the last external version, left in place (read before an install). */
   flushLedger(path: string): FlushLedger {
-    return this.ledgers.get(toProjectPath(path)) ?? new Map();
+    return this.ledgers.get(toProjectPath(path)) ?? EMPTY_FLUSH_LEDGER;
   }
 
   /**
@@ -91,8 +115,9 @@ export class SceneBaselineService {
    */
   takeFlushLedger(path: string): FlushLedger {
     const key = toProjectPath(path);
-    const ledger = this.ledgers.get(key) ?? new Map();
+    const ledger = this.ledgers.get(key) ?? EMPTY_FLUSH_LEDGER;
     this.ledgers.delete(key);
+    this.notifyLedger(key);
     return ledger;
   }
 
@@ -175,6 +200,17 @@ export class SceneBaselineService {
   dispose(): void {
     this.reset();
     this.listeners.clear();
+    this.ledgerListeners.clear();
+  }
+
+  private notifyLedger(path: string): void {
+    for (const listener of [...this.ledgerListeners]) {
+      try {
+        listener(path);
+      } catch (error) {
+        console.error('[SceneBaselineService] Ledger listener error', error);
+      }
+    }
   }
 
   private notify(): void {
