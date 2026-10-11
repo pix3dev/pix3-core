@@ -210,23 +210,6 @@ pix3-scene-tree-node {
   min-width: 0;
 }
 
-.script-popover__empty {
-  font-size: 0.85rem;
-  color: var(--fg-2);
-}
-
-.tree-node__type {
-  display: inline-block;
-  padding: 0.1rem 0.35rem;
-  border-radius: 999px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: var(--bg-3);
-  color: var(--fg-1);
-  align-self: flex-start;
-}
-
 .tree-node__instance-inline {
   font-size: 11px;
   color: var(--fg-2);

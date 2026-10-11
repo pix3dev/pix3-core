@@ -198,52 +198,6 @@ asset-tree {
   width: 100%;
 }
 
-.tb-btn {
-  background: none;
-  border: none;
-  color: var(--fg-1);
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-}
-
-.tb-btn:hover {
-  background: var(--bg-2);
-  color: var(--fg-0);
-}
-
-.tb-dropdown {
-  position: relative;
-}
-
-.small-caret {
-  width: 10px;
-  height: 10px;
-  margin-left: 4px;
-}
-
-.tb-icon {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-}
-
-/* File icons in feather are visually narrower; scale slightly to match folder */
-.tb-icon.file svg {
-  transform: scale(1.05);
-  transform-origin: 50% 50%;
-}
-
 .menu {
   position: absolute;
   top: 34px;
