@@ -18,11 +18,10 @@ jobs:
       - run: npm run lint
       - run: npm run type-check
       - run: npm test
-      # The CLI bundle, runtime types and agent kit are built from this checkout's sources; a broken
-      # path between packages shows up here before it reaches a tarball.
-      - name: Build @pix3/cli
-        working-directory: packages/cli
-        run: npm run copy-templates && npm run build && npm run build-runtime-types && npm run build-kit
-      # The prebuilt editor and its contract-B gate (no /@vite/client trigger in dist/).
-      - name: Build @pix3/editor-core
-        run: npm run build -w packages/editor-core
+      # `npm pack` of all five packages: each `prepack` builds what it ships (the CLI bundle, runtime
+      # types and agent kit from this checkout's sources; the prebuilt editor and its contract-B gate,
+      # no /@vite/client trigger in dist/; the plugin's dist/), then the tarballs are scanned for
+      # specs, fixtures, plans, the Spine runtime, secrets and local paths, and their manifests for
+      # the lockstep pins (README → "Releasing"). The scratch-project install runs locally only.
+      - name: Pack and scan the tarballs
+        run: npm run release:check -- --pack-only
