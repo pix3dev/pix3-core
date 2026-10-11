@@ -48,7 +48,7 @@ const SWEEP_SKIPPED_DIRS = new Set([
   '.cache',
   'coverage',
 ]);
-/** Parallel reads during the pre-launch scan (each is a round trip on a `pix3 serve` workspace). */
+/** Parallel reads during the pre-launch scan (each is a round trip to the dev server). */
 const SCAN_READ_CONCURRENCY = 12;
 /** Minimum path depth for a directory-prefix include (avoids broad roots like textures/). */
 const MIN_DIR_PREFIX_SEGMENTS = 4;
@@ -84,12 +84,6 @@ export interface AtlasPrepResult {
   sheets?: number;
   frames?: number;
   excluded?: number;
-}
-
-export interface ExportedAtlas {
-  manifest: AtlasManifest;
-  /** PNG blobs index-aligned with `manifest.sheets` (file names in the manifest). */
-  sheets: Blob[];
 }
 
 interface ClassifiedInputs {
@@ -193,28 +187,6 @@ export class TextureAtlasService {
       assetLoader.setAtlasResolver(null);
       return { status: 'error' };
     }
-  }
-
-  /**
-   * Pack the project for export (strict byte hash, no cache). Returns the manifest
-   * plus PNG blobs for {@link ProjectBuildService} to emit under `assets/.atlas/`.
-   * Returns null when nothing is eligible.
-   */
-  async packForExport(): Promise<ExportedAtlas | null> {
-    const inputs = await this.scanAndClassify();
-    if (inputs.include.length === 0) {
-      return null;
-    }
-    const filtering = getProjectTextureFiltering();
-    const hash = await this.hashStrict(inputs.include, filtering);
-    const packed = await this.pack(inputs.include, inputs.excluded, hash, filtering);
-    if (packed.manifest.sheets.length === 0) {
-      return null;
-    }
-    const sheets = await Promise.all(
-      packed.canvases.map(canvas => canvas.convertToBlob({ type: 'image/png' }))
-    );
-    return { manifest: packed.manifest, sheets };
   }
 
   private resultFor(status: 'hit' | 'miss', manifest: AtlasManifest): AtlasPrepResult {
@@ -323,9 +295,9 @@ export class TextureAtlasService {
 
   /**
    * Read and scan `paths` with bounded concurrency, results index-aligned; an
-   * unreadable or unscannable file yields null. On a `pix3 serve` workspace every
-   * read is a network round trip, so a sequential sweep of a real project's
-   * scenes + scripts cost >10 s of every launch. Files whose manifest sha256 is
+   * unreadable or unscannable file yields null. Every read is a round trip to the
+   * dev server, so a sequential sweep of a real project's scenes + scripts cost
+   * >10 s of every launch. Files whose manifest sha256 is
    * unchanged since the last scan are not read at all.
    */
   private async scanFiles<T>(
@@ -446,19 +418,6 @@ export class TextureAtlasService {
     const files = inputs.include.map(
       path => `${path}|${inputs.sizeMap.get(stripRes(path)) ?? '?'}`
     );
-    return this.hashPayload(files, filtering);
-  }
-
-  private async hashStrict(include: string[], filtering: string): Promise<string> {
-    const files: string[] = [];
-    for (const path of include) {
-      try {
-        const buffer = await (await this.fs.readBlob(stripRes(path))).arrayBuffer();
-        files.push(`${path}|${await sha256(buffer)}`);
-      } catch {
-        files.push(`${path}|missing`);
-      }
-    }
     return this.hashPayload(files, filtering);
   }
 
