@@ -67,29 +67,6 @@ export const isEmojiOnlyText = (value: string): boolean => {
 export const isTextProperty = (propertyPath: string): boolean =>
   EMOJI_GUARDED_TEXT_PROPERTIES.has(propertyPath.split('.').pop() ?? propertyPath);
 
-/** `label: 🪙` written straight into scene YAML — the path that bypasses every property setter. */
-const YAML_TEXT_LINE = new RegExp(
-  `^\\s*(${[...EMOJI_GUARDED_TEXT_PROPERTIES].join('|')}):\\s*(?:"([^"]*)"|'([^']*)'|(.+?))\\s*$`,
-  'gmu'
-);
-
-/**
- * Emoji-only text values written directly into a `.pix3scene`, as `property: value` pairs.
- *
- * Returns every offending line, because a scene write is wholesale: telling the agent about the
- * first one only would have it fix one and resubmit.
- */
-export const findEmojiArtInSceneYaml = (
-  yaml: string
-): Array<{ property: string; value: string }> => {
-  const found: Array<{ property: string; value: string }> = [];
-  for (const match of yaml.matchAll(YAML_TEXT_LINE)) {
-    const value = match[2] ?? match[3] ?? match[4] ?? '';
-    if (isEmojiOnlyText(value)) found.push({ property: match[1], value: value.trim() });
-  }
-  return found;
-};
-
 /** The rule in words, shared by `E_EMOJI_AS_ART` and the inspector's refusal. */
 export interface EmojiAsArtFinding {
   /** What is wrong with `<property>: <value>`. */
