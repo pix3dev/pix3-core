@@ -1,12 +1,8 @@
-import { ResourceManager } from '@/services/assets/ResourceManager';
 import { SceneManager, type SceneGraph } from '@pix3/runtime';
 import { SceneValidationError } from '@pix3/runtime';
 import { ref } from 'valtio/vanilla';
 import { optionalService } from '@/services/project/disk/optional-service';
 import { SceneBaselineService, type SceneBaseline } from '@/services/project/SceneBaselineService';
-import { normOfGraph } from '@/core/scene-patch/scene-norm';
-import { readDiskVersion } from '@/services/project/disk/disk-version';
-import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import {
   NON_HUMAN_OPERATION_TAG,
   type Operation,
@@ -18,27 +14,22 @@ import {
 export interface ReloadSceneOperationParams {
   /** Scene ID to reload. */
   sceneId: string;
-  /** File path to reload from. */
+  /** The scene's file path. */
   filePath: string;
   /**
-   * The scene text to build the graph from — a merge result (plan §C.3 step 3). Omitted: the file
-   * is read now and becomes the baseline.
+   * The graph to install: built from the external version E, or from the merged text M (plan §C.3
+   * step 3) — `SceneMergeService` parses it.
    */
-  sceneText?: string;
-  /**
-   * The baseline to record instead of the text read now: with a merge, the graph is built from
-   * the merged text M while the baseline is the external version E on disk (§C.3 step 3).
-   */
-  baseline?: SceneBaseline;
-  /** A graph already parsed from `sceneText` (the merge parses E once to normalise it). */
-  graph?: SceneGraph;
+  graph: SceneGraph;
+  /** The disk version, E: with a merge the graph is built from M while the baseline stays E. */
+  baseline: SceneBaseline;
   /** Mark the scene dirty after the reload (a merge result not on disk yet). */
   markDirty?: boolean;
 }
 
 /**
- * ReloadSceneOperation reloads a scene from its file source.
- * Used when external file changes are detected.
+ * ReloadSceneOperation installs a version of a scene from disk (an external change, or a merge on
+ * top of one): the graph replaces the open one, selection by id is kept, the baseline moves.
  */
 export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
   readonly metadata: OperationMetadata = {
@@ -58,81 +49,22 @@ export class ReloadSceneOperation implements Operation<OperationInvokeResult> {
 
   async perform(context: OperationContext): Promise<OperationInvokeResult> {
     const { state, container } = context;
-    const { sceneId, filePath } = this.params;
+    const { sceneId, filePath, graph, baseline } = this.params;
 
-    const resourceManager = container.getService<ResourceManager>(
-      container.getOrCreateToken(ResourceManager)
-    );
     const sceneManager = container.getService<SceneManager>(
       container.getOrCreateToken(SceneManager)
     );
 
     try {
-      const baselines = optionalService(container, SceneBaselineService);
-      let diskBytes: Uint8Array | null = null;
-      let diskHash: string | null = null;
-      let sceneText = this.params.sceneText;
-      if (sceneText === undefined) {
-        // Raw bytes when the project storage is there (the baseline hash must be the disk's).
-        const storage = optionalService(container, ProjectStorageService);
-        const version = storage ? await readDiskVersion(storage, filePath).catch(() => null) : null;
-        diskBytes = version?.bytes ?? null;
-        diskHash = version?.hash ?? null;
-        sceneText = version?.text ?? (await resourceManager.readText(filePath));
-      }
-
-      // When a file is being written, some browsers briefly expose a 0-byte file.
-      // Retry a few times before treating this as a real invalid scene.
-      for (
-        let attempt = 0;
-        attempt < 3 && (!sceneText || sceneText.trim().length === 0);
-        attempt += 1
-      ) {
-        console.warn('[ReloadSceneOperation] Scene file empty; retrying read', {
-          filePath,
-          attempt: attempt + 1,
-          contentLength: sceneText?.length ?? 0,
-        });
-        await new Promise(resolve => window.setTimeout(resolve, 50));
-        sceneText = await resourceManager.readText(filePath);
-        diskBytes = null;
-        diskHash = null;
-      }
-
-      if (!sceneText || sceneText.trim().length === 0) {
-        console.warn('[ReloadSceneOperation] Scene file still empty; skipping reload', {
-          filePath,
-          contentLength: sceneText?.length ?? 0,
-        });
-        return { didMutate: false };
-      }
-
-      const graph = this.params.graph ?? (await sceneManager.parseScene(sceneText, { filePath }));
-
       // Get current scene descriptor
       const descriptor = state.scenes.descriptors[sceneId];
       if (!descriptor) {
         throw new Error(`Scene descriptor not found: ${sceneId}`);
       }
 
-      // The baseline is normalised from the fresh graph before anything touches it (W1).
-      const norm = normOfGraph(graph);
-
       // Update scene manager with new graph
       sceneManager.setActiveSceneGraph(sceneId, graph);
-      if (baselines) {
-        if (this.params.baseline) {
-          baselines.set(filePath, this.params.baseline);
-        } else if (diskBytes && diskHash) {
-          baselines.set(filePath, {
-            sha: diskHash,
-            text: SceneBaselineService.decode(diskBytes),
-            norm,
-          });
-        } else {
-          await baselines.setFromText(filePath, sceneText, norm);
-        }
-      }
+      optionalService(container, SceneBaselineService)?.set(filePath, baseline);
 
       // Non-destructive: keep the selection of every node that still exists (by id). The camera
       // lives in `appState.scenes.*CameraStates` and the viewport reconciles proxies by id, and the
