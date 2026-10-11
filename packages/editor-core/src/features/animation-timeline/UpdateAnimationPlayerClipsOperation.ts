@@ -88,9 +88,11 @@ export class UpdateAnimationPlayerClipsOperation implements Operation<OperationI
     }
 
     const activeSceneId = state.scenes.activeSceneId;
+    // By id on undo/redo: the instance may have been replaced since (`LiveComponentService`).
     const applySet = (set: KeyframeAnimationSet): void => {
-      component.config.animations = structuredClone(set);
-      this.invalidateBindings(component);
+      const live = node.components.find(c => c.id === component.id) ?? component;
+      live.config.animations = structuredClone(set);
+      this.invalidateBindings(live);
       this.markSceneDirty(state, activeSceneId);
     };
 

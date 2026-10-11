@@ -8,8 +8,7 @@ import type {
   OperationInvokeResult,
   OperationMetadata,
 } from '@/core/Operation';
-import { SceneManager } from '@pix3/runtime';
-import { ScriptRegistry } from '@pix3/runtime';
+import { SceneManager, ScriptRegistry, type ScriptComponent } from '@pix3/runtime';
 
 export interface AddComponentParams {
   nodeId: string;
@@ -100,13 +99,19 @@ export class AddComponentOperation implements Operation<OperationInvokeResult> {
       }
     }
 
+    // Undo finds the component by id: a script re-registered since then replaced the instance
+    // (`LiveComponentService`), and removing the detached one would change nothing on screen.
+    // Redo brings the captured instance back; the live-component watch replaces it if stale.
+    const live = (): ScriptComponent =>
+      node.components.find(c => c.id === component.id) ?? component;
+
     return {
       didMutate: true,
       commit: {
         label: `Add Component ${this.params.componentType}`,
         undo: async () => {
           // Remove component from node
-          node.removeComponent(component);
+          node.removeComponent(live());
           // Mark scene as dirty on undo
           if (activeSceneId) {
             const descriptor = context.state.scenes.descriptors[activeSceneId];
