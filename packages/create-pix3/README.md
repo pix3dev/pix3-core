@@ -20,7 +20,9 @@ npm run build   # dist/index.html, one self-contained file
 fail until it is published. Until then, run the bin from a pix3-core checkout —
 `node <pix3-core>/packages/create-pix3/index.js [dir] --template 2d` — and link the checkout into
 the new project as its README says (`rm -rf node_modules && ln -s <pix3-core>/node_modules
-node_modules`, after building `packages/editor-core` and `packages/vite-plugin` once).
+node_modules`, after building `packages/editor-core` and `packages/vite-plugin` once). Or let
+`npm run release:check -- --keep` (pix3-core root) pack everything and leave a scratch project
+installed from the tarballs.
 
 ## Layout
 

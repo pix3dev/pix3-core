@@ -84,6 +84,7 @@ npm run build -w packages/editor-core   # prebuilt editor → dist/ (+ check-dis
 npm run knip           # unused files / exports / dependencies over the workspaces (knip.jsonc; must stay empty)
 npm run knip:prod      # the same without specs (`knip --production`): code only a spec keeps alive; must stay empty
 npm run version:sync   # stamp the root version into every package (lockstep, plan §A.3)
+npm run release:check  # npm pack all five + scan + a scratch 2D project on the tarballs (README → "Releasing"; --keep, --pack-only)
 npm run test:corpus    # write-model corpus specs + ../DeepCore scenes (local only, not CI; another dir as arg)
 ```
 
