@@ -6,7 +6,7 @@ import { findProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { describeLevel2, formatDiagnostic, validateHelp } from './diagnostics.ts';
 import type { ScriptImportMap } from './level2.ts';
-import { ProjectFiles, SCENE_EXTENSION } from './project.ts';
+import { isSceneFile, ProjectFiles } from './project.ts';
 import { validateProject, type ValidateReport } from './validate.ts';
 
 /**
@@ -67,8 +67,8 @@ const resolveTargets = (
     if (existsSync(absolute) && statSync(absolute).isDirectory()) {
       const prefix = rel === '' ? '' : `${rel}/`;
       for (const scene of project.scenes()) if (scene.startsWith(prefix)) files.add(scene);
-    } else if (!rel.endsWith(SCENE_EXTENSION)) {
-      return { error: `${path} is not a ${SCENE_EXTENSION} file` };
+    } else if (!isSceneFile(rel)) {
+      return { error: `${path} is not a .pix3scene or .prefab file` };
     } else {
       files.add(rel);
     }

@@ -290,8 +290,10 @@ several run, one after another from one bundle, a line each (`src/smoke/select-s
    scripts that reach no scene and widen every run to everything.
 2. Otherwise — no git, nothing changed, a changed scene/script that reaches no top-level scene (a
    helper module, an unused prefab), or a changed `pix3project.yaml` — **every** top-level scene
-   (not instanced by another, not under `prefabs/` / `ui/`), `scenes/main.pix3scene` first (where
-   the starters and the 1.x recipes put the game), then `defaultExportScenePath`, then by path.
+   (not instanced by another, not under `prefabs/` / `ui/`, not a `.prefab` — those are only
+   instanced, and a whole-project `pix3 validate` checks them as prefabs),
+   `scenes/main.pix3scene` first (where the starters and the 1.x recipes put the game), then
+   `defaultExportScenePath`, then by path.
    `--all` forces this.
 
 It never picks `defaultExportScenePath` alone any more: in every 1.x recipe that is the menu, input is

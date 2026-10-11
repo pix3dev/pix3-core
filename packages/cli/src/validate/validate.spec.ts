@@ -736,6 +736,43 @@ describe('level 2: hydration with compiled user scripts', () => {
   });
 });
 
+describe('.prefab files', () => {
+  it('a whole-project run validates every .prefab like a scene, but as a prefab', async () => {
+    const files = {
+      'scenes/a.pix3scene': scene(
+        '  - id: i\n    instance: res://things/enemy.prefab\n  - id: cam\n    type: Camera2D\n'
+      ),
+      // Instanced by the scene; its sprite is used through it.
+      'things/enemy.prefab': scene(
+        '  - id: e\n    type: Sprite2D\n    properties:\n      texture: res://sprites/enemy.png\n'
+      ),
+      // Spawned from a script, instanced by no scene: still checked, still not a whole scene.
+      'things/spawned.prefab': scene(
+        '  - id: s\n    type: Sprit2D\n  - id: box\n    type: GeometryMesh\n'
+      ),
+      'sprites/enemy.png': PNG,
+    };
+    const report = await run(files);
+    expect(report.files.map(f => f.file)).toEqual(
+      expect.arrayContaining(['things/enemy.prefab', 'things/spawned.prefab'])
+    );
+    expect(find(report, 'E_UNKNOWN_NODE_TYPE').map(d => d.file)).toEqual(['things/spawned.prefab']);
+    expect(find(report, 'W_UNUSED_ASSET')).toEqual([]);
+    expect(
+      report.diagnostics.filter(
+        d => d.code.startsWith('W_RENDERABILITY_') && d.file.endsWith('.prefab')
+      )
+    ).toEqual([]);
+  });
+
+  it('pix3 validate names a .prefab file or finds it in a folder', async () => {
+    const root = makeProject({ 'things/enemy.prefab': scene('  - id: e\n    type: Sprit2D\n') });
+    const quiet = { cwd: root, stdout: () => {}, stderr: () => {} };
+    expect(await runValidate(['things/enemy.prefab'], quiet)).toBe(1);
+    expect(await runValidate(['things'], quiet)).toBe(1);
+  });
+});
+
 describe('pix3 validate command', () => {
   const capture = () => {
     let stdout = '';

@@ -20,7 +20,17 @@ export const IGNORED_DIRECTORIES: ReadonlySet<string> = new Set([
   '.cache',
 ]);
 
-export const SCENE_EXTENSION = '.pix3scene';
+/**
+ * Scene-format files: a `.pix3scene`, and a `.prefab` (the same format, only ever instanced —
+ * the plugin ships both, `isPrefabPath` in `vite-plugin/src/build/scan.ts`).
+ */
+export const SCENE_EXTENSIONS = ['.pix3scene', '.prefab'] as const;
+
+/** True for a `.pix3scene` or a `.prefab` (any case, as the plugin's build reads them). */
+export const isSceneFile = (path: string): boolean => {
+  const lower = path.toLowerCase();
+  return SCENE_EXTENSIONS.some(extension => lower.endsWith(extension));
+};
 
 /**
  * A read-only inventory of a project folder: every file, by project-relative path.
@@ -65,8 +75,9 @@ export class ProjectFiles {
     return text;
   }
 
+  /** Every scene-format file: `.pix3scene` and `.prefab` ({@link isSceneFile}). */
   scenes(): string[] {
-    return this.files.filter(file => file.endsWith(SCENE_EXTENSION));
+    return this.files.filter(isSceneFile);
   }
 }
 

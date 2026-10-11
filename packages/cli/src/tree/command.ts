@@ -163,7 +163,7 @@ const overview = (root: string, args: TreeArgs, io: TreeIo): number => {
     ...summary,
     kind: /(^|\/)ui\//.test(summary.path)
       ? 'overlay'
-      : instanced.has(summary.path) || /(^|\/)prefabs?\//.test(summary.path)
+      : instanced.has(summary.path) || /(^|\/)prefabs?\/|\.prefab$/i.test(summary.path)
         ? 'prefab'
         : 'scene',
     entry: manifest?.entry === summary.path,

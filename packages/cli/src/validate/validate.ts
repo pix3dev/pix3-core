@@ -30,7 +30,7 @@ import { checkManifestExport } from './manifest-export.ts';
 export interface ValidateOptions {
   /** Project folder (the one holding `pix3project.yaml`, or any folder `res://` is relative to). */
   readonly projectRoot: string;
-  /** Project-relative scene paths; all `.pix3scene` files in the project when omitted. */
+  /** Project-relative scene paths; every `.pix3scene` and `.prefab` in the project when omitted. */
   readonly files?: readonly string[];
   /** Level 2 (real loader + compiled scripts). Default true. */
   readonly hydrate?: boolean;
@@ -73,6 +73,7 @@ export const USER_PROPERTIES_NOT_CHECKED = '(user: component properties not chec
 /** Text files that can reference an asset by path. */
 const REFERENCING_EXTENSIONS = [
   '.pix3scene',
+  '.prefab',
   '.ts',
   '.js',
   '.json',
@@ -274,7 +275,8 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
           text: texts.get(file) ?? '',
           parsed: result.parsed,
           targetPlatform,
-          isPrefab: prefabTargets.has(file),
+          // A `.prefab` is only ever instanced (or spawned): no camera of its own to want.
+          isPrefab: prefabTargets.has(file) || file.toLowerCase().endsWith('.prefab'),
           checkUserConfig: userSchemasAvailable,
         }))
       );

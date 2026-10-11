@@ -102,7 +102,7 @@ export const COMMAND_USAGE = {
 `,
   validate: `Usage: pix3 validate [paths…] [--json] [--no-hydrate] [--project <dir>]
 
-  paths          .pix3scene files or folders (default: every scene in the project)
+  paths          .pix3scene / .prefab files or folders (default: every scene and .prefab)
   --json         machine-readable report (diagnostics + sha256 of each validated file)
   --no-hydrate   level 1 only: no project code runs (user: component properties not checked)
   --project dir  project root (default: nearest folder with pix3project.yaml)
@@ -132,7 +132,8 @@ export const COMMAND_USAGE = {
                  another, a line each: in a git repo with uncommitted changes, the top-level scenes
                  those changes reach (the scene, a prefab/overlay it instances, a user: script it
                  attaches); otherwise — or when a changed scene/script reaches none — every
-                 top-level scene (not a prefab, not scenes/ui), scenes/main.pix3scene first.
+                 top-level scene (not a prefab or a .prefab, not scenes/ui), scenes/main.pix3scene
+                 first.
   --changed      only the scenes changed files reach (needs git; exit 2 when nothing changed)
   --all          every top-level scene, whatever git says
   --frames N     frames to step (default 120 = 2 s of game time)

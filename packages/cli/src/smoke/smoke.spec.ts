@@ -550,11 +550,18 @@ export class Greeter extends Script {
       expect(selectScenesFor({ projectRoot: root })).toMatchObject({ mode: 'all' });
     });
 
-    it('prefabs and scenes/ui are never run on their own', async () => {
+    it('prefabs, .prefab files and scenes/ui are never run on their own', async () => {
       const root = project({
-        'levels/start.pix3scene': scene(''),
+        'levels/start.pix3scene': scene(
+          `      - id: enemy
+        instance: res://things/enemy.prefab
+`
+        ),
         'scenes/prefabs/coin.pix3scene': scene(''),
         'scenes/ui/result.pix3scene': scene(''),
+        // A .prefab is only ever instanced or spawned, wherever it lives.
+        'things/enemy.prefab': scene(''),
+        'things/spawned.prefab': scene(''),
       });
       const set = (await runSmokeSet({
         projectRoot: root,
@@ -563,6 +570,10 @@ export class Greeter extends Script {
       })) as SmokeRunSet;
       expect(set.runs.map(run => run.scene)).toEqual(['levels/start.pix3scene']);
       expect(set.ok).toBe(true);
+      // A changed .prefab smokes the scenes that instance it.
+      expect(
+        selectScenesFor({ projectRoot: root, changedFiles: ['things/enemy.prefab'] })
+      ).toMatchObject({ mode: 'changed', scenes: ['levels/start.pix3scene'] });
     });
   });
 

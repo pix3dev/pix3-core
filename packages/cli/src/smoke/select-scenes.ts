@@ -4,7 +4,12 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { scanExportNames } from '../script-rule.ts';
-import { IGNORED_DIRECTORIES, ProjectFiles, toProjectPath } from '../validate/project.ts';
+import {
+  IGNORED_DIRECTORIES,
+  isSceneFile,
+  ProjectFiles,
+  toProjectPath,
+} from '../validate/project.ts';
 
 /**
  * Which scenes `pix3 smoke` runs when it is not given one.
@@ -44,7 +49,8 @@ export interface SmokeSelection {
 const INSTANCE_LINE = /^\s*(?:-\s+)?instance:\s*["']?(?:res:\/\/)?([^"'\s#]+)/gm;
 const RES_REFERENCE = /res:\/\/[^"'\s#)]+/g;
 const USER_COMPONENT = /\buser:([A-Za-z_$][\w$]*)/g;
-const PREFAB_OR_UI = /(^|\/)(prefabs?|ui)\//i;
+/** Instanced, never started: under `prefab(s)/` or `ui/`, or a `.prefab` file anywhere. */
+const PREFAB_OR_UI = /(^|\/)(prefabs?|ui)\/|\.prefab$/i;
 
 /** Game code: a script module, not a declaration file and not a unit test (`*.spec.ts` / `*.test.ts`). */
 const isScript = (file: string): boolean =>
@@ -58,7 +64,7 @@ const isScript = (file: string): boolean =>
 export const isIgnoredProjectPath = (file: string): boolean =>
   file.split('/').some(segment => IGNORED_DIRECTORIES.has(segment));
 /** Files that change what a run does: a scene or a script. */
-const isCode = (file: string): boolean => file.endsWith('.pix3scene') || isScript(file);
+const isCode = (file: string): boolean => isSceneFile(file) || isScript(file);
 
 const readOr = (project: ProjectFiles, path: string): string => {
   try {
@@ -77,7 +83,7 @@ const instancesOf = (project: ProjectFiles, scene: string): string[] => {
   return out;
 };
 
-/** Scenes no other scene instances, outside prefabs/ and ui/ folders — the ones a game starts in. */
+/** Scenes no other scene instances, outside prefabs/ and ui/ folders and not a `.prefab` — the ones a game starts in. */
 export const topLevelScenes = (project: ProjectFiles): string[] => {
   const scenes = project.scenes();
   const instanced = new Set<string>();
