@@ -45,7 +45,7 @@ const parseValidateArgs = (argv: readonly string[]): ValidateArgs | { error: str
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
-      if (!project) return { error: '--project needs a folder' };
+      if (!project || project.startsWith('--')) return { error: '--project needs a folder' };
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else if (arg.startsWith('-')) return { error: `unknown option ${arg}` };
     else paths.push(arg);

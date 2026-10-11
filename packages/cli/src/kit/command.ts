@@ -26,8 +26,7 @@ const parseKitArgs = (argv: readonly string[]): KitArgs | { error: string } => {
     else if (arg.startsWith('--project=')) projectDir = arg.slice('--project='.length);
     else if (arg === '--project') {
       projectDir = argv[++i];
-      if (!projectDir || projectDir.startsWith('-'))
-        return { error: '--project needs a directory' };
+      if (!projectDir || projectDir.startsWith('--')) return { error: '--project needs a folder' };
     } else return { error: `unknown option "${arg}"` };
   }
   return { projectDir, update, migrate, help };

@@ -197,7 +197,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
-      if (!project) return { error: '--project needs a folder' };
+      if (!project || project.startsWith('--')) return { error: '--project needs a folder' };
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else return { error: `unknown argument ${arg}` };
   }
