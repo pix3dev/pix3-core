@@ -35,4 +35,5 @@ need the CLI's bin, which the checkout links only once its CLI is built (prepack
 - `design/` — design notes and references
 - `src/main.ts` — boots the entry scene (`startGame` from `@pix3/vite-plugin/player`)
 - `pix3project.yaml` — the project manifest (viewport, quality, entry scene)
-- `AGENTS.md` — rules and pointers for coding agents working on this project
+- `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`, `design/tests/bots/` — the agent kit: rules, skills
+  and bot-policy types for coding agents (`pix3 kit --update` refreshes it)
