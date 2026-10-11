@@ -57,6 +57,7 @@ import { GeometryMesh } from '@pix3/runtime';
 import { isShaderEffectHost, type ShaderEffectStack } from '@pix3/runtime';
 import { MeshInstance } from '@pix3/runtime';
 import { Sprite3D } from '@pix3/runtime';
+import { AnimatedSprite3D } from '@pix3/runtime';
 import { Particles3D } from '@pix3/runtime';
 import { AmbientLightNode } from '@pix3/runtime';
 import { HemisphereLightNode } from '@pix3/runtime';
@@ -3160,22 +3161,38 @@ export class ViewportRendererService {
   }
 
   /**
-   * Repaint every 2D proxy drawn from a texture file whose pixels just changed on
-   * disk. Nothing calls it in 2.x yet (its caller was the 1.x Sprite Editor): an
-   * image an agent overwrites is not followed, which also needs the AssetLoader's
-   * decoded copy evicted.
-   * The registry forgets its decoded copy; the standard per-node visual sync then
-   * reloads it, exactly as {@link refreshLocalizedLabels} does for a locale swap.
+   * Repaint every node drawn from an image file whose pixels just changed on disk
+   * (an agent regenerated a sprite) — called by `ExternalReloadService` for each
+   * settled image of an external batch (`.plans/editor-core-port.md`, texture
+   * refresh). Edit mode only: during play the batch is held (ExternalChangeService
+   * step 4) and arrives here when play stops.
+   *
+   * 1. The shared {@link AssetLoader}'s decoded copy goes first — the
+   *    AnimatedSprite2D / AnimatedSprite3D reloads below read through it, and so
+   *    does the next play.
+   * 2. The 2D proxies (Sprite2D, TiledSprite2D, UI skins and overlay quads,
+   *    AnimatedSprite2D frames, Spine atlas pages) and the 3D path caches
+   *    (Sprite3D, Particles3D, GeometryMesh map) forget the path; the standard
+   *    per-node sync then reloads it, exactly as {@link refreshLocalizedLabels}
+   *    does for a locale swap.
+   * 3. AnimatedSprite3D has no viewport proxy — its frames were set by the
+   *    SceneLoader — so its frames on this file are re-read here.
    *
    * The trailing `requestRender()` is required, not defensive: a file write marks
    * nothing dirty, so without it the new pixels would only appear on the ≤500 ms
-   * heartbeat (CLAUDE.md render-on-demand rule).
+   * heartbeat (CLAUDE.md render-on-demand rule); the async loads request their
+   * own frame when they land.
    */
   invalidateTexture(texturePath: string): void {
-    const affectedNodeIds = this.proxyRegistry.invalidateTexture(texturePath);
-    if (affectedNodeIds.length === 0) {
+    const path = texturePath.trim();
+    if (!path) {
       return;
     }
+    this.assetLoader.evictTexture(path);
+    const affectedNodeIds = new Set([
+      ...this.proxyRegistry.invalidateTexture(path),
+      ...this.contentSync3D.invalidateTexture(path),
+    ]);
 
     const graph = this.sceneManager.getActiveSceneGraph();
     for (const nodeId of affectedNodeIds) {
@@ -3184,7 +3201,28 @@ export class ViewportRendererService {
         this.updateNodeTransform(node);
       }
     }
+    for (const node of graph?.nodeMap.values() ?? []) {
+      if (node instanceof AnimatedSprite3D) this.reloadAnimatedSprite3DFrames(node, path);
+    }
     this.requestRender();
+  }
+
+  private reloadAnimatedSprite3DFrames(node: AnimatedSprite3D, texturePath: string): void {
+    node.frames.forEach((frame, index) => {
+      if (frame?.url !== texturePath) return;
+      void this.assetLoader.loadTexture(texturePath).then(
+        texture => {
+          node.setTextureForFrame(index, texture);
+          this.requestRender();
+        },
+        (error: unknown) =>
+          console.warn(
+            '[ViewportRenderer] Failed to reload AnimatedSprite3D frame',
+            texturePath,
+            error
+          )
+      );
+    });
   }
 
   /**

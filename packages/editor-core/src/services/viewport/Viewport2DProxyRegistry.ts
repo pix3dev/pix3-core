@@ -20,7 +20,8 @@ import { Sprite2D } from '@pix3/runtime';
 import { TiledSprite2D } from '@pix3/runtime';
 import { ColorRect2D } from '@pix3/runtime';
 import { SpineSkeleton2D, SpineSkeletonView } from '@pix3/runtime';
-import type { AssetLoader } from '@pix3/runtime';
+import type { AssetLoader, SpineAssetRequest } from '@pix3/runtime';
+import { spineAssetKey } from '@pix3/runtime';
 import { buildTiledSpriteGeometry, type TiledSpriteGeometryParams } from '@pix3/runtime';
 import {
   buildSkinGeometry,
@@ -325,12 +326,20 @@ export class Viewport2DProxyRegistry {
    * the next visual sync re-reads it (§9.5 step 4).
    *
    * Proxies cache the path they last loaded (`userData.texturePath` for
-   * Sprite2D / TiledSprite2D / UIControl2D, `userData.animationTexturePath` for
-   * AnimatedSprite2D) and only reload when it *differs* — which an in-place
-   * overwrite never makes it do. Clearing the cached path (and, for animated
-   * sprites, the cached resource that gates their reload) turns the next sync
-   * into a reload. Returns the affected node ids so the caller can drive that
-   * sync; it is the facade that owns the per-node-type update dispatch.
+   * Sprite2D / TiledSprite2D / UIControl2D and each UI overlay quad,
+   * `userData.animationTexturePath` for AnimatedSprite2D) and only reload when it
+   * *differs* — which an in-place overwrite never makes it do. Clearing the cached
+   * path (and, for animated sprites, the cached resource that gates their reload)
+   * turns the next sync into a reload. A Spine proxy drawing the file as an atlas
+   * page drops its view and its asset signature; the shared `SpineAsset` is
+   * evicted from the loader (once, after every view on it is gone — eviction
+   * disposes the page textures) so the next sync rebuilds it from disk.
+   *
+   * The AnimatedSprite2D frame decode is the shared {@link AssetLoader}'s: the
+   * caller evicts that copy first (`AssetLoader.evictTexture`), or the reload
+   * would get the old pixels back. Returns the affected node ids so the caller
+   * can drive that sync; it is the facade that owns the per-node-type update
+   * dispatch.
    */
   invalidateTexture(texturePath: string): string[] {
     const normalizedTexturePath = texturePath.trim();
@@ -372,6 +381,37 @@ export class Viewport2DProxyRegistry {
       // restamps `sourceSize`); its reload is gated on a missing resource.
       visualRoot.userData.animationResource = null;
       affectedNodeIds.push(nodeId);
+    }
+
+    for (const [nodeId, visualRoot] of this.uiControl2DVisuals) {
+      const overlays = visualRoot.userData.overlayMeshes as
+        | Map<UIControlOverlaySpec['key'], THREE.Mesh>
+        | undefined;
+      let hit = false;
+      for (const mesh of overlays?.values() ?? []) {
+        if (mesh.userData.texturePath === normalizedTexturePath) {
+          mesh.userData.texturePath = null; // `syncUIControlOverlays` reloads on a mismatch
+          hit = true;
+        }
+      }
+      if (hit && !affectedNodeIds.includes(nodeId)) affectedNodeIds.push(nodeId);
+    }
+
+    const staleSpineAssets = new Map<string, SpineAssetRequest>();
+    for (const [nodeId, visualRoot] of this.spineSkeleton2DVisuals) {
+      const pagePaths = (visualRoot.userData.spinePagePaths as readonly string[] | undefined) ?? [];
+      const request = visualRoot.userData.spineAssetRequest as SpineAssetRequest | undefined;
+      if (!request || !pagePaths.includes(normalizedTexturePath)) continue;
+      this.disposeSpineView(nodeId, visualRoot);
+      delete visualRoot.userData.spineAssetRequest;
+      delete visualRoot.userData.spinePagePaths;
+      // `syncSpineSkeleton2DVisual` rebuilds on a signature mismatch.
+      visualRoot.userData.assetSignature = null;
+      staleSpineAssets.set(spineAssetKey(request), request);
+      affectedNodeIds.push(nodeId);
+    }
+    for (const request of staleSpineAssets.values()) {
+      this.deps.getAssetLoader().evictSpineAsset(request);
     }
 
     return affectedNodeIds;
@@ -1619,6 +1659,9 @@ export class Viewport2DProxyRegistry {
       this.spineViews.set(node.nodeId, view);
       visualRoot.userData.spineView = view;
       visualRoot.userData.viewSignature = signature;
+      // What `invalidateTexture` needs to recognise a rewritten page image and evict the asset.
+      visualRoot.userData.spineAssetRequest = request;
+      visualRoot.userData.spinePagePaths = asset.pagePaths;
 
       const placeholder = visualRoot.userData.placeholder as THREE.Group | undefined;
       if (placeholder) {

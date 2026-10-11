@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import {
   AnimatedSprite2D,
+  AnimatedSprite3D,
   AmbientLightNode,
   Camera3D,
   DirectionalLightNode,
@@ -79,6 +80,71 @@ describe('ViewportRendererService', () => {
     expect(animatedVisual.userData.animationTexturePath).toBeNull();
     expect(animatedVisual.userData.animationResource).toBeNull();
     expect(untouched.userData.texturePath).toBe('res://sprites/other.png');
+  });
+
+  // An agent regenerating a sprite on disk: the external-change path calls this for the image.
+  it('invalidateTexture evicts the decode and refreshes every holder of the file', async () => {
+    const PATH = 'res://sprites/hero.png';
+    const service = new ViewportRendererService();
+    const fresh = new THREE.Texture();
+    const assetLoader = {
+      evictTexture: vi.fn(),
+      evictSpineAsset: vi.fn(),
+      loadTexture: vi.fn(async () => fresh),
+    };
+    const flipbook = new AnimatedSprite3D({
+      id: 'flip3d',
+      frames: [PATH, 'res://other.png'].map(url => ({ type: 'texture' as const, url })),
+    });
+    const setFrame = vi.spyOn(flipbook, 'setTextureForFrame');
+    Object.defineProperty(service, 'assetLoader', { value: assetLoader });
+    Object.defineProperty(service, 'sceneManager', {
+      value: { getActiveSceneGraph: () => ({ nodeMap: new Map([[flipbook.nodeId, flipbook]]) }) },
+    });
+    const svc = service as unknown as {
+      proxyRegistry: {
+        uiControl2DVisuals: Map<string, THREE.Group>;
+        spineSkeleton2DVisuals: Map<string, THREE.Group>;
+      };
+      contentSync3D: {
+        sprite3DTexturePaths: Map<string, string | null>;
+        geometryMeshMapPaths: Map<string, string | null>;
+      };
+    };
+
+    // A slider whose fill overlay draws the file.
+    const overlay = new THREE.Mesh();
+    overlay.userData.texturePath = PATH;
+    const control = new THREE.Group();
+    control.userData.overlayMeshes = new Map([['fill', overlay]]);
+    svc.proxyRegistry.uiControl2DVisuals.set('slider', control);
+    // Two Spine proxies on one asset whose atlas page is the file: one eviction.
+    const request = { skeletonPath: 'res://h.json', atlasPath: 'res://h.atlas', texturePath: null };
+    const spines = ['spine-a', 'spine-b'].map(id => {
+      const root = new THREE.Group();
+      root.userData.assetSignature = 'sig';
+      root.userData.spineAssetRequest = request;
+      root.userData.spinePagePaths = [PATH];
+      svc.proxyRegistry.spineSkeleton2DVisuals.set(id, root);
+      return root;
+    });
+    svc.contentSync3D.sprite3DTexturePaths.set('sprite3d', PATH);
+    svc.contentSync3D.geometryMeshMapPaths.set('mesh', 'res://other.png');
+
+    service.invalidateTexture(PATH);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(assetLoader.evictTexture).toHaveBeenCalledWith(PATH);
+    expect(overlay.userData.texturePath).toBeNull();
+    expect(spines.map(root => root.userData.assetSignature)).toEqual([null, null]);
+    expect(assetLoader.evictSpineAsset).toHaveBeenCalledTimes(1);
+    expect(assetLoader.evictSpineAsset).toHaveBeenCalledWith(request);
+    expect(svc.contentSync3D.sprite3DTexturePaths.has('sprite3d')).toBe(false);
+    expect(svc.contentSync3D.geometryMeshMapPaths.get('mesh')).toBe('res://other.png');
+    // AnimatedSprite3D has no proxy: its frame on the file is re-read, the other one is not.
+    expect(assetLoader.loadTexture).toHaveBeenCalledTimes(1);
+    expect(setFrame).toHaveBeenCalledWith(0, fresh);
   });
 
   it('should create an editor anchor marker for Sprite2D visuals', () => {

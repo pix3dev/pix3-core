@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getProjectTextureFiltering } from '@pix3/runtime';
+import { AssetLoader, getProjectTextureFiltering } from '@pix3/runtime';
 
 import { ServiceContainer } from '@/fw/di';
 import { ExternalReloadService } from '@/host/ExternalReloadService';
@@ -43,5 +43,22 @@ describe('ExternalReloadService', () => {
 
     expect(getProjectTextureFiltering()).toBe('nearest');
     expect(reapply).toHaveBeenCalledTimes(1);
+  });
+
+  // An agent regenerating a sprite: the viewport kept the decoded copy until the editor reloaded.
+  it('a changed image evicts the decoded texture and repaints the nodes drawn from it', async () => {
+    resetAppState();
+    const host = new FakeHost({ files: { 'pix3project.yaml': 'version: 1.0.0\n' } });
+    await host.whenReady();
+    handle = await mountEditorWith(document.createElement('div'), host, { shell: false });
+    const evict = vi.spyOn(AssetLoader.prototype, 'evictTexture');
+    const invalidate = vi
+      .spyOn(ViewportRendererService.prototype, 'invalidateTexture')
+      .mockImplementation(() => undefined);
+
+    await service(ExternalReloadService).apply(['sprites/hero.PNG', 'notes.txt', 'scripts/a.ts']);
+
+    expect(evict.mock.calls).toEqual([['res://sprites/hero.PNG']]);
+    expect(invalidate.mock.calls).toEqual([['res://sprites/hero.PNG']]);
   });
 });

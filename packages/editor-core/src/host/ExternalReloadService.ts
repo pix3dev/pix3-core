@@ -1,3 +1,4 @@
+import { AssetLoader } from '@pix3/runtime';
 import { inject, injectable, ServiceContainer } from '@/fw/di';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
@@ -13,6 +14,9 @@ import { ProjectService } from '@/services/project/ProjectService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { appState } from '@/state';
 
+/** Image files a node can draw (sprite, skin, frame, Spine page, 3D map). */
+const IMAGE_FILE = /\.(?:png|jpe?g|webp|gif|bmp|avif|svg)$/i;
+
 /**
  * What a settled batch of external changes does to the open editor — the one consumer of
  * `ExternalChangeService` (stabilisation, own-write filter, parse check, play hold):
@@ -23,7 +27,10 @@ import { appState } from '@/state';
  * - a changed prefab refreshes its instances in every other open scene and re-derives their
  *   baselines (the override base moved);
  * - `pix3project.yaml` is re-read (and the viewport re-filters its 2D textures);
- * - a `locales/<id>.json` goes to `LocalizationEditorService` (its key-level merge, W20).
+ * - a `locales/<id>.json` goes to `LocalizationEditorService` (its key-level merge, W20);
+ * - an image drops the shared `AssetLoader`'s decoded copy and the viewport repaints every node
+ *   drawn from it (`ViewportRendererService.invalidateTexture`) — an agent regenerating a sprite
+ *   shows up without a reload. Like everything here, held during play and applied on stop.
  */
 @injectable()
 export class ExternalReloadService {
@@ -41,6 +48,9 @@ export class ExternalReloadService {
 
   @inject(LocalizationEditorService)
   private readonly localization!: LocalizationEditorService;
+
+  @inject(AssetLoader)
+  private readonly assetLoader!: AssetLoader;
 
   private unsubscribe: (() => void) | null = null;
 
@@ -64,6 +74,12 @@ export class ExternalReloadService {
       await this.projects.reloadProjectManifest();
       // A changed `textureFiltering` re-filters the 2D textures already on screen.
       viewport()?.reapply2DTextureFiltering();
+    }
+    for (const path of [...changed].filter(path => IMAGE_FILE.test(path))) {
+      const resource = `res://${path}`;
+      // The viewport evicts too; this covers a page without one (the next play reads fresh bytes).
+      this.assetLoader.evictTexture(resource);
+      viewport()?.invalidateTexture(resource);
     }
     const locales = [...changed].filter(path => localeOfPath(path) !== null);
     for (const path of locales) await this.localization.applyExternal(path);

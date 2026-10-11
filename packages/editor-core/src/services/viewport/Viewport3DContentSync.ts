@@ -35,6 +35,29 @@ export class Viewport3DContentSync {
     this.geometryMeshMapPaths.clear();
   }
 
+  /**
+   * Forget which nodes last loaded `texturePath` (a Sprite3D / Particles3D
+   * texture, a GeometryMesh map) so their next sync re-reads the file — the
+   * per-node path cache otherwise skips an in-place overwrite. Returns the
+   * affected node ids for the facade to sync.
+   */
+  invalidateTexture(texturePath: string): string[] {
+    const affected: string[] = [];
+    for (const paths of [
+      this.sprite3DTexturePaths,
+      this.particles3DTexturePaths,
+      this.geometryMeshMapPaths,
+    ]) {
+      for (const [nodeId, path] of paths) {
+        if (path === texturePath) {
+          paths.delete(nodeId);
+          affected.push(nodeId);
+        }
+      }
+    }
+    return affected;
+  }
+
   syncSprite3DBillboarding(camera: THREE.Camera): void {
     const sceneGraph = this.deps.getActiveSceneGraph();
     if (!sceneGraph) {
