@@ -466,6 +466,31 @@ describe('sync barrier', () => {
     expect(flushes).toBe(2);
   });
 
+  it('flushes through the writer tab when another (read-only) tab asks', async () => {
+    const p = await start();
+    const writer = await p.connectTab('tab-a');
+    const reader = await p.connectTab('tab-b');
+    let flushes = 0;
+    writer.onRequest('flush', () => {
+      flushes += 1;
+      return { ok: true, written: [] };
+    });
+    for (const tab of [writer, reader]) {
+      tab.onRequest('sync', request => ({ ok: true, rev: request.rev, executed: {} }));
+    }
+    await p.mutate('/__pix3/api/handover/claim', {
+      method: 'POST',
+      body: JSON.stringify({ writerId: 'tab-a' }),
+    });
+    // The writer asked: it flushed itself before calling, nothing to do here.
+    expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
+    expect(flushes).toBe(0);
+    // A read-only tab asked: its own flush wrote nothing (it holds no unsaved scene), the writer's
+    // dirty scenes must reach the disk before the rescan.
+    expect((await sync(p, { tabId: 'tab-b' })).ok).toBe(true);
+    expect(flushes).toBe(1);
+  });
+
   it('reports a gesture that outlasts the flush as not ok', async () => {
     const p = await start();
     const tab = await p.connectTab('tab-a');
