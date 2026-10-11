@@ -1,14 +1,13 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { prebuiltDir } from '../package-root.ts';
+import type { CliIo } from '../io.ts';
+import { resolveEsbuild, withCommandBundle } from '../package-root.ts';
 import { validateHelp } from './diagnostics.ts';
 
 /**
- * `pix3 validate` as `index.ts` reaches it — deliberately free of runtime imports, so `pix3 new` /
- * `pix3 mcp` never pay for the validator and `node src/index.ts` can load this file directly.
+ * `pix3 validate` as `index.ts` reaches it — deliberately free of runtime imports, so the other
+ * commands never pay for the validator and `node src/index.ts` can load this file directly.
  *
  * The validator itself always runs from an esbuild bundle (see `bundle.ts` for why):
  * - published package: `dist/validate/prebuilt/bundle-main.js`, built at `prepack`;
@@ -58,28 +57,11 @@ export interface BundledValidate {
   }): Promise<BundledValidateReport>;
   runBundledValidate(
     argv: readonly string[],
-    io: {
-      cwd: string;
-      stdout: (text: string) => void;
-      stderr: (text: string) => void;
-      esbuildSpecifier?: string;
-    }
+    io: CliIo & { readonly esbuildSpecifier?: string }
   ): Promise<number>;
 }
 
 const BUNDLE_MAIN = 'bundle-main.js';
-
-/**
- * `esbuild` as this package sees it (an optional dependency when published, the repo's in a
- * checkout). Resolved here, not in the bundle: a checkout's bundle lives in a temp folder.
- */
-const resolveEsbuild = (): string | undefined => {
-  try {
-    return import.meta.resolve('esbuild');
-  } catch {
-    return undefined;
-  }
-};
 
 const importBundle = async (dir: string): Promise<BundledValidate> =>
   (await import(pathToFileURL(join(dir, BUNDLE_MAIN)).href)) as BundledValidate;
@@ -88,37 +70,24 @@ const importBundle = async (dir: string): Promise<BundledValidate> =>
  * Run `fn` with the validator bundle loaded: the prebuilt one when published, else one built from
  * source into a temp folder (removed afterwards).
  */
-export const withValidateBundle = async <T>(
+export const withValidateBundle = <T>(
   fn: (bundle: BundledValidate, esbuildSpecifier: string | undefined) => Promise<T>
-): Promise<T> => {
-  const prebuilt = prebuiltDir('validate');
-  if (prebuilt && existsSync(join(prebuilt, BUNDLE_MAIN))) {
-    return fn(await importBundle(prebuilt), resolveEsbuild());
-  }
-  // Repo checkout: build the bundle from source first.
-  const outdir = mkdtempSync(join(tmpdir(), 'pix3-validate-bundle-'));
-  try {
-    const { buildValidateBundle } = await import('./bundle.ts');
-    await buildValidateBundle(outdir);
-    return await fn(await importBundle(outdir), resolveEsbuild());
-  } finally {
-    rmSync(outdir, { recursive: true, force: true });
-  }
-};
+): Promise<T> =>
+  withCommandBundle(
+    'validate',
+    BUNDLE_MAIN,
+    async outdir => (await import('./bundle.ts')).buildValidateBundle(outdir),
+    async dir => fn(await importBundle(dir), resolveEsbuild())
+  );
 
 /** Run `pix3 validate` with the arguments after the command word; resolves to the exit code. */
-export const runValidateCli = async (argv: readonly string[]): Promise<number> => {
+export const runValidateCli = async (argv: readonly string[], io: CliIo): Promise<number> => {
   // The help needs no bundle (a published package without its prebuilt one still answers it).
   if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write(validateHelp());
+    io.stdout(validateHelp());
     return 0;
   }
   return withValidateBundle((bundle, esbuildSpecifier) =>
-    bundle.runBundledValidate(argv, {
-      cwd: process.cwd(),
-      stdout: text => process.stdout.write(text),
-      stderr: text => process.stderr.write(text),
-      esbuildSpecifier,
-    })
+    bundle.runBundledValidate(argv, { ...io, esbuildSpecifier })
   );
 };

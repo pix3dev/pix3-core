@@ -3,7 +3,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { writeAtomic } from '../fs-util.ts';
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import type { CliIo } from '../io.ts';
+import { resolveProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
 import {
@@ -28,11 +29,7 @@ import {
  * unless `--force`; a file that already has exactly these bytes is left alone.
  */
 
-export interface CharacterCompileIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type CharacterCompileIo = CliIo;
 
 interface Args {
   readonly spec?: string;
@@ -403,13 +400,12 @@ export const runCharacterCompileCli = async (
     );
     return 2;
   }
-  const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
-  if (!root || !existsSync(join(root, PROJECT_MANIFEST_FILE))) {
-    io.stderr(
-      `pix3 character-compile: no ${PROJECT_MANIFEST_FILE} in ${args.project ? root : `${io.cwd} or above`} — run inside a project or pass --project <dir>.\n`
-    );
+  const project = resolveProjectRoot(io.cwd, args.project);
+  if ('error' in project) {
+    io.stderr(`pix3 character-compile: ${project.error}\n`);
     return 2;
   }
+  const { root } = project;
   const specPath = isAbsolute(args.spec) ? args.spec : resolve(io.cwd, args.spec);
   if (!existsSync(specPath)) {
     io.stderr(`pix3 character-compile: ${args.spec} does not exist.\n`);

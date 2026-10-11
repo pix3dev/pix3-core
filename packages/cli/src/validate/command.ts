@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import type { CliIo } from '../io.ts';
 import { findProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { validateHelp, type Diagnostic } from './diagnostics.ts';
@@ -16,10 +17,7 @@ import { validateProject, type ValidateReport } from './validate.ts';
  * (bad arguments, no project found).
  */
 
-export interface ValidateIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface ValidateIo extends CliIo {
   /** Set by the bundled entry; the specs leave it bare. */
   readonly scriptImports?: ScriptImportMap;
   /** Resolved URL of `esbuild`, when the caller can see one (level 2 needs it). */

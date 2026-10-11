@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { parse, stringify } from 'yaml';
 
 import { findUp, readTextOrNull } from './fs-util.ts';
@@ -70,6 +71,23 @@ export const renderManifest = (payload: Record<string, unknown>): string =>
 export const findProjectRoot = (start: string): string | null => {
   const manifest = findUp(start, PROJECT_MANIFEST_FILE);
   return manifest === null ? null : dirname(manifest);
+};
+
+/**
+ * The project a command works on: `--project <dir>` (from `cwd`), else the nearest folder from
+ * `cwd` up that holds the manifest. No manifest there is no project: `error` is the line to print
+ * after the command's `pix3 <command>: ` prefix.
+ */
+export const resolveProjectRoot = (
+  cwd: string,
+  projectDir: string | undefined
+): { readonly root: string } | { readonly error: string } => {
+  const start = resolve(cwd, projectDir ?? '.');
+  const root = projectDir ? start : findProjectRoot(start);
+  if (root && existsSync(join(root, PROJECT_MANIFEST_FILE))) return { root };
+  return {
+    error: `no ${PROJECT_MANIFEST_FILE} in ${start}${projectDir ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.`,
+  };
 };
 
 /** `metadata.agentKit.version` of the project's manifest (the kit `pix3 kit` installed), or null. */

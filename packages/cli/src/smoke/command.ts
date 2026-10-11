@@ -5,10 +5,12 @@ import { Worker } from 'node:worker_threads';
 import { parse as parseYaml } from 'yaml';
 
 import { describeUnsynced, syncEditor } from '../editor-sync.ts';
+import type { CliIo } from '../io.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { cliPackageRoot, resolveEsbuild } from '../package-root.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
-import { cliPackageRoot, resolveEsbuild, SMOKE_WORKER_FILE, withSmokeBundle } from './entry.ts';
+import { SMOKE_WORKER_FILE, withSmokeBundle } from './entry.ts';
 import {
   isSmokeFailure,
   type SmokeFailure,
@@ -32,11 +34,7 @@ import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
  * wall-clock timeout. Exit codes: 0 = ran clean, 1 = at least one error, 2 = could not run.
  */
 
-export interface SmokeIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type SmokeIo = CliIo;
 
 interface SmokeArgs {
   readonly scene?: string;

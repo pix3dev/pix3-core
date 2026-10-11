@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
+import type { CliIo } from '../io.ts';
 import { findProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import {
@@ -18,11 +19,7 @@ import {
  * editor. Offline, no network, no key, no native module; see `synth.ts`.
  */
 
-export interface SfxIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type SfxIo = CliIo;
 
 export interface SfxResult {
   /** As written, relative to the current folder, forward slashes. */

@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 
+import type { CliIo } from '../io.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
@@ -31,11 +32,7 @@ import {
  * Exit: 0 = ok, 1 = a scene does not parse, 2 = bad arguments / no such file.
  */
 
-export interface TreeIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type TreeIo = CliIo;
 
 interface TreeArgs {
   readonly scene?: string;

@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { describeUnsynced, syncEditor } from '../editor-sync.ts';
 import { findUp, sha256Hex } from '../fs-util.ts';
-import { findProjectRoot, PROJECT_MANIFEST_FILE, readManifestKitVersion } from '../manifest.ts';
+import type { CliIo } from '../io.ts';
+import { PROJECT_MANIFEST_FILE, readManifestKitVersion, resolveProjectRoot } from '../manifest.ts';
 import {
   CHECK_TSCONFIG,
   hasOwnTsconfig,
@@ -165,10 +166,7 @@ export type ValidateFn = (options: {
   hydrate: boolean;
 }) => Promise<BundledValidateReport>;
 
-export interface CheckIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface CheckIo extends CliIo {
   readonly validate?: ValidateFn;
   readonly typescript?: Partial<Omit<ResolveTypeScriptOptions, 'projectRoot' | 'offline'>>;
 }
@@ -499,14 +497,12 @@ export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<nu
     );
     return 0;
   }
-  const start = args.project ? resolve(io.cwd, args.project) : io.cwd;
-  const projectRoot = args.project ? start : findProjectRoot(start);
-  if (!projectRoot || !existsSync(join(projectRoot, PROJECT_MANIFEST_FILE))) {
-    io.stderr(
-      `pix3 check: no pix3project.yaml in ${start}${args.project ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.\n`
-    );
+  const project = resolveProjectRoot(io.cwd, args.project);
+  if ('error' in project) {
+    io.stderr(`pix3 check: ${project.error}\n`);
     return 2;
   }
+  const projectRoot = project.root;
   const report = await checkProject(projectRoot, {
     hydrate: args.hydrate,
     offline: args.offline,
