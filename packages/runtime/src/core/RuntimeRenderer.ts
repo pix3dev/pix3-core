@@ -64,20 +64,11 @@ export class RuntimeRenderer {
     return this.renderer;
   }
 
-  attachToDocument(containerId: string = 'app'): void {
-    const container = document.getElementById(containerId);
-    if (!(container instanceof HTMLElement)) {
-      throw new Error(`Missing #${containerId} container`);
-    }
-
-    this.attach(container);
-  }
-
   /**
    * Mount the canvas into `container`. Re-entrant on purpose: calling it again with a different
    * element MOVES the live canvas (and with it the WebGL context, so the running game survives the
-   * move) instead of leaving a second, orphaned observer behind. The editor uses that to hand a
-   * running game between the Studio Game tab and the Vibe stage without restarting it.
+   * move) instead of leaving a second, orphaned observer behind. The editor's play session uses that
+   * to re-mount a running game's canvas without restarting it.
    */
   attach(container: HTMLElement): void {
     this.resizeObserver?.disconnect();
