@@ -22,6 +22,7 @@ import {
   ResourceNotDecodedError,
 } from '@pix3/runtime/node';
 
+import { PENDING_COMPONENT_WARNING } from '../validate/level2.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { resolveLocalization } from '../validate/resource-files.ts';
 import type { ScriptImportMap } from '../validate/script-build.ts';
@@ -127,8 +128,6 @@ const DOM_GLOBAL =
 /** `console.log`/`info` lines kept for the report (the rest are counted). */
 const MAX_LOG_LINES = 40;
 
-const PENDING = /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
-
 /** Engine re-reports of a failure the error sink already delivered. */
 const ENGINE_REPORTS = [
   /^\[NodeBase\] Script ".*" threw in/,
@@ -196,7 +195,7 @@ export const runSmokeJob = async (
     // SceneRunner's own clock; not the game's business.
     if (/^THREE\.THREE\.Clock: This module has been deprecated/.test(message)) return;
     if (/^\[AudioService\] Web Audio API is not supported/.test(message)) return;
-    const pending = PENDING.exec(message);
+    const pending = PENDING_COMPONENT_WARNING.exec(message);
     if (pending) {
       addWarning(
         'W_SMOKE_PENDING_COMPONENT',

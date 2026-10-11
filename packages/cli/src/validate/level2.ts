@@ -120,7 +120,12 @@ export const loadUserScripts = async (
   }
 };
 
-const PENDING = /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
+/**
+ * The loader's warning for a component it parked (`component-hydration.ts`): type, node id. Read by
+ * level 2 (`E_PENDING_COMPONENT`) and by `pix3 smoke`; the E_PENDING_COMPONENT spec pins the text.
+ */
+export const PENDING_COMPONENT_WARNING =
+  /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
 const OVERRIDE_TARGET = /Override target "(.*?)" not found/;
 
 export interface HydrateOptions {
@@ -149,7 +154,7 @@ export const hydrateScene = async (options: HydrateOptions): Promise<Diagnostic[
       loader.parseScene(options.text, { filePath: `res://${file}` })
     );
     for (const warning of warnings) {
-      const pending = PENDING.exec(warning.message);
+      const pending = PENDING_COMPONENT_WARNING.exec(warning.message);
       if (pending) {
         out.push(
           diagnostic({
