@@ -6,6 +6,7 @@ import { ComponentBase, customElement, html, state, inject } from '@/fw';
 import { appState } from '@/state';
 import { getRuntimeSceneRoot, SceneManager } from '@pix3/runtime';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
+import { IconService, IconSize } from '@/services/editor/IconService';
 import { selectObject } from '@/features/selection/SelectObjectCommand';
 
 import '../shared/pix3-panel';
@@ -121,6 +122,9 @@ const REFRESH_INTERVAL_MS = 350;
 
 @customElement('pix3-runtime-panel')
 export class RuntimePanel extends ComponentBase {
+  @inject(IconService)
+  private readonly icons!: IconService;
+
   @inject(CommandDispatcher)
   private readonly commandDispatcher!: CommandDispatcher;
 
@@ -507,10 +511,17 @@ export class RuntimePanel extends ComponentBase {
               @click=${this.toggleLive}
               title=${this.live ? 'Live updates on' : 'Live updates paused'}
             >
-              ${this.live ? '● Live' : '⏸ Paused'}
+              ${this.icons.getIcon(this.live ? 'radio' : 'pause', IconSize.SMALL)}
+              <span>${this.live ? 'Live' : 'Paused'}</span>
             </button>
-            <button type="button" class="runtime-refresh" @click=${() => this.refreshTree()}>
-              ↻
+            <button
+              type="button"
+              class="runtime-refresh"
+              @click=${() => this.refreshTree()}
+              title="Refresh"
+              aria-label="Refresh runtime objects"
+            >
+              ${this.icons.getIcon('refresh-cw', IconSize.SMALL)}
             </button>
             <span class="runtime-count">${this.nodeCount} objs</span>
             <button
@@ -520,16 +531,7 @@ export class RuntimePanel extends ComponentBase {
               title="Collapse all"
               aria-label="Collapse all runtime nodes"
             >
-              <svg viewBox="0 0 2000 2000" aria-hidden="true" focusable="false">
-                <path
-                  d="M3425 19984 c-93 -20 -235 -91 -312 -154 -197 -163 -292 -440 -238 -695 18 -87 77 -211 138 -290 72 -95 6040 -6052 6127 -6117 353 -261 795 -350 1210 -243 199 51 374 137 534 262 77 60 5939 5913 6062 6052 208 235 252 533 119 802 -73 148 -186 258 -339 329 -151 71 -339 88 -486 44 -60 -18 -173 -71 -223 -105 -18 -12 -1379 -1368 -3024 -3013 l-2993 -2991 -2992 2991 c-1646 1645 -3007 3001 -3025 3013 -50 34 -163 87 -223 105 -79 24 -248 29 -335 10z"
-                  transform="matrix(.1 0 0 -.1 0 2000)"
-                ></path>
-                <path
-                  d="M9795 7545 c-247 -39 -458 -127 -655 -273 -87 -65 -6055 -6022 -6127 -6117 -202 -265 -203 -613 -3 -879 93 -123 268 -230 430 -262 98 -19 232 -15 320 12 60 18 173 71 223 105 18 12 1379 1368 3025 3013 l2992 2991 2993 -2991 c1645 -1645 3006 -3001 3024 -3013 50 -34 163 -87 223 -105 251 -75 563 23 733 231 233 285 222 662 -27 944 -41 46 -1410 1419 -3042 3050 -2063 2061 -2994 2984 -3052 3027 -300 222 -703 323 -1057 267z"
-                  transform="matrix(.1 0 0 -.1 0 2000)"
-                ></path>
-              </svg>
+              ${this.icons.getIcon('collapse-all', IconSize.SMALL)}
             </button>
           </div>
 
@@ -629,7 +631,12 @@ export class RuntimePanel extends ComponentBase {
             }}
             aria-label=${isCollapsed ? 'Expand' : 'Collapse'}
           >
-            ${hasChildren ? (isCollapsed ? '▶' : '▼') : ''}
+            ${hasChildren
+              ? this.icons.getIcon(
+                  isCollapsed ? 'chevron-right-caret' : 'chevron-down-caret',
+                  IconSize.SMALL
+                )
+              : null}
           </button>
           <span class="runtime-type">${node.type}</span>
           ${node.name ? html`<span class="runtime-name">${node.name}</span>` : null}
@@ -687,7 +694,7 @@ export class RuntimePanel extends ComponentBase {
             aria-label="Clear selection"
             title="Clear selection"
           >
-            ✕
+            ${this.icons.getIcon('x', IconSize.SMALL)}
           </button>
         </div>
 

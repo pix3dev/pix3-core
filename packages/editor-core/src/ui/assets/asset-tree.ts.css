@@ -112,16 +112,10 @@ asset-tree {
   font: inherit;
 }
 
-.expander::before {
-  content: '';
-}
-
-.expander--visible::before {
-  content: '▾';
-}
-
-.expander--collapsed::before {
-  content: '▸';
+.expander svg {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
 .expander--button {

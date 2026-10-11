@@ -56,7 +56,7 @@ export class SaveAnimationOperation implements Operation<OperationInvokeResult> 
     const nextText = serializeAnimationResource(resource);
     await storage.writeTextFile(filePath, nextText);
 
-    logger.info(`✓ Animation asset saved: ${descriptor.name || filePath}`);
+    logger.info(`Animation asset saved: ${descriptor.name || filePath}`);
 
     const beforeSnapshot = context.snapshot;
 

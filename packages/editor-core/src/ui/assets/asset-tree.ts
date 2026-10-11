@@ -5,7 +5,7 @@ import type { FileDescriptor } from '@/services/project/file-descriptor';
 import { AssetsPreviewService } from '@/services/assets/AssetsPreviewService';
 import { ProjectService } from '@/services/project/ProjectService';
 import { AssetImportService } from '@/services/assets/AssetImportService';
-import { IconService } from '@/services/editor/IconService';
+import { IconService, IconSize } from '@/services/editor/IconService';
 import { computeDirectoryStats } from '@/services/assets/asset-folder-stats';
 import { appState, type AssetBrowserViewMode } from '@/state';
 import { subscribe } from 'valtio/vanilla';
@@ -874,15 +874,18 @@ export class AssetTree extends ComponentBase {
         ${isExpandable
           ? html`<button
               type="button"
-              class="expander expander--visible expander--button ${node.expanded
-                ? ''
-                : 'expander--collapsed'}"
+              class="expander expander--button"
               @click=${(e: Event) => {
                 e.stopPropagation();
                 this.toggleNode(node);
               }}
               aria-label=${node.expanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
-            ></button>`
+            >
+              ${this.iconService.getIcon(
+                node.expanded ? 'chevron-down-caret' : 'chevron-right-caret',
+                IconSize.SMALL
+              )}
+            </button>`
           : html`<span class="expander" aria-hidden="true"></span>`}
         ${isCategory
           ? this.categoryIcon(node)
