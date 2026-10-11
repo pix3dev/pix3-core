@@ -176,6 +176,9 @@ describe('keys', () => {
     const local = join(s.p.root, '.pix3', 'local', 'keys.json');
     expect(JSON.parse(readFileSync(local, 'utf8'))).toEqual({ openai: OPENAI_KEY });
     if (process.platform !== 'win32') expect(statSync(local).mode & 0o777).toBe(0o600);
+    expect(await json(await s.editor('/__pix3/api/keys'))).toMatchObject({
+      keys: { openai: { set: true, last4: OPENAI_KEY.slice(-4) } },
+    });
     // The proxy reads it from there.
     const answer = await s.editor('/__pix3/api/proxy/openai/v1/images/generations', {
       method: 'POST',

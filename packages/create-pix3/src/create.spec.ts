@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,8 @@ import { parse } from 'yaml';
 import { parseArgs, pix3Entry } from './create.js';
 
 const BIN = fileURLToPath(new URL('../index.js', import.meta.url));
-const scratch = mkdtempSync(join(tmpdir(), 'create-pix3-'));
+// macOS's temp directory can be reached through /var and its real path /private/var.
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'create-pix3-')));
 
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });

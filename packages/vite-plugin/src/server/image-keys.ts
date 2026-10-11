@@ -118,7 +118,10 @@ const readKeys = async (file: string): Promise<Record<string, unknown> | null> =
   try {
     text = await readFile(file, 'utf8');
   } catch (error) {
-    if (errnoCode(error) === 'ENOENT') return null;
+    // An inaccessible home store must not hide the project fallback. In particular, macOS
+    // reports ENOTDIR for a file in a parent path, where other systems may report ENOENT.
+    const code = errnoCode(error) ?? '';
+    if (code === 'ENOENT' || UNWRITABLE.has(code)) return null;
     throw error;
   }
   try {
