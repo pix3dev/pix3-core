@@ -9,10 +9,6 @@
  * - blob: / data:
  */
 
-export interface ReadResourceOptions {
-  readonly allowNetworkFallback?: boolean;
-}
-
 export interface EmbeddedResourceEntry {
   readonly base64: string;
   readonly mimeType?: string;
@@ -52,20 +48,6 @@ export class ResourceManager {
 
     // Default to relative path from base
     return this.buildUrl(resource);
-  }
-
-  /**
-   * True when this manager was built with an embedded asset map — i.e. a
-   * single-file build, where the embedded set is the whole universe of assets
-   * and a `res://` miss cannot be found anywhere else.
-   */
-  get hasEmbeddedResources(): boolean {
-    return this.embeddedResources.size > 0;
-  }
-
-  /** Whether a specific resource ships inside this build. */
-  hasEmbeddedResource(resource: string): boolean {
-    return this.getEmbeddedEntry(resource) !== null;
   }
 
   getAudioBuffer(key: string): AudioBuffer | undefined {
