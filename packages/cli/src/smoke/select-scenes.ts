@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { IGNORED_DIRECTORIES, ProjectFiles, toProjectPath } from '../validate/project.ts';
 
 /**
@@ -43,7 +44,6 @@ export interface SmokeSelection {
 const INSTANCE_LINE = /^\s*(?:-\s+)?instance:\s*["']?(?:res:\/\/)?([^"'\s#]+)/gm;
 const RES_REFERENCE = /res:\/\/[^"'\s#)]+/g;
 const USER_COMPONENT = /\buser:([A-Za-z_$][\w$]*)/g;
-const EXPORTED_CLASS = /\bexport\s+(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g;
 const PREFAB_OR_UI = /(^|\/)(prefabs?|ui)\//i;
 
 /** Game code: a script module, not a declaration file and not a unit test (`*.spec.ts` / `*.test.ts`). */
@@ -71,7 +71,8 @@ const readOr = (project: ProjectFiles, path: string): string => {
 const instancesOf = (project: ProjectFiles, scene: string): string[] => {
   const out: string[] = [];
   for (const match of readOr(project, scene).matchAll(INSTANCE_LINE)) {
-    out.push(match[1].replace(/^\/+/, ''));
+    const target = toProjectPath(match[1]);
+    if (target) out.push(target);
   }
   return out;
 };
@@ -128,10 +129,10 @@ const scriptClassIndex = (project: ProjectFiles): Map<string, string[]> => {
   const index = new Map<string, string[]>();
   for (const file of project.files) {
     if (!isScript(file)) continue;
-    for (const match of readOr(project, file).matchAll(EXPORTED_CLASS)) {
-      const list = index.get(match[1]) ?? [];
+    for (const name of scanExportNames(readOr(project, file)).names) {
+      const list = index.get(name) ?? [];
       list.push(file);
-      index.set(match[1], list);
+      index.set(name, list);
     }
   }
   return index;

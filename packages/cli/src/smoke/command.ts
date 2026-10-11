@@ -108,14 +108,12 @@ const failure = (code: SmokeFailureCode, reason: string, scene?: string): SmokeF
 interface ManifestBits {
   readonly defaultScene?: string;
   readonly viewport: { width: number; height: number };
-  readonly localization: unknown;
   readonly autoloads: unknown;
 }
 
 const readManifest = (root: string): ManifestBits => {
   const fallback: ManifestBits = {
     viewport: { width: 1920, height: 1080 },
-    localization: null,
     autoloads: [],
   };
   try {
@@ -133,7 +131,6 @@ const readManifest = (root: string): ManifestBits => {
         : undefined;
     return {
       viewport: { width, height },
-      localization: isRecord(data.localization) ? data.localization : null,
       autoloads: data.autoloads ?? [],
       ...(defaultScene ? { defaultScene } : {}),
     };
@@ -256,7 +253,6 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   scene,
   frames: options.frames ?? DEFAULT_FRAMES,
   viewport: prepared.manifest.viewport,
-  localization: prepared.manifest.localization,
   autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
   fallbackResolveDir: cliPackageRoot(),
@@ -296,7 +292,13 @@ export const runSmoke = async (options: RunOneSmokeOptions): Promise<SmokeOutcom
 /** Which scenes a run with no scene argument covers (see `select-scenes.ts`). */
 export const selectScenesFor = (options: RunSmokeSetOptions): SmokeSelection | SmokeFailure => {
   const prepared = prepare(options.projectRoot);
-  if ('code' in prepared) return prepared;
+  return 'code' in prepared ? prepared : selectFor(prepared, options);
+};
+
+const selectFor = (
+  prepared: Prepared,
+  options: RunSmokeSetOptions
+): SmokeSelection | SmokeFailure => {
   const selection = selectSmokeScenes(prepared.project, {
     manifestDefault: prepared.manifest.defaultScene,
     changedOnly: options.changedOnly,
@@ -312,7 +314,7 @@ export const runSmokeSet = async (
 ): Promise<SmokeRunSet | SmokeFailure> => {
   const prepared = prepare(options.projectRoot);
   if ('code' in prepared) return prepared;
-  const selection = selectScenesFor(options);
+  const selection = selectFor(prepared, options);
   if ('code' in selection) return selection;
   const runs = await runScenes(prepared, selection.scenes, options);
   return {

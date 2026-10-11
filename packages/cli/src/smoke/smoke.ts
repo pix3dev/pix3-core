@@ -12,7 +12,6 @@ import {
   SceneValidationError,
   ScriptRegistry,
   setPostprocessingModuleLoader,
-  type LocalizationConfig,
   type RuntimeRenderer,
   type ScriptErrorInfo,
 } from '@pix3/runtime';
@@ -24,8 +23,8 @@ import {
 } from '@pix3/runtime/node';
 
 import { ProjectFiles } from '../validate/project.ts';
+import { resolveLocalization } from '../validate/resource-files.ts';
 import { scanUserScripts } from '../validate/user-scripts.ts';
-import { isRecord } from '../validate/yaml-doc.ts';
 import type { ScriptImportMap } from '../validate/script-build.ts';
 import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
@@ -428,8 +427,11 @@ export const runSmokeJob = async (
     });
     // The project's autoloads run here as in the player and the editor's play mode.
     runner.setAutoloads(normalizeAutoloads(job.autoloads), registry);
-    if (isRecord(job.localization) && typeof job.localization.defaultLocale === 'string') {
-      runner.setLocalizationConfig(job.localization as unknown as LocalizationConfig);
+    // The locales the player loads (the plugin's rule: the manifest's block, else locales/*.json).
+    const localization = resolveLocalization(project);
+    if (localization) {
+      const { defaultLocale, fallbackLocale, locales } = localization;
+      runner.setLocalizationConfig({ defaultLocale, fallbackLocale, locales });
     }
 
     // --- Frame 0: load + onAttach/onStart ------------------------------------------------------
