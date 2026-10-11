@@ -475,19 +475,6 @@ export class IconService {
   }
 
   /**
-   * Register a custom icon at runtime
-   * @param name - Unique icon name
-   * @param svgContent - SVG content string
-   */
-  registerIcon(name: string, svgContent: string): void {
-    this.customIcons.set(name, svgContent);
-    // Clear cached entries for this icon
-    Array.from(this.iconCache.keys())
-      .filter(key => key.startsWith(`${name}-`))
-      .forEach(key => this.iconCache.delete(key));
-  }
-
-  /**
    * Apply width and height attributes to an SVG string
    */
   private applySizeToSvg(svg: string, size: number): string {
@@ -560,13 +547,6 @@ export class IconService {
     }
 
     return svg;
-  }
-
-  /**
-   * Clear the icon cache (useful for testing or memory management)
-   */
-  clearCache(): void {
-    this.iconCache.clear();
   }
 
   dispose(): void {

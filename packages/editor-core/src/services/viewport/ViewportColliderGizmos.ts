@@ -69,11 +69,6 @@ export class ViewportColliderGizmos {
 
   constructor(private readonly deps: ViewportColliderGizmosDeps) {}
 
-  /** The polygon open for editing, or null. */
-  getEditTarget(): PolygonEditTarget | null {
-    return this.editTarget;
-  }
-
   setEditTarget(target: PolygonEditTarget | null): void {
     this.editTarget = target;
     this.hoveredHandle = null;

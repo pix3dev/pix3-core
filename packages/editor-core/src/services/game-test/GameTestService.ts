@@ -80,7 +80,6 @@ import {
   buildBotVerdict,
   type BotActuatorChannel,
   type BotReport,
-  type BotStore,
   type BotWorld,
   type NormalizedBotSpec,
   parseBotSpec,
@@ -1060,20 +1059,6 @@ export class GameTestService {
         sticks.releaseAll();
       },
     };
-  }
-
-  /**
-   * Swap in the project-file policy store (the file backend needs the project's file
-   * services, which this service deliberately does not depend on).
-   * Delegated to the host rather than held here: the host is what reads a policy, and
-   * two owners of one store is how a run ends up compiling last project's file.
-   */
-  setBotStore(store: BotStore): void {
-    this.botHost.setStore(store);
-  }
-
-  getBotStore(): BotStore {
-    return this.botHost.getStore();
   }
 
   /**

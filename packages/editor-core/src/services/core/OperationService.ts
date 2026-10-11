@@ -117,7 +117,6 @@ export class OperationService {
   // to the active scene's stack; buckets for closed scenes are pruned.
   private readonly histories = new Map<string, HistoryManager>();
   private readonly historyVersions = new WeakMap<HistoryManager, number>();
-  private historyCapacity: number | undefined;
   private readonly seedHistory?: HistoryManager;
   private subscribedHistory: HistoryManager | null = null;
   private disposeHistorySubscription: () => void = () => {};
@@ -150,11 +149,7 @@ export class OperationService {
       // Reuse the injected/seed manager for the very first bucket so tests and
       // DI wiring that pass a specific HistoryManager keep working.
       manager =
-        this.seedHistory && this.histories.size === 0
-          ? this.seedHistory
-          : new HistoryManager(
-              this.historyCapacity != null ? { capacity: this.historyCapacity } : undefined
-            );
+        this.seedHistory && this.histories.size === 0 ? this.seedHistory : new HistoryManager();
       this.histories.set(key, manager);
     }
     return manager;
@@ -343,13 +338,6 @@ export class OperationService {
   private invalidateHistory(history: HistoryManager): void {
     this.historyVersions.set(history, (this.historyVersions.get(history) ?? 0) + 1);
     history.clear();
-  }
-
-  setHistoryCapacity(capacity: number): void {
-    this.historyCapacity = Math.max(1, capacity);
-    for (const manager of this.histories.values()) {
-      manager.setCapacity(capacity);
-    }
   }
 
   private async executeOperation<TInvokeResult extends OperationInvokeResult>(

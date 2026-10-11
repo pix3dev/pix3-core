@@ -60,10 +60,6 @@ export class AssetTree extends ComponentBase {
     return this.selectedPath;
   }
 
-  public getViewMode(): AssetBrowserViewMode {
-    return this.viewMode;
-  }
-
   public async setViewMode(mode: AssetBrowserViewMode): Promise<void> {
     if (mode === this.viewMode) {
       return;

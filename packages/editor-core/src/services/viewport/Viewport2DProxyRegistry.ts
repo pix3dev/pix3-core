@@ -1708,11 +1708,6 @@ export class Viewport2DProxyRegistry {
     this.stampSpineLayers(view);
   }
 
-  /** The live Spine view for a node's proxy, if it has loaded. */
-  getSpineView(nodeId: string): SpineSkeletonView | undefined {
-    return this.spineViews.get(nodeId);
-  }
-
   /**
    * Advance the editor preview for one Spine proxy. Called by the preview ticker
    * for nodes with `previewInEditor` enabled.

@@ -292,11 +292,6 @@ export class AssetsPreviewService {
     await this.loadFolder(this.state.selectedFolderPath);
   }
 
-  /** Whether managed sprite folders render as one sprite card. */
-  public getCollapseSpriteFolders(): boolean {
-    return this.collapseSpriteFolders;
-  }
-
   public async setCollapseSpriteFolders(collapse: boolean): Promise<void> {
     if (this.collapseSpriteFolders === collapse) {
       return;

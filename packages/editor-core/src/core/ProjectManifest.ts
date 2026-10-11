@@ -261,10 +261,10 @@ export const createDefaultProjectManifest = (): ProjectManifest => ({
  * Where a project's stable identity lives: `metadata.projectId` (a random UUID).
  *
  * Not a top-level key: `normalizeProjectManifest` keeps only the fields it knows, while `metadata`
- * round-trips verbatim — so `pix3 new` (packages/pix3-cli `manifest.ts`, which writes the same key)
- * and the editor agree on it without either having to learn the other's schema. The editor mints
- * it when it creates a project and backfills it once when it opens a project that lacks one. It is
- * a filter for "is this the project I think it is" (the CLI's link/serve channel), not a secret.
+ * round-trips verbatim — so `pix3 new` (packages/cli `new-project.ts`, which mints it) and the
+ * editor agree on it without either having to learn the other's schema. The editor backfills it
+ * once when it opens a project that lacks one. It keys the editor's per-project browser state
+ * (drafts, open tabs, the asset browser), not a secret.
  */
 export const PROJECT_ID_METADATA_KEY = 'projectId';
 

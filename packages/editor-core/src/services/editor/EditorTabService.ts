@@ -386,13 +386,6 @@ export class EditorTabService {
     return appState.tabs.tabs.filter(tab => tab.isDirty);
   }
 
-  async saveDirtyTabs(): Promise<void> {
-    const dirtyTabs = this.getDirtyTabs();
-    for (const tab of dirtyTabs) {
-      await this.saveTabResource(tab);
-    }
-  }
-
   /**
    * Close every tab. This only ever runs as part of project teardown (closing or replacing the
    * project), so session ownership is released first: the emptying tab set must not be written

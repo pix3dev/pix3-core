@@ -4319,10 +4319,6 @@ export class ViewportRendererService {
     this.requestRender();
   }
 
-  getPolygonEditTarget(): PolygonEditTarget | null {
-    return this.colliderGizmos.getEditTarget();
-  }
-
   /** The vertex/edge handle under the pointer, in CSS pixels. */
   getPolygonHandleAt(screenX: number, screenY: number): PolygonHandleHit | null {
     return this.colliderGizmos.getHandleAt(screenX, screenY);
@@ -4333,14 +4329,6 @@ export class ViewportRendererService {
     const changed = this.colliderGizmos.setHoveredHandle(
       this.colliderGizmos.getHandleAt(screenX, screenY)
     );
-    if (changed) {
-      this.requestRender();
-    }
-    return changed;
-  }
-
-  clearPolygonHandleHover(): boolean {
-    const changed = this.colliderGizmos.setHoveredHandle(null);
     if (changed) {
       this.requestRender();
     }
@@ -4389,13 +4377,6 @@ export class ViewportRendererService {
       this.orthographicCamera,
       this.viewportSize
     );
-  }
-
-  /**
-   * Clear handle hover state (e.g., when cursor leaves viewport)
-   */
-  clearHandleHover(): boolean {
-    return this.transformTool2d.clearHover(this.selection2DOverlay);
   }
 
   /**

@@ -181,10 +181,6 @@ export class GamePlaySessionService {
     this.closePopoutWindow();
   }
 
-  getAspectRatio(): GameAspectRatio {
-    return appState.ui.gameAspectRatio;
-  }
-
   async setAspectRatio(aspectRatio: GameAspectRatio): Promise<void> {
     this.initialize();
     await this.operationService.invoke(

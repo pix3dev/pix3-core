@@ -69,20 +69,6 @@ export class HistoryManager {
     return this.redoStack.length > 0;
   }
 
-  getCapacity(): number {
-    return this.capacity;
-  }
-
-  setCapacity(capacity: number): void {
-    const normalized = Math.max(1, capacity);
-    if (normalized === this.capacity) {
-      return;
-    }
-    this.capacity = normalized;
-    this.trimToCapacity();
-    this.emitChange();
-  }
-
   push(entryInit: HistoryEntryInit): HistoryEntry {
     const entry = this.createEntry(entryInit);
 
