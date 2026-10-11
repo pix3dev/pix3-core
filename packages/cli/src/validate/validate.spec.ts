@@ -1315,6 +1315,9 @@ describe('level 1: sprite keys, locale sprites, script keys', () => {
         'loc.tr(key); loc.tr(`shop.${id}`);',
       ].join('\n'),
       'src/types.d.ts': "declare function tr(key: 'never.checked'): string;\n",
+      // Not game code by the project-script rule: a test may call tr() with a key no table has.
+      'scripts/Hud.spec.ts': "loc.tr('fake.in.spec');\n",
+      'src/hud.test.ts': "loc.tr('fake.in.test');\n",
     };
     const report = await run(files, { hydrate: false });
     expect(find(report, 'E_LOCALE_SCRIPT_KEY').map(d => [d.file, d.line, d.fix])).toEqual([

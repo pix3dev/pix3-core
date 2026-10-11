@@ -7,6 +7,7 @@ import {
   UIControl2D,
   type ScriptLocalizationKey,
   PROJECT_SCRIPT_DIRECTORIES,
+  PROJECT_SCRIPT_EXCLUDE_PATTERN,
 } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
@@ -204,7 +205,7 @@ export class LocalizationExtractionService {
     for (const dir of PROJECT_SCRIPT_DIRECTORIES) {
       const files = await this.discoverFilesByExtension(dir, '.ts');
       for (const file of files) {
-        if (file.endsWith('.d.ts')) continue;
+        if (PROJECT_SCRIPT_EXCLUDE_PATTERN.test(file)) continue;
         scannedScripts += 1;
         let text: string;
         try {

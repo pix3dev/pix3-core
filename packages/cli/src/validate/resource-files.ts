@@ -1,4 +1,4 @@
-import { scanScriptLocalizationKeys } from '@pix3/runtime';
+import { PROJECT_SCRIPT_EXCLUDE_PATTERN, scanScriptLocalizationKeys } from '@pix3/runtime';
 import { parse as parseYaml } from 'yaml';
 
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
@@ -435,8 +435,14 @@ export const checkSpriteKeys = (
     );
 };
 
-/** Script files `checkScriptKeys` reads (`.d.ts` excluded). */
+/**
+ * Code files `checkScriptKeys` reads: every `.ts` / `.js` of the project but what the
+ * project-script rule says is not game code — a spec, a test, a declaration
+ * (`PROJECT_SCRIPT_EXCLUDE_PATTERN`, the rule the editor, the plugin and the player register by).
+ */
 const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+const isScriptKeySource = (file: string): boolean =>
+  SCRIPT_FILE.test(file) && !PROJECT_SCRIPT_EXCLUDE_PATTERN.test(file);
 
 /**
  * Keys a project script passes to the localization API as a string literal
@@ -457,7 +463,7 @@ export const checkScriptKeys = (
   const table = localeTablePath(plan.defaultLocale);
   const out: Diagnostic[] = [];
   for (const file of project.files) {
-    if (!SCRIPT_FILE.test(file) || file.endsWith('.d.ts')) continue;
+    if (!isScriptKeySource(file)) continue;
     let text: string;
     try {
       text = project.readText(file);
