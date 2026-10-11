@@ -1,5 +1,6 @@
 import { injectable, inject } from '@/fw/di';
-import { keepaliveTimer } from '@/services/core/background-ticker';
+import { keepaliveSleep } from '@/services/core/background-ticker';
+import { diffJsonPaths, fmtScalar } from '@/services/game-test/report-format';
 import { appState } from '@/state';
 import { errors as capturedErrors, safeSerialize, type Json } from '@/core/agent-introspection';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
@@ -179,8 +180,6 @@ const MAX_TRACKED_NODES = 8;
 const MAX_TIMELINE_ENTRIES = 20;
 /** Max changed paths recorded per frame, so one chaotic frame cannot eat the timeline. */
 const MAX_TIMELINE_PATHS_PER_FRAME = 3;
-/** Max scalar paths in the baseline→outcome game diff (payload discipline, cf. MAX_GAME_DIFF_PATHS). */
-const MAX_GAME_DIFF_PATHS = 20;
 /**
  * When no predicate reads game state, the snapshot is sampled only this often —
  * purely to give the timeline something to show. Predicate correctness never
@@ -1207,8 +1206,8 @@ export class GameTestService {
       // A macrotask, not a microtask: a microtask queue drain never lets the host
       // paint or deliver events, so the editor would still look frozen.
       yieldToHost: () => new Promise<void>(resolve => setTimeout(resolve, 0)),
-      // keepaliveTimer: not throttled in a hidden tab while an agent keeps the editor alive.
-      sleep: ms => new Promise<void>(resolve => void keepaliveTimer(resolve, ms)),
+      // Not throttled in a hidden tab while an agent keeps the editor alive.
+      sleep: keepaliveSleep,
     };
   }
 }
@@ -2772,35 +2771,4 @@ function buildVerdict(
     default:
       return `UNKNOWN OUTCOME (${at}) — ${outcome.detail}.`;
   }
-}
-
-const isPlainObject = (value: Json): value is { [key: string]: Json } =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const fmtScalar = (value: Json): string =>
-  typeof value === 'string' ? value : (JSON.stringify(value) ?? 'null');
-
-/**
- * Dot-path diff between two Json snapshots down to `depth` object levels; scalar
- * leaves that differ become `path -> [before, after]`. Capped so a big snapshot
- * cannot blow up the payload (the same discipline as `MAX_GAME_DIFF_PATHS` in
- * `GameInputService`, deliberately duplicated rather than shared — that file is
- * the input harness, not a utility module).
- */
-function diffJsonPaths(before: Json, after: Json, depth = 2): Record<string, [Json, Json]> {
-  const out: Record<string, [Json, Json]> = {};
-  const walk = (a: Json, b: Json, path: string, d: number): void => {
-    if (Object.keys(out).length >= MAX_GAME_DIFF_PATHS) return;
-    if (d > 0 && isPlainObject(a) && isPlainObject(b)) {
-      for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-        walk(a[key] ?? null, b[key] ?? null, path ? `${path}.${key}` : key, d - 1);
-      }
-      return;
-    }
-    if (JSON.stringify(a) !== JSON.stringify(b)) {
-      out[path || '(root)'] = [a, b];
-    }
-  };
-  walk(before, after, '', depth);
-  return out;
 }

@@ -188,6 +188,16 @@ export const keepaliveTimer = (callback: () => void, ms: number): (() => void) =
   };
 };
 
+/**
+ * A real-time wait on {@link keepaliveTimer}: a plain `setTimeout` is clamped to >=1 s — and to one
+ * wake-up a minute under Chrome's intensive throttling — in a background tab, which stretched a
+ * 3-tap input script to ~40 s of wall time and let longer ones time out as `no_editor`.
+ */
+export const keepaliveSleep = (ms: number): Promise<void> =>
+  new Promise(resolve => {
+    keepaliveTimer(resolve, ms);
+  });
+
 /** A `requestAnimationFrame` / `cancelAnimationFrame` pair (SceneRunner's frame scheduler). */
 export interface FrameScheduler {
   request(callback: (timestampMs: number) => void): number;

@@ -29,6 +29,7 @@ import {
   type BotStore,
   type StoredBot,
 } from '@/services/game-test/game-bots';
+import { describeError } from '@/services/game-test/report-format';
 
 export interface BotLoadFailure {
   error: string;
@@ -121,8 +122,4 @@ export class GameBotHost {
     }
     return { policy: resolved.policy, name: stored.name, warnings: [] };
   }
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
