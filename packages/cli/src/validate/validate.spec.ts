@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { runValidate } from './command.ts';
 import { DIAGNOSTIC_CODES, type Diagnostic } from './diagnostics.ts';
-import { scanExportNames } from './user-scripts.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { validateProject, type ValidateOptions, type ValidateReport } from './validate.ts';
 
 /**

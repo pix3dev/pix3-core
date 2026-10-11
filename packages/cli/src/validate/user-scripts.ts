@@ -1,5 +1,6 @@
 import { isProjectScriptEntry, USER_SCRIPT_ID_PREFIX } from '@pix3/runtime';
 
+import { scanExportNames } from '../script-rule.ts';
 import type { ProjectFiles } from './project.ts';
 
 /**
@@ -22,37 +23,6 @@ export interface UserScriptIndex {
   /** Entry files with an `export * from …` — they may register ids this scan cannot see. */
   readonly opaqueEntries: readonly string[];
 }
-
-/** Drop comments so a commented-out `export class` does not count; strings are left alone. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
-
-const EXPORT_CLASS = /\bexport\s+(default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)?/g;
-const EXPORT_CONST_CLASS = /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b/g;
-const EXPORT_LIST = /\bexport\s+(type\s+)?\{([^}]*)\}/g;
-const EXPORT_STAR = /\bexport\s+\*\s+(?:as\s+[A-Za-z_$][\w$]*\s+)?from\b/;
-
-/** Export names that the editor would consider for registration, as far as text can tell. */
-export const scanExportNames = (source: string): { names: string[]; hasStar: boolean } => {
-  const text = stripComments(source);
-  const names: string[] = [];
-  for (const match of text.matchAll(EXPORT_CLASS)) {
-    names.push(match[1] ? 'default' : (match[2] ?? 'default'));
-  }
-  for (const match of text.matchAll(EXPORT_CONST_CLASS)) {
-    names.push(match[1]);
-  }
-  for (const match of text.matchAll(EXPORT_LIST)) {
-    if (match[1]) continue; // `export type { … }`
-    for (const raw of match[2].split(',')) {
-      const specifier = raw.trim();
-      if (!specifier || specifier.startsWith('type ')) continue;
-      const alias = /\bas\s+([A-Za-z_$][\w$]*)$/.exec(specifier);
-      names.push(alias ? alias[1] : specifier.split(/\s+/)[0]);
-    }
-  }
-  return { names, hasStar: EXPORT_STAR.test(text) };
-};
 
 export const scanUserScripts = (project: ProjectFiles): UserScriptIndex => {
   const ids = new Map<string, string>();

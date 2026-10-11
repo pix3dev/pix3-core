@@ -8,7 +8,7 @@ import {
 
 import { diagnostic, type Diagnostic } from './diagnostics.ts';
 import { toProjectPath, type ProjectFiles } from './project.ts';
-import { scanExportNames } from './user-scripts.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { formatPath, isRecord, parseYamlWithLines, type DocPath } from './yaml-doc.ts';
 
 /**

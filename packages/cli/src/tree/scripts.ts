@@ -1,30 +1,23 @@
+import { isScriptEntry, scanExportNames } from '../script-rule.ts';
 import type { ProjectFiles } from '../validate/project.ts';
 
 /**
- * The `user:` component ids a project declares, read from the text of its scripts — for the
- * `pix3 tree` overview, which must not load the runtime. The entry rule restates
- * `@pix3/runtime` `core/project-script-registration.ts` (`.ts`/`.js` under `scripts/` or
- * `src/scripts/` whose text matches `extends Script`); ids are the exported class names. An
- * overview line, not a check: `pix3 validate` is the authority on what registers.
+ * The `user:` component ids a project declares, read from the text of its script entries — for
+ * the `pix3 tree` overview, which must not load the runtime. The same view as `pix3 validate`'s
+ * level 1 (`script-rule.ts`: the entry rule and the export names), so the two agree on which ids
+ * exist; level 2 of `pix3 validate` is the authority on what registers.
  */
-
-const SCRIPT_DIRECTORY = /^(src\/)?scripts\//;
-const ENTRY_PATTERN = /extends\s+Script\b/;
-const EXPORTED_CLASS = /\bexport\s+(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g;
-
 export const scanUserScriptIds = (project: ProjectFiles): string[] => {
   const ids = new Set<string>();
   for (const file of project.files) {
-    if (!SCRIPT_DIRECTORY.test(file) || file.endsWith('.d.ts') || file.includes('.spec.')) continue;
-    if (!file.endsWith('.ts') && !file.endsWith('.js')) continue;
+    if (!isScriptEntry(file)) continue;
     let source: string;
     try {
       source = project.readText(file);
     } catch {
       continue;
     }
-    if (!ENTRY_PATTERN.test(source)) continue;
-    for (const match of source.matchAll(EXPORTED_CLASS)) ids.add(`user:${match[1]}`);
+    for (const name of scanExportNames(source).names) ids.add(`user:${name}`);
   }
   return [...ids].sort();
 };

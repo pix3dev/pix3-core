@@ -347,3 +347,28 @@ describe('pix3 tree on anchor margins (W21)', () => {
     }
   });
 });
+
+describe('pix3 tree: the scripts line follows the one project-script rule', () => {
+  it('lists every export of a .ts entry (a class on an intermediate base, an alias); no .js, no tests', async () => {
+    const dir = join(scratch, 'script-rule');
+    const files: Record<string, string> = {
+      'pix3project.yaml': 'version: 1.0.0\n',
+      'scripts/BaseEnemy.ts':
+        "import { Script } from '@pix3/runtime';\nexport abstract class BaseEnemy extends Script {}\n",
+      'scripts/Bat.ts':
+        "import { BaseEnemy } from './BaseEnemy';\nexport class Bat extends BaseEnemy {}\n",
+      'scripts/boss.ts':
+        "import { Script } from '@pix3/runtime';\nclass Impl extends Script {}\nexport { Impl as Boss };\n",
+      'scripts/Legacy.js': 'export class Legacy extends Script {}\n',
+      'scripts/Bat.test.ts': 'export class BatTest extends Script {}\n',
+    };
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+    const { code, out } = await run(dir, []);
+    expect(code).toBe(0);
+    // Before: `extends Script` in the text was required (no Bat, no Boss) and .js counted (Legacy).
+    expect(out).toContain('scripts: user:BaseEnemy user:Bat user:Boss\n');
+  });
+});
