@@ -45,10 +45,6 @@ const typescriptRules = {
     },
   ],
 
-  // An empty interface is a deliberate declaration-merging seam here: `SceneNodeNames` is
-  // augmented by the editor with the current scene's node names and stays empty everywhere else.
-  '@typescript-eslint/no-empty-object-type': ['error', { allowInterfaces: 'always' }],
-
   // Base rules TypeScript supersedes. `no-undef` does not know browser or Node globals, and
   // `no-redeclare` reads a function's overload signatures as duplicate declarations.
   'no-undef': 'off',
