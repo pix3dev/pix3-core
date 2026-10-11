@@ -140,10 +140,7 @@ Scripts: `label.setText('SCORE 5')`.
 | `sliceBorderLeft/Right/Top/Bottom` | number | 0 | Nine-slice insets in source pixels |
 | `effects` | list | — | Shader effects on the skin |
 
-Signals: `pressed` (finger/button went down inside it), `released`, `click` (down **and** up
-inside it — a completed tap; sliding off cancels it), `pointerdown`, `pointerup`. Game buttons
-wire `pressed` for an instant response; use `click` where an accidental touch must be
-cancellable (menus, purchases). `button.connect('click', this, handler)`.
+Signals (`pressed` for game buttons, `click` for menus and purchases): `pix3-scripts` → "Signals".
 
 ## Bar2D
 
