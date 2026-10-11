@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdirSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
@@ -9,9 +8,9 @@ import { chromeProfileDir, chromeProfileFallbackDir } from './paths.ts';
  * own profile, remote debugging over `--remote-debugging-pipe` only (no debugging port: the
  * owner process holds the pipe and serves it behind the token proxy, `chrome-owner.ts`), and the
  * flags that stop Chrome from throttling a background tab (the agent's tab is in the background
- * almost all the time). A second launch with the same `--user-data-dir` and no debugging flag
- * (`handoffArgs`) opens another app window in the running process — that is how a second project
- * joins the same Chrome and proxy.
+ * almost all the time). A second project never launches the profile again (a headless Chrome
+ * would start a second process nobody owns): its tab is opened through the proxy
+ * (`ensureEditorTab` in `chrome-owner.ts`).
  */
 
 export const CHROME_FLAGS: readonly string[] = [
@@ -119,31 +118,6 @@ export const chromeArgs = (options: ChromeArgsOptions): string[] => [
   ...CHROME_FLAGS,
   ...(options.headless ? ['--headless=new', options.url] : [`--app=${options.url}`]),
 ];
-
-/**
- * Another app window in the Chrome that already runs this profile: the process singleton hands
- * the URL over and the new process exits. No debugging flag — the running Chrome keeps its pipe.
- */
-export const handoffArgs = (options: { url: string; profile: string }): string[] => [
-  `--user-data-dir=${options.profile}`,
-  ...CHROME_FLAGS,
-  `--app=${options.url}`,
-];
-
-/** Start a short-lived Chrome detached (the handoff launch); the command does not wait for it. */
-export const launchDetached = (
-  launch: ChromeLaunch,
-  args: readonly string[],
-  spawnImpl: typeof spawn = spawn
-): ChildProcess => {
-  const child = spawnImpl(launch.path, [...args], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: false,
-  });
-  child.unref();
-  return child;
-};
 
 export const describeChromeNotFound = (platform: NodeJS.Platform = process.platform): string =>
   [

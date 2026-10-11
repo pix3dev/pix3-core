@@ -179,7 +179,8 @@ add a second one.
 ## The CLI and the editor bridge
 
 A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite: the game at
-`/`, the editor at `/__pix3/`), `npm run editor` (`pix3 editor`), `npm run build` (`dist/`),
+`/`, the editor at `/__pix3/`, on the port Vite got — 5173 only if it was free; read
+`.pix3/dev.json`), `npm run editor` (`pix3 editor`), `npm run build` (`dist/`),
 `npm run preview` (serve the build), `npm run check` (`pix3 check`), `npm run smoke`
 (`pix3 smoke`; pass the scene after `--`). Elsewhere call `npx pix3 …` or read `package.json`.
 

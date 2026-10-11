@@ -188,6 +188,43 @@ describe('write protection', () => {
     expect(status).toBe(403);
   });
 
+  it('refuses a rebound name that starts like a loopback address, over HTTP and the event socket', async () => {
+    // A page on 127.evil.com (resolved to 127.0.0.1 by its attacker) sends its own name as the
+    // Host and its own origin as the Origin — same-origin as far as the browser is concerned.
+    // Vite's host check answers the HTTP request first in this Vite; the WebSocket upgrade
+    // reaches the plugin's socket directly, so the plugin's own check is all there is.
+    const p = await start();
+    const host = `127.evil.com:${p.port}`;
+    const { request } = await import('node:http');
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: p.port,
+          path: '/__pix3/api/hello',
+          headers: { Host: host, Origin: `http://${host}` },
+        },
+        res => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        }
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+    const socket = new WebSocket(`ws://127.0.0.1:${p.port}/__pix3/ws`, {
+      headers: { Host: host, Origin: `http://${host}` },
+    });
+    const outcome = await new Promise<string>(resolve => {
+      socket.once('open', () => resolve('open'));
+      socket.once('error', () => resolve('refused'));
+      socket.once('unexpected-response', () => resolve('refused'));
+    });
+    socket.terminate();
+    expect(outcome).toBe('refused');
+  });
+
   it('refuses the event socket to a page of another origin', async () => {
     const p = await start();
     const socket = new WebSocket(`ws://127.0.0.1:${p.port}/__pix3/ws`, {

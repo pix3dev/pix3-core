@@ -17,7 +17,9 @@ follows the disk, and `pix3_sync` is the barrier between the two.
 
 1. `.pix3/dev.json` in the project → `publicEditorUrl` when it is there (the address the
    browser reached the server at, e.g. through a port forward), else `editorUrl` (e.g.
-   `http://localhost:5173/__pix3/`).
+   `http://localhost:5173/__pix3/` — but the port is whatever Vite got: 5174, 5175… when 5173 was
+   taken, so always read it from `dev.json` or from what `npm run dev` / `npm run editor` printed,
+   never assume 5173).
    No file, or the server does not answer → `npm run editor` (= `npx pix3 editor`: starts the
    dev server and Chrome). No `pix3-browser` server in
    your MCP list → `npx pix3 agent-setup` once, then start a new thread. The server cannot
@@ -32,6 +34,10 @@ follows the disk, and `pix3_sync` is the barrier between the two.
    them, including the one ssh line that copies the token here — then `npx pix3 agent-setup
    --remote` and a new thread. `npm run editor` says `CDP forward: live` once it works.
 2. `list_pages` → the page whose URL starts with that address → `select_page` with its id.
+   **No such page** (the human closed it, or Chrome was started without it) → `npm run editor`
+   again: it checks the tab through the proxy and opens it when missing; or open it yourself with
+   chrome-devtools-mcp's `new_page` on that URL. Then `list_pages` again. Open one tab only: a
+   second editor tab on the same project competes for the writer.
 3. `list_3p_developer_tools` → the `pix3` group with the seven `pix3_*` tools below. **Call it
    again after every `select_page` and after any page reload** — the registration lives in the
    page, and `execute_3p_developer_tool` answers `Tool … not found` until it is listed again in
@@ -47,7 +53,7 @@ Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"
 | --- | --- | --- |
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
-| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` one node with `components`, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); with `find` the nodes whose name/type contains it. Read-only |
+| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it. Read-only |
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
 | `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails; read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
@@ -102,6 +108,10 @@ tells you which it is before you act.
 `pix3_game_run` needs a running session (`not_playing` otherwise). It steps the game far faster
 than real time: a game whose `onStart` awaits something real (assets, a WASM module, a fetch)
 needs `settleMs` (e.g. `2000`) first, and a readiness predicate before the one you care about.
+The same holds for a `changeScene` the game starts **during** a run: the async load is starved
+while the run steps frames, so the new scene never shows up within `maxFrames`. Run until the
+change is requested, then a second run with `settleMs` and a readiness predicate on the next
+scene (`{kind:"nodeAppeared", name}` of one of its nodes) before you assert anything in it.
 Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", name, path, op, value}`
 (a live node by name or id, dot path into its properties — `position.x`, `text`),
 `{kind:"gameState", path, op, value}` and `{kind:"gameStateChanged", path, by?}` (the game's

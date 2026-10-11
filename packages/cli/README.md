@@ -36,6 +36,12 @@ plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` / `{{PAC
 `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent kit. Nothing in it plays a
 game. Record: `.plans/templates.md`.
 
+Two things a first run trips on: **2.0.0-alpha packages are not published yet** — a new
+project's `npm install` fails until they are; the starter's README says how to link a pix3-core
+checkout meanwhile (`node_modules` → the checkout's, `node <checkout>/packages/cli/src/index.ts`
+for `pix3`). And **the dev port is Vite's**, 5173 only when free: `pix3 editor`, the kit and every
+harness read `.pix3/dev.json` (`editorUrl`, `publicEditorUrl`), never a fixed port.
+
 `new`, `kit`, `editor` and `agent-setup` load neither TypeScript nor the kit generator: the kit
 and the runtime types are prebuilt into the package (`kit/`, `dist/runtime-types.json`, at
 `prepack`).
@@ -382,7 +388,7 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 | `CLAUDE.md` | `@AGENTS.md` (plus `@AGENTS.pix3.md` in that case). A `CLAUDE.md` of the project's own is never touched — the command prints the line to add. |
 | `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format |
 | `design/tests/bots/pix3-test-bot.d.ts` | Global types for bot policies (`Pix3TestBot`, `BotPolicy`, …): a policy is `export default { name, tick(bot) { … } } satisfies BotPolicy`, and the starter's `tsconfig.json` includes `design/tests`, so `pix3 check` type-checks it. The editor writes no project files; this is where the 1.x editor-written declaration went |
-| `.gitignore` | `.pix3/` appended when not covered; existing content kept |
+| `.gitignore` | `.pix3/*` with `!.pix3/kit-manifest.json` and `!.pix3/template.json` appended when no line ignores `.pix3` yet; existing content kept |
 | `tsconfig.json`, `.pix3/tsconfig.check.json`, `.pix3/types/` | Only without a `tsconfig.json` of the project's own (see below) |
 | `pix3project.yaml` | `metadata.agentKit: { version, files }` (everything else as written) |
 | `.pix3/kit-manifest.json` | sha256 of every file the kit wrote |
@@ -390,8 +396,10 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 Without `--update`, existing files are never replaced (missing ones are written; an unchanged file
 from an older kit is reported `outdated`). `--update` replaces every kit file whose bytes still
 match the hash in `.pix3/kit-manifest.json` and **skips** (and reports) every file edited since.
-`.pix3/` is gitignored, so on a fresh clone the manifest is gone and every differing kit file counts
-as edited.
+The starters ignore `.pix3/*` but not `.pix3/kit-manifest.json` (nor `.pix3/template.json`), so a
+clone keeps the manifest. A project whose `.gitignore` ignores all of `.pix3/` (an older starter, or by
+hand) loses it on a fresh clone, and every differing kit file then counts as
+edited — replace that line with the three of the starter.
 
 **Generated, not copied.** `scripts/build-kit.mjs` (run at `prepack`; a repo checkout regenerates
 `kit/` automatically whenever an input changed) expands the templates in `kit-src/`: hand-written
@@ -490,10 +498,14 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`). The owner lives
    exactly as long as Chrome: Chrome gone → the owner closes every client, removes
    `~/.pix3/chrome.json` and exits; the owner gone (killed) → the pipe closes and Chrome exits
-   with it. `--stop-chrome` asks the owner to close Chrome. A second project opens another app
-   window in the running Chrome (a short launch of the same profile, no debugging flag; with
-   `--headless`, a new tab through the proxy). `--headless` opens the URL as a plain tab with
-   `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
+   with it. `--stop-chrome` asks the owner to close Chrome. Then, launched or reused, the editor
+   tab is checked in the proxy's `/json/list` and, when it is not there, opened through the proxy
+   (`Target.createTarget`: a new window, a tab in a headless Chrome) and checked again — a binary
+   that ignores `--app` (`PIX3_CHROME` pointing at a `chrome-headless-shell`) still gets its tab,
+   and `pix3 editor` fails rather than print success without one. A second project gets its tab
+   the same way: the profile is never launched a second time (a headless one would start a
+   second Chrome that nobody owns and `--stop-chrome` would not end). `--headless` opens the URL
+   as a plain tab with `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
    under `SSH_CONNECTION` Chrome is not launched — see [Remote SSH](#remote-ssh--vs-code-on-a-remote-host-chrome-on-your-machine).
 3. **The token proxy (9333).** The owner serves `ws://127.0.0.1:9333/pix3` (the browser target;
    `…/pix3/page/<targetId>` for one page) and `GET /json/version`, `/json/list` (`/json`) on
@@ -578,28 +590,34 @@ reaches your browser through VS Code's port forward; the agent reaches that brow
 
 1. **On the remote host** (VS Code's terminal, in the project): `npm run editor`. Under
    `SSH_CONNECTION` it starts (or reuses) the dev server, launches no Chrome, and prints what to
-   do on your machine — with the ports it found free there:
+   do on your machine — with the one remote port this host uses for the forward (9333, or
+   `--cdp-port <n>`, which it stores):
 
    ```text
    On your machine, once — ~/.ssh/config, under the Host you connect to, then reconnect:
        RemoteForward 127.0.0.1:9333 127.0.0.1:9333
        ExitOnForwardFailure yes
    On your machine, each session — VS Code forwards port 5173 (its Ports tab shows the local address):
-       npx @pix3/cli@<version> editor --chrome-only --url http://localhost:5173/__pix3/
+       npx @pix3/cli@<version> editor --chrome-only --url http://localhost:5173/__pix3/ --remote-port 9333
    ```
 
    VS Code forwards the dev server's port by itself (it sees the URL in the terminal; the Ports
    tab lists it). When the local port is not the same (5173 was taken on your machine), use the
    local address in `--url`.
 2. **On your machine, once:** add the two lines to `~/.ssh/config` under that `Host`, close the
-   remote window and connect again. The first port is the one on the remote host (`pix3 editor`
-   skips one another user of that host already holds); the second is your proxy (9333 unless
-   `pix3 editor` said it had to use another). `ExitOnForwardFailure yes` is not optional: without
-   it a connection whose forward failed — because someone else on the remote host took the port —
-   comes up anyway, and the agent would hand its token to whoever holds the port.
+   remote window and connect again. The first port is the one on the remote host — one port,
+   configured on both sides, never "the next free one": if another user of that host holds it,
+   the forward must fail visibly (`pix3 editor` there says the port is held; pick another with
+   `--cdp-port <n>` there, the same `<n>` in `RemoteForward` and in `--remote-port`); the second
+   is your proxy (9333 unless `pix3 editor` said it had to use another). `ExitOnForwardFailure
+   yes` is not optional: without it a connection whose forward failed — because someone else on
+   the remote host took the port — comes up anyway, and the agent would hand its token to
+   whoever holds the port.
 3. **On your machine, each session:** the `npx @pix3/cli … editor --chrome-only --url …` line.
    No project needed there: it checks that the URL answers as a Pix3 editor, starts Chrome behind
-   the token proxy (as `pix3 editor` always does) and opens the editor. It then prints one line
+   the token proxy (as `pix3 editor` always does), opens the editor, and records `--remote-port`
+   (default 9333) in `~/.pix3/cdp-forward-ports.json`: the proxy proves its token for the ports
+   listed there and for its own, nothing else. It then prints one line
    that copies its token to the remote host (`--ssh <host>` fills the host in):
 
    ```text
@@ -610,12 +628,18 @@ reaches your browser through VS Code's port forward; the agent reaches that brow
    the SSH channel into a 0600 file on the remote host: it is never printed, typed, pasted or put
    on a command line.
 4. **On the remote host, once:** `npx pix3 agent-setup --remote`, then a new agent thread. It
-   finds the forward among 9333–9339 by asking each port for **proof** that it knows the token
-   (`X-Pix3-Challenge` → `X-Pix3-Proof`, an HMAC the proxy computes; the token itself is never
-   sent to a port that has not proven it), writes `~/.pix3/remote-cdp.json` (0600: the endpoint
-   `ws://127.0.0.1:<port>/pix3` and the token, read by chrome-devtools-mcp's `--config`), and the
-   project's `.mcp.json` / `.codex/config.toml` entry `npx -y chrome-devtools-mcp@1.10.1 …
-   --config=<that file>`, which holds no secret. `--cdp-port <n>` names the port instead.
+   asks the configured port (the one `pix3 editor` stored, or `--cdp-port <n>`) for **proof**
+   that it knows the token (`X-Pix3-Challenge` + `X-Pix3-Proof-Scope: forward` → `X-Pix3-Proof`,
+   an HMAC the proxy computes over the challenge **and the port the client dialled**; the token
+   itself is never sent to a port that has not proven it), writes `~/.pix3/remote-cdp.json`
+   (0600: the endpoint `ws://127.0.0.1:<port>/pix3` and the token, read by chrome-devtools-mcp's
+   `--config`), and the project's `.mcp.json` / `.codex/config.toml` entry `npx -y
+   chrome-devtools-mcp@1.10.1 … --config=<that file>`, which holds no secret. Something on the
+   port that cannot give the proof gets nothing written (exit 1: a squatter waiting for the
+   token, or your proxy not told the port — `--remote-port`); a port nothing answers on yet is
+   written with a warning. Bound to the port, a proof cannot be relayed: a squatter on 9333 that
+   passes the challenge to your real forward on 9334 gets an answer for 9334, which the agent's
+   side rejects.
    `npm run editor` on the remote host says whether the forward is live (`CDP forward: live on
    127.0.0.1:9333`).
 

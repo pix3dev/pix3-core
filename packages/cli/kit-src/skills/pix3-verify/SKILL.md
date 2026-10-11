@@ -193,4 +193,5 @@ and what you tried.
 - `pix3_sync` confirms the open scenes and the executed scripts; a prefab or asset the game
   loads lazily during play is only read when play (re)starts.
 - `.pix3/kit-manifest.json` (how `pix3 kit --update` knows which files are still the kit's) is
-  in the gitignored `.pix3/`: on a fresh clone every kit file counts as edited and is skipped.
+  committed (the starter's `.gitignore` re-includes it); in a project whose `.gitignore` drops
+  all of `.pix3/`, a fresh clone counts every kit file as edited and skips it.

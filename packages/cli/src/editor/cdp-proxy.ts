@@ -4,8 +4,14 @@ import type { Duplex, Readable, Writable } from 'node:stream';
 
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
-import { cdpProof, readChallenge } from './cdp-proof.ts';
-import { CDP_PROOF_HEADER, CDP_PROXY_HEADER, CDP_PROXY_PATH, CDP_PROXY_PROTOCOL } from './paths.ts';
+import { cdpProof, readChallenge, readProofScope } from './cdp-proof.ts';
+import {
+  CDP_PROOF_HEADER,
+  CDP_PROOF_REFUSED_HEADER,
+  CDP_PROXY_HEADER,
+  CDP_PROXY_PATH,
+  CDP_PROXY_PROTOCOL,
+} from './paths.ts';
 
 /**
  * The CDP token proxy (plan §D.5). `pix3 editor` owns Chrome through `--remote-debugging-pipe`
@@ -20,7 +26,10 @@ import { CDP_PROOF_HEADER, CDP_PROXY_HEADER, CDP_PROXY_PATH, CDP_PROXY_PROTOCOL 
  *   WebSocket upgrade is refused before it is accepted;
  * - a request with `X-Pix3-Challenge: <nonce>` gets `X-Pix3-Proof` on its answer, refusals
  *   included (`cdp-proof.ts`): a client proves the listener knows the token before it sends the
- *   token — what a forwarded port on a shared host needs (Remote SSH, plan §E.3).
+ *   token — what a forwarded port on a shared host needs (Remote SSH, plan §E.3). The proof is
+ *   bound to the `Host` port and signed only for the port this proxy listens on (`local`) or a
+ *   `RemoteForward` port the human named (`forward`, `forwardPorts`); a proof-only probe (no
+ *   `Authorization`) is not logged as a refusal.
  *
  * Several clients share the one pipe. Each gets its own root session — the browser target
  * through `Target.attachToBrowserTarget` (its own auto-attach and discovery state, its own child
@@ -109,6 +118,11 @@ export interface CdpProxyOptions {
   readonly token: string;
   /** One line per accepted / refused connection (the owner's log). */
   readonly log?: (line: string) => void;
+  /**
+   * The remote ports a `RemoteForward` brings this proxy to (`~/.pix3/cdp-forward-ports.json`,
+   * read on every challenge): the only ports it signs a `forward` proof for.
+   */
+  readonly forwardPorts?: () => readonly number[];
 }
 
 type Refusal = { readonly status: number; readonly message: string };
@@ -126,11 +140,21 @@ const hangUp = (socket: WebSocket, code: number, reason: string): void => {
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
 
+/** The port of a `Host` header, or null when it names none. */
+const hostPort = (host: string | undefined): number | null => {
+  const match = /:(\d{1,5})$/.exec(host ?? '');
+  const port = match ? Number(match[1]) : NaN;
+  return port > 0 && port < 65536 ? port : null;
+};
+
 export class CdpProxy {
   readonly #pipe: CdpPipe;
   readonly #tokenDigest: Buffer;
   readonly #token: string;
   readonly #log: (line: string) => void;
+  readonly #forwardPorts: () => readonly number[];
+  /** The port listened on (0 until `listen`). */
+  #port = 0;
   readonly #server: Server;
   readonly #wss: WebSocketServer;
   readonly #pending = new Map<number, Pending>();
@@ -147,6 +171,7 @@ export class CdpProxy {
     this.#tokenDigest = digest(options.token);
     this.#token = options.token;
     this.#log = options.log ?? (() => {});
+    this.#forwardPorts = options.forwardPorts ?? (() => []);
     this.#wss = new WebSocketServer({
       noServer: true,
       perMessageDeflate: false,
@@ -170,7 +195,8 @@ export class CdpProxy {
       this.#server.listen(port, host, () => {
         this.#server.off('error', reject);
         const address = this.#server.address();
-        resolve(typeof address === 'object' && address ? address.port : port);
+        this.#port = typeof address === 'object' && address ? address.port : port;
+        resolve(this.#port);
       });
     });
   }
@@ -239,20 +265,46 @@ export class CdpProxy {
 
   // --- HTTP discovery --------------------------------------------------------------------------
 
+  /**
+   * The answer to a challenge: the proof for the `Host` port when this proxy is reachable there
+   * in the asked scope — the port it listens on (`local`), or one of its `RemoteForward` ports
+   * (`forward`) — else a refusal naming what was asked (a relay rewrites `Host` in vain).
+   */
+  #proofHeaders(req: IncomingMessage): Record<string, string> {
+    const challenge = readChallenge(req.headers);
+    if (!challenge) return {};
+    const scope = readProofScope(req.headers);
+    const port = hostPort(req.headers.host);
+    const signs =
+      port !== null &&
+      (scope === 'local' ? port === this.#port : this.#forwardPorts().includes(port));
+    if (signs) return { [CDP_PROOF_HEADER]: cdpProof(this.#token, challenge, scope, port) };
+    this.#log(
+      `no proof for ${scope}:${port ?? '-'}: ` +
+        (scope === 'local'
+          ? `this proxy listens on ${this.#port}`
+          : 'not a RemoteForward port of this proxy (pix3 editor --url … --remote-port <n> names one)')
+    );
+    return { [CDP_PROOF_REFUSED_HEADER]: `${scope}:${port ?? '-'}` };
+  }
+
   async #onHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const refusal = this.#refusal(req);
-    const challenge = readChallenge(req.headers);
+    const proofHeaders = this.#proofHeaders(req);
     const reply = (status: number, body: unknown) => {
       res.writeHead(status, {
         'Content-Type': 'application/json; charset=UTF-8',
         [CDP_PROXY_HEADER]: String(CDP_PROXY_PROTOCOL),
-        ...(challenge ? { [CDP_PROOF_HEADER]: cdpProof(this.#token, challenge) } : {}),
+        ...proofHeaders,
         ...(status === 401 ? { 'WWW-Authenticate': 'Bearer realm="pix3"' } : {}),
       });
       res.end(JSON.stringify(body, null, 2));
     };
     if (refusal) {
-      this.#log(`refused ${req.method} ${req.url}: ${refusal.message}`);
+      // pix3's own probe asks for the proof and sends no token: answered, not a refusal to log.
+      const proofProbe =
+        readChallenge(req.headers) !== null && req.headers.authorization === undefined;
+      if (!proofProbe) this.#log(`refused ${req.method} ${req.url}: ${refusal.message}`);
       reply(refusal.status, { error: refusal.message });
       return;
     }

@@ -1,14 +1,8 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createConnection } from 'node:net';
 
-import { cdpProof } from './cdp-proof.ts';
-import {
-  CDP_CHALLENGE_HEADER,
-  CDP_PORT_RANGE,
-  CDP_PROOF_HEADER,
-  CDP_PROXY_HEADER,
-  DEFAULT_CDP_PORT,
-} from './paths.ts';
+import { challengeHeaders, provesToken } from './cdp-proof.ts';
+import { CDP_PORT_RANGE, CDP_PROOF_HEADER, CDP_PROXY_HEADER, DEFAULT_CDP_PORT } from './paths.ts';
 
 /**
  * The check of port 9333 before Chrome is launched (plan §D.4 «Проверка 9333», §D.5): something
@@ -94,10 +88,12 @@ export const inspectCdpPort = async (
   const base = `http://127.0.0.1:${port}`;
   // The challenge, never the token: an unproven port learns nothing it could reuse.
   const challenge = randomBytes(24).toString('base64url');
-  const version = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, {
-    [CDP_CHALLENGE_HEADER]: challenge,
-  });
-  if (version && token && proves(version.proof, token, challenge)) {
+  const version = await getJson<JsonVersion>(
+    `${base}/json/version`,
+    fetchImpl,
+    challengeHeaders(challenge, 'local')
+  );
+  if (version && token && provesToken(version.proof, token, challenge, 'local', port)) {
     // Ours: it knows the token, so asking with it gives nothing away.
     const auth = { Authorization: `Bearer ${token}` };
     const ours = await getJson<JsonVersion>(`${base}/json/version`, fetchImpl, auth);
@@ -140,13 +136,6 @@ export const inspectCdpPort = async (
     browser,
     detail: `port ${port} is a ${browser} that is not Pix3's (${urls.length} page(s), none is /__pix3/)`,
   };
-};
-
-const proves = (proof: string | null, token: string, challenge: string): boolean => {
-  if (!proof) return false;
-  const expected = Buffer.from(cdpProof(token, challenge));
-  const given = Buffer.from(proof);
-  return given.length === expected.length && timingSafeEqual(given, expected);
 };
 
 const pageUrls = (list: Probe<JsonPage[]>): string[] =>
