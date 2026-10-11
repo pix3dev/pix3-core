@@ -77,24 +77,22 @@ interface ExecutionResult {
 
 const READ_ONLY_ALLOWED_OPERATIONS = new Set([
   'scene.select-object',
-  'viewport.toggle-grid',
-  'viewport.toggle-layer-2d',
-  'viewport.toggle-layer-3d',
-  'viewport.toggle-lighting',
   'viewport.set-editor-camera-projection',
   'viewport.set-preview-camera',
-  'viewport.toggle-ui-flag',
-  // Peek is a per-user view mask that never reaches the document, so a read-only collab session
-  // must still be able to look behind something.
+  // Peek is a per-user view mask that never reaches the document, so a read-only tab must still
+  // be able to look behind something.
   'viewport.set-peek-visibility',
-  'scripts.set-play-mode',
-  'scripts.set-game-popout-window-open',
+  'scene.set-play-mode',
+  'scene.set-play-paused',
+  'scene.set-game-popout-window-open',
   'editor.update-settings',
   // Following the disk is not an edit: a read-only tab must show what the writer tab (or an
   // agent) wrote — the external-version path reloads its scenes and refreshes prefab instances.
   'scene.reload',
   'scene.refresh-prefab-instances',
 ]);
+/** `ToggleUIFlagOperation` (grid, layers, gizmos): view state only. */
+const READ_ONLY_ALLOWED_PREFIXES = ['ui.toggle-'];
 
 const NO_SCENE_HISTORY_KEY = '__none__';
 
@@ -563,7 +561,11 @@ export class OperationService {
 
   /** A tab that is not the writer (another tab took over) only follows the disk. */
   private ensureWritable(actionId: string): void {
-    if (appState.project.host.writer !== 'other' || READ_ONLY_ALLOWED_OPERATIONS.has(actionId)) {
+    if (
+      appState.project.host.writer !== 'other' ||
+      READ_ONLY_ALLOWED_OPERATIONS.has(actionId) ||
+      READ_ONLY_ALLOWED_PREFIXES.some(prefix => actionId.startsWith(prefix))
+    ) {
       return;
     }
 

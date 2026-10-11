@@ -10,11 +10,12 @@ import {
 } from '@/core/command';
 
 /**
- * A tab that is not the writer (another tab claimed the project, plan §C.3) is view-only until it takes over: every command
- * that could change a scene or write a file is refused here. Navigation, selection, viewport and
- * play mode stay available; so do `scene.reload` / `scene.refresh-prefab-instances` (a non-owner
- * still follows the disk). Undo/redo
- * are NOT allowed (unlike collaboration read-only mode): they mutate the graph like any edit.
+ * A tab that is not the writer (another tab claimed the project, plan §C.3) is view-only until it
+ * takes over: every command that could change a scene or write a file is refused here.
+ * Navigation, selection, view toggles, panels and play mode stay available; so do `scene.reload` /
+ * `scene.refresh-prefab-instances` (a non-owner still follows the disk). Undo/redo are NOT
+ * allowed: they mutate the graph like any edit. `OperationService` keeps the matching list of
+ * operations.
  */
 const NON_OWNER_ALLOWED_COMMANDS = new Set([
   'scene.load',
@@ -23,9 +24,8 @@ const NON_OWNER_ALLOWED_COMMANDS = new Set([
   'scene.refresh-prefab-instances',
   'scene.select-object',
   'scene.open-prefab',
-  'game.open-popout',
 ]);
-const NON_OWNER_ALLOWED_PREFIXES = ['viewport.', 'game.', 'editor.open-', 'editor.switch-'];
+const NON_OWNER_ALLOWED_PREFIXES = ['view.', 'viewport.', 'window.', 'game.', 'editor.open-'];
 
 /** True when this window must not run `commandId` because another window owns the project. */
 export function isBlockedForNonOwner(commandId: string): boolean {
