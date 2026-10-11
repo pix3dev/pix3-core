@@ -111,8 +111,8 @@ the hashes `pix3_sync`'s `expect` takes. `typecheck.errors` counts the
 **A compile error hides level 2.** When the scripts do not compile (`E_SCRIPT_COMPILE`), level 2
 skips every scene with `user:` components — their `E_UNKNOWN_CONFIG_KEY` / `E_PROPERTY_TYPE` /
 component checks are *missing*, not passed. The report says so: `level2.filesSkippedForScripts`,
-a `SKIPPED: N scene(s) …` note, and the human summary line reads `level 2 hydrated 0 file(s), N
-SKIPPED (scripts do not compile — user: components unchecked)`. Fix the compile error and run again.
+a `SKIPPED: N scene(s) …` note, and the human summary line reads `0 scene file(s) loaded as the game loads
+them, N NOT loaded (scripts do not compile — user: components unchecked)`. Fix the compile error and run again.
 
 **Which tsconfig.** A project with its **own** root `tsconfig.json` (a Vite project — every
 `npm create pix3` starter) is checked with it, as is, against its own

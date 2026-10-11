@@ -77,7 +77,7 @@ when scripts cannot be loaded) those are **not** checked — say so if your chan
 
 **A compile error hides level 2.** With `E_SCRIPT_COMPILE` in the list, every scene with `user:`
 components is skipped at level 2 — `check` says `SKIPPED: N scene(s) …` and the summary line
-reads `level 2 hydrated 0 file(s), N SKIPPED`. Their config/property errors are *missing*, not
+reads `0 scene file(s) loaded …, N NOT loaded`. Their config/property errors are *missing*, not
 passed: fix the compile error, run `check` again, and only then read the rest.
 
 ### `pix3 smoke` — when no editor is connected

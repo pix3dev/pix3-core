@@ -227,7 +227,11 @@ export const DIAGNOSTIC_CODES = {
     level: 2,
     summary: 'compiled scripts threw on import in Node; user: properties not checked',
   },
-  W_HYDRATE_SKIPPED: { severity: 'warning', level: 2, summary: 'level 2 did not run' },
+  W_HYDRATE_SKIPPED: {
+    severity: 'warning',
+    level: 2,
+    summary: 'scenes not loaded as the game loads them',
+  },
   W_RENDERABILITY: {
     severity: 'warning',
     level: 2,
@@ -294,14 +298,17 @@ export const formatDiagnostic = (
   return text;
 };
 
-/** The level-2 part of the human summary line. */
+/**
+ * The level-2 part of the human summary line, in plain words: level 2 loads each scene the way
+ * the game does ("hydrates" it), with the project's compiled scripts. `--json` keeps `level2`.
+ */
 export const describeLevel2 = (level2: BundledValidateReport['level2']): string =>
   level2.state === 'ran'
-    ? `level 2 hydrated ${level2.filesHydrated} file(s)${
+    ? `${level2.filesHydrated} scene file(s) loaded as the game loads them${
         level2.filesSkippedForScripts
-          ? `, ${level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
+          ? `, ${level2.filesSkippedForScripts} NOT loaded (scripts do not compile — user: components unchecked)`
           : ''
       }`
     : level2.state === 'disabled'
-      ? 'level 2 off'
-      : `level 2 skipped: ${level2.reason}`;
+      ? 'scenes not loaded (--no-hydrate)'
+      : `scenes not loaded: ${level2.reason}`;

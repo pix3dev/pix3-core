@@ -27,7 +27,7 @@ Usage:
         [--project <dir>]          token, the P1 --browserUrl launch); --remote: the agent
                                    is on an SSH host, Chrome on your machine (forwarded)
   pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
-        [--no-hydrate]             hydration with the real loader (exit 1 on errors)
+        [--no-hydrate]             each scene loaded as the game loads it (exit 1 on errors)
   pix3 check [--json]              validate + TypeScript check of the scripts + version
         [--no-hydrate] [--offline] check (exit 1 on errors)
         [--project <dir>]
@@ -104,7 +104,8 @@ export const COMMAND_USAGE = {
 
   paths          .pix3scene / .prefab files or folders (default: every scene and .prefab)
   --json         machine-readable report (diagnostics + sha256 of each validated file)
-  --no-hydrate   level 1 only: no project code runs (user: component properties not checked)
+  --no-hydrate   do not load the scenes as the game does: no project code runs (user: component
+                 properties not checked)
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `,
   check: `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
@@ -114,7 +115,7 @@ export const COMMAND_USAGE = {
 
   --json         machine-readable report (diagnostics, sha256 of every checked file, typecheck,
                  kit)
-  --no-hydrate   validate level 1 only (user: component properties not checked)
+  --no-hydrate   do not load the scenes as the game does (user: component properties not checked)
   --offline      never install TypeScript (fails with the command to run instead)
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project root (default: nearest folder with pix3project.yaml)

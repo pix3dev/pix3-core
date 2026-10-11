@@ -214,7 +214,9 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
   if (options.hydrate === false) {
     level2 = { state: 'disabled' };
     if (usesUserComponents)
-      notes.push(`Level 2 disabled (--no-hydrate) ${USER_PROPERTIES_NOT_CHECKED}.`);
+      notes.push(
+        `Scenes not loaded as the game loads them (--no-hydrate) ${USER_PROPERTIES_NOT_CHECKED}.`
+      );
   } else {
     const cleanFiles = targets.filter(file => {
       const result = results.get(file);
@@ -236,7 +238,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
         diagnostic({
           code: 'W_HYDRATE_SKIPPED',
           file: 'scripts',
-          message: `Level 2 skipped for scenes with user: components: ${scripts.reason} ${USER_PROPERTIES_NOT_CHECKED}.`,
+          message: `Scenes with user: components not loaded as the game loads them: ${scripts.reason} ${USER_PROPERTIES_NOT_CHECKED}.`,
           fix: 'npm install esbuild next to @pix3/cli, or run with --no-hydrate',
         })
       );
@@ -290,14 +292,14 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     };
     if (targets.length - hydrated > 0) {
       notes.push(
-        `Level 2 did not hydrate ${targets.length - hydrated} of ${targets.length} file(s): it runs only on files with no level-1 errors${skipUserScenes ? ' and, while scripts cannot be loaded, without user: components' : ''}.`
+        `${targets.length - hydrated} of ${targets.length} scene file(s) were not loaded as the game loads them: that runs only on files with no structural errors${skipUserScenes ? ' and, while scripts cannot be loaded, without user: components' : ''}.`
       );
     }
     if (scripts.status === 'failed' && skippedForScripts > 0) {
       // Explicit, because the symptom is silence: a compile error makes every scene/component
-      // diagnostic of those scenes vanish, and "level 2 hydrated 0 file(s)" read as a clean pass.
+      // diagnostic of those scenes vanish, and "0 scene file(s) loaded" read as a clean pass.
       notes.push(
-        `SKIPPED: ${skippedForScripts} scene(s) with user: components were not checked at level 2 because the project scripts do not compile (E_SCRIPT_COMPILE above) — E_UNKNOWN_CONFIG_KEY, E_PROPERTY_TYPE and every other user: component check are missing from this report, not passed. Fix the compile error and run again.`
+        `SKIPPED: ${skippedForScripts} scene(s) with user: components were not loaded as the game loads them because the project scripts do not compile (E_SCRIPT_COMPILE above) — E_UNKNOWN_CONFIG_KEY, E_PROPERTY_TYPE and every other user: component check are missing from this report, not passed. Fix the compile error and run again.`
       );
     }
     if (!userSchemasAvailable && usesUserComponents) {
