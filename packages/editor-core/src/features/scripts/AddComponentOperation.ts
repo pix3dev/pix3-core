@@ -9,6 +9,7 @@ import type {
   OperationMetadata,
 } from '@/core/Operation';
 import { SceneManager, ScriptRegistry, type ScriptComponent } from '@pix3/runtime';
+import { newComponentId } from '@/core/unique-id';
 
 export interface AddComponentParams {
   nodeId: string;
@@ -56,7 +57,7 @@ export class AddComponentOperation implements Operation<OperationInvokeResult> {
 
     // Generate component ID if not provided
     const componentId =
-      this.params.componentId || `${this.params.nodeId}-${this.params.componentType}-${Date.now()}`;
+      this.params.componentId || newComponentId(this.params.nodeId, this.params.componentType);
 
     // Create component instance
     const component = scriptRegistry.createComponent(this.params.componentType, componentId);

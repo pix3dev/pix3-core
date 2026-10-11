@@ -670,11 +670,9 @@ ${textPreview?.content || 'Empty file'}</pre
 
     const component = await this.host.behaviorPickerService.showPicker();
     if (component) {
-      const componentId = `${component.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const command = new AddComponentCommand({
         nodeId: this.host.primaryNode.nodeId,
         componentType: component.id,
-        componentId,
       });
       void this.host.commandDispatcher.execute(command);
     }

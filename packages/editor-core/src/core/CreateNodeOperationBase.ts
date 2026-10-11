@@ -13,6 +13,7 @@ import type {
   OperationInvokeResult,
   OperationMetadata,
 } from '@/core/Operation';
+import { uniqueId } from '@/core/unique-id';
 
 const isIndexedNodePlacement = (params: unknown): params is IndexedNodePlacement => {
   return typeof params === 'object' && params !== null;
@@ -49,8 +50,7 @@ export abstract class CreateNodeOperationBase<TParams> implements Operation<Oper
   }
 
   protected generateNodeId(): string {
-    const prefix = this.getNodeIdPrefix();
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    return uniqueId(this.getNodeIdPrefix());
   }
 
   protected getNodeName(): string {
