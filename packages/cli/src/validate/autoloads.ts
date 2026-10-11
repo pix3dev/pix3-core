@@ -92,15 +92,15 @@ export const checkAutoloads = (project: ProjectFiles): Diagnostic[] => {
       );
       return;
     }
-    const source = project.readText(file);
-    if (!isProjectScriptEntry(file, source)) {
+    if (!isProjectScriptEntry(file)) {
       report(
         where,
-        `${file} is not a script entry (no "extends Script" in a .ts/.js file): autoload "${normalized.singleton}" never runs.`,
-        `export class ${name} extends Script`
+        `${file} is not a script entry (project scripts are .ts files under scripts/ or src/scripts/, not .js, specs, tests or declarations): autoload "${normalized.singleton}" never runs.`,
+        `move the class to scripts/${name}.ts`
       );
       return;
     }
+    const source = project.readText(file);
     const { names, hasStar } = scanExportNames(source);
     if (!hasStar && !names.includes(name)) {
       report(

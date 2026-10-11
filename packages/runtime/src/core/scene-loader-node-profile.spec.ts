@@ -92,8 +92,7 @@ async function registerTemplateScripts(
     return;
   }
   for (const file of readdirSync(scriptsDir).filter(entry => entry.endsWith('.ts'))) {
-    const source = readFileSync(join(scriptsDir, file), 'utf8');
-    if (!isProjectScriptEntry(`scripts/${file}`, source)) continue;
+    if (!isProjectScriptEntry(`scripts/${file}`)) continue;
     const module = (await import(/* @vite-ignore */ join(scriptsDir, file))) as Record<
       string,
       unknown

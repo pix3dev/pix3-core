@@ -822,7 +822,7 @@ class SceneChecker {
       this.report({
         code: 'E_USER_SCRIPT_NOT_FOUND',
         nodeId,
-        message: `No script under scripts/ (or src/scripts/) exports a Script class named ${exportName}; the component would stay unregistered. The id is the EXPORT name, and the file must contain "extends Script".`,
+        message: `No script under scripts/ (or src/scripts/) exports a Script class named ${exportName}; the component would stay unregistered. The id is the EXPORT name of a Script class in a .ts file (not .js) under those folders.`,
         fix: suggestion
           ? `type: ${suggestion}`
           : `create scripts/${exportName}.ts with export class ${exportName} extends Script`,

@@ -6,12 +6,11 @@ import {
   scanScriptLocalizationKeys,
   UIControl2D,
   type ScriptLocalizationKey,
+  PROJECT_SCRIPT_DIRECTORIES,
 } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 
-/** Directories scanned for project runtime scripts (mirrors ProjectBuildService). */
-const PROJECT_SCRIPT_DIRECTORIES = ['scripts', 'src/scripts'] as const;
 /** Directory names never descended into during scene discovery. */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'exports', '.git', '.yalc']);
 
