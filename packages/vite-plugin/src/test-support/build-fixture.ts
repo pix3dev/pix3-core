@@ -226,3 +226,57 @@ export const UNDECLARED_IMPORT_LIB: Readonly<Record<string, string>> = {
 /** A project script that uses a library's export (the scan sees `makeBox`, not `GeometryMesh`). */
 export const usesLibScript = (lib: string, fn: string): string =>
   `import { Script } from '@pix3/runtime';\nimport { ${fn} } from '${lib}';\n\nexport class UsesLib extends Script {\n  onStart(): void {\n    void ${fn};\n  }\n}\n`;
+
+/** A library that declares the runtime and uses a non-class export of a strippable module. */
+export const POLYGON_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'polygon-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+    peerDependencies: { '@pix3/runtime': '*' },
+  }),
+  'index.js':
+    "import { pointInPolygon } from '@pix3/runtime';\nexport const inside = (x, y) => pointInPolygon(x, y, [[0, 0], [1, 0], [0, 1]]);\n",
+};
+
+/** The same, undeclared: only the transform net sees it. */
+export const UNDECLARED_POLYGON_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'undeclared-polygon-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+  }),
+  'index.js':
+    "import { pointInPolygon } from '@pix3/runtime';\nexport const inside = (x, y) => pointInPolygon(x, y, [[0, 0], [1, 0], [0, 1]]);\n",
+};
+
+/**
+ * A library script that imports only `Script` from the runtime and reaches the tween API and
+ * a `core:` behaviour through the scene and the registry — what no import names.
+ */
+export const SCENE_API_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'scene-api-lib',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+    peerDependencies: { '@pix3/runtime': '*' },
+  }),
+  'index.js':
+    "import { Script } from '@pix3/runtime';\nexport class Pulse extends Script {\n  onStart() { this.scene?.tween.to(this.node, { x: 1 }, { durationSec: 0.1 }); this.scene?.physics2d; }\n}\nexport const pulse = () => new Pulse();\n",
+};
+
+/** A library that loads models itself (three's addon), without declaring the runtime (its name
+ * must not say `gltf`: the project's import of it would be the mention that keeps the loader). */
+export const GLTF_LIB: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({
+    name: 'model-kit',
+    version: '1.0.0',
+    type: 'module',
+    main: 'index.js',
+  }),
+  'index.js':
+    "import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';\nexport const makeLoader = () => new GLTFLoader();\n",
+};

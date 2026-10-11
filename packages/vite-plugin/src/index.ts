@@ -78,6 +78,7 @@ import {
 import {
   buildStrippedModuleSource,
   resolveStrippableRuntimeModules,
+  valueExportNames,
 } from './build/strippable-runtime-modules.ts';
 import { zipDirectory } from './build/zip.ts';
 import {
@@ -218,7 +219,14 @@ interface BuildState {
   readonly stubYaml: boolean;
   /** No model in the project: `GLTFLoader` is a stub. */
   readonly stubGltf: boolean;
-  // Filled by the bundle hooks, for the report.
+  // Filled by the bundle hooks, for the report: what the hooks actually replaced (a runtime that
+  // resolves under another path than the one `buildStart` saw would leave these empty).
+  readonly applied: {
+    readonly modules: Set<string>;
+    yaml: boolean;
+    gltf: boolean;
+    postprocessing: boolean;
+  };
   readonly moduleSizes: ModuleSize[];
   bundleBytes: number;
   assets: EmbeddedAssetsResult | null;
@@ -230,6 +238,29 @@ const isUnder = (file: string, dir: string | null): boolean => {
   const rel = relative(dir, file);
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 };
+
+/**
+ * The real path of a module id (query dropped; the id itself when it is not a file). The
+ * runtime's `src/` is a real path, and module ids are not always (`resolve.preserveSymlinks`, a
+ * linked workspace): comparing the two as written would silently strip nothing.
+ */
+const realPaths = new Map<string, string>();
+const realFileOf = (id: string): string => {
+  const file = id.split('?')[0];
+  let real = realPaths.get(file);
+  if (real === undefined) {
+    try {
+      real = realpathSync(file);
+    } catch {
+      real = file;
+    }
+    realPaths.set(file, real);
+  }
+  return real;
+};
+
+/** A `.glb`/`.gltf` (any case) or the loader by name among `names`. */
+const MODEL_MENTION = /^(?:glb|gltf|GLTFLoader)$/i;
 
 export function pix3(options: Pix3Options = {}): Plugin[] {
   const settings = {
@@ -268,8 +299,8 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
   /** The module path under the runtime's `src/` of an absolute id, or null. */
   const runtimeModulePath = (id: string): string | null => {
     if (!build?.runtimeSrc) return null;
-    const file = id.split('?')[0];
-    if (!file.endsWith('.ts')) return null;
+    if (!id.split('?')[0].endsWith('.ts')) return null;
+    const file = realFileOf(id);
     const rel = relative(build.runtimeSrc, file);
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null;
     return rel.split(sep).join('/').replace(/\.ts$/, '');
@@ -399,20 +430,13 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           log(`editor at ${flushed.url} flushed its unsaved scenes`);
         else if (flushed.status === 'no-editor')
           log(`dev server at ${flushed.url}: no editor tab open`);
+        else if (flushed.status === 'no-server' && flushed.url)
+          log(`no dev server at ${flushed.url} (${flushed.reason}): .pix3/dev.json is stale`);
       } catch (error) {
         if (error instanceof EditorUnsyncedError) this.error(`${error.code}: ${error.message}`);
         throw error;
       }
       const manifest = readProjectManifest(projectRoot);
-      const scan = await scanProject({
-        root: projectRoot,
-        resRoot: settings.resRoot,
-        manifest,
-        entryScene: settings.entryScene,
-      });
-      for (const warning of scan.warnings) warn(warning);
-      if (!scan.entryScenePath) warn('no .pix3scene found: the player will have nothing to boot');
-
       const importer = join(projectRoot, 'index.html');
       const runtime = await this.resolve('@pix3/runtime', importer);
       const runtimeSrc = runtime ? dirname(realpathSync(runtime.id.split('?')[0])) : null;
@@ -420,36 +444,69 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       const spineInstalled =
         (await this.resolve('@esotericsoftware/spine-threejs', importer)) !== null;
       const postprocessingInstalled = (await this.resolve('postprocessing', importer)) !== null;
-      if (scan.usesSpine && !spineInstalled)
-        warn(
-          'a scene places a SpineSkeleton2D but @esotericsoftware/spine-threejs is not installed'
-        );
 
-      // N11: a dependency that declares the runtime is parsed for what it imports from it.
+      // N11: a dependency that declares the runtime is parsed for what it imports from it, and
+      // its text is scanned for mentions like the project's own sources.
       const dependents = settings.strip === false ? [] : runtimeDependents(projectRoot);
       const dependencyScan = await scanDependencyImports({
         root: projectRoot,
         packages: dependents,
         parse: code => this.parse(code),
       });
+      const scan = await scanProject({
+        root: projectRoot,
+        resRoot: settings.resRoot,
+        manifest,
+        entryScene: settings.entryScene,
+        dependencies: dependencyScan,
+      });
+      for (const warning of scan.warnings) warn(warning);
+      if (!scan.entryScenePath) warn('no .pix3scene found: the player will have nothing to boot');
+      if (scan.usesSpine && !spineInstalled)
+        warn(
+          'a scene places a SpineSkeleton2D but @esotericsoftware/spine-threejs is not installed'
+        );
+
       const decision = decideStrip(settings.strip, dependencyScan);
       const mentions = (name: string): boolean =>
         scan.mentionedNames.has(name) ||
         dependencyScan.names.has(name) ||
+        dependencyScan.mentionedNames.has(name) ||
         decision.keep.includes(name);
       const stripped = new Set<string>();
       const stubbedNames = new Map<string, string>();
       if (decision.enabled && runtimeSrc) {
-        for (const entry of resolveStrippableRuntimeModules(mentions)) {
+        // Every value export keeps its module too (the barrel re-exports them all): a mention of
+        // `pointInPolygon` keeps `collision-shapes-2d`, and the net knows every stubbed name.
+        const exportsOf = new Map<string, string[]>();
+        const readExports = (modulePath: string): string[] => {
+          let names = exportsOf.get(modulePath);
+          if (!names) {
+            try {
+              names = valueExportNames(readFileSync(join(runtimeSrc, `${modulePath}.ts`), 'utf8'));
+            } catch {
+              names = [];
+            }
+            exportsOf.set(modulePath, names);
+          }
+          return names;
+        };
+        for (const entry of resolveStrippableRuntimeModules(mentions, readExports)) {
           stripped.add(entry.modulePath);
-          for (const name of entry.keepWhenMentioned) stubbedNames.set(name, entry.modulePath);
+          for (const name of [...entry.keepWhenMentioned, ...readExports(entry.modulePath)])
+            stubbedNames.set(name, entry.modulePath);
         }
       }
+      // Case-insensitive, like the asset test: `crate.GLB` names a model as well.
+      const namesModel = (names: Iterable<string>): boolean =>
+        [...names].some(name => MODEL_MENTION.test(name));
       const stubGltf =
         decision.enabled &&
-        !mentions('GLTFLoader') &&
-        !mentions('glb') &&
-        !mentions('gltf') &&
+        runtimeSrc !== null &&
+        !namesModel(scan.mentionedNames) &&
+        !namesModel(dependencyScan.names) &&
+        !namesModel(dependencyScan.mentionedNames) &&
+        !namesModel(decision.keep) &&
         !scan.assetPaths.some(path => /\.(glb|gltf)$/i.test(path));
       build = {
         format,
@@ -468,6 +525,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         postprocessingInstalled,
         stubYaml: decision.enabled,
         stubGltf,
+        applied: { modules: new Set(), yaml: false, gltf: false, postprocessing: false },
         moduleSizes: [],
         bundleBytes: 0,
         assets: null,
@@ -520,7 +578,30 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       }
       const digest = fileDigest(artifact);
       const at = new Date().toISOString();
-      const stripped = [...build.stripped].sort();
+      // What the hooks replaced, not what `buildStart` planned: the two differ only when the
+      // runtime's modules arrived under ids the plan did not recognise — say so.
+      const stripped = [...build.applied.modules].sort();
+      const missed = [...build.stripped].filter(path => !build?.applied.modules.has(path));
+      if (missed.length > 0)
+        warn(
+          `${missed.length} runtime module(s) planned for stripping were never replaced ` +
+            `(${missed.slice(0, 3).join(', ')}${missed.length > 3 ? ', …' : ''}): ` +
+            `they did not load from ${build.runtimeSrc ?? 'the resolved runtime'}`
+        );
+      const applied = build.applied;
+      // Strip as it happened: off when the runtime did not resolve, or when nothing it planned
+      // was replaced (the ids never matched).
+      const stripHappened =
+        build.stripEnabled &&
+        build.runtimeSrc !== null &&
+        (build.stripped.size === 0 || stripped.length > 0);
+      const stripReason = stripHappened
+        ? build.stripReason
+        : !build.stripEnabled
+          ? build.stripReason
+          : build.runtimeSrc === null
+            ? '@pix3/runtime did not resolve from the project'
+            : `no runtime module loaded from ${build.runtimeSrc}: nothing was replaced`;
       const reportPath = buildReportPath(artifact, dir);
       const compressed = build.compressed;
       const assets = build.assets;
@@ -546,25 +627,29 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           : { enabled: false },
         code: summarizeCode({ bundleBytes: build.bundleBytes, modules: build.moduleSizes }),
         strip: {
-          enabled: build.stripEnabled,
-          reason: build.stripReason,
+          enabled: stripHappened,
+          reason: stripReason,
           keep: build.keep,
           stripped,
           dependencies: build.dependencyParsed,
           dependencyImports: [...build.dependencyImports].sort(),
         },
         libraries: {
-          yaml: build.stubYaml ? 'stub: scenes and prefabs ship as JSON' : 'bundled',
-          GLTFLoader: build.stubGltf ? 'stub: no .glb/.gltf in the project' : 'bundled',
+          yaml: applied.yaml
+            ? 'stub: scenes and prefabs ship as JSON'
+            : build.stubYaml
+              ? 'bundled (scenes ship as JSON)'
+              : 'bundled',
+          GLTFLoader: applied.gltf ? 'stub: no .glb/.gltf in the project' : 'bundled',
           postprocessing: !build.postprocessingInstalled
             ? 'not installed'
-            : build.scan.usesPostProcessing
-              ? 'bundled (static import)'
-              : build.format !== 'html'
-                ? 'lazy chunk (the runtime import())'
-                : build.stripEnabled
-                  ? 'stub: no PostProcess node'
-                  : 'bundled (the runtime import(), inlined; strip is off)',
+            : applied.postprocessing
+              ? 'stub: no PostProcess node'
+              : build.scan.usesPostProcessing
+                ? 'bundled (static import)'
+                : build.format !== 'html'
+                  ? 'lazy chunk (the runtime import())'
+                  : 'bundled (the runtime import(), inlined)',
           spine: !build.scan.usesSpine
             ? 'not bundled: no SpineSkeleton2D'
             : build.spineInstalled
@@ -767,6 +852,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         // Plan §B.6 item 2: an unmentioned runtime module becomes a stub with the same exports.
         const modulePath = runtimeModulePath(id);
         if (modulePath !== null && build?.stripped.has(modulePath)) {
+          build.applied.modules.add(modulePath);
           return buildStrippedModuleSource(readFileSync(id.split('?')[0], 'utf8'), modulePath);
         }
         return null;
@@ -891,9 +977,9 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         !build.stripEnabled ||
         id.startsWith('\0') ||
         !code.includes(RUNTIME_SPECIFIER) ||
-        isUnder(id.split('?')[0], build.runtimeSrc) ||
-        isUnder(id.split('?')[0], PACKAGE_DIR) ||
-        !(id.includes('/node_modules/') || !isUnder(id.split('?')[0], root()))
+        isUnder(realFileOf(id), build.runtimeSrc) ||
+        isUnder(realFileOf(id), realFileOf(PACKAGE_DIR)) ||
+        !(id.includes('/node_modules/') || !isUnder(realFileOf(id), realFileOf(root())))
       ) {
         return null;
       }
@@ -966,28 +1052,37 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
   /**
    * The optional libraries a build leaves out (CLAUDE.md «Playable export size»), part of the
    * strip (`strip: false` keeps them all). `enforce: 'pre'`, because Vite's own resolver runs
-   * before a normal plugin's `resolveId`:
+   * before a normal plugin's `resolveId`. Every one is stubbed **for the runtime's own importers
+   * only** (real paths compared): a project script or a dependency that imports the library
+   * itself always gets the real one — and the scan counts that import as a use, so the runtime
+   * shares the real copy then too.
    *
-   * - `postprocessing` in a single-file build with no PostProcess node — the runtime's
-   *   `import('postprocessing')` would be inlined whole;
-   * - `yaml` **for the runtime's own importers** — the scenes ship as JSON (`shippedBytes`), so
-   *   `SceneLoader`'s `parse` is `JSON.parse`; a project module importing `yaml` keeps the real
-   *   one (plan §B.6 item 4, done the 1.x way: no runtime change, no second scene format);
-   * - `GLTFLoader` when no scene, script or asset names a model.
+   * - `postprocessing` in a single-file build with no PostProcess node and no import of it — the
+   *   runtime's `import('postprocessing')` would be inlined whole;
+   * - `yaml` — the scenes ship as JSON (`shippedBytes`), so `SceneLoader`'s `parse` is
+   *   `JSON.parse` (plan §B.6 item 4, done the 1.x way: no runtime change, no second format);
+   * - `GLTFLoader` when no scene, script, library or asset names a model.
    */
   const libraryStubs: Plugin = {
     name: 'pix3:library-stubs',
     apply: 'build',
     enforce: 'pre',
     resolveId(id, importer) {
-      if (!build?.stripEnabled) return null;
+      if (!build?.stripEnabled || !importer || importer.startsWith('\0')) return null;
+      if (id !== 'postprocessing' && id !== 'yaml' && id !== GLTF_LOADER_SPECIFIER) return null;
+      if (!isUnder(realFileOf(importer), build.runtimeSrc)) return null;
       if (id === 'postprocessing' && build.format === 'html' && !build.scan.usesPostProcessing) {
+        build.applied.postprocessing = true;
         return resolvedId(POSTPROCESSING_STUB_ID);
       }
-      if (id === 'yaml' && build.stubYaml && importer && isUnder(importer, build.runtimeSrc)) {
+      if (id === 'yaml' && build.stubYaml) {
+        build.applied.yaml = true;
         return resolvedId(YAML_STUB_ID);
       }
-      if (id === GLTF_LOADER_SPECIFIER && build.stubGltf) return resolvedId(GLTF_LOADER_STUB_ID);
+      if (id === GLTF_LOADER_SPECIFIER && build.stubGltf) {
+        build.applied.gltf = true;
+        return resolvedId(GLTF_LOADER_STUB_ID);
+      }
       return null;
     },
   };

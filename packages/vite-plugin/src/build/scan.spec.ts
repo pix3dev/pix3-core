@@ -56,6 +56,43 @@ describe('scanProject (plan §B.6 item 1)', () => {
     expect(scan.textSourceCount).toBe(3);
   });
 
+  it('reads single-file components, and tells an import of postprocessing from a mention', async () => {
+    const root = project({
+      'src/Hud.vue': '<script setup lang="ts">import { Bar2D } from "@pix3/runtime";</script>',
+      'src/Menu.svelte': '<script>const kind = "Checkbox2D";</script>',
+      'src/Page.astro': '---\nconst n = "Joystick2D";\n---',
+      // The starter's package.json names postprocessing: a dependency list, not a use.
+      'package.json': '{"dependencies":{"postprocessing":"^6.39.2"}}',
+    });
+    let scan = await scanProject({ root, resRoot: '.', manifest: manifest() });
+    expect(scan.mentionedNames.has('Bar2D')).toBe(true);
+    expect(scan.mentionedNames.has('Checkbox2D')).toBe(true);
+    expect(scan.mentionedNames.has('Joystick2D')).toBe(true);
+    expect(scan.usesPostProcessing).toBe(false);
+
+    writeFileSync(
+      join(root, 'src/fx.ts'),
+      "import { EffectComposer } from 'postprocessing';\nexport const fx = EffectComposer;\n"
+    );
+    scan = await scanProject({ root, resRoot: '.', manifest: manifest() });
+    expect(scan.importedSpecifiers.has('postprocessing')).toBe(true);
+    expect(scan.usesPostProcessing).toBe(true);
+
+    // A dependency's import counts the same.
+    rmSync(join(root, 'src/fx.ts'));
+    scan = await scanProject({
+      root,
+      resRoot: '.',
+      manifest: manifest(),
+      dependencies: {
+        mentionedNames: new Set(['netNodes']),
+        importedSpecifiers: new Set(['postprocessing']),
+      },
+    });
+    expect(scan.usesPostProcessing).toBe(true);
+    expect(scan.usesNetwork).toBe(true);
+  });
+
   it('ships every scene and prefab, what they reference, and expands directories', async () => {
     const root = project({
       'scenes/main.pix3scene':
@@ -110,7 +147,7 @@ describe('scanProject (plan §B.6 item 1)', () => {
     expect(scan.warnings).toEqual(['Referenced resource not found: res://textures/missing.png']);
   });
 
-  it('adds fonts, declared locale tables with their sprites, atlas pages and the packed atlas', async () => {
+  it('adds fonts, declared locale tables with their sprites and atlas pages (no packed atlas)', async () => {
     const root = project({
       'pix3project.yaml': '',
       'scenes/main.pix3scene':
@@ -142,8 +179,10 @@ describe('scanProject (plan §B.6 item 1)', () => {
     expect(scan.assetPaths).toContain('locales/ru.json');
     expect(scan.assetPaths).not.toContain('locales/de.json');
     expect(scan.assetPaths).toContain('sprites/logo-ru.png');
-    expect(scan.assetPaths).toContain('assets/.atlas/atlas-manifest.json');
-    expect(scan.assetPaths).toContain('assets/.atlas/s0.png');
+    // Nothing in 2.x writes a packed atlas and the player does not read one (P26): an unreferenced
+    // `assets/.atlas/` is not shipped.
+    expect(scan.assetPaths).not.toContain('assets/.atlas/atlas-manifest.json');
+    expect(scan.assetPaths).not.toContain('assets/.atlas/s0.png');
     expect(scan.localization).toEqual({ defaultLocale: 'en', locales: ['en', 'ru'] });
   });
 
@@ -323,6 +362,15 @@ describe('toClassicScriptHtml', () => {
     );
     expect(out).toBe(
       '<!doctype html><html><head><meta charset="utf-8"><title>t</title></head><body><div id="app"></div><script>const u = document.baseURI; const r = undefined ? 1 : 2; const h = ({}).hot;</script>\n</body></html>'
+    );
+  });
+
+  it('finds a head that carries attributes', () => {
+    const out = toClassicScriptHtml(
+      '<html><head data-x="1"><script type="module">go()</script></head><body><div id="app"></div></body></html>'
+    );
+    expect(out).toBe(
+      '<html><head data-x="1"></head><body><div id="app"></div><script>go()</script>\n</body></html>'
     );
   });
 
