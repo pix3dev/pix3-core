@@ -82,7 +82,7 @@ export interface ScenesState {
    * Editor Peek: node ids the author has masked out of their own view, keyed by scene id.
    *
    * Per-user, non-serializable, outside undo. It never reaches the `.pix3scene` (that is the whole
-   * point — see `docs/pix3-specification.md`, "Editor Peek") and it is not shared in collab; it is
+   * point — see `docs/pix3-specification.md`, "Editor Peek"); it is
    * mirrored to `localStorage` by `PeekService` so a reload does not force the author to re-hide
    * everything. Ids rather than names, so renaming a node keeps the mask and deleting one drops it.
    */

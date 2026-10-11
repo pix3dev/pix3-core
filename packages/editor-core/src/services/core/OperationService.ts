@@ -33,7 +33,7 @@ export type OperationEvent =
       /** True when the operation changed local state. */
       readonly metadata: OperationMetadata;
       readonly didMutate: boolean;
-      /** True when the mutation was committed through history and is safe to sync in collaboration. */
+      /** True when the mutation was committed through history (undoable). */
       readonly pushedToHistory: boolean;
       /** Scene active when execution began, before any asynchronous work or tab switch. */
       readonly sceneId?: string | null;

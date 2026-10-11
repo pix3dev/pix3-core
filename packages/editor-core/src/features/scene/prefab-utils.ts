@@ -93,8 +93,8 @@ export const isInstancePlacementProperty = (node: NodeBase, propertyName: string
 
 /**
  * Whether a scene file lives under a `prefabs/` folder. A prefab is a usage, not a file type (any
- * `.pix3scene` can be instanced), but every producer — Save as Prefab, UI Kit Forge, the character
- * compiler — writes to `prefabs/`, so the folder is the convention editor UX can key off.
+ * `.pix3scene` can be instanced), but every producer — the kit's extract-a-branch recipe, the
+ * character compiler — writes to `prefabs/`, so the folder is the convention editor UX can key off.
  */
 export const isPrefabScenePath = (filePath: string): boolean =>
   /(^|\/)prefabs\//.test(filePath.replace(/^res:\/\//, '').replace(/\\/g, '/'));

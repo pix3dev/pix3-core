@@ -1336,7 +1336,7 @@ export class Viewport2DProxyRegistry {
 
     // The current frame's own file when it has one, else the resource-level
     // spritesheet — `getAnimationFrameTexturePath` is the single precedence rule,
-    // shared with the runtime loader, the asset previews and the Sprite Editor.
+    // shared with the runtime loader and the asset previews.
     const frameTexturePath = getAnimationFrameTexturePath(resource, frame);
     this.ensureAnimatedSprite2DFrameTexture(node, visualRoot, frameTexturePath);
 
@@ -1439,8 +1439,7 @@ export class Viewport2DProxyRegistry {
    * A §8.2 clip is N files, so this runs on every frame change (including while
    * an editor preview is playing). The *decode* cache is the shared
    * {@link AssetLoader}'s — deliberately not a per-proxy map: one decode per file
-   * for the whole editor, evictable from one place (`evictTexture`, which the
-   * Sprite Editor's write-back fan-out already calls), and no proxy pinning 60
+   * for the whole editor, evictable from one place (`evictTexture`), and no proxy pinning 60
    * frames of its clip forever. What the proxy keeps is exactly one *clone* of
    * the current frame's texture, because `offset`/`repeat` are per-node state and
    * two nodes on the same sheet at different frames would otherwise fight over

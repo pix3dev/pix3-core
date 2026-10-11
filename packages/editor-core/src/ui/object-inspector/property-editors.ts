@@ -857,7 +857,7 @@ export class TextureResourceEditor extends ComponentBase {
     );
   }
 
-  /** Double-click the preview or the path → edit the image (mirrors the animation editor). */
+  /** Double-click the preview or the path → preview the image full-screen. */
   private emitOpenRequest(): void {
     const resourceUrl = this.resourceUrl.trim();
     if (!resourceUrl) {
@@ -885,7 +885,7 @@ export class TextureResourceEditor extends ComponentBase {
       <div class="editor-row">
         <div
           class="preview ${this.isDragOver ? 'is-dragover' : ''}"
-          title=${this.resourceUrl ? 'Double-click to edit in the Sprite Editor' : ''}
+          title=${this.resourceUrl ? 'Double-click to preview' : ''}
           @dragover=${(event: DragEvent) => this.onDragOver(event)}
           @dragleave=${() => this.onDragLeave()}
           @drop=${(event: DragEvent) => this.onDrop(event)}
@@ -2072,7 +2072,7 @@ export class CollisionPolygonEditor extends ComponentBase {
   protected render() {
     if (!this.editable) {
       return html`<div class="hint">
-        Vertices come from the animation frame. Edit them in the Sprite Editor's polygon overlay.
+        Vertices come from the animation frame (its collisionPolygon in the .pix3anim).
       </div>`;
     }
 

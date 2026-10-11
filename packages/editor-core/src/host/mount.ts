@@ -80,8 +80,8 @@ export async function mountEditorWith(
   const writer = service(WriterService);
   await writer.claimAtLoad();
 
-  const sceneWrite = service(FlushService);
-  sceneWrite.start();
+  const flush = service(FlushService);
+  flush.start();
   const drafts = service(SceneDraftService);
   drafts.start();
   const syncApply = service(SyncApplyService);
@@ -89,7 +89,7 @@ export async function mountEditorWith(
     flush: async timeoutMs => {
       // Locale tables write through; one whose write failed without a conflict goes now.
       await service(LocalizationEditorService).flush();
-      return sceneWrite.flushDirty(timeoutMs);
+      return flush.flushDirty(timeoutMs);
     },
     applySync: info => syncApply.apply(info),
   });
@@ -105,7 +105,7 @@ export async function mountEditorWith(
     async dispose() {
       for (const dispose of disposers) dispose();
       host.sync.setHandlers({});
-      sceneWrite.dispose();
+      flush.dispose();
       drafts.dispose();
       writer.dispose();
       service(ExternalReloadService).dispose();

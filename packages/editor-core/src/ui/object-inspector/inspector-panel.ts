@@ -1043,8 +1043,7 @@ export class InspectorPanel extends ComponentBase {
 
   /**
    * Trace an outline from the node's own texture alpha and write it into the
-   * polygon — the same marching-squares + Ramer-Douglas-Peucker pipeline the
-   * Sprite Editor uses on animation frames, reused here for a static sprite.
+   * polygon — marching squares + Ramer-Douglas-Peucker (`core/contour-trace.ts`).
    */
   async onPolygonTrace(componentId: string, prop: PropertyDefinition): Promise<void> {
     const node = this.primaryNode;

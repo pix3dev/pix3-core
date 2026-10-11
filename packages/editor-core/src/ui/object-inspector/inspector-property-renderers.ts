@@ -151,7 +151,7 @@ type InspectorSubsectionOptions = {
   /** Sub-block title, also its `data-subsection` handle. */
   title: string;
   enabled: boolean;
-  /** Play mode / read-only collaborator: the switch and the body are both gated. */
+  /** Play mode / a read-only tab: the switch and the body are both gated. */
   readOnly: boolean;
   /** The single muted line shown instead of the body while off; clicking it turns it on. */
   hint: string;

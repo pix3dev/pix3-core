@@ -12,8 +12,6 @@ export function normalizeAnimationAssetPath(path: string): string {
 
   const normalizedRelativePath = withScheme
     .replace(/^res:\/\//i, '')
-    .replace(/^templ:\/\//i, '')
-    .replace(/^collab:\/\//i, '')
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
   const pathSegments = normalizedRelativePath.split('/').filter(Boolean);

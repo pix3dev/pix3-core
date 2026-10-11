@@ -18,8 +18,9 @@ export interface DiskVersion {
 
 /**
  * Read `path` as raw bytes and hash THOSE (plan §4.3 "факт изменения — хеш от байтов").
- * Hashing decoded text instead would never match `pix3 serve` / `pix3 read` for a file with a BOM
- * (the decoder strips it), and every such file would look like an external change forever.
+ * Hashing decoded text instead would never match the plugin's hash (it hashes the bytes it wrote)
+ * for a file with a BOM (the decoder strips it), and every such file would look like an external
+ * change forever.
  * Resolves to null when the file does not exist.
  */
 export async function readDiskVersion(

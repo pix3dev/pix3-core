@@ -55,7 +55,7 @@ export type AuthoredGuard = <T>(read: () => T) => T;
 
 /**
  * When and how the editor writes scenes (plan §C.1 "Когда пишется диск", §C.2 "Flush = один патч
- * от baseline"). Replaces the port-phase `SceneWriteService` behind the same methods.
+ * от baseline").
  *
  * `pending = diff(baseline.norm, norm(graph))`, computed at flush time, so perform / undo / redo /
  * coalesce need no bookkeeping (N8). A flush takes a snapshot `{revision, norm}` synchronously,

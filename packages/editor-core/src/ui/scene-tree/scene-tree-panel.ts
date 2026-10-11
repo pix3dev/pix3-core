@@ -176,8 +176,8 @@ export class SceneTreePanel extends ComponentBase {
       this.syncSceneState();
       this.syncPeekState();
     });
-    // The mask also moves without `appState.scenes` moving with it — a re-parsed graph (a collab
-    // update, a prefab refresh) re-stamps the same ids onto fresh nodes, and a solo is cleared
+    // The mask also moves without `appState.scenes` moving with it — a re-parsed graph (a reload,
+    // a prefab refresh) re-stamps the same ids onto fresh nodes, and a solo is cleared
     // through the service. The service's own signal is the one that covers all of those.
     this.disposePeekSubscription = this.peek.subscribe(() => {
       this.syncPeekState();

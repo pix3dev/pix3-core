@@ -1977,7 +1977,7 @@ export class ViewportRendererService {
    * Mark the viewport dirty so the render loop paints a frame on the next
    * animation frame. When the loop is not running (paused, window unfocused,
    * or a hidden tab where rAF never fires), the frame is rendered
-   * synchronously instead so on-demand consumers (resize, collab updates,
+   * synchronously instead so on-demand consumers (resize, external versions,
    * agent-driven edits in a background tab) still get a fresh canvas.
    */
   requestRender(): void {
@@ -3160,7 +3160,9 @@ export class ViewportRendererService {
 
   /**
    * Repaint every 2D proxy drawn from a texture file whose pixels just changed on
-   * disk (the sprite editor's frame write-back / overwrite paths, §9.5 step 4).
+   * disk. Nothing calls it in 2.x yet (its caller was the 1.x Sprite Editor): an
+   * image an agent overwrites is not followed, which also needs the AssetLoader's
+   * decoded copy evicted.
    * The registry forgets its decoded copy; the standard per-node visual sync then
    * reloads it, exactly as {@link refreshLocalizedLabels} does for a locale swap.
    *

@@ -8,10 +8,6 @@ describe('deriveSceneIdFromResourcePath', () => {
     );
   });
 
-  it('strips the collab:// scheme', () => {
-    expect(deriveSceneIdFromResourcePath('collab://x')).toBe('x');
-  });
-
   it('falls back to "scene" when nothing is left', () => {
     expect(deriveSceneIdFromResourcePath('')).toBe('scene');
     expect(deriveSceneIdFromResourcePath('res://')).toBe('scene');

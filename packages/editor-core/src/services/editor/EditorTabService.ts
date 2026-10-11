@@ -48,7 +48,7 @@ export class EditorTabService {
   private readonly storage!: ProjectStorageService;
 
   @inject(FlushService)
-  private readonly sceneWrite!: FlushService;
+  private readonly flush!: FlushService;
 
   @inject(SceneDraftService)
   private readonly drafts!: SceneDraftService;
@@ -454,8 +454,8 @@ export class EditorTabService {
   }
 
   /**
-   * Whether a `res://` resource still exists in the project. Non-`res://` ids (collab scenes,
-   * synthetic editor ids) have no backing file and are always `present`.
+   * Whether a `res://` resource still exists in the project. Non-`res://` ids (synthetic editor
+   * ids) have no backing file and are always `present`.
    *
    * Three-valued on purpose. `unknown` (the read threw) is NOT the same as `missing`: storage that
    * is not pointed at the newly opened project directory yet throws, and collapsing the two let a
@@ -657,7 +657,7 @@ export class EditorTabService {
       case 'scene': {
         // Ctrl+S, the dirty-close prompt and the sync barrier all write through one seam (plan D4).
         const sceneId = this.deriveSceneIdFromResource(tab.resourceId);
-        await this.sceneWrite.saveScene(sceneId);
+        await this.flush.saveScene(sceneId);
         return;
       }
       default:

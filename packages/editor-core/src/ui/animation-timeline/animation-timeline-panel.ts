@@ -8,8 +8,8 @@
  * `UpdateAnimationPlayerClipsOperation`; scrub/playback preview goes through
  * `AnimationTimelinePreviewService` and never dirties the scene.
  *
- * Panel-local shortcuts use a local keydown listener (sprite-editor
- * precedent) instead of global keybindings: Space = play/pause, Delete =
+ * Panel-local shortcuts use a local keydown listener instead of global
+ * keybindings: Space = play/pause, Delete =
  * delete selected keys, arrows = nudge selection, Home/End = playhead.
  */
 

@@ -345,8 +345,7 @@ export class PeekService {
    *   of the mask. `appState.scenes` is a busy proxy and this service is subscribed to all of it,
    *   so a cheap early-out is needed — but an early-out keyed on *ids* is a bug, because every path
    *   that swaps the active graph for a re-parsed one with the SAME ids hands back fresh nodes
-   *   whose flags are all default: a remote collab update (`SceneCRDTBinding.setActiveSceneGraph`),
-   *   a prefab refresh, a scene reload. Those would leave the chips claiming a mask the graph no
+   *   whose flags are all default: a prefab refresh, a scene reload, an external version merged. Those would leave the chips claiming a mask the graph no
    *   longer has. Re-deriving and diffing is O(branches) — a handful of nodes — so it is simply not
    *   worth guarding against.
    * - **Nodes that stopped being branches get cleared.** The branch set moves under the mask's feet
