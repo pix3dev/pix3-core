@@ -14,10 +14,11 @@ import {
   type FileHandle,
 } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
+import { relativeInside } from '../module-paths.ts';
 import { errnoCode, headerValue, HttpError, readJson, sendJson } from '../server/http.ts';
 import {
   changesetFingerprint,
@@ -382,10 +383,8 @@ export class ProjectFiles {
   /** A watch event for an absolute path (Vite's `server.watcher`); ignored outside the set. */
   noteFsEvent(absolute: string): void {
     if (this.closed) return;
-    const rel = relative(this.root, absolute);
-    if (rel.startsWith('..') || rel === '' || /^[A-Za-z]:/.test(rel)) return;
-    const wirePath = rel.split(sep).join('/');
-    if (isExcludedPath(wirePath)) return;
+    const wirePath = relativeInside(this.root, absolute);
+    if (wirePath === null || isExcludedPath(wirePath)) return;
     if (this.dirty.size === 0) this.firstDirtyAt = Date.now();
     this.dirty.add(wirePath);
     if (this.batchTimer) clearTimeout(this.batchTimer);

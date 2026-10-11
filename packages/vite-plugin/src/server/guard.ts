@@ -99,7 +99,7 @@ export const isLoopbackAddress = (address: string | undefined): boolean =>
   Boolean(address) && isLoopbackIp(address ?? '');
 
 /** `Origin` header, or null when absent (a non-browser client). */
-export const originOf = (req: IncomingMessage): string | null => headerValue(req, 'origin');
+const originOf = (req: IncomingMessage): string | null => headerValue(req, 'origin');
 
 /** The origin a page served by this request's `Host` has. */
 const ownOrigins = (req: IncomingMessage): string[] => {
@@ -133,7 +133,13 @@ export class RequestGuard {
     }
   }
 
-  checkSameOrigin(req: IncomingMessage): void {
+  /** The editor's WebSocket upgrade: no preflight exists, so its `Origin` is the only fence. */
+  checkSocket(req: IncomingMessage): void {
+    this.checkPeer(req);
+    this.checkSameOrigin(req);
+  }
+
+  private checkSameOrigin(req: IncomingMessage): void {
     const origin = originOf(req);
     if (origin !== null && !ownOrigins(req).includes(origin.toLowerCase())) {
       throw new HttpError(403, 'forbidden_origin', 'Origin not allowed.');
