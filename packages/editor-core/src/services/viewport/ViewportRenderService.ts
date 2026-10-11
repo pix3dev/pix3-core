@@ -1896,6 +1896,7 @@ export class ViewportRendererService {
    */
   reapply2DTextureFiltering(): void {
     this.proxyRegistry.reapplyTextureFiltering();
+    this.requestRender();
   }
 
   /**

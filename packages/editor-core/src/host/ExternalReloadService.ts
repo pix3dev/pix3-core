@@ -22,7 +22,7 @@ import { appState } from '@/state';
  *   your edit" is detected;
  * - a changed prefab refreshes its instances in every other open scene and re-derives their
  *   baselines (the override base moved);
- * - `pix3project.yaml` is re-read;
+ * - `pix3project.yaml` is re-read (and the viewport re-filters its 2D textures);
  * - a `locales/<id>.json` goes to `LocalizationEditorService` (its key-level merge, W20).
  */
 @injectable()
@@ -58,17 +58,16 @@ export class ExternalReloadService {
   async apply(paths: readonly string[]): Promise<{ failed: string[] }> {
     const failed: string[] = [];
     const changed = new Set(paths.map(path => toProjectPath(path)));
+    // The viewport, when one is mounted.
+    const viewport = () => optionalService(ServiceContainer.getInstance(), ViewportRendererService);
     if (changed.has('pix3project.yaml')) {
       await this.projects.reloadProjectManifest();
+      // A changed `textureFiltering` re-filters the 2D textures already on screen.
+      viewport()?.reapply2DTextureFiltering();
     }
     const locales = [...changed].filter(path => localeOfPath(path) !== null);
     for (const path of locales) await this.localization.applyExternal(path);
-    if (locales.length > 0) {
-      optionalService(
-        ServiceContainer.getInstance(),
-        ViewportRendererService
-      )?.refreshLocalizedLabels();
-    }
+    if (locales.length > 0) viewport()?.refreshLocalizedLabels();
     const prefabsChanged = [...changed].filter(isSceneFilePath);
     for (const descriptor of Object.values(appState.scenes.descriptors)) {
       const path = toProjectPath(descriptor.filePath);
