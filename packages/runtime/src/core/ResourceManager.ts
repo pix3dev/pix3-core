@@ -100,8 +100,13 @@ export class ResourceManager {
     return await response.blob();
   }
 
+  /**
+   * The URL scheme, lower-case, or `''` for a plain (project-relative) path. `data:` and `blob:`
+   * URLs have no `//` after the colon, so they are matched by name.
+   */
   protected getScheme(resource: string): string {
-    const match = /^([a-z]+[a-z0-9+.-]*):\/\//i.exec(resource.trim());
+    const trimmed = resource.trim();
+    const match = /^([a-z]+[a-z0-9+.-]*):\/\//i.exec(trimmed) ?? /^(data|blob):/i.exec(trimmed);
     if (!match) {
       return '';
     }
