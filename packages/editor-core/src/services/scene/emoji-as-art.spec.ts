@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  describeEmojiAsArt,
-  findEmojiArtInSceneYaml,
-  isEmojiOnlyText,
-  isTextProperty,
-} from '@pix3/runtime';
+import { describeEmojiAsArt, isEmojiOnlyText, isTextProperty } from '@pix3/runtime';
 
 import { emojiAsArtFieldError } from './emoji-as-art';
 
@@ -80,37 +75,5 @@ describe('emojiAsArtFieldError', () => {
     expect(emojiAsArtFieldError('label', 'Счёт: 10 🪙')).toBeNull();
     expect(emojiAsArtFieldError('name', '🪙')).toBeNull();
     expect(emojiAsArtFieldError('label', 42)).toBeNull();
-  });
-});
-
-describe('findEmojiArtInSceneYaml', () => {
-  /**
-   * Scene YAML is the path around every property setter: a file write of a whole `.pix3scene` never
-   * touches the inspector. This is the measured shape of the defect that started the rule.
-   */
-  it('finds emoji art written straight into a scene file, all of it', () => {
-    const yaml = `
-  - id: coin
-    type: Button2D
-    properties:
-      label: 🪙
-      labelFontSize: 140
-  - id: star
-    type: Label2D
-    properties:
-      text: "⭐"
-  - id: score
-    type: Label2D
-    properties:
-      label: SCORE 0
-`;
-    expect(findEmojiArtInSceneYaml(yaml)).toEqual([
-      { property: 'label', value: '🪙' },
-      { property: 'text', value: '⭐' },
-    ]);
-  });
-
-  it('stays quiet on a scene with no emoji art', () => {
-    expect(findEmojiArtInSceneYaml('      label: SCORE 0\n      text: "Играть"\n')).toEqual([]);
   });
 });

@@ -1813,7 +1813,7 @@ export class ViewportRendererService {
     // Reflow root-anchored 2D nodes against the authored base viewport frame.
     // The orthographic camera can expand beyond the yellow frame for previewing,
     // but authored root anchors stay relative to the base frame itself.
-    this.sceneManager.resizeRoot(viewportBaseSize.width, viewportBaseSize.height, true);
+    this.sceneManager.resizeRoot(viewportBaseSize.width, viewportBaseSize.height);
 
     // Sync all 2D visuals after layout recalculation
     this.syncAll2DVisuals();
