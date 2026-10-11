@@ -291,7 +291,7 @@ export type NetSignalPayload = Uint8Array | string | number | boolean | null | o
 /** Receives an inbound signal. `payload` is a view over the receive buffer — copy it if you keep it. */
 export type NetSignalHandler = (payload: Uint8Array, senderClientId: number) => void;
 
-/** Counters for the Game tab, the profiler and bug reports. */
+/** Session counters (`net.stats`) for diagnostics and bug reports. */
 export interface NetworkStats {
   /** Frames handed to the session by the transport. */
   framesReceived: number;
