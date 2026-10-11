@@ -197,6 +197,12 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a pix3project.yaml autoload that never runs: no singleton/scriptPath, a repeated singleton, or a script that is missing, outside scripts/, or exports no Script class named like the file',
   },
+  W_MANIFEST_EXPORT: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'pix3project.yaml has the 1.x export: block (prune / include / exclude globs), which no 2.x build reads',
+  },
   W_LEGACY_VERSION: {
     severity: 'warning',
     level: 1,

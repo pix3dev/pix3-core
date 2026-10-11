@@ -25,6 +25,7 @@ import {
 } from './resource-files.ts';
 import { scanUserScripts } from './user-scripts.ts';
 import { checkAutoloads, checkAutoloadTypes } from './autoloads.ts';
+import { checkManifestExport } from './manifest-export.ts';
 
 export interface ValidateOptions {
   /** Project folder (the one holding `pix3project.yaml`, or any folder `res://` is relative to). */
@@ -203,6 +204,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
   // `pix3project.yaml` `autoloads:` — project-level, checked on every run.
   const autoloadDiagnostics = checkAutoloads(project);
   diagnostics.push(...autoloadDiagnostics);
+  diagnostics.push(...checkManifestExport(project));
 
   const usesUserComponents = [...results.values()].some(result => result.usesUserComponents);
   const notes: string[] = [];

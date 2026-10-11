@@ -851,14 +851,8 @@ describe('kit drift', () => {
       'ProjectFontFace'
     );
     const rows = keyTable(text(PROJECT_FILES), '`pix3project.yaml`');
-    // `export` (prune / include / exclude globs) is the 1.x build's; the 2.x build does not read
-    // it (.plans/player-build.md P5), so the kit does not offer it.
     const strip = (names: readonly string[]) => names.map(n => n.replace(/\?$/, ''));
-    expect([...rows.keys()].sort()).toEqual(
-      strip(interfaces.get('ProjectManifest') ?? [])
-        .filter(n => n !== 'export')
-        .sort()
-    );
+    expect([...rows.keys()].sort()).toEqual(strip(interfaces.get('ProjectManifest') ?? []).sort());
     const braces = (cell: string): string[] =>
       (/`\[?\{ ([^}]+) \}\]?`/.exec(cell)?.[1] ?? '').split(',').map(part => part.trim());
     expect(braces(rows.get('quality') ?? '')).toEqual(interfaces.get('QualitySettings'));

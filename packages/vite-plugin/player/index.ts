@@ -1,8 +1,6 @@
 import {
   AssetLoader,
-  ATLAS_MANIFEST_PATH,
   AudioService,
-  installAtlasFromManifest,
   registerBuiltInScripts,
   registerProjectScriptExports,
   ResourceManager,
@@ -152,14 +150,9 @@ export async function startGame(
         locales: runtimeLocalization.locales,
       });
     }
-    // A single-file build has no sibling files: probing for an atlas manifest it did not embed can
-    // never succeed, and in a sandboxed container it is a visible network error on every run.
-    if (
-      !resourceManager.hasEmbeddedResources ||
-      resourceManager.hasEmbeddedResource(ATLAS_MANIFEST_PATH)
-    ) {
-      await installAtlasFromManifest(assetLoader, resourceManager);
-    }
+    // No pre-packed atlas: nothing in 2.x writes `assets/.atlas/atlas-manifest.json` (the editor
+    // packs into IndexedDB for its own play mode), so the player does not probe for one
+    // (.plans/player-build.md P26).
     // `loadAndStartScene` reads, parses and runs the graph directly; `startScene` would clone it
     // through the serializer, which a player does not need (and must not bundle).
     await runner.loadAndStartScene(scenePath);

@@ -9,33 +9,12 @@ import {
 } from './ProjectManifest';
 
 describe('ProjectManifest', () => {
-  it('normalizes export path lists and strips the res:// scheme', () => {
+  it('drops the 1.x export: block (no 2.x build reads it; pix3 validate warns about it)', () => {
     const manifest = normalizeProjectManifest({
       ...createDefaultProjectManifest(),
-      export: {
-        pruneUnusedAssets: true,
-        extraRootScenePaths: ['res://scenes/level-2.pix3scene'],
-        includeGlobs: ['  res://src/assets/audio/**  ', './src/assets/fonts/**', '', 42],
-        excludeGlobs: ['scratch/**', 'scratch/**'],
-      },
+      export: { pruneUnusedAssets: true, includeGlobs: ['audio/**'] },
     });
-
-    expect(manifest.export).toEqual({
-      pruneUnusedAssets: true,
-      extraRootScenePaths: ['scenes/level-2.pix3scene'],
-      includeGlobs: ['src/assets/audio/**', 'src/assets/fonts/**'],
-      excludeGlobs: ['scratch/**'],
-    });
-  });
-
-  it('keeps an all-default or absent export block out of the manifest', () => {
-    expect(createDefaultProjectManifest().export).toBeUndefined();
-    expect(
-      normalizeProjectManifest({
-        ...createDefaultProjectManifest(),
-        export: { pruneUnusedAssets: false, includeGlobs: [], excludeGlobs: [] },
-      }).export
-    ).toBeUndefined();
+    expect('export' in manifest).toBe(false);
   });
 
   it('normalizes default export scene path from resource path input', () => {

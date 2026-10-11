@@ -41,33 +41,6 @@ export interface LocalizationSettings {
 }
 
 /**
- * Export-time asset selection. Absent ⇒ nothing is forced into or out of the
- * build (the collector's own reachability scan decides alone).
- *
- * Patterns match project-relative file paths (no `res://` prefix) and support
- * `*` (within a path segment), `**` (across segments) and `?`.
- */
-export interface ExportSettings {
-  /**
-   * Seed the asset scan from the entry scene + {@link extraRootScenePaths} instead
-   * of from every `.pix3scene` on disk, so unreachable scenes/prefabs and the
-   * assets only they reference stay out of the build. Defaults to `false`: a game
-   * may load any scene at runtime, so opting in is the author's call.
-   */
-  pruneUnusedAssets: boolean;
-  /**
-   * Extra reachability roots for {@link pruneUnusedAssets} — scenes/prefabs the
-   * game loads dynamically (`level-${n}.pix3scene`, `instantiate()` with a
-   * computed path) and which no static scan can therefore see.
-   */
-  extraRootScenePaths: string[];
-  /** Always ship these files, even when nothing in the project references them. */
-  includeGlobs: string[];
-  /** Never ship these files; a scene/prefab excluded here is not scanned either. */
-  excludeGlobs: string[];
-}
-
-/**
  * One `@font-face` the project registers at start-up. `path` is project-relative
  * (`fonts/nunito-900-latin.woff2`); the loader reads it through the normal asset seam.
  */
@@ -85,8 +58,6 @@ export interface ProjectManifest {
   version: string;
   autoloads: AutoloadConfig[];
   defaultExportScenePath?: string;
-  /** Export-time asset selection; absent ⇒ defaults (see {@link ExportSettings}). */
-  export?: ExportSettings;
   viewportBaseSize: {
     width: number;
     height: number;
@@ -258,46 +229,6 @@ const normalizeLocalization = (input: unknown): LocalizationSettings | undefined
   };
 };
 
-/** Trim, drop blanks, strip `res://` / `./`, dedupe — for globs and root paths alike. */
-const normalizePathList = (input: unknown): string[] => {
-  if (!Array.isArray(input)) {
-    return [];
-  }
-
-  const paths = input
-    .filter((entry): entry is string => typeof entry === 'string')
-    .map(entry => entry.trim())
-    .filter(entry => entry.length > 0)
-    // Authors write either form; the collector works in scheme-less paths.
-    .map(entry => (entry.startsWith('res://') ? entry.slice(6) : entry).replace(/^\.\//, ''));
-
-  return [...new Set(paths)];
-};
-
-const normalizeExportSettings = (input: unknown): ExportSettings | undefined => {
-  if (!input || typeof input !== 'object') {
-    return undefined;
-  }
-
-  const record = input as Record<string, unknown>;
-  const settings: ExportSettings = {
-    pruneUnusedAssets: record.pruneUnusedAssets === true,
-    extraRootScenePaths: normalizePathList(record.extraRootScenePaths),
-    includeGlobs: normalizePathList(record.includeGlobs),
-    excludeGlobs: normalizePathList(record.excludeGlobs),
-  };
-
-  // An all-default block is inert — keep it out of the manifest so projects that
-  // never touch export settings don't grow a no-op section on every save.
-  const isInert =
-    !settings.pruneUnusedAssets &&
-    settings.extraRootScenePaths.length === 0 &&
-    settings.includeGlobs.length === 0 &&
-    settings.excludeGlobs.length === 0;
-
-  return isInert ? undefined : settings;
-};
-
 const normalizeDefaultExportScenePath = (input: unknown): string | undefined => {
   if (typeof input !== 'string') {
     return undefined;
@@ -380,7 +311,6 @@ export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
         : DEFAULT_PROJECT_MANIFEST_VERSION,
     autoloads,
     defaultExportScenePath: normalizeDefaultExportScenePath(record.defaultExportScenePath),
-    export: normalizeExportSettings(record.export),
     viewportBaseSize: normalizeViewportBaseSize(record.viewportBaseSize),
     ambientOcclusion: normalizeAmbientOcclusion(record.ambientOcclusion),
     textureFiltering: normalizeTextureFiltering(record.textureFiltering),
