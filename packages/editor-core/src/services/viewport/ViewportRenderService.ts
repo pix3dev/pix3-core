@@ -690,12 +690,6 @@ export class ViewportRendererService {
     });
     this.disposers.push(unsubscribeUi);
 
-    const unsubscribeAnimations = subscribe(appState.animations, () => {
-      this.syncAnimatedSprite2DVisuals();
-      this.requestRender();
-    });
-    this.disposers.push(unsubscribeAnimations);
-
     const unsubscribeProject = subscribe(appState.project, () => {
       this.syncBaseViewportFrame();
       if (this.viewportSize.width > 0 && this.viewportSize.height > 0) {
@@ -3894,27 +3888,6 @@ export class ViewportRendererService {
       this.proxyRegistry.spineSkeleton2DVisuals.get(nodeId) ??
       this.proxyRegistry.uiControl2DVisuals.get(nodeId)
     );
-  }
-
-  private syncAnimatedSprite2DVisuals(): void {
-    const sceneGraph = this.sceneManager.getActiveSceneGraph();
-    if (!sceneGraph) {
-      return;
-    }
-
-    const visit = (nodes: NodeBase[]) => {
-      for (const node of nodes) {
-        if (node instanceof AnimatedSprite2D) {
-          this.updateNodeTransform(node);
-        }
-
-        if (node.children.length > 0) {
-          visit(node.children);
-        }
-      }
-    };
-
-    visit(sceneGraph.rootNodes);
   }
 
   private findNodeById(nodeId: string, nodes: NodeBase[]): NodeBase | null {

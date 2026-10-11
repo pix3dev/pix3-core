@@ -1,14 +1,12 @@
 import type { ProjectManifest } from '@/core/ProjectManifest';
-import type { AnimationResource } from '@pix3/runtime';
 
 export type ThemeName = 'dark' | 'light' | 'high-contrast';
 
 const DEFAULT_THEME: ThemeName = 'dark';
 
 export type SceneLoadState = 'idle' | 'loading' | 'ready' | 'error';
-export type AnimationLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
-export type EditorTabType = 'scene' | 'prefab' | 'script' | 'texture' | 'animation' | 'game';
+export type EditorTabType = 'scene' | 'game';
 
 export interface CameraState {
   position: { x: number; y: number; z: number };
@@ -101,29 +99,6 @@ export interface ScenesState {
    * set is faded, not hidden — an empty/absent entry means no solo is active.
    */
   peekSoloByScene: Record<string, string[]>;
-}
-
-export interface AnimationDescriptor {
-  id: string;
-  filePath: string;
-  name: string;
-  version: string;
-  isDirty: boolean;
-  lastSavedAt: number | null;
-  lastModifiedTime?: number | null;
-}
-
-export interface AnimationsState {
-  /** Currently focused animation document identifier. */
-  activeAnimationId: string | null;
-  /** Map of animation document descriptors currently loaded into memory. */
-  descriptors: Record<string, AnimationDescriptor>;
-  /** Parsed animation resources keyed by animation document id. */
-  resources: Record<string, AnimationResource>;
-  loadState: AnimationLoadState;
-  loadError: string | null;
-  /** Timestamp (ms) when the most recent animation finished loading. */
-  lastLoadedAt: number | null;
 }
 
 export type ProjectStatus = 'idle' | 'selecting' | 'opening' | 'ready' | 'error';
@@ -383,7 +358,6 @@ export interface LocalizationState {
 export interface AppState {
   project: ProjectState;
   scenes: ScenesState;
-  animations: AnimationsState;
   tabs: TabsState;
   selection: SelectionState;
   editorContext: EditorContextState;
@@ -427,14 +401,6 @@ export const createInitialAppState = (): AppState => ({
     previewCameraNodeIds: {},
     peekHiddenByScene: {},
     peekSoloByScene: {},
-  },
-  animations: {
-    activeAnimationId: null,
-    descriptors: {},
-    resources: {},
-    loadState: 'idle',
-    loadError: null,
-    lastLoadedAt: null,
   },
   tabs: {
     tabs: [],

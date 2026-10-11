@@ -48,10 +48,7 @@ import { InventorySlot2D } from '@pix3/runtime';
 import { getProjectTextureFiltering } from '@pix3/runtime';
 import { appState } from '@/state';
 import { isPeekDimmedInTree, PEEK_DIM_OPACITY } from './peek-gating';
-import {
-  deriveAnimationDocumentId,
-  parseAnimationResourceText,
-} from '@/features/scene/animation-asset-utils';
+import { parseAnimationResourceText } from '@/features/scene/animation-asset-utils';
 
 const LAYER_2D = 1;
 /** Marks a UIControl2D proxy skin as the plain unit quad (no 9-slice patch). */
@@ -1295,26 +1292,11 @@ export class Viewport2DProxyRegistry {
     const currentResourcePath = node.animationResourcePath?.trim() || null;
     const previousResourcePath =
       (visualRoot.userData.animationResourcePath as string | null) ?? null;
-    const openResource = currentResourcePath
-      ? this.getLoadedAnimationResource(currentResourcePath)
-      : null;
-    const cachedResource =
-      (visualRoot.userData.animationResource as AnimationResource | null) ?? null;
 
     visualRoot.userData.animationResourcePath = currentResourcePath;
     visualRoot.userData.currentClip = node.currentClip;
     visualRoot.userData.currentFrame = node.currentFrame;
     visualRoot.userData.color = node.color;
-
-    if (openResource && openResource !== cachedResource) {
-      // The Sprite Editor holds this .pix3anim open and just mutated it — adopt
-      // the live object. Whether that changed the *pixels* on screen is decided
-      // by the presentation pass, which resolves the current frame's own file
-      // and reloads only when that path differs from the cached one.
-      visualRoot.userData.animationResource = openResource;
-      this.applyAnimatedSprite2DPresentation(node, visualRoot, material);
-      return;
-    }
 
     if (currentResourcePath !== previousResourcePath) {
       void this.loadAnimatedSprite2DVisualAsset(node, visualRoot);
@@ -1423,9 +1405,7 @@ export class Viewport2DProxyRegistry {
     }
 
     try {
-      const resource =
-        this.getLoadedAnimationResource(animationResourcePath) ??
-        parseAnimationResourceText(await this.deps.readText(animationResourcePath));
+      const resource = parseAnimationResourceText(await this.deps.readText(animationResourcePath));
 
       if (visualRoot.userData.animationLoadToken !== token) {
         return;
@@ -1532,16 +1512,6 @@ export class Viewport2DProxyRegistry {
     configureSpriteTexture(texture);
     copyAtlasMetadata(shared, texture);
     return texture;
-  }
-
-  private getLoadedAnimationResource(resourcePath: string): AnimationResource | null {
-    const animationId = deriveAnimationDocumentId(resourcePath);
-    const descriptor = appState.animations.descriptors[animationId];
-    if (!descriptor || descriptor.filePath !== resourcePath) {
-      return null;
-    }
-
-    return appState.animations.resources[animationId] ?? null;
   }
 
   disposeAnimatedSprite2DTexture(visualRoot: THREE.Object3D): void {
