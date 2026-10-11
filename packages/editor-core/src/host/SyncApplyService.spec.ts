@@ -46,8 +46,13 @@ function createSync() {
   // Timers never fire on their own: nothing settles unless the spec ticks.
   externalChanges.configureForTests({ stabilityIntervalMs: 1e9 });
   const reloaded: string[][] = [];
+  const scripts = {
+    registerRoots: vi.fn(),
+    queueRoots: vi.fn(),
+    componentsSettled: async () => undefined,
+  };
   const sync = wire(new SyncApplyService(), {
-    scripts: { registerRoots: vi.fn(), componentsSettled: async () => undefined },
+    scripts,
     reloads: {
       apply: async (paths: readonly string[]) => {
         reloaded.push([...paths]);
@@ -57,11 +62,38 @@ function createSync() {
     externalChanges,
   });
   const roots = { revision: 1 } as unknown as SyncInfo['roots'];
-  return { storage, externalChanges, sync, reloaded, roots };
+  return { storage, externalChanges, sync, scripts, reloaded, roots };
 }
 
 describe('SyncApplyService', () => {
   beforeEach(() => resetAppState());
+
+  it('during play, queues the roots the page re-imported for the sync (S13): the restart runs them', async () => {
+    const h = createSync();
+    appState.ui.isPlaying = true;
+    appState.ui.playOwner = 'agent';
+    // The agent added scripts/Jumper.ts and placed user:Jumper in the scene, then synced: the
+    // plugin re-ran the roots' globs and the page re-imported them with the new class. The
+    // answer is stale (the game runs without it) — and the roots must not be thrown away with it.
+    const jumper = { revision: 2 } as unknown as SyncInfo['roots'];
+    const stale = await h.sync.apply({
+      rev: 2,
+      changed: { 'scripts/Jumper.ts': 'a'.repeat(64), 'scenes/main.pix3scene': 'b'.repeat(64) },
+      roots: jumper,
+    });
+    expect(stale).toMatchObject({ ok: false, reason: 'stale', playing: 'agent' });
+    expect(h.scripts.queueRoots).toHaveBeenCalledWith(jumper);
+    expect(h.scripts.registerRoots).not.toHaveBeenCalled();
+    // An ok answer during play (only a policy changed) queues them too: the latest roots win.
+    const policy = { revision: 3 } as unknown as SyncInfo['roots'];
+    await h.sync.apply({
+      rev: 3,
+      changed: { 'design/tests/bots/rush.ts': 'c'.repeat(64) },
+      roots: policy,
+    });
+    expect(h.scripts.queueRoots).toHaveBeenLastCalledWith(policy);
+    h.externalChanges.dispose();
+  });
 
   it("applies what a frame reported before the sync, though the sync's rescan found nothing", async () => {
     const h = createSync();

@@ -585,6 +585,25 @@ describe('sync barrier', () => {
     const frame = await tab.waitFor(f => f.type === 'pix3:scripts', 5_000);
     expect(frame.path).toBe('scripts/Foo.ts');
   });
+
+  it('tells the editor to re-import its scripts when one is added or deleted outside a sync (S13)', async () => {
+    const ROOT = '/@id/__x00__virtual:pix3/editor-scripts';
+    const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' });
+    expect(await (await p.fetch(ROOT)).text()).not.toContain('/scripts/Bar.ts');
+    const tab = await p.connectTab('tab-a');
+    await sleep(100);
+    // Vite's legacy `handleHotUpdate` fires for an update only: a created script never reached
+    // the editor, whose roots kept the old glob until the next sync.
+    writeFileSync(join(p.root, 'scripts/Bar.ts'), 'export const bar = 1;\n');
+    const created = await tab.waitFor(f => f.type === 'pix3:scripts' && f.op === 'create', 5_000);
+    expect(created.path).toBe('scripts/Bar.ts');
+    expect(await (await p.fetch(ROOT)).text()).toContain('/scripts/Bar.ts');
+
+    rmSync(join(p.root, 'scripts/Bar.ts'));
+    const deleted = await tab.waitFor(f => f.type === 'pix3:scripts' && f.op === 'delete', 5_000);
+    expect(deleted.path).toBe('scripts/Bar.ts');
+    expect(await (await p.fetch(ROOT)).text()).not.toContain('/scripts/Bar.ts');
+  });
 });
 
 describe('the script graph', () => {

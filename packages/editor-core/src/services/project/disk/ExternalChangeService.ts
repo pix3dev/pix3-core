@@ -501,7 +501,10 @@ export class ExternalChangeService {
 
   private isSettled(): boolean {
     if (this.disposePlaySubscription) {
-      return true; // held for play mode: nothing more happens until play stops
+      // Held for play mode: nothing more happens until play stops. Once it has stopped, the
+      // subscription (asynchronous) is about to re-read and deliver — a `whenSettled` asked
+      // between the stop and that delivery (the bridge's restart) must wait for it.
+      return appState.ui.isPlaying;
     }
     // A noticed entry reported again (`stable` reset) is not settled until it was re-read: the
     // caller of `whenSettled` (syncNow) wants to know whether the file came back.
