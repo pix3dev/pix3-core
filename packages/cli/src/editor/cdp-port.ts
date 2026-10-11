@@ -1,7 +1,6 @@
-import { randomBytes } from 'node:crypto';
 import { createConnection } from 'node:net';
 
-import { challengeHeaders, provesToken } from './cdp-proof.ts';
+import { challengeHeaders, newChallenge, PROBE_TIMEOUT_MS, provesToken } from './cdp-proof.ts';
 import { CDP_PORT_RANGE, CDP_PROOF_HEADER, CDP_PROXY_HEADER, DEFAULT_CDP_PORT } from './paths.ts';
 
 /**
@@ -25,8 +24,6 @@ export type CdpPortState =
   | { readonly kind: 'ours'; readonly browser: string; readonly pages: string[] }
   | { readonly kind: 'legacy'; readonly browser: string; readonly pages: string[] }
   | { readonly kind: 'foreign'; readonly browser: string | null; readonly detail: string };
-
-const PROBE_TIMEOUT_MS = 1_500;
 
 interface JsonVersion {
   Browser?: string;
@@ -86,8 +83,7 @@ export const inspectCdpPort = async (
   const fetchImpl = options.fetch ?? fetch;
   const token = options.token ?? null;
   const base = `http://127.0.0.1:${port}`;
-  // The challenge, never the token: an unproven port learns nothing it could reuse.
-  const challenge = randomBytes(24).toString('base64url');
+  const challenge = newChallenge();
   const version = await getJson<JsonVersion>(
     `${base}/json/version`,
     fetchImpl,

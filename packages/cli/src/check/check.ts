@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { parse } from 'yaml';
+import { join, resolve } from 'node:path';
 
 import { describeUnsynced, syncEditor } from '../editor-sync.ts';
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { findUp, sha256Hex } from '../fs-util.ts';
+import { findProjectRoot, PROJECT_MANIFEST_FILE, readManifestKitVersion } from '../manifest.ts';
 import {
   CHECK_TSCONFIG,
   hasOwnTsconfig,
@@ -12,15 +11,15 @@ import {
   projectTypesCurrent,
   ROOT_TSCONFIG,
 } from '../types/project-types.ts';
+import { COMMAND_USAGE } from '../usage.ts';
 import type { BundledDiagnostic, BundledValidateReport } from '../validate/entry.ts';
 import { CLI_VERSION } from '../version.ts';
-import { scanEditorChain, type EditorChainIssueKind } from './editor-chain.ts';
 import {
   installedRuntimeVersion,
   lockstepMismatches,
   runtimeVersionMismatch,
 } from '../version-gate.ts';
-import { COMMAND_USAGE } from '../usage.ts';
+import { scanEditorChain, type EditorChainIssueKind } from './editor-chain.ts';
 import { runTypecheck, type TypecheckResult } from './typecheck.ts';
 import {
   resolveTypeScript,
@@ -213,41 +212,14 @@ const defaultValidate: ValidateFn = async options => {
   );
 };
 
-const sha256File = (path: string): string =>
-  createHash('sha256').update(readFileSync(path)).digest('hex');
-
 const diag = (
   code: CheckCode,
   fields: Omit<CheckDiagnostic, 'severity' | 'code'>
 ): CheckDiagnostic => ({ severity: CHECK_CODES[code].severity, code, ...fields });
 
-/** `metadata.agentKit.version` of the manifest, or null. */
-export const readKitVersion = (projectRoot: string): string | null => {
-  try {
-    const parsed = parse(readFileSync(join(projectRoot, PROJECT_MANIFEST_FILE), 'utf8')) as unknown;
-    const metadata =
-      parsed && typeof parsed === 'object'
-        ? (parsed as { metadata?: { agentKit?: { version?: unknown } } }).metadata
-        : undefined;
-    const version = metadata?.agentKit?.version;
-    return typeof version === 'string' ? version : null;
-  } catch {
-    return null;
-  }
-};
-
 /** Whether a `node_modules` folder is reachable from the project (walking up), as Node resolves. */
-export const hasNodeModules = (projectRoot: string): boolean => {
-  let dir = resolve(projectRoot);
-  for (;;) {
-    if (existsSync(join(dir, 'node_modules'))) return true;
-    const parent = dirname(dir);
-    if (parent === dir) return false;
-    dir = parent;
-  }
-};
-
-export { installedRuntimeVersion };
+const hasNodeModules = (projectRoot: string): boolean =>
+  findUp(projectRoot, 'node_modules') !== null;
 
 const formatDiagnostic = (d: CheckDiagnostic): string => {
   const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
@@ -434,7 +406,7 @@ export const checkProject = async (
   }
 
   // --- kit ------------------------------------------------------------------------------------
-  const kitVersion = readKitVersion(projectRoot);
+  const kitVersion = readManifestKitVersion(projectRoot);
   const kitUpToDate = kitVersion === CLI_VERSION;
   if (kitVersion !== null && !kitUpToDate) {
     diagnostics.push(
@@ -470,10 +442,11 @@ export const checkProject = async (
   for (const file of result?.files ?? []) {
     if (file.startsWith('/') || /^[A-Za-z]:/.test(file)) continue; // outside the project
     const absolute = join(projectRoot, file);
-    if (!files.has(file) && existsSync(absolute)) files.set(file, sha256File(absolute));
+    if (!files.has(file) && existsSync(absolute))
+      files.set(file, sha256Hex(readFileSync(absolute)));
   }
   for (const file of chain.files) {
-    if (!files.has(file)) files.set(file, sha256File(join(projectRoot, file)));
+    if (!files.has(file)) files.set(file, sha256Hex(readFileSync(join(projectRoot, file))));
   }
 
   const all = [...validated.diagnostics, ...[...diagnostics].sort(compare)];

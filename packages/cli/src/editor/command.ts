@@ -1,11 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { chooseCdpPort } from './cdp-port.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
-import { ensureCdpToken } from './cdp-token.ts';
+import { ensureCdpToken, newCdpToken } from './cdp-token.ts';
 import { describeChromeNotFound, ensureProfileDir, findChrome } from './chrome.ts';
 import {
   ensureEditorTab,
@@ -25,6 +24,7 @@ import {
   cdpTokenPath,
   cdpWsEndpoint,
   chromeProfileDir,
+  isPort,
   DEFAULT_CDP_PORT,
   localMcpConfigPath,
 } from './paths.ts';
@@ -99,7 +99,7 @@ export const parseEditorArgs = (argv: readonly string[]): EditorArgs | { error: 
       const raw = value();
       if (typeof raw !== 'string') return raw;
       const n = Number(raw);
-      return Number.isInteger(n) && n > 0 && n < 65536 ? n : { error: `${arg} needs a port` };
+      return isPort(n) ? n : { error: `${arg} needs a port` };
     };
     switch (arg) {
       case '--stop':
@@ -266,7 +266,7 @@ export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promi
     const token = readRemoteCdpToken(env);
     const port = remoteCdpPort(parsed.cdpPort, env);
     // Without a token nothing can prove itself: a random one tells a free port from a held one.
-    const probeToken = token ?? randomBytes(32).toString('base64url');
+    const probeToken = token ?? newCdpToken();
     io.stdout(
       `\n${describeRemoteSession({
         editorUrl: info.editorUrl,

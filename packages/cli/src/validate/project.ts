@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
+import { sha256Hex } from '../fs-util.ts';
 import { isRecord } from './yaml-doc.ts';
 
 /**
@@ -121,11 +121,9 @@ const decodeURIComponentSafe = (value: string): string => {
   }
 };
 
-/** sha256 of a project file's RAW BYTES — the hash `pix3 read`, `pix3 serve` and `expect` use. */
+/** sha256 of a project file's raw bytes (the report's `files[].sha256`). */
 export const sha256OfFile = (project: ProjectFiles, projectPath: string): string =>
-  createHash('sha256')
-    .update(readFileSync(project.absolute(projectPath)))
-    .digest('hex');
+  sha256Hex(readFileSync(project.absolute(projectPath)));
 
 export interface ProjectManifestInfo {
   readonly targetPlatform?: string;

@@ -7,6 +7,7 @@ import { proveCdpProxy } from '../editor/cdp-proof.ts';
 import {
   cdpWsEndpoint,
   DEFAULT_CDP_PORT,
+  isPort,
   localMcpConfigPath,
   remoteMcpConfigPath,
 } from '../editor/paths.ts';
@@ -77,7 +78,7 @@ export const parseAgentSetupArgs = (
         return { error: '--project needs a directory' };
     } else if (arg === '--cdp-port') {
       const n = Number(argv[++i]);
-      if (!Number.isInteger(n) || n <= 0 || n > 65535) return { error: '--cdp-port needs a port' };
+      if (!isPort(n)) return { error: '--cdp-port needs a port' };
       cdpPort = n;
     } else if (arg === 'claude' || arg === 'codex') targets.push(arg);
     else return { error: `agent-setup takes claude or codex, not "${arg}"` };

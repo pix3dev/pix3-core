@@ -1,11 +1,14 @@
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { narrowTo0600 } from '../fs-util.ts';
 import { CLI_VERSION } from '../version.ts';
 import type { ProvenPort } from './cdp-proof.ts';
+import { readTokenFile } from './cdp-token.ts';
 import {
   cdpForwardPortsPath,
   DEFAULT_CDP_PORT,
+  isPort,
   remoteCdpPortPath,
   remoteCdpTokenPath,
 } from './paths.ts';
@@ -22,19 +25,12 @@ import {
  * (the proxy signs a `forward` proof only for it).
  */
 
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,}$/;
-
 /** The human machine's token as copied here (its file narrowed to 0600), or null. */
 export const readRemoteCdpToken = (env: NodeJS.ProcessEnv = process.env): string | null => {
   const path = remoteCdpTokenPath(env);
-  try {
-    const token = readFileSync(path, 'utf8').trim();
-    if (!TOKEN_SHAPE.test(token)) return null;
-    if (process.platform !== 'win32' && (statSync(path).mode & 0o077) !== 0) chmodSync(path, 0o600);
-    return token;
-  } catch {
-    return null;
-  }
+  const token = readTokenFile(path);
+  if (token) narrowTo0600(path);
+  return token;
 };
 
 /**
@@ -67,9 +63,6 @@ export const addCdpForwardPort = (port: number, env: NodeJS.ProcessEnv = process
   const ports = readCdpForwardPorts(env);
   if (!ports.includes(port)) writeJson(cdpForwardPortsPath(env), { ports: [...ports, port] });
 };
-
-const isPort = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 65536;
 
 const readJson = (path: string): unknown => {
   try {

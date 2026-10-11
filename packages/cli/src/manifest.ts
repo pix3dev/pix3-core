@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { stringify } from 'yaml';
+import { dirname, join } from 'node:path';
+import { parse, stringify } from 'yaml';
+
+import { findUp, readTextOrNull } from './fs-util.ts';
 
 import type { TargetPlatform, TemplateInfo } from './templates.ts';
 
@@ -67,15 +68,19 @@ export const renderManifest = (payload: Record<string, unknown>): string =>
 
 /** Nearest ancestor (inclusive) of `start` that holds a `pix3project.yaml`, or null. */
 export const findProjectRoot = (start: string): string | null => {
-  let current = resolve(start);
-  for (;;) {
-    try {
-      readFileSync(join(current, PROJECT_MANIFEST_FILE));
-      return current;
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return null;
-      current = parent;
-    }
+  const manifest = findUp(start, PROJECT_MANIFEST_FILE);
+  return manifest === null ? null : dirname(manifest);
+};
+
+/** `metadata.agentKit.version` of the project's manifest (the kit `pix3 kit` installed), or null. */
+export const readManifestKitVersion = (projectRoot: string): string | null => {
+  const text = readTextOrNull(join(projectRoot, PROJECT_MANIFEST_FILE));
+  if (text === null) return null;
+  try {
+    const parsed = parse(text) as { metadata?: { agentKit?: { version?: unknown } } } | null;
+    const version = parsed?.metadata?.agentKit?.version;
+    return typeof version === 'string' ? version : null;
+  } catch {
+    return null;
   }
 };
