@@ -7,8 +7,9 @@ import type { ProjectFiles } from './project.ts';
  * scripts, never by running them.
  *
  * It mirrors `ProjectScriptLoaderService` (the shared rule is `core/project-script-registration.ts`
- * in the runtime): entry files are `.ts`/`.js` under `scripts/` or `src/scripts/` whose text matches
- * `extends Script`, and every exported Script class registers as `user:<export name>`. From text we
+ * in the runtime): entry files are the `.ts` under `scripts/` or `src/scripts/` (no specs, tests or
+ * declarations — what the plugin's glob root evaluates; no `.js`, no textual gate), and every
+ * exported Script class registers as `user:<export name>`. From text we
  * can see the export names but not whether each is a Script class — an entry file's exported
  * helper function would be listed too. That errs towards "exists", which is the right side for a
  * check that must never produce a false error; level 2 compiles the files and knows for sure.
@@ -58,14 +59,13 @@ export const scanUserScripts = (project: ProjectFiles): UserScriptIndex => {
   const entries: string[] = [];
   const opaqueEntries: string[] = [];
   for (const file of project.files) {
-    if (!(file.endsWith('.ts') || file.endsWith('.js')) || file.endsWith('.d.ts')) continue;
+    if (!isProjectScriptEntry(file)) continue;
     let source: string;
     try {
       source = project.readText(file);
     } catch {
       continue;
     }
-    if (!isProjectScriptEntry(file, source)) continue;
     entries.push(file);
     const { names, hasStar } = scanExportNames(source);
     if (hasStar) opaqueEntries.push(file);

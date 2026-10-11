@@ -99,7 +99,9 @@ export class SceneMergeService {
       filePath: descriptor.filePath,
     });
     const E: SceneBaseline = { sha: version.hash, text: eText, norm: normOfGraph(eGraph) };
-    const clobbered = findClobberedKeys(this.baselines.takeFlushLedger(path), E.norm);
+    // Read now, spent only once E is installed: a failed install (the loader rejected the graph)
+    // leaves the path pending and retried, and the retry must still see the flushed keys.
+    const clobbered = findClobberedKeys(this.baselines.flushLedger(path), E.norm);
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending =
@@ -112,6 +114,7 @@ export class SceneMergeService {
     } else {
       outcome = await this.merge(descriptor, path, B, E, version.text, eGraph, graph);
     }
+    this.baselines.takeFlushLedger(path);
     if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, E.norm);
     return outcome;
   }
@@ -285,7 +288,22 @@ export class SceneMergeService {
         op
       );
     }
-    await this.adoptText(descriptor, applySceneOps(B.text, [...keyed.values()]));
+    let text: string;
+    try {
+      text = applySceneOps(B.text, [...keyed.values()]);
+    } catch (error) {
+      if (!(error instanceof ScenePatchError)) throw error;
+      // The agent's version uses YAML the writer does not edit in place (anchors, aliases, flow
+      // `children`): a full serialization would rewrite the file it just wrote. Say so instead.
+      this.notices.show({
+        key: `restore-failed:${path}`,
+        tone: 'warn',
+        message: `Could not restore your edit in ${path}.`,
+        detail: `${error.message}${this.journal.available ? ' Your version is in History.' : ''}`,
+      });
+      return;
+    }
+    await this.adoptText(descriptor, text);
     await this.flush.flushScene(descriptor.id);
   }
 

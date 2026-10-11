@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { contentTypeFor } from '../files/content-type.ts';
-import { SCRIPT_DIRS } from '../sync/script-graph.ts';
+import { globPatterns, SCRIPT_DIRS } from '../sync/script-graph.ts';
 import type { LocalizationSettings, ProjectManifestInfo } from './project-manifest.ts';
 
 /**
@@ -74,18 +74,8 @@ export const sceneManifestSource = (model: SceneManifestModel): string =>
   ].join('\n');
 
 /** The eager glob root of the project's scripts — the player's `register-project-scripts`. */
-export const projectScriptsSource = (): string => {
-  const patterns: string[] = [];
-  for (const dir of SCRIPT_DIRS) {
-    patterns.push(
-      `/${dir}/**/*.ts`,
-      `!/${dir}/**/*.spec.ts`,
-      `!/${dir}/**/*.test.ts`,
-      `!/${dir}/**/*.d.ts`
-    );
-  }
-  return `export const modules = import.meta.glob(${JSON.stringify(patterns)}, { eager: true });\n`;
-};
+export const projectScriptsSource = (): string =>
+  `export const modules = import.meta.glob(${JSON.stringify(globPatterns(SCRIPT_DIRS))}, { eager: true });\n`;
 
 export interface EmbeddedAssetsSourceOptions {
   readonly root: string;

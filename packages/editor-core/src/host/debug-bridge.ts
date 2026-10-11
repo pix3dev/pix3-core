@@ -21,6 +21,7 @@ import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GameTestService, type GameRunSpec } from '@/services/game-test/GameTestService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
+import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
@@ -300,6 +301,12 @@ const play = {
     const dispatcher = resolveCommandDispatcher();
     const stopped = await dispatcher.executeById('game.stop');
     if (!stopped) return ran(false, 'game.stop');
+    // Script roots re-imported during play (a sync's, or a `pix3:scripts` frame's) register now,
+    // before the held scene versions reload — their parked `user:*` components resolve against the
+    // new registry — and before the start builds the game from it. Explicit, not left to the valtio
+    // subscription that also does it: that one fires asynchronously, after this start could.
+    const scripts = service(ProjectScriptLoaderService);
+    if (scripts.applyQueuedRoots()) await scripts.componentsSettled();
     // Held external versions are re-read and delivered once play is off; the reloads they
     // trigger complete before `whenSettled` resolves. Bounded: an unreadable file settles too.
     await Promise.race([

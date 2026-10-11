@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SceneManager, Script, ScriptRegistry, type PropertySchema } from '@pix3/runtime';
 
+import type { Command } from '@/core/command';
 import { UpdateObjectPropertyCommand } from '@/features/properties/UpdateObjectPropertyCommand';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
+import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { ServiceContainer } from '@/fw/di';
 import { AgentKeepaliveService, RECENT_CALL_MS } from '@/services/core/AgentKeepaliveService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
+import { CommandRegistry } from '@/services/core/CommandRegistry';
+import { OperationService } from '@/services/core/OperationService';
 import { appState, resetAppState } from '@/state';
 
 import { BRIDGE_TOOLS, BRIDGE_TOOL_NAMES, validateParams } from './bridge-tools';
 import { callBridgeTool, thirdPartyToolGroup, type Pix3DebugBridge } from './debug-bridge';
+import type { ScriptRoots } from './EditorHost';
 import { HostService } from './HostService';
 import { mountEditorWith, type EditorHandle } from './mount';
 import { FakeHost } from './testing/fake-host';
@@ -268,6 +274,76 @@ describe('agent bridge', () => {
       playing: 'designer',
       pending: ['scenes/main.pix3scene'],
     });
+  });
+
+  it('play: restart registers the script roots a sync re-imported during play, before the start (S13)', async () => {
+    const container = ServiceContainer.getInstance();
+    const registry = container.getService<ScriptRegistry>(
+      container.getOrCreateToken(ScriptRegistry)
+    );
+    const sceneManager = container.getService<SceneManager>(
+      container.getOrCreateToken(SceneManager)
+    );
+    // The shell registers the play commands; without it, stand-ins that only flip play mode (the
+    // Game tab and its runtime are not under test here).
+    const playCommand = (id: string, isPlaying: boolean): Command => ({
+      metadata: { id, title: id, description: id, keywords: [] },
+      async execute(context) {
+        const operations = context.container.getService<OperationService>(
+          context.container.getOrCreateToken(OperationService)
+        );
+        await operations.invoke(
+          new SetPlayModeOperation({ isPlaying, status: isPlaying ? 'playing' : 'stopped' })
+        );
+        return { didMutate: true, payload: undefined };
+      },
+    });
+    container
+      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
+      .registerMany(playCommand('game.start', true), playCommand('game.stop', false));
+    expect(await callBridgeTool('pix3_play', { action: 'start' })).toMatchObject({ ok: true });
+    expect(appState.ui.playOwner).toBe('agent');
+
+    // During play the agent adds scripts/Jumper.ts, places user:Jumper on the hero, and syncs: the
+    // page re-imported the roots with the new class and hands them to the sync handler.
+    class Jumper extends Script {
+      static getPropertySchema(): PropertySchema {
+        return { nodeType: 'Jumper', properties: [], groups: {} };
+      }
+    }
+    const roots: ScriptRoots = {
+      editorScripts: { __pix3Revision: 2, modules: { '/scripts/Jumper.ts': { Jumper } } },
+      botPolicies: { __pix3Revision: 2, modules: {} },
+    };
+    await host.externalWrite(
+      'scenes/main.pix3scene',
+      SCENE.replace(
+        '    children:',
+        '    components:\n      - id: jump\n        type: user:Jumper\n        enabled: true\n        config: {}\n    children:'
+      )
+    );
+    const synced = await host.handlers.applySync!({
+      rev: 2,
+      changed: { 'scripts/Jumper.ts': 'a'.repeat(64), 'scenes/main.pix3scene': 'b'.repeat(64) },
+      roots,
+    });
+    expect(synced).toMatchObject({ ok: false, reason: 'stale', playing: 'agent' });
+    // The running game keeps its classes: nothing registered yet.
+    expect(registry.getComponentType('user:Jumper')).toBeUndefined();
+
+    expect(await callBridgeTool('pix3_play', { action: 'restart' })).toMatchObject({ ok: true });
+    expect(appState.ui.isPlaying).toBe(true);
+    // The restart registered the roots and the held scene reloaded against them: the placed
+    // component is live, not parked — and the next sync is ok.
+    expect(registry.getComponentType('user:Jumper')?.componentClass).toBe(Jumper);
+    const hero = sceneManager.getActiveSceneGraph()?.nodeMap.get('hero');
+    expect(hero?.components.map(c => c.type)).toEqual(['user:Jumper']);
+    expect(hero?.components[0]).toBeInstanceOf(Jumper);
+    expect(await callBridgeTool('pix3_sync', { timeoutMs: 1000 })).toMatchObject({
+      ok: true,
+      playing: 'agent',
+    });
+    await callBridgeTool('pix3_play', { action: 'stop' });
   });
 
   it('play: stop and pause without a session say not_playing; game_run needs play', async () => {

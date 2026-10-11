@@ -109,6 +109,7 @@ import { SyncBarrier } from './sync/barrier.ts';
 import {
   BOT_POLICIES_ID,
   EDITOR_SCRIPTS_ID,
+  isGlobbedScript,
   resolvedId,
   rootModuleSource,
   ScriptGraph,
@@ -1014,35 +1015,50 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       return null;
     },
 
-    async handleHotUpdate(ctx) {
+    /**
+     * `hotUpdate`, not the legacy `handleHotUpdate`: Vite (6+, the environment API) calls the
+     * legacy hook for `update` only, so a script file created or deleted outside a sync never
+     * reached the editor — its roots kept the old glob until the next sync, and a play restart
+     * ran without the new class (`.plans/scripts-vite.md` S13). This hook sees every kind.
+     */
+    async hotUpdate({ type, file, modules }) {
       if (!server || !scripts || !barrier || !socket) return;
+      const env = this.environment;
       // The player's scene manifest follows `pix3project.yaml` (entry scene, viewport, quality).
-      if (ctx.file === join(root(), 'pix3project.yaml')) {
-        const manifest = server.moduleGraph.getModuleById(resolvedId(SCENE_MANIFEST_ID));
+      if (file === join(root(), 'pix3project.yaml')) {
+        const manifest = env.moduleGraph.getModuleById(resolvedId(SCENE_MANIFEST_ID));
         if (manifest) {
-          server.moduleGraph.invalidateModule(manifest);
-          return [...ctx.modules, manifest];
+          env.moduleGraph.invalidateModule(manifest);
+          return [...modules, manifest];
         }
         return;
       }
-      const wirePath = scripts.wirePathOf(ctx.file);
-      if (wirePath === null || !scripts.isEditorModule(wirePath)) return;
+      const wirePath = scripts.wirePathOf(file);
+      if (wirePath === null) return;
+      const globbed = isGlobbedScript(wirePath);
+      // A deleted helper has nothing to propagate (its importers fail on their next import, and
+      // a sync reports that); a created one is not in the graph yet and Vite's default retries
+      // the importers that failed to resolve it.
+      if (!globbed && (type !== 'update' || !scripts.isEditorModule(wirePath))) return;
+      // The work is done once, on the client graph (the editor's and the game tab's environment);
+      // every environment returns [] so Vite does not propagate a second time.
+      if (env.name !== 'client') return [];
       let sha: string | null;
       try {
-        sha = sha256Hex(readFileSync(ctx.file));
+        sha = sha256Hex(readFileSync(file));
       } catch {
         sha = null;
       }
       // A sync already propagated these bytes; the watcher's late echo must not do it twice.
       if (barrier.alreadyPropagated(wirePath, sha)) return [];
       barrier.notePropagated(wirePath, sha);
-      // Propagate through the client environment's own nodes (not `ctx.modules`, which are Vite 8's
-      // backward-compatible mixed nodes — S1, finding 5), then tell the editor to re-import its
-      // roots. Returning [] stops Vite from propagating a second time; the game tab already got
-      // its update from `reloadModule`.
+      // Propagate through the client environment's own nodes (never Vite 8's backward-compatible
+      // mixed nodes — S1, finding 5): a changed file through its importers, an added or deleted
+      // globbed script by re-running the roots' globs. Then tell the editor to re-import its roots.
       scripts.hardInvalidateRoots();
-      await scripts.reload(wirePath);
-      socket.broadcast({ type: 'pix3:scripts', path: wirePath });
+      if (type === 'update') await scripts.reload(wirePath);
+      if (globbed && type !== 'update') await scripts.reloadRoots();
+      socket.broadcast({ type: 'pix3:scripts', path: wirePath, op: type });
       return [];
     },
   };

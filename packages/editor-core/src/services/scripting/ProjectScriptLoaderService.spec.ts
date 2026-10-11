@@ -136,6 +136,29 @@ describe('ProjectScriptLoaderService.registerRoots', () => {
       loader.dispose();
     });
   });
+
+  it('applyQueuedRoots registers the queued roots the moment play is off (the restart path)', async () => {
+    const { loader, registry, sceneManager } = makeLoader();
+    appState.ui.isPlaying = true;
+    loader.queueRoots(roots({ '/scripts/Jumper.ts': { Jumper: scriptClass('Jumper') } }));
+    expect(loader.hasQueuedRoots()).toBe(true);
+    // Still playing: nothing registers.
+    expect(loader.applyQueuedRoots()).toBe(false);
+    expect(registry.getComponentType('user:Jumper')).toBeUndefined();
+
+    // The bridge's restart: play off, apply before anything else runs (no microtask has passed,
+    // so the valtio subscription has not fired).
+    appState.ui.isPlaying = false;
+    expect(loader.applyQueuedRoots()).toBe(true);
+    expect(registry.getComponentType('user:Jumper')).toBeDefined();
+    expect(sceneManager.resolvePendingComponents).toHaveBeenCalledTimes(1);
+    expect(loader.hasQueuedRoots()).toBe(false);
+    expect(loader.applyQueuedRoots()).toBe(false);
+    // The subscription that would also have done it finds nothing left.
+    await Promise.resolve();
+    expect(sceneManager.resolvePendingComponents).toHaveBeenCalledTimes(1);
+    loader.dispose();
+  });
 });
 
 describe('ProjectScriptLoaderService.ensureReady', () => {

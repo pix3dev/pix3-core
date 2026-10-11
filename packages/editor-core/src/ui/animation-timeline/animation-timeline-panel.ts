@@ -16,6 +16,7 @@
 import { ComponentBase, customElement, html, inject, state, subscribe } from '@/fw';
 import { svg } from 'lit';
 import { appState } from '@/state';
+import { setGestureInProgress } from '@/state/gesture';
 import {
   findKeyframeClip,
   fromSchemaValue,
@@ -1007,6 +1008,8 @@ export class AnimationTimelinePanel extends ComponentBase {
       popoverTrackId: track.id,
       popoverKeyTime: keyTime,
     };
+    // Every move commits a coalesced operation: the idle flush waits for the release.
+    setGestureInProgress(true);
   }
 
   private onKeyPointerMove(event: PointerEvent): void {
@@ -1032,6 +1035,7 @@ export class AnimationTimelinePanel extends ComponentBase {
       return;
     }
     this.keysDrag = null;
+    setGestureInProgress(false);
     if (drag.moved) {
       // Selection follows the moved keys — clamp to the clip like moveKeys does,
       // so an over-drag past the clip end doesn't desync (and drop) the selection.

@@ -686,8 +686,13 @@ export class LocalizationEditorService {
     let version;
     try {
       version = await readDiskVersion(this.storage, path);
-    } catch {
-      version = null;
+    } catch (error) {
+      // A read that fails is not a deletion (only `fileExists` false is): the table stays, the
+      // version arrives again with the next frame or sync.
+      console.warn(
+        `[Localization] File not readable: ${path} (${error instanceof Error ? error.message : String(error)}). Keeping the last good version.`
+      );
+      return 'unreadable';
     }
     if (!version) {
       this.removeTable(locale);

@@ -8,8 +8,9 @@ import { isGlobbedScript, type ScriptGraph } from './script-graph.ts';
  * The sync barrier (plan §B.3), as S1 found it works:
  *
  * 0. **flush** — the editor writes its dirty scenes. The page's `pix3_sync` flushes itself before
- *    calling `POST /sync`; a caller without a tab (the CLI) gets the flush done here, through the
- *    writer tab (`POST /flush` is the same step on its own);
+ *    calling `POST /sync`; a caller without a tab (the CLI), or a tab that is not the writer (a
+ *    read-only second tab's `pix3_sync`), gets the flush done here, through the writer tab
+ *    (`POST /flush` is the same step on its own);
  * 1. **rescan** — stat + sha256 of the revision set, changes broadcast as `pix3:fs`;
  * 2. **hard-invalidate the roots**, so their `load()` runs again with the new revision;
  * 3. **propagate** every changed file through the client graph (`environment.reloadModule`), and
@@ -120,7 +121,9 @@ export class SyncBarrier {
   private async run(request: SyncRequest): Promise<SyncResult> {
     const { files, scripts, socket } = this.deps;
     const started = Date.now();
-    if (request.tabId === null) {
+    // Step 0: the asking tab flushed itself before calling — but only the writer tab holds
+    // unsaved scenes. A caller without a tab, or a read-only tab asking, flushes the writer here.
+    if (request.tabId === null || request.tabId !== files.writerId) {
       const flushed = await this.flush(request.timeoutMs);
       if (!flushed.ok) return { ...flushed, ok: false, step: 'flush' };
     }

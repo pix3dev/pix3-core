@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -274,6 +274,41 @@ describe('file API', () => {
     expect(readFileSync(join(p.root, 'scenes/a.pix3scene'), 'utf8')).toBe(SCENE);
   });
 
+  it('hashes for real on an If-Match check: a same-size rewrite within one timestamp tick is a 412', async () => {
+    const p = await start();
+    const file = join(p.root, 'scenes/a.pix3scene');
+    const first = 'root: [a]\n';
+    const second = 'root: [b]\n'; // same length
+    await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: first,
+      headers: { 'If-None-Match': '*' },
+    });
+    // The hash cache is keyed ino:size:mtimeNs. Pin the mtime, read the ETag (cached under that
+    // key), then rewrite the file in place — same inode, same size — with the same mtime: the
+    // agent's write within one tick of the editor's read.
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    const read = await p.fetch('/__pix3/api/file?path=scenes/a.pix3scene');
+    expect(read.headers.get('etag')).toBe(`"${sha(first)}"`);
+    writeFileSync(file, second);
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    // A cheap read may still answer the cached sha; the write precondition must not.
+    const stale = await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: 'editor bytes',
+      headers: { 'If-Match': `"${sha(first)}"` },
+    });
+    expect(stale.status).toBe(412);
+    expect((await json(stale)).currentHash).toBe(sha(second));
+    expect(readFileSync(file, 'utf8')).toBe(second);
+    const fresh = await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: 'editor bytes',
+      headers: { 'If-Match': `"${sha(second)}"` },
+    });
+    expect(fresh.status).toBe(200);
+  });
+
   it('refuses paths outside the root and the plugin-private part of .pix3', async () => {
     const p = await start();
     expect((await p.fetch('/__pix3/api/file?path=../etc/passwd')).status).toBe(400);
@@ -503,6 +538,31 @@ describe('sync barrier', () => {
     expect(flushes).toBe(2);
   });
 
+  it('flushes through the writer tab when another (read-only) tab asks', async () => {
+    const p = await start();
+    const writer = await p.connectTab('tab-a');
+    const reader = await p.connectTab('tab-b');
+    let flushes = 0;
+    writer.onRequest('flush', () => {
+      flushes += 1;
+      return { ok: true, written: [] };
+    });
+    for (const tab of [writer, reader]) {
+      tab.onRequest('sync', request => ({ ok: true, rev: request.rev, executed: {} }));
+    }
+    await p.mutate('/__pix3/api/handover/claim', {
+      method: 'POST',
+      body: JSON.stringify({ writerId: 'tab-a' }),
+    });
+    // The writer asked: it flushed itself before calling, nothing to do here.
+    expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
+    expect(flushes).toBe(0);
+    // A read-only tab asked: its own flush wrote nothing (it holds no unsaved scene), the writer's
+    // dirty scenes must reach the disk before the rescan.
+    expect((await sync(p, { tabId: 'tab-b' })).ok).toBe(true);
+    expect(flushes).toBe(1);
+  });
+
   it('reports a gesture that outlasts the flush as not ok', async () => {
     const p = await start();
     const tab = await p.connectTab('tab-a');
@@ -621,6 +681,25 @@ describe('sync barrier', () => {
     writeFileSync(join(p.root, 'scripts/Foo.ts'), 'export const foo = 2;\n');
     const frame = await tab.waitFor(f => f.type === 'pix3:scripts', 5_000);
     expect(frame.path).toBe('scripts/Foo.ts');
+  });
+
+  it('tells the editor to re-import its scripts when one is added or deleted outside a sync (S13)', async () => {
+    const ROOT = '/@id/__x00__virtual:pix3/editor-scripts';
+    const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' });
+    expect(await (await p.fetch(ROOT)).text()).not.toContain('/scripts/Bar.ts');
+    const tab = await p.connectTab('tab-a');
+    await sleep(100);
+    // Vite's legacy `handleHotUpdate` fires for an update only: a created script never reached
+    // the editor, whose roots kept the old glob until the next sync.
+    writeFileSync(join(p.root, 'scripts/Bar.ts'), 'export const bar = 1;\n');
+    const created = await tab.waitFor(f => f.type === 'pix3:scripts' && f.op === 'create', 5_000);
+    expect(created.path).toBe('scripts/Bar.ts');
+    expect(await (await p.fetch(ROOT)).text()).toContain('/scripts/Bar.ts');
+
+    rmSync(join(p.root, 'scripts/Bar.ts'));
+    const deleted = await tab.waitFor(f => f.type === 'pix3:scripts' && f.op === 'delete', 5_000);
+    expect(deleted.path).toBe('scripts/Bar.ts');
+    expect(await (await p.fetch(ROOT)).text()).not.toContain('/scripts/Bar.ts');
   });
 });
 

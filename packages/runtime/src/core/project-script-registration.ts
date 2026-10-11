@@ -1,18 +1,22 @@
 /**
  * Which project files are script entries, and which of their exports become `user:*` components.
  *
- * One definition for every place that has to agree on it: the editor's
- * `ProjectScriptLoaderService` (compiles `scripts/` and registers what it finds), `pix3 validate`
- * (level 1 checks that a `user:X` component *exists* without running any code; level 2 compiles and
- * registers exactly like the editor), and the node-profile golden spec. If these drift, a scene the
- * editor loads cleanly fails validation, or — worse — validation passes a component the editor
- * parks as "not registered".
+ * ONE rule for every place that has to agree on it: the editor's `ProjectScriptLoaderService`
+ * (registers what Vite's `virtual:pix3/editor-scripts` glob evaluated), the plugin's glob roots
+ * and the player's `virtual:pix3/project-scripts` (`packages/vite-plugin` mirrors
+ * {@link projectScriptGlobPatterns} and {@link isProjectScriptEntry} — it cannot import the
+ * runtime's TypeScript sources at Node run time — pinned by its `script-rule.spec.ts`),
+ * `pix3 validate` (level 1 checks that a `user:X` component *exists* without running any code;
+ * level 2 compiles the same files and registers exactly like the editor), and the node-profile
+ * golden spec. If these drift, a scene the editor loads cleanly fails validation, or — worse —
+ * validation passes a component the editor parks as "not registered".
  *
- * The rule, as the editor implements it:
- * - only `.ts`/`.js` files under `scripts/` or `src/scripts/` (recursively) are candidates;
- * - a candidate is an entry only if its text matches {@link PROJECT_SCRIPT_ENTRY_PATTERN} — a class
- *   extending an intermediate base from a file without `extends Script` is not an entry unless it
- *   is re-exported from one (the check is textual on purpose, and mirrors the editor exactly);
+ * The rule, as Vite's glob implements it:
+ * - a `.ts` file under `scripts/` or `src/scripts/` (recursively) is an entry — no `.js`, and no
+ *   textual gate: a class extending an intermediate base (`extends BaseScript`) in a file without
+ *   the words `extends Script` registers like any other (the gate that once asked for them made
+ *   `pix3 validate` report such a component as missing while the editor ran it);
+ * - `*.spec.ts`, `*.test.ts` and `*.d.ts` are not entries;
  * - every exported value that is a function with a static `getPropertySchema` and whose prototype
  *   chain reaches `Script` registers as **`user:<export name>`** — the export name, not the class's
  *   `.name` and not the file name (`export { Foo as Bar }` registers `user:Bar`).
@@ -22,11 +26,27 @@
 import { Script } from './ScriptComponent';
 import type { ComponentTypeInfo, ScriptRegistry } from './ScriptRegistry';
 
-/** Project-relative folders whose `.ts`/`.js` files may declare script components. */
+/** Project-relative folders whose `.ts` files are script entries. */
 export const PROJECT_SCRIPT_DIRECTORIES = ['scripts', 'src/scripts'] as const;
 
-/** The textual gate: a script file is an entry only when this matches its source. */
-export const PROJECT_SCRIPT_ENTRY_PATTERN = /extends\s+Script\b/;
+/** A `.ts` file under a script directory that is not an entry: a spec, a test, a declaration. */
+export const PROJECT_SCRIPT_EXCLUDE_PATTERN = /\.(?:spec|test)\.ts$|\.d\.ts$/;
+
+/**
+ * The `import.meta.glob` patterns of a script root (every `.ts` under `/scripts/`, recursively,
+ * minus the excluded kinds), as the plugin's `virtual:pix3/editor-scripts` and the player's project-scripts root
+ * write them. `dirs` defaults to {@link PROJECT_SCRIPT_DIRECTORIES}; the bot-policy root passes
+ * its own.
+ */
+export const projectScriptGlobPatterns = (
+  dirs: readonly string[] = PROJECT_SCRIPT_DIRECTORIES
+): string[] =>
+  dirs.flatMap(dir => [
+    `/${dir}/**/*.ts`,
+    `!/${dir}/**/*.spec.ts`,
+    `!/${dir}/**/*.test.ts`,
+    `!/${dir}/**/*.d.ts`,
+  ]);
 
 /** Namespace of project script component ids (`user:Player`). */
 export const USER_SCRIPT_ID_PREFIX = 'user:';
@@ -42,20 +62,27 @@ const normalizeProjectPath = (path: string): string =>
     .replace(/^\.?\/+/, '');
 
 /** True for a project-relative path inside one of {@link PROJECT_SCRIPT_DIRECTORIES}. */
-export const isProjectScriptPath = (path: string): boolean => {
+export const isProjectScriptPath = (
+  path: string,
+  dirs: readonly string[] = PROJECT_SCRIPT_DIRECTORIES
+): boolean => {
   const normalized = normalizeProjectPath(path);
-  return PROJECT_SCRIPT_DIRECTORIES.some(
-    directory => normalized === directory || normalized.startsWith(`${directory}/`)
-  );
+  return dirs.some(directory => normalized === directory || normalized.startsWith(`${directory}/`));
 };
 
-/** True when `path` + its `source` make a script entry the editor would compile and register. */
-export const isProjectScriptEntry = (path: string, source: string): boolean => {
+/**
+ * True when `path` is a script entry the glob roots pick up, the editor registers and `pix3
+ * validate` scans: a `.ts` under one of `dirs` that is not a spec, a test or a declaration.
+ */
+export const isProjectScriptEntry = (
+  path: string,
+  dirs: readonly string[] = PROJECT_SCRIPT_DIRECTORIES
+): boolean => {
   const normalized = normalizeProjectPath(path);
   return (
-    (normalized.endsWith('.ts') || normalized.endsWith('.js')) &&
-    isProjectScriptPath(normalized) &&
-    PROJECT_SCRIPT_ENTRY_PATTERN.test(source)
+    normalized.endsWith('.ts') &&
+    !PROJECT_SCRIPT_EXCLUDE_PATTERN.test(normalized) &&
+    isProjectScriptPath(normalized, dirs)
   );
 };
 

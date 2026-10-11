@@ -22,24 +22,27 @@ export const BOT_POLICIES_ID = 'virtual:pix3/bot-policies';
 export const ROOT_IDS = [EDITOR_SCRIPTS_ID, BOT_POLICIES_ID] as const;
 export const resolvedId = (id: string): string => `\0${id}`;
 
+/**
+ * The project-script rule, mirrored from the runtime's `project-script-registration.ts`
+ * (`PROJECT_SCRIPT_DIRECTORIES`, `projectScriptGlobPatterns`, `isProjectScriptEntry`): the
+ * plugin runs in Node and cannot import the runtime's TypeScript sources, so `script-rule.spec.ts`
+ * pins these to the runtime's. A `.ts` under `scripts/` or `src/scripts/` (no specs, tests or
+ * declarations) is an entry — no `.js`, no textual gate.
+ */
 export const SCRIPT_DIRS = ['scripts', 'src/scripts'] as const;
 export const BOT_POLICY_DIRS = ['design/tests/bots'] as const;
 
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
-const NOT_A_SCRIPT = /\.(?:spec|test)\.[cm]?[jt]sx?$|\.d\.[cm]?ts$/;
+const NOT_A_SCRIPT = /\.(?:spec|test)\.ts$|\.d\.ts$/;
 
-const globPatterns = (dirs: readonly string[]): string[] => {
-  const patterns: string[] = [];
-  for (const dir of dirs) {
-    patterns.push(
-      `/${dir}/**/*.ts`,
-      `!/${dir}/**/*.spec.ts`,
-      `!/${dir}/**/*.test.ts`,
-      `!/${dir}/**/*.d.ts`
-    );
-  }
-  return patterns;
-};
+/** The glob patterns of a root over `dirs` (= the runtime's `projectScriptGlobPatterns`). */
+export const globPatterns = (dirs: readonly string[]): string[] =>
+  dirs.flatMap(dir => [
+    `/${dir}/**/*.ts`,
+    `!/${dir}/**/*.spec.ts`,
+    `!/${dir}/**/*.test.ts`,
+    `!/${dir}/**/*.d.ts`,
+  ]);
 
 /** Source of a glob root; `revision` is the file table's `seq` when Vite loads it. */
 export const rootModuleSource = (id: string, revision: number): string => {

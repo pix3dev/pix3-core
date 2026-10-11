@@ -46,6 +46,7 @@ import {
   applySubtree,
   computeRevision,
   HashCache,
+  hashFile,
   isExcludedPath,
   mtimeOf,
   scanInto,
@@ -691,11 +692,25 @@ export class ProjectFiles {
     sendJson(res, result.status, result.body);
   }
 
-  private async currentHashOf(wirePath: string, absolute: string): Promise<string | null> {
+  /**
+   * The file's sha256 now. `precondition: true` (an `If-Match` check before a write) hashes the
+   * bytes for real and refreshes the cache: the cache is keyed `ino:size:mtimeNs`, and an agent's
+   * same-size rewrite within one timestamp tick keeps the key — a stale sha would let the editor's
+   * write pass the check and overwrite the agent's bytes without a 412. Reads (an ETag) keep the
+   * cheap path.
+   */
+  private async currentHashOf(
+    wirePath: string,
+    absolute: string,
+    options: { readonly precondition?: boolean } = {}
+  ): Promise<string | null> {
     try {
       const stats = await lstat(absolute, { bigint: true });
       if (!stats.isFile()) return null;
-      return await this.cache.hash(wirePath, absolute, stats);
+      if (!options.precondition) return await this.cache.hash(wirePath, absolute, stats);
+      const sha256 = await hashFile(absolute);
+      this.cache.remember(wirePath, statKeyOf(stats), sha256);
+      return sha256;
     } catch (error) {
       if (errnoCode(error) === 'ENOENT') return null;
       throw error;
@@ -787,7 +802,9 @@ export class ProjectFiles {
           throw new HttpError(409, 'not_a_file', `${wirePath} exists and is not a file.`);
         }
         const currentHash =
-          resolved.kind === 'file' ? await this.currentHashOf(wirePath, resolved.absolute) : null;
+          resolved.kind === 'file'
+            ? await this.currentHashOf(wirePath, resolved.absolute, { precondition: true })
+            : null;
         checkPreconditions(wirePath, currentHash, ifMatch, createOnly);
         await mkdir(dirname(resolved.absolute), { recursive: true });
         if (resolved.kind === 'file') {
@@ -1026,7 +1043,7 @@ export class ProjectFiles {
           }
           const currentHash =
             resolved.kind === 'file'
-              ? await this.currentHashOf(entry.path, resolved.absolute)
+              ? await this.currentHashOf(entry.path, resolved.absolute, { precondition: true })
               : null;
           checkPreconditions(entry.path, currentHash, entry.ifMatch, entry.createOnly);
           const mode =
@@ -1200,7 +1217,9 @@ export class ProjectFiles {
         throw new HttpError(409, 'not_a_file', `${wirePath} exists and is not a file.`);
       }
       const currentHash =
-        resolved.kind === 'file' ? await this.currentHashOf(wirePath, resolved.absolute) : null;
+        resolved.kind === 'file'
+          ? await this.currentHashOf(wirePath, resolved.absolute, { precondition: true })
+          : null;
       checkPreconditions(wirePath, currentHash, ifMatch, false);
       const sha256 = createHash('sha256').update(bytes).digest('hex');
       const tempDir = join(this.root, RESERVED_ROOT_DIR, 'tmp');

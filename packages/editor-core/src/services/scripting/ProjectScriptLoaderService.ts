@@ -125,7 +125,8 @@ export class ProjectScriptLoaderService {
 
   /**
    * {@link registerRoots} now, or — during play mode — once play stops (the running game keeps
-   * the classes it started with). The latest roots win.
+   * the classes it started with). The latest roots win. A sync during play queues the roots the
+   * page re-imported for it, so a restart runs the classes on disk (`.plans/scripts-vite.md` S13).
    */
   queueRoots(roots: ScriptRoots): void {
     if (!appState.ui.isPlaying) {
@@ -135,13 +136,30 @@ export class ProjectScriptLoaderService {
     }
     this.pendingRoots = roots;
     this.disposePlayWatch ??= subscribe(appState.ui, () => {
-      if (appState.ui.isPlaying || !this.pendingRoots) return;
-      const pending = this.pendingRoots;
-      this.pendingRoots = null;
-      this.disposePlayWatch?.();
-      this.disposePlayWatch = null;
-      this.registerRoots(pending);
+      if (appState.ui.isPlaying) return;
+      this.applyQueuedRoots();
     });
+  }
+
+  /**
+   * Register the roots queued during play now (play is off). The bridge's restart calls it between
+   * `game.stop` and the start: the valtio subscription above fires asynchronously, so a start that
+   * follows the stop at once would otherwise build the game from the old registry. Returns whether
+   * anything was queued.
+   */
+  applyQueuedRoots(): boolean {
+    if (appState.ui.isPlaying || !this.pendingRoots) return false;
+    const pending = this.pendingRoots;
+    this.pendingRoots = null;
+    this.disposePlayWatch?.();
+    this.disposePlayWatch = null;
+    this.registerRoots(pending);
+    return true;
+  }
+
+  /** True while roots re-imported during play wait for play to stop. */
+  hasQueuedRoots(): boolean {
+    return this.pendingRoots !== null;
   }
 
   /** Resolves once project scripts are registered (registers the host's current roots if not yet). */

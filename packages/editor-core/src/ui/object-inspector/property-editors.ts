@@ -5,6 +5,7 @@
  * multiple components (x, y, z) in a single row.
  */
 
+import { setGestureInProgress } from '@/state/gesture';
 import { html, css, customElement, property, state } from '@/fw';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { ComponentBase } from '@/fw/component-base';
@@ -282,6 +283,8 @@ export class NumberField extends ComponentBase {
       return;
     }
     this.dragged = true;
+    // A scrub previews a coalesced operation on every move: the idle flush waits for the release.
+    setGestureInProgress(true);
     const multiplier = event.shiftKey ? 0.1 : event.ctrlKey || event.metaKey ? 10 : 1;
     const delta = this.accumX * this.scrubSensitivity * multiplier;
     const next = this.clamp(this.snap(this.startValue + delta));
@@ -301,6 +304,7 @@ export class NumberField extends ComponentBase {
     }
     this.pointerId = null;
     if (this.dragged) {
+      setGestureInProgress(false);
       this.emit('commit-change', this.value);
     } else {
       this.enterEdit();
@@ -2205,6 +2209,7 @@ export class SliderNumberEditor extends ComponentBase {
   }
 
   private onSliderCommit(event: Event): void {
+    setGestureInProgress(false);
     const raw = Number.parseFloat((event.target as HTMLInputElement).value);
     if (!Number.isFinite(raw)) {
       return;
@@ -2276,7 +2281,9 @@ export class SliderNumberEditor extends ComponentBase {
         ?disabled=${this.disabled}
         @input=${(event: Event) => this.onSliderInput(event)}
         @change=${(event: Event) => this.onSliderCommit(event)}
+        @pointerdown=${() => setGestureInProgress(true)}
         @pointerup=${(event: Event) => this.onSliderCommit(event)}
+        @pointercancel=${(event: Event) => this.onSliderCommit(event)}
       />
       <input
         class="number-input"

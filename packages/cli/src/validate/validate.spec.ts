@@ -412,6 +412,51 @@ describe('level 1: components', () => {
     expect(codesOf(clean)).not.toContain('E_AUTOLOAD');
   });
 
+  it('E_AUTOLOAD: a .js script is not an entry (the roots glob .ts only), whatever its text says', async () => {
+    const report = await run(
+      {
+        'pix3project.yaml': `${MANIFEST}autoloads:\n  - singleton: Spin\n    scriptPath: scripts/Spinner.js\n`,
+        'scripts/Spinner.js': SCRIPT_SPINNER,
+      },
+      { hydrate: false }
+    );
+    expect(find(report, 'E_AUTOLOAD')).toMatchObject([
+      { path: 'autoloads[0].scriptPath', message: expect.stringContaining('not .js') },
+    ]);
+  });
+
+  it('a class extending an intermediate base registers: no textual gate on "extends Script"', async () => {
+    // The editor's glob root evaluates every scripts/*.ts; a file without the words `extends
+    // Script` used to be dropped by level 1 (E_USER_SCRIPT_NOT_FOUND) and level 2 (not compiled)
+    // while the editor ran it.
+    const report = await run(
+      {
+        'scripts/BaseScript.ts': SCRIPT_SPINNER.replace(/Spinner/g, 'BaseScript'),
+        'scripts/Jumper.ts':
+          "import { BaseScript } from './BaseScript';\n\nexport class Jumper extends BaseScript {}\n",
+        'scenes/a.pix3scene': scene(
+          '  - id: a\n    type: Node2D\n    components:\n      - type: user:Jumper\n        config: { speed: 2 }\n'
+        ),
+      },
+      { hydrate: false }
+    );
+    expect(codesOf(report)).not.toContain('E_USER_SCRIPT_NOT_FOUND');
+    expect(codesOf(report)).not.toContain('E_UNKNOWN_COMPONENT');
+    const compiled = await run({
+      'scripts/BaseScript.ts': SCRIPT_SPINNER.replace(/Spinner/g, 'BaseScript'),
+      'scripts/Jumper.ts':
+        "import { BaseScript } from './BaseScript';\n\nexport class Jumper extends BaseScript {}\n",
+      'scenes/a.pix3scene': scene(
+        '  - id: a\n    type: Node2D\n    components:\n      - type: user:Jumper\n        config: { speed: 2, bogus: 1 }\n'
+      ),
+    });
+    // Level 2 compiled it and knows its schema: the bogus key is reported, the component exists.
+    expect(codesOf(compiled)).not.toContain('E_USER_SCRIPT_NOT_FOUND');
+    expect(find(compiled, 'E_UNKNOWN_CONFIG_KEY')).toMatchObject([
+      { path: 'root[0].components[0].config.bogus' },
+    ]);
+  });
+
   it('E_AUTOLOAD at level 2: the file exports a name like the file that is not a Script class', async () => {
     const report = await run({
       'pix3project.yaml': `${MANIFEST}autoloads:\n  - singleton: Fake\n    scriptPath: scripts/Fake.ts\n  - singleton: Spin\n    scriptPath: scripts/Spinner.ts\n`,

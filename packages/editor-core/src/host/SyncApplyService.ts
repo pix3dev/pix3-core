@@ -50,6 +50,11 @@ export class SyncApplyService {
   async apply(info: SyncInfo): Promise<HookReply> {
     const changedPaths = Object.keys(info.changed);
     if (appState.ui.isPlaying) {
+      // The page re-imported the roots for this sync (a script added, deleted or changed is in
+      // them): queued for the stop, so a restart builds the game from the classes on disk. The
+      // plugin broadcasts `pix3:scripts` only for a change it propagates itself — never for one
+      // the sync propagated first — so this is the only road these roots have (S13).
+      this.scripts.queueRoots(info.roots);
       const playing = appState.ui.playOwner ?? 'designer';
       const pending = pendingDuringPlay(
         changedPaths,
