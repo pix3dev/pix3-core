@@ -2,6 +2,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,6 +10,7 @@ import {
   NEUTRALISED_IMPORTERS,
   resolveStrippableRuntimeModules,
   STRIPPABLE_RUNTIME_MODULES,
+  valueExportNames,
 } from './strippable-runtime-modules.ts';
 
 const RUNTIME_SRC = path.resolve(import.meta.dirname, '../../../runtime/src');
@@ -78,8 +80,133 @@ const buildValueImportGraph = (): Map<string, Set<string>> => {
   return importers;
 };
 
+const parseRuntimeModule = (modulePath: string): ts.SourceFile =>
+  ts.createSourceFile(
+    `${modulePath}.ts`,
+    readFileSync(path.join(RUNTIME_SRC, `${modulePath}.ts`), 'utf8'),
+    ts.ScriptTarget.Latest,
+    true
+  );
+
+const someNode = (root: ts.Node, test: (node: ts.Node) => boolean): boolean => {
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (test(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+};
+
+const memberName = (member: ts.ClassElement): string =>
+  ts.isConstructorDeclaration(member)
+    ? 'constructor'
+    : member.name && (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
+      ? member.name.text
+      : '(computed)';
+
+/**
+ * The members of a lazy importer that construct one of `classNames` (`get physics2d()` →
+ * `new Physics2DService()`), plus the getters that read one of those (`get netNodes()` reads
+ * `this.network`): the property names through which any other module reaches the class.
+ */
+const constructingMembers = (
+  lazyImporter: string,
+  classNames: ReadonlySet<string>
+): Set<string> => {
+  const members: ts.ClassElement[] = [];
+  const collect = (node: ts.Node): void => {
+    if (ts.isClassDeclaration(node)) members.push(...node.members);
+    ts.forEachChild(node, collect);
+  };
+  collect(parseRuntimeModule(lazyImporter));
+  const found = new Set(
+    members
+      .filter(member =>
+        someNode(
+          member,
+          node =>
+            ts.isNewExpression(node) &&
+            ts.isIdentifier(node.expression) &&
+            classNames.has(node.expression.text)
+        )
+      )
+      .map(memberName)
+  );
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const member of members) {
+      if (!ts.isGetAccessorDeclaration(member) || found.has(memberName(member))) continue;
+      const reads = someNode(
+        member,
+        node =>
+          ts.isPropertyAccessExpression(node) &&
+          node.expression.kind === ts.SyntaxKind.ThisKeyword &&
+          found.has(node.name.text)
+      );
+      if (reads) {
+        found.add(memberName(member));
+        grew = true;
+      }
+    }
+  }
+  return found;
+};
+
+/**
+ * Per listed module: the runtime modules that reach it through a lazy importer's constructing
+ * member (`this.scene?.physics2d` in a behaviour that imports only the service's types) — an
+ * edge the value-import graph cannot see, and exactly as binding: a kept behaviour that calls
+ * `scene.physics2d` against a stripped service throws.
+ */
+const buildLazyReachGraph = (): {
+  reachers: Map<string, Set<string>>;
+  members: Map<string, Set<string>>;
+} => {
+  const reachers = new Map<string, Set<string>>();
+  const members = new Map<string, Set<string>>();
+  const sources = listRuntimeSources(RUNTIME_SRC).map(file => toModulePath(file));
+  const parsed = new Map<string, ts.SourceFile>();
+  const sourceOf = (modulePath: string): ts.SourceFile => {
+    let file = parsed.get(modulePath);
+    if (!file) {
+      file = parseRuntimeModule(modulePath);
+      parsed.set(modulePath, file);
+    }
+    return file;
+  };
+  for (const entry of STRIPPABLE_RUNTIME_MODULES) {
+    const classNames = new Set(
+      valueExportNames(readFileSync(path.join(RUNTIME_SRC, `${entry.modulePath}.ts`), 'utf8'))
+    );
+    const names = new Set<string>();
+    const lazyImporters = new Set(entry.lazyValueImporters ?? []);
+    for (const lazyImporter of lazyImporters) {
+      for (const name of constructingMembers(lazyImporter, classNames)) names.add(name);
+    }
+    members.set(entry.modulePath, names);
+    if (names.size === 0) continue;
+    const found = new Set<string>();
+    for (const modulePath of sources) {
+      if (modulePath === entry.modulePath) continue;
+      const reaches = someNode(
+        sourceOf(modulePath),
+        node => ts.isPropertyAccessExpression(node) && names.has(node.name.text)
+      );
+      if (reaches) found.add(modulePath);
+    }
+    reachers.set(entry.modulePath, found);
+  }
+  return { reachers, members };
+};
+
 describe('strippable runtime modules', () => {
   const graph = buildValueImportGraph();
+  const lazy = buildLazyReachGraph();
 
   it('lists modules that exist in the runtime', () => {
     for (const entry of STRIPPABLE_RUNTIME_MODULES) {
@@ -97,7 +224,13 @@ describe('strippable runtime modules', () => {
     const neutralised = new Set<string>(NEUTRALISED_IMPORTERS);
 
     for (const entry of STRIPPABLE_RUNTIME_MODULES) {
-      const actual = [...(graph.get(entry.modulePath) ?? new Set<string>())];
+      // What keeps it alive: value importers, and modules reaching it through a lazy getter.
+      const actual = [
+        ...new Set([
+          ...(graph.get(entry.modulePath) ?? new Set<string>()),
+          ...(lazy.reachers.get(entry.modulePath) ?? new Set<string>()),
+        ]),
+      ];
       const declared = new Set([...(entry.importers ?? []), ...(entry.lazyValueImporters ?? [])]);
 
       const unaccounted = actual.filter(
@@ -106,7 +239,8 @@ describe('strippable runtime modules', () => {
       );
       expect(
         unaccounted,
-        `${entry.modulePath} gained value importer(s) not declared in the table. Either add them ` +
+        `${entry.modulePath} gained value importer(s), or module(s) reaching it through a lazy ` +
+          `getter, not declared in the table. Either add them ` +
           `to \`importers\` (if they are strippable too), justify them in \`lazyValueImporters\`, ` +
           `or remove the entry.`
       ).toEqual([]);
@@ -125,6 +259,73 @@ describe('strippable runtime modules', () => {
           `${entry.modulePath} declares ${importer} in \`importers\`, but that module is not itself strippable`
         ).toBe(true);
       }
+    }
+  });
+
+  it('keeps a module whenever a script can reach it through a lazy getter', () => {
+    // `this.scene.physics2d` in a project script constructs the service; the getter's name must
+    // keep it, or the game gets the stub. Derived from the getters, not from a list.
+    const reached = new Map<string, string[]>();
+    for (const entry of STRIPPABLE_RUNTIME_MODULES) {
+      const names = [...(lazy.members.get(entry.modulePath) ?? [])];
+      if (names.length > 0) reached.set(entry.modulePath, names);
+      for (const name of names) {
+        expect(
+          entry.keepWhenMentioned,
+          `${entry.modulePath} is constructed by the lazy member \`${name}\` of ` +
+            `${(entry.lazyValueImporters ?? []).join(', ')}: a script that writes it must keep it`
+        ).toContain(name);
+      }
+    }
+    // The ones the build relies on today (the derivation itself must not go blind).
+    expect(reached.get('core/Physics2DService')).toContain('physics2d');
+    expect(reached.get('core/Collision2DService')).toContain('collision2d');
+    expect(reached.get('core/TweenApi')).toContain('tween');
+    expect(reached.get('core/trail-2d')).toContain('trail');
+    expect(reached.get('net/NetworkService')).toEqual(
+      expect.arrayContaining(['network', 'netNodes'])
+    );
+    expect([...(lazy.reachers.get('core/Physics2DService') ?? [])]).toContain(
+      'behaviors/PhysicsBody2DBehavior'
+    );
+  });
+
+  it('a behaviour constructed from code keeps the service it reaches', () => {
+    // `addComponent(new PhysicsBody2DBehavior())`: the class name alone is the mention.
+    for (const [behaviour, service] of [
+      ['PhysicsBody2DBehavior', 'core/Physics2DService'],
+      ['Collider2DBehavior', 'core/Physics2DService'],
+      ['PhysicsWorld2DBehavior', 'core/Physics2DService'],
+      ['RevoluteJoint2DBehavior', 'core/Physics2DService'],
+      ['Hitbox2DBehavior', 'core/Collision2DService'],
+    ] as const) {
+      const stripped = resolveStrippableRuntimeModules(name => name === behaviour).map(
+        entry => entry.modulePath
+      );
+      expect(stripped, `${behaviour} kept, ${service} stripped`).not.toContain(service);
+      expect(stripped).not.toContain(`behaviors/${behaviour}`);
+    }
+  });
+
+  it('keeps a module when any of its value exports is mentioned, not only its keep-names', () => {
+    const exportsOf = (modulePath: string): string[] =>
+      valueExportNames(readFileSync(path.join(RUNTIME_SRC, `${modulePath}.ts`), 'utf8'));
+    const paths = (mentioned: string): string[] =>
+      resolveStrippableRuntimeModules(name => name === mentioned, exportsOf).map(
+        entry => entry.modulePath
+      );
+    expect(paths('pointInPolygon')).not.toContain('core/collision-shapes-2d');
+    expect(paths('CHARACTER_STATE_FINISHED_SIGNAL')).not.toContain(
+      'behaviors/CharacterVisual2DBehavior'
+    );
+    expect(paths('describeRejectCode')).not.toContain('net/NetworkService');
+    // Without the exports (the table alone) the first one was a stub that throws.
+    expect(
+      resolveStrippableRuntimeModules(name => name === 'pointInPolygon').map(e => e.modulePath)
+    ).toContain('core/collision-shapes-2d');
+    // Every listed module has value exports the build can read (or the protection is blind).
+    for (const entry of STRIPPABLE_RUNTIME_MODULES) {
+      expect(exportsOf(entry.modulePath), entry.modulePath).not.toEqual([]);
     }
   });
 
