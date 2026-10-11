@@ -196,10 +196,6 @@ export const collectRenderabilityIssues = (
   return issues;
 };
 
-/** One-line summary for a log line or a verdict prefix; empty string when the scene is fine. */
-export const summarizeRenderabilityIssues = (issues: readonly RenderabilityIssue[]): string =>
-  issues.length === 0 ? '' : issues.map(issue => issue.message).join(' ');
-
 const asNode = (object: Object3D): NodeBase | null => (object instanceof NodeBase ? object : null);
 
 /**
