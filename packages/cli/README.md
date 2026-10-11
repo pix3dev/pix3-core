@@ -30,6 +30,12 @@ every text lives in `src/usage.ts` (`USAGE`, `COMMAND_USAGE`), and `bin-bundle.s
 command the entry dispatches to an entry there, answered by the bundled bin. `validate --help`
 adds its codes, `check --help` the ones it adds.
 
+A usage error exits **2**: an unknown option, an option without its value, a bad argument, or no
+`pix3project.yaml` above the folder — with the message (and, for a bad argument, the command's
+usage) on stderr. That holds for `editor`, `agent-setup` and `gap` as for the checks; `kit`
+refuses an unknown option rather than ignoring it (`pix3 kit --updat` is exit 2, not a plain
+install).
+
 `pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
 (package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore,
 README.md) plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` /
