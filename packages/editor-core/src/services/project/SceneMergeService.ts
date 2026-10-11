@@ -13,7 +13,7 @@ import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-con
 import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
 import { editorNormOfGraph, normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
-import { HostNoticeService } from '@/host/HostNoticeService';
+import { HostNoticeService, listNoticeNames } from '@/host/HostNoticeService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { readDiskVersion } from '@/services/project/disk/disk-version';
 import { toProjectPath } from '@/services/project/disk/project-paths';
@@ -30,9 +30,6 @@ import { appState, type SceneDescriptor } from '@/state';
  * - `missing`: the file is gone — the scene stays in memory, listed in `staleScenes`.
  */
 export type ExternalApplyOutcome = 'unchanged' | 'reloaded' | 'merged' | 'missing';
-
-/** How many dropped keys a notice names before "and N more". */
-const NOTICE_KEYS = 4;
 
 /**
  * An external version E of an open scene (plan §C.3): a settled batch from `ExternalChangeService`
@@ -222,7 +219,7 @@ export class SceneMergeService {
         tone: 'warn',
         message: `${path} changed on disk while you were editing it: ${dropped.length} of your change${dropped.length === 1 ? ' was' : 's were'} dropped.`,
         detail:
-          `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''}. ` +
+          `${listNoticeNames(names)}. ` +
           (this.journal.available ? 'Your version is in History.' : ''),
       });
     }
@@ -263,7 +260,7 @@ export class SceneMergeService {
       key: `clobber:${path}`,
       tone: 'warn',
       message: `An agent overwrote your edit in ${path}.`,
-      detail: `${labels.slice(0, NOTICE_KEYS).join('; ')}${labels.length > NOTICE_KEYS ? `; and ${labels.length - NOTICE_KEYS} more` : ''} — it wrote a file it read before you saved them.`,
+      detail: `${listNoticeNames(labels)} — it wrote a file it read before you saved them.`,
       actions: [
         { label: 'Restore my edit', run: () => this.restoreKeys(descriptor, path, clobbered) },
       ],

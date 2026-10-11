@@ -2,16 +2,17 @@ import { subscribe } from 'valtio/vanilla';
 import { injectable, inject } from '@/fw/di';
 import { appState } from '@/state';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { SceneDraftService, type DraftRecord } from '@/services/project/SceneDraftService';
+import { SceneDraftService } from '@/services/project/SceneDraftService';
 import { SceneJournalService } from '@/services/project/SceneJournalService';
 import { SceneWriteConflictError } from '@/services/project/write-errors';
 import { readDiskVersion } from '@/services/project/disk/disk-version';
 import { toProjectPath } from '@/services/project/disk/project-paths';
-import { HostNoticeService } from '@/host/HostNoticeService';
+import { HostNoticeService, listNoticeNames } from '@/host/HostNoticeService';
 import { HostService } from '@/host/HostService';
 import { LocalizationService, setActiveLocalization, type LocaleTable } from '@pix3/runtime';
 import type { LocalizationSettings } from '@/core/ProjectManifest';
 import {
+  cloneLocaleTable,
   diffLocaleTables,
   findClobberedLocaleKeys,
   mergeLocaleTables,
@@ -25,8 +26,6 @@ const LOCALES_DIR = 'locales';
 /** Which half of a locale table an entry lives in: UI strings or localized sprite paths. */
 export type LocaleTableSection = 'strings' | 'sprites';
 
-/** How many keys a notice names before "and N more". */
-const NOTICE_KEYS = 4;
 /** A write refused because the disk moved is merged and retried at most this often. */
 const MAX_WRITE_ATTEMPTS = 3;
 
@@ -258,50 +257,18 @@ export class LocalizationEditorService {
       await this.drafts.dropFileDraft(path);
       return;
     }
-    const when = new Date(draft.at).toLocaleTimeString();
-    if (!SceneDraftService.applies(draft, base?.sha ?? '')) {
-      await this.journal.recordRejectedDraft(
-        path,
-        draft.text,
-        `unsaved locale edits from ${when}; the file changed on disk since`
-      );
-      await this.drafts.dropFileDraft(path);
-      this.notices.show({
-        key: `draft:${path}`,
-        tone: 'warn',
-        message: `Unsaved edits to ${path} from ${when} were not restored: the file changed on disk since.`,
-        detail: this.journal.available ? 'They are kept in History.' : undefined,
-      });
-      return;
-    }
-    this.notices.show({
-      key: `draft:${path}`,
-      tone: 'info',
-      message: `Unsaved edits to ${path} from ${when} were found.`,
-      detail: 'They did not reach the disk before the editor closed.',
-      actions: [
-        { label: 'Restore', run: () => this.restoreDraft(locale, draft) },
-        { label: 'Discard', run: () => this.drafts.dropFileDraft(path) },
-      ],
-    });
-  }
-
-  private async restoreDraft(locale: string, draft: DraftRecord): Promise<void> {
-    const path = pathOf(locale);
-    const base = this.baselines.get(locale) ?? null;
-    if (!SceneDraftService.applies(draft, base?.sha ?? '')) {
-      this.notices.show({
-        key: `draft:${path}`,
-        tone: 'warn',
-        message: `The draft of ${path} no longer applies: the file changed on disk.`,
-      });
-      return;
-    }
-    const table = parseTableFile(locale, draft.text);
-    this.tables.set(locale, table);
-    this.preview?.setTable(table);
-    this.mirrorSlice();
-    await this.saveLocale(locale);
+    await this.drafts.offerDraft(
+      path,
+      draft,
+      'unsaved locale edits',
+      () => this.baselines.get(locale)?.sha ?? '',
+      async () => {
+        this.tables.set(locale, drafted);
+        this.preview?.setTable(drafted);
+        this.mirrorSlice();
+        await this.saveLocale(locale);
+      }
+    );
   }
 
   /**
@@ -334,7 +301,7 @@ export class LocalizationEditorService {
       const version = await readDiskVersion(this.storage, pathOf(locale));
       if (version) {
         const table = parseTableFile(locale, version.text);
-        return { table, baseline: { sha: version.hash, table: cloneTable(table) } };
+        return { table, baseline: { sha: version.hash, table: cloneLocaleTable(table) } };
       }
     } catch {
       // broken file: below
@@ -566,7 +533,7 @@ export class LocalizationEditorService {
   private ensureTable(locale: string): LocaleTable {
     let table = this.tables.get(locale);
     if (!table) {
-      table = { locale, strings: {}, sprites: {} };
+      table = emptyTable(locale);
       this.tables.set(locale, table);
     }
     return table;
@@ -614,7 +581,7 @@ export class LocalizationEditorService {
       if (!table) return;
       const base = this.baselines.get(locale) ?? null;
       if (!this.hasUnwrittenEdits(locale)) return;
-      const written = cloneTable(table);
+      const written = cloneLocaleTable(table);
       try {
         // writeTextFile does not create parent dirs; ensure `locales/` exists first.
         if (!base) await this.storage.createDirectory(LOCALES_DIR);
@@ -689,10 +656,7 @@ export class LocalizationEditorService {
     } catch (error) {
       // A read that fails is not a deletion (only `fileExists` false is): the table stays, the
       // version arrives again with the next frame or sync.
-      console.warn(
-        `[Localization] File not readable: ${path} (${error instanceof Error ? error.message : String(error)}). Keeping the last good version.`
-      );
-      return 'unreadable';
+      return unreadable(path, error);
     }
     if (!version) {
       this.removeTable(locale);
@@ -705,20 +669,17 @@ export class LocalizationEditorService {
       external = parseTableFile(locale, version.text);
     } catch (error) {
       // The last good table stays; the version arrives again once it parses.
-      console.warn(
-        `[Localization] File not readable: ${path} (${error instanceof Error ? error.message : String(error)}). Keeping the last good version.`
-      );
-      return 'unreadable';
+      return unreadable(path, error);
     }
 
     const local = this.tables.get(locale);
     if (!local) {
       if (!this.acceptsLocale(locale)) return 'unchanged';
-      this.addTable(locale, external, { sha: version.hash, table: cloneTable(external) });
+      this.addTable(locale, external, { sha: version.hash, table: cloneLocaleTable(external) });
       return 'followed';
     }
 
-    const before = cloneTable(local);
+    const before = cloneLocaleTable(local);
     const clobbered = findClobberedLocaleKeys(this.ledgers.get(locale) ?? new Map(), external);
     this.ledgers.delete(locale);
     const { merged, dropped } = mergeLocaleTables(this.baselineTable(locale), external, local);
@@ -734,11 +695,12 @@ export class LocalizationEditorService {
         tone: 'warn',
         message: `${path} changed on disk while you were editing it: your change to ${dropped.length} key${dropped.length === 1 ? ' was' : 's was'} dropped, the disk value kept.`,
         detail:
-          `${listNames(names)}. ` + (this.journal.available ? 'Your version is in History.' : ''),
+          `${listNoticeNames(names)}. ` +
+          (this.journal.available ? 'Your version is in History.' : ''),
       });
     }
     this.tables.set(locale, merged);
-    this.baselines.set(locale, { sha: version.hash, table: cloneTable(external) });
+    this.baselines.set(locale, { sha: version.hash, table: cloneLocaleTable(external) });
     if (clobbered.length > 0 && fromFrame) this.offerRestore(locale, clobbered);
     const changed = diffLocaleTables(before, merged);
     for (const listener of [...this.externalListeners]) listener(locale, changed);
@@ -757,7 +719,7 @@ export class LocalizationEditorService {
       key: `locale-clobber:${path}`,
       tone: 'warn',
       message: `An agent overwrote your edit in ${path}.`,
-      detail: `${listNames(clobbered.map(describeKey))} — it wrote a file it read before you saved them.`,
+      detail: `${listNoticeNames(clobbered.map(describeKey))} — it wrote a file it read before you saved them.`,
       actions: [
         {
           label: 'Restore my edit',
@@ -874,20 +836,15 @@ const pathOf = (locale: string): string => `${LOCALES_DIR}/${locale}.json`;
 
 const emptyTable = (locale: string): LocaleTable => ({ locale, strings: {}, sprites: {} });
 
-function cloneTable(table: LocaleTable): LocaleTable {
-  return {
-    locale: table.locale,
-    strings: { ...table.strings },
-    sprites: { ...table.sprites },
-    ...(table.meta ? { meta: { ...table.meta } } : {}),
-  };
+function unreadable(path: string, error: unknown): 'unreadable' {
+  console.warn(
+    `[Localization] File not readable: ${path} (${error instanceof Error ? error.message : String(error)}). Keeping the last good version.`
+  );
+  return 'unreadable';
 }
 
 const describeKey = (ref: LocaleKeyRef): string =>
   ref.section === 'strings' ? ref.key : `${ref.key} (sprite)`;
-
-const listNames = (names: readonly string[]): string =>
-  `${names.slice(0, NOTICE_KEYS).join('; ')}${names.length > NOTICE_KEYS ? `; and ${names.length - NOTICE_KEYS} more` : ''}`;
 
 /** Parse a `locales/<locale>.json` file into a runtime {@link LocaleTable}. */
 function parseTableFile(locale: string, text: string): LocaleTable {

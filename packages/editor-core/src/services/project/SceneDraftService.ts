@@ -181,8 +181,8 @@ export class SceneDraftService {
   /**
    * A checkpoint of a project file that is not a scene — a locale table whose write got no answer
    * (W22): the text the editor meant to write, against the disk sha it was written on (`''` when
-   * the file did not exist). Offered by its owner on the next open the way a scene draft is
-   * ({@link draftApplies}); dropped by a write that landed. Nothing without an open project.
+   * the file did not exist). Offered by its owner on the next open through {@link offerDraft};
+   * dropped by a write that landed. Nothing without an open project.
    */
   async putFileDraft(path: string, text: string, baselineSha: string): Promise<void> {
     const projectId = appState.project.id;
@@ -211,9 +211,62 @@ export class SceneDraftService {
     await this.store.delete(draftKey(projectId, toProjectPath(path))).catch(() => undefined);
   }
 
-  /** Whether `draft` was made on the disk version `diskSha` (`''`: no file). */
-  static applies(draft: DraftRecord, diskSha: string): boolean {
-    return draftApplies(draft, diskSha);
+  /**
+   * Offer a stored draft of `path` (a scene's, or a file's from {@link putFileDraft}): "Restore" /
+   * "Discard" when the disk still holds the version it was made from ({@link draftApplies});
+   * otherwise it goes to the journal as `rejected-draft` with a notice. `diskSha` is asked now and
+   * again on Restore (`''`: no file; `null`: nothing to restore into any more); `restore` applies
+   * and writes the draft. `what` names the edits in the journal (`unsaved draft`).
+   */
+  async offerDraft(
+    path: string,
+    draft: DraftRecord,
+    what: string,
+    diskSha: () => string | null,
+    restore: () => Promise<void>
+  ): Promise<void> {
+    const when = new Date(draft.at).toLocaleTimeString();
+    const sha = diskSha();
+    if (sha === null || !draftApplies(draft, sha)) {
+      // The disk moved on since the draft was made: offering it would write over someone's change.
+      await this.journal.recordRejectedDraft(
+        path,
+        draft.text,
+        `${what} from ${when}; the file changed on disk since`
+      );
+      await this.dropFileDraft(path);
+      this.notices.show({
+        key: `draft:${path}`,
+        tone: 'warn',
+        message: `Unsaved edits to ${path} from ${when} were not restored: the file changed on disk since.`,
+        detail: this.journal.available ? 'They are kept in History.' : undefined,
+      });
+      return;
+    }
+    this.notices.show({
+      key: `draft:${path}`,
+      tone: 'info',
+      message: `Unsaved edits to ${path} from ${when} were found.`,
+      detail: 'They did not reach the disk before the editor closed.',
+      actions: [
+        {
+          label: 'Restore',
+          run: async () => {
+            const now = diskSha();
+            if (now === null || !draftApplies(draft, now)) {
+              this.notices.show({
+                key: `draft:${path}`,
+                tone: 'warn',
+                message: `The draft of ${path} no longer applies: the file changed on disk.`,
+              });
+              return;
+            }
+            await restore();
+          },
+        },
+        { label: 'Discard', run: () => this.dropFileDraft(path) },
+      ],
+    });
   }
 
   /** Write a checkpoint of every dirty scene now (one run at a time). */
@@ -274,61 +327,28 @@ export class SceneDraftService {
       const path = toProjectPath(descriptor.filePath);
       if (this.checked.has(path) || !this.baselines.get(path)) continue;
       this.checked.add(path);
-      await this.offer(projectId, descriptor.id, path);
+      await this.offer(descriptor.id, path);
     }
   }
 
-  private async offer(projectId: string, sceneId: string, path: string): Promise<void> {
-    const key = draftKey(projectId, path);
-    const draft = await this.store.get(key).catch(() => null);
+  private async offer(sceneId: string, path: string): Promise<void> {
+    const draft = await this.getFileDraft(path);
     const baseline = this.baselines.get(path);
     if (!draft || !baseline) return;
     if (draft.text === baseline.text) {
-      await this.store.delete(key);
+      await this.dropFileDraft(path);
       return;
     }
-    const when = new Date(draft.at).toLocaleTimeString();
-    if (!draftApplies(draft, baseline.sha)) {
-      // The disk moved on since the draft was made: offering it would write over someone's change.
-      await this.journal.recordRejectedDraft(
-        path,
-        draft.text,
-        `unsaved draft from ${when}; the file changed on disk since`
-      );
-      await this.store.delete(key);
-      this.notices.show({
-        key: `draft:${path}`,
-        tone: 'warn',
-        message: `Unsaved edits to ${path} from ${when} were not restored: the file changed on disk since.`,
-        detail: this.journal.available ? 'They are kept in History.' : undefined,
-      });
-      return;
-    }
-    this.notices.show({
-      key: `draft:${path}`,
-      tone: 'info',
-      message: `Unsaved edits to ${path} from ${when} were found.`,
-      detail: 'They did not reach the disk before the editor closed.',
-      actions: [
-        { label: 'Restore', run: () => this.restore(sceneId, path, draft) },
-        { label: 'Discard', run: () => this.store.delete(key) },
-      ],
-    });
-  }
-
-  private async restore(sceneId: string, path: string, draft: DraftRecord): Promise<void> {
-    const descriptor = appState.scenes.descriptors[sceneId];
-    const baseline = this.baselines.get(path);
-    if (!descriptor || !baseline || !draftApplies(draft, baseline.sha)) {
-      this.notices.show({
-        key: `draft:${path}`,
-        tone: 'warn',
-        message: `The draft of ${path} no longer applies: the file changed on disk.`,
-      });
-      return;
-    }
-    await this.merges.adoptText(descriptor, draft.text);
-    await this.flush.flushScene(sceneId);
+    await this.offerDraft(
+      path,
+      draft,
+      'unsaved draft',
+      () => (appState.scenes.descriptors[sceneId] ? (this.baselines.get(path)?.sha ?? null) : null),
+      async () => {
+        await this.merges.adoptText(appState.scenes.descriptors[sceneId], draft.text);
+        await this.flush.flushScene(sceneId);
+      }
+    );
   }
 }
 
