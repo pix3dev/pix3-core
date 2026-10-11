@@ -2,12 +2,12 @@ import type { AssetLoader } from './AssetLoader';
 import type { ResourceManager } from './ResourceManager';
 import { createAtlasResolver, type AtlasManifest } from './atlas-frame-map';
 
-/** Where the editor export writes the packed atlas. */
+/** Where a host that ships a pre-packed atlas puts it (the 2.x build packs none). */
 export const ATLAS_MANIFEST_PATH = 'res://assets/.atlas/atlas-manifest.json';
 export const ATLAS_SHEET_DIR = 'res://assets/.atlas/';
 
 /**
- * For exported / standalone / remote-preview games: if a pre-packed atlas
+ * For a host that ships a pre-packed atlas: if its
  * manifest is present, install a resolver so every eligible texture loads as a
  * view onto a bundled sheet (sheets are real res:// files — `loadTexture` loads
  * them like any texture, no preseeding needed). Call before

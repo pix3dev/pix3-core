@@ -26,7 +26,7 @@ import { isRecord, type DocPath, type ParsedYaml } from './yaml-doc.ts';
 
 /**
  * Level 2 of `pix3 validate`: the real `SceneLoader`, with the project's scripts compiled by native
- * esbuild and imported — the path the editor takes, minus the browser.
+ * esbuild and imported — what the editor does with them through Vite, minus the browser.
  *
  * It needs no DOM beyond the canvas-only `document` shim (`@pix3/runtime/node`): measured on every
  * template scene in `.plans/measurements/external-agent-phase0-strict-profile.md`. It does run the
@@ -62,10 +62,11 @@ const loadEsbuild = async (specifier: string): Promise<EsbuildModule | null> => 
 };
 
 /**
- * Mirrors the editor's script compiler: `@pix3/runtime` and `three` are provided by the host,
- * `?raw` / `?url` / shader / CSS imports work as in the editor, and every other bare import (three
- * addons, rapier, …) becomes an empty module — it exists in the editor's import map, not here, and
- * validation only needs the classes to be defined, not to run.
+ * Stands in for Vite, which serves the scripts in the editor and the build: `@pix3/runtime` and
+ * `three` are provided by the host, `?raw` / `?url` / shader / CSS imports load as Vite loads them,
+ * and every other bare import (three addons, rapier, …) becomes an empty module — Vite resolves it
+ * from the project's node_modules, not here, and validation only needs the classes to be defined,
+ * not to run.
  */
 const hostImportsPlugin = (imports: ScriptImportMap, project: ProjectFiles): Plugin => ({
   name: 'pix3-validate-host-imports',

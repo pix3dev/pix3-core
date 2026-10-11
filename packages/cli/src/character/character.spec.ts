@@ -23,7 +23,7 @@ import {
 
 /**
  * `pix3 character-compile` (plan §F.5 (в)): the 1.x `character-compiler.ts` cases ported, the
- * output held to the runtime's `AnimationResource` and the editor's frame naming, and the command
+ * output held to the runtime's `AnimationResource` and the kit's frame naming, and the command
  * run end to end on a starter: files written, `pix3 validate` clean, refusals all-or-nothing.
  * A headless boot of the compiled prefab is `character.headless.spec.ts`.
  */

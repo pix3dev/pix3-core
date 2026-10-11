@@ -111,8 +111,7 @@ export interface ScriptComponent {
    * The semantic interactions this component offers on its node — the third source of
    * interactions, after the engine controls and the game-level debug provider. Declaring them is
    * what makes a clickable game object that is NOT a `UIControl2D` (a tappable enemy, a card, a
-   * hotspot) addressable by name: `game_controls` lists it and a `game_input`
-   * `{type:'invoke'}` step drives it.
+   * hotspot) addressable by name: a test bot on the direct-action channel finds and invokes it.
    *
    * Both members are optional and the pair is the whole contract ({@link Interactive}), so a
    * component opts in by simply implementing them — nothing to register, nothing to import.

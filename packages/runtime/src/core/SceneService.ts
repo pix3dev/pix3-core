@@ -441,8 +441,8 @@ export class SceneService {
    * `net.vars`. Every member is offline-safe, so a single-player game may touch it freely: reads
    * return sane defaults and writes are no-ops until something calls `connect()`.
    *
-   * Unlike {@link collision2d}, the session is **not** scene state. A host (the runtime bootstrap,
-   * the editor's play session, the preview player) constructs one and installs it with
+   * Unlike {@link collision2d}, the session is **not** scene state. A host (the plugin's player, when
+   * the project mentions the network) constructs one and installs it with
    * {@link setNetworkService}; it then outlives every `changeScene`, because leaving a room just
    * because the game switched levels is exactly the bug D5 exists to prevent. When no host installed
    * one, this getter lazily creates a private, permanently-offline instance so scripts still work.
@@ -479,11 +479,10 @@ export class SceneService {
    */
   setNetworkService(service: NetworkService | null): void {
     if (service !== null && service === this.networkService) {
-      // Re-installing the SAME session must be a no-op. Hosts call this from a getter (the editor's
-      // `GamePlaySessionService.getNetworkService`, which the Play Online card polls once a second),
-      // and tearing the binder down would drop every entity↔node binding: peers' avatars would stop
-      // receiving transforms and the next reconcile would spawn duplicates of nodes still in the
-      // scene. Only an actual session swap invalidates the binder.
+      // Re-installing the SAME session must be a no-op: tearing the binder down would drop every
+      // entity↔node binding — peers' avatars would stop receiving transforms and the next reconcile
+      // would spawn duplicates of nodes still in the scene. Only an actual session swap
+      // invalidates the binder.
       return;
     }
     this.networkService = service;

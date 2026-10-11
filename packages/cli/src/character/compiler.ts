@@ -19,9 +19,9 @@
  *
  * No timestamps, ids or randomness: the same input yields byte-identical output. Host-agnostic and
  * free of runtime imports (the CLI's Node-runnable code never loads the engine): the `.pix3anim`
- * shape is declared structurally below, and `compiler.spec.ts` holds it to the runtime's
- * `AnimationResource` interfaces, the frame naming to the editor's
- * `buildAnimationFrameResourcePath`, and the output to `pix3 validate` and a headless boot.
+ * shape is declared structurally below, and `character.spec.ts` holds it to the runtime's
+ * `AnimationResource` interfaces, the frame naming to the kit's `<folder>/<clip>_<nnnn>.png`
+ * convention (`pix3anim.md`), and the output to `pix3 validate` and a headless boot.
  */
 
 import { stringify } from 'yaml';

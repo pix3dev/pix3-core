@@ -1189,8 +1189,8 @@ export class NetworkService {
         new NetworkSpawnError(
           'unknown-kind',
           prefabPath,
-          `"${prefabPath}" is not in this build's netKindTable, so it has no wire kind. Export the ` +
-            'project (the exporter emits the table) or call registerNetworkPrefab() on every client.'
+          `"${prefabPath}" is not in this build's netKindTable, so it has no wire kind. Run it from ` +
+            "the plugin's player (the build emits the table) or call registerNetworkPrefab() on every client."
         )
       );
     }

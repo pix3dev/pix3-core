@@ -13,7 +13,7 @@ import { describeUnknownNodeType, isKnownSceneNodeType } from './node-type-regis
  * no signal at all until a human looks at the running game.
  *
  * So the check has to key on the thing that is actually wrong — lit geometry with nothing lighting
- * it — and be readable wherever the agent already looks (play-start, `game_observe`, `scene_tree`).
+ * it — and be readable wherever the agent already looks (the play-start log, the play results).
  *
  * Pure and editor-agnostic: it walks `Object3D`s and reads `node.type`, so it works on an editor
  * scene graph, a running graph, or a graph parsed in a test, and it pulls no node classes into the
@@ -31,7 +31,7 @@ export type RenderabilityIssueCode =
  * the target platform wants to pay.
  *
  * The split exists so advice can be shown where someone is authoring and withheld from the
- * verification loop: a warning that appears in every single `game_observe` result is a warning
+ * verification loop: a warning that appears in every single play result is a warning
  * everyone learns to scroll past, which would cost the blocking ones their credibility too.
  */
 export type RenderabilitySeverity = 'blocking' | 'advice';
