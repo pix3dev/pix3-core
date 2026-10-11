@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Plugin } from 'vite';
 import { WebSocket } from 'ws';
 
 import { ScriptGraph } from './sync/script-graph.ts';
@@ -489,14 +490,107 @@ describe('sync barrier', () => {
     expect(ok.tabId).toBe('tab-a');
   });
 
-  it('does not accept an answer from an older revision', async () => {
+  it('does not accept an answer from an older revision: asks again, a bounded number of times', async () => {
     const p = await start({ 'scenes/a.pix3scene': SCENE });
     const tab = await p.connectTab('tab-a');
-    tab.onRequest('sync', request => ({ ok: true, rev: Number(request.rev) - 1, executed: {} }));
+    let asked = 0;
+    tab.onRequest('sync', request => {
+      asked += 1;
+      return { ok: true, rev: Number(request.rev) - 1, executed: {} };
+    });
     writeFileSync(join(p.root, 'scenes/a.pix3scene'), `${SCENE}# v2\n`);
     const result = await sync(p, { tabId: 'tab-a' });
-    expect(result.ok).toBe(false);
-    expect(result.reason).toBe('stale_modules');
+    expect(result).toMatchObject({ ok: false, reason: 'stale_modules', attempts: 4 });
+    expect(result.ackRev).toBe(Number(result.rev) - 1);
+    expect(asked).toBe(4);
+    expect(result.ms).toBeLessThan(2_000);
+  });
+
+  it('is ok when the tab first acks the previous revision and then the current one', async () => {
+    const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' });
+    const tab = await p.connectTab('tab-a');
+    const acks: number[] = [];
+    tab.onRequest('sync', request => {
+      // The first answer is a re-import that started before the rescan bumped the revision.
+      const rev = acks.length === 0 ? Number(request.rev) - 1 : Number(request.rev);
+      acks.push(rev);
+      return { ok: true, rev, executed: { 'scripts/Foo.ts': sha('export const foo = 2;\n') } };
+    });
+    writeFileSync(join(p.root, 'scripts/Foo.ts'), 'export const foo = 2;\n');
+    const result = await sync(p, { tabId: 'tab-a' });
+    expect(result).toMatchObject({ ok: true, attempts: 2 });
+    expect(acks).toEqual([Number(result.rev) - 1, Number(result.rev)]);
+  });
+
+  it('never asks again past timeoutMs, nor after a refusal', async () => {
+    const p = await start({ 'scenes/a.pix3scene': SCENE });
+    const tab = await p.connectTab('tab-a');
+    let asked = 0;
+    tab.onRequest('sync', request => {
+      asked += 1;
+      return { ok: true, rev: Number(request.rev) - 1, executed: {} };
+    });
+    const short = await sync(p, { tabId: 'tab-a', timeoutMs: 60 });
+    expect(short).toMatchObject({ ok: false, reason: 'stale_modules' });
+    expect(asked).toBeLessThanOrEqual(2);
+
+    asked = 0;
+    tab.onRequest('sync', () => {
+      asked += 1;
+      return { ok: false, reason: 'reload_failed', paths: ['scenes/a.pix3scene'] };
+    });
+    expect(await sync(p, { tabId: 'tab-a' })).toMatchObject({ ok: false, reason: 'reload_failed' });
+    expect(asked).toBe(1);
+  });
+
+  it('a root request in flight from before the rescan does not answer for the sync (S15)', async () => {
+    // The race of m3: the tab re-imports the roots on a watcher `pix3:scripts` (its `load()` ran at
+    // the old seq) and the sync's own re-import arrives while that request is still in flight.
+    // Vite dedupes requests by URL unless the module was invalidated since — and an HMR-only
+    // invalidation does not count — so the sync's re-import got the old `__pix3Revision`.
+    const ROOT = '\0virtual:pix3/editor-scripts';
+    let hold: Promise<void> | null = null;
+    let release = (): void => undefined;
+    let held = (): void => undefined;
+    const reached = new Promise<void>(resolve => (held = resolve));
+    const gate: Plugin = {
+      name: 'test:hold-root-transform',
+      async transform(_code, id) {
+        if (id !== ROOT || hold === null) return null;
+        const waiting = hold;
+        hold = null;
+        held();
+        await waiting;
+        return null;
+      },
+    };
+    const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' }, {}, [gate]);
+    const rootUrl = () =>
+      `/@id/__x00__virtual:pix3/editor-scripts?t=${String(Date.now()).padStart(13, '0')}`;
+    const revisionOf = async (response: Promise<Response>): Promise<number> =>
+      Number(/__pix3Revision = (\d+)/.exec(await (await response).text())?.[1] ?? -1);
+
+    hold = new Promise<void>(resolve => (release = resolve));
+    const inFlight = revisionOf(p.fetch(rootUrl()));
+    await reached; // `load()` has run: this request carries the revision before the write
+    const tab = await p.connectTab('tab-a');
+    const acks: number[] = [];
+    tab.onRequest('sync', async () => {
+      const mine = revisionOf(p.fetch(rootUrl()));
+      await sleep(50); // the sync's request reaches the server while the old one is held
+      release();
+      const rev = await mine;
+      acks.push(rev);
+      return { ok: true, rev, executed: { 'scripts/Foo.ts': sha('export const foo = 2;\n') } };
+    });
+    writeFileSync(join(p.root, 'scripts/Foo.ts'), 'export const foo = 2;\n');
+    const result = await sync(p, { tabId: 'tab-a' });
+    const old = await inFlight;
+    expect(old).toBeLessThan(Number(result.rev));
+    // The first answer is already current: the barrier did not need to ask again.
+    expect(acks).toEqual([Number(result.rev)]);
+    expect(result).toMatchObject({ ok: true });
+    expect(result.attempts).toBeUndefined();
   });
 
   it('passes the page’s play refusal through with whose session it is', async () => {

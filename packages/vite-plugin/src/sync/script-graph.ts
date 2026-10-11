@@ -130,13 +130,22 @@ export class ScriptGraph {
    * Vite ≥ 5.1 SOFT-invalidates static importers of a changed module: the cached transform is
    * reused with re-stamped `?t=` and `load()` does not run again, so `__pix3Revision` would stay
    * stale (S1, finding 1). The roots are hard-invalidated explicitly.
+   *
+   * Twice: as an HMR invalidation (`lastHMRTimestamp`, what the propagation stamps) and as a plain
+   * one, because only `lastInvalidationTimestamp` is what Vite checks a transform against. With
+   * the HMR call alone, a root request already in flight — the tab re-importing after a watcher
+   * `pix3:scripts`, its `load()` done at the old `seq` — is handed to the next request for the same
+   * URL (`transformRequest` dedupes on the URL without `?t=`), and its result is even cached after
+   * the invalidation. The sync's own re-import then executed the previous `__pix3Revision`
+   * (`.plans/scripts-vite.md` S15). Vite's own clock is used, so the invalidation is strictly later
+   * than every request that started before it.
    */
   hardInvalidateRoots(): void {
     const env = this.graph();
     if (!env) return;
-    const now = Date.now();
     for (const mod of this.rootModules()) {
-      env.moduleGraph.invalidateModule(mod, new Set(), now, true, false);
+      env.moduleGraph.invalidateModule(mod, new Set(), Date.now(), true, false);
+      env.moduleGraph.invalidateModule(mod, new Set(), undefined, false, false);
     }
   }
 

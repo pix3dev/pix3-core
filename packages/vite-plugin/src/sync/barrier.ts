@@ -17,8 +17,10 @@ import { isGlobbedScript, type ScriptGraph } from './script-graph.ts';
  *    the roots themselves when a globbed script was added or removed;
  * 4. **page confirmation** — the tab re-imports the roots with `?t=<13 digits>` and answers with the
  *    revision it executed and `globalThis.__pix3Executed`. Sync is ok only when that revision is
- *    current AND every changed module the editor runs carries a stamp equal to the sha on disk;
- *    otherwise `{ok:false, reason:'stale_modules', paths}`.
+ *    current AND every changed module the editor runs carries a stamp equal to the sha on disk.
+ *    A page behind on either is asked again (roots re-invalidated, bounded: {@link
+ *    MAX_CONFIRM_ATTEMPTS}, within `timeoutMs`); still behind → `{ok:false, reason:'stale_modules',
+ *    paths, ackRev}`.
  *
  * A non-ok answer is not a barrier: on `gesture_in_progress` and `stale_modules` the agent
  * retries; on `expect_mismatch` it re-reads; on `stale` (play is running) it follows `playing`.
@@ -30,6 +32,16 @@ export const VITE_CLIENT_WARNING =
   'a script, a bot policy or a module they import uses import.meta.hot, a CSS import or a ' +
   'non-literal import(). `pix3 check` names the file (W_EDITOR_*).';
 const MAX_SYNC_TIMEOUT_MS = 120_000;
+/**
+ * Step 4 asks the tab again when its answer is behind (`rev` older than the rescan's, or a changed
+ * module's stamp not the disk's): at most this many times, after 50, 100, 200 ms, and never past
+ * the caller's `timeoutMs`. A page that still runs old code after that is reported `stale_modules`
+ * — a module that genuinely failed to re-execute costs ~350 ms more, never a hang.
+ */
+const MAX_CONFIRM_ATTEMPTS = 4;
+const CONFIRM_RETRY_MS = 50;
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 export interface SyncRequest {
@@ -171,15 +183,32 @@ export class SyncBarrier {
     if (tabId === null) {
       return { ok: expectMismatch.length === 0, ...base, editor: false, ms: Date.now() - started };
     }
-    const remaining = Math.max(0, request.timeoutMs - (Date.now() - started));
-    const reply = await socket.request(
-      tabId,
-      'sync',
-      // `policyOnly`: modules only bot policies import — applied during play like a policy (S11).
-      { rev: seq, changed, paths: Object.keys(changed), policyOnly: scripts.policyOnlyModules() },
-      remaining
-    );
-    const verdict = this.judge(reply, seq, required);
+    const deadline = started + request.timeoutMs;
+    // `policyOnly`: modules only bot policies import — applied during play like a policy (S11).
+    const ask = {
+      rev: seq,
+      changed,
+      paths: Object.keys(changed),
+      policyOnly: scripts.policyOnlyModules(),
+    };
+    let attempts = 0;
+    let reply: RequestReply;
+    let verdict: SyncResult;
+    for (;;) {
+      attempts += 1;
+      reply = await socket.request(tabId, 'sync', ask, Math.max(0, deadline - Date.now()));
+      verdict = this.judge(reply, seq, required);
+      // Only a page that answered and is behind is asked again; a refusal is the answer.
+      if (verdict.ok || !reply.ok || attempts >= MAX_CONFIRM_ATTEMPTS) break;
+      const pause = CONFIRM_RETRY_MS * 2 ** (attempts - 1);
+      if (deadline - Date.now() <= pause) break;
+      this.deps.log?.(
+        `sync rev ${seq}: the tab answered rev ${String(verdict.ackRev)}, stale ` +
+          `[${String(verdict.paths)}]; asking again (attempt ${attempts + 1})`
+      );
+      await sleep(pause);
+      scripts.hardInvalidateRoots();
+    }
     return {
       ...base,
       ...verdict,
@@ -187,6 +216,7 @@ export class SyncBarrier {
       ...(verdict.ok && expectMismatch.length > 0 ? { reason: 'expect_mismatch' } : {}),
       editor: true,
       tabId,
+      ...(attempts > 1 ? { attempts } : {}),
       // Contract B broken: the page found /@vite/client loaded (plan §B.2).
       ...(reply.viteClient === true ? { viteClient: true, warning: VITE_CLIENT_WARNING } : {}),
       ms: Date.now() - started,

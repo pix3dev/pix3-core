@@ -3,7 +3,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { createServer, type ViteDevServer } from 'vite';
+import { createServer, type Plugin, type ViteDevServer } from 'vite';
 import { WebSocket } from 'ws';
 
 import { pix3, type Pix3Options } from '../index.ts';
@@ -53,7 +53,9 @@ const freePort = (): Promise<number> =>
 
 export const startProject = async (
   files: Record<string, string> = {},
-  options: Pix3Options = {}
+  options: Pix3Options = {},
+  /** Plugins after `pix3()` (a spec that holds a transform to open a race window). */
+  plugins: Plugin[] = []
 ): Promise<TestProject> => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-plugin-')));
   const write = (path: string, content: string): void => {
@@ -69,7 +71,7 @@ export const startProject = async (
     configFile: false,
     root,
     logLevel: 'silent',
-    plugins: [pix3(options)],
+    plugins: [pix3(options), ...plugins],
     // The temp project has no node_modules; nothing here needs pre-bundling.
     optimizeDeps: { noDiscovery: true },
     server: { port, strictPort: true, host: '127.0.0.1' },
