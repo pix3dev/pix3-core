@@ -160,6 +160,26 @@ describe('LocalizationEditorService — following the disk', () => {
     expect(appState.localization.locales).toEqual(['en']);
   });
 
+  it('a read that fails keeps the table: only a missing file is a deletion', async () => {
+    const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
+    const read = host.files.read.bind(host.files);
+    host.files.read = async () => {
+      throw new Error('EIO');
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await service(ExternalReloadService).apply([EN]);
+    host.files.read = read;
+    expect(loc.getLocales()).toEqual(['en']);
+    expect(loc.getEntry('en', 'hello')).toBe('Hello');
+    expect(appState.localization.locales).toEqual(['en']);
+    expect(warn.mock.calls.flat().join(' ')).toContain('not readable');
+    warn.mockRestore();
+    // The version arrives again once the read works.
+    await host.externalWrite(EN, file({ hello: 'Hi' }));
+    await service(ExternalReloadService).apply([EN]);
+    expect(loc.getEntry('en', 'hello')).toBe('Hi');
+  });
+
   it('an agent that wrote from a read older than the editor’s write: a notice offers the edit back', async () => {
     const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
     const stale = host.text(EN)!;
