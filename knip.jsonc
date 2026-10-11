@@ -67,7 +67,9 @@
       ]
     },
     "packages/editor-core": {
-      "entry": ["scripts/*.mjs!"],
+      // `src/index.ts`: the library entry `vite.config.ts` builds into `dist/index.js` (the
+      // published `exports` name only the built file; no consumer compiles against the sources).
+      "entry": ["src/index.ts!", "scripts/*.mjs!"],
       "project": [
         "src/**/*.ts!",
         "scripts/*.mjs!",

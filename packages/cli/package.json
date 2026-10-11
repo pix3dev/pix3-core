@@ -8,6 +8,10 @@
     "url": "git+https://github.com/pix3dev/pix3-core.git",
     "directory": "packages/cli"
   },
+  "homepage": "https://github.com/pix3dev/pix3-core/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/pix3dev/pix3-core/issues"
+  },
   "bin": {
     "pix3": "dist/index.js"
   },
@@ -50,5 +54,9 @@
     "typescript": "~5.8.3",
     "ws": "^8.18.0",
     "yaml": "^2.6.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
   }
 }

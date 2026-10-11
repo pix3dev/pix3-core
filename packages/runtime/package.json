@@ -1,11 +1,16 @@
 {
   "name": "@pix3/runtime",
   "version": "2.0.0-alpha.0",
+  "description": "The Pix3 engine: scene graph, 2D/3D nodes, scripts, ECS, audio and resources on three.js. Ships TypeScript sources.",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pix3dev/pix3-core.git",
     "directory": "packages/runtime"
+  },
+  "homepage": "https://github.com/pix3dev/pix3-core/tree/main/packages/runtime#readme",
+  "bugs": {
+    "url": "https://github.com/pix3dev/pix3-core/issues"
   },
   "engines": {
     "node": ">=20.19"
@@ -48,5 +53,9 @@
       "optional": true
     }
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  }
 }
