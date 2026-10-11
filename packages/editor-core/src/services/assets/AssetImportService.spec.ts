@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  AssetImportService,
   isTextAsset,
   normalizeImportDirectory,
   resolveUniqueAssetName,
@@ -81,5 +82,27 @@ describe('isTextAsset', () => {
   it('treats images and unknown binaries as non-text', () => {
     expect(isTextAsset(makeFile('hero.png', 'image/png'))).toBe(false);
     expect(isTextAsset(makeFile('model.glb'))).toBe(false);
+  });
+});
+
+describe('AssetImportService.writeAsset', () => {
+  it('creates every folder of the path, then writes the bytes', async () => {
+    const calls: string[] = [];
+    const service = new AssetImportService();
+    Object.defineProperty(service, 'storage', {
+      value: {
+        createDirectory: vi.fn(async (path: string) => {
+          calls.push(`mkdir ${path}`);
+          if (path === 'sprites') throw new Error('exists');
+        }),
+        writeBinaryFile: vi.fn(async (path: string) => void calls.push(`write ${path}`)),
+      },
+    });
+    await service.writeAsset('sprites/generated/gear.png', new ArrayBuffer(1));
+    expect(calls).toEqual([
+      'mkdir sprites',
+      'mkdir sprites/generated',
+      'write sprites/generated/gear.png',
+    ]);
   });
 });

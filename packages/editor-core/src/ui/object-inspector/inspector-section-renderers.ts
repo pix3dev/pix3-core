@@ -4,7 +4,7 @@ import { appState } from '@/state';
 import { MeshInstance, getPropertiesByGroup, isShaderEffectHost } from '@pix3/runtime';
 import type { ScriptComponent } from '@pix3/runtime';
 import { IconSize } from '@/services/editor/IconService';
-import { getNodeVisuals } from '@/ui/scene-tree/node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 import { isPrefabChildNode, isPrefabNode } from '@/features/scene/prefab-utils';
 import { AddNodeToGroupCommand } from '@/features/scene/AddNodeToGroupCommand';
 import { RemoveNodeFromGroupCommand } from '@/features/scene/RemoveNodeFromGroupCommand';

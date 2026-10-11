@@ -47,7 +47,7 @@ interface PanelStubs {
   historyAdd: ReturnType<typeof vi.fn>;
   historyList: ReturnType<typeof vi.fn>;
   historyGet: ReturnType<typeof vi.fn>;
-  writeBinaryFile: ReturnType<typeof vi.fn>;
+  writeAsset: ReturnType<typeof vi.fn>;
 }
 
 function createPanel(records: GenerationRecord[] = []): {
@@ -75,7 +75,7 @@ function createPanel(records: GenerationRecord[] = []): {
   const historyGet = vi
     .fn()
     .mockImplementation(async (id: string) => records.find(record => record.id === id));
-  const writeBinaryFile = vi.fn().mockResolvedValue(undefined);
+  const writeAsset = vi.fn().mockResolvedValue(undefined);
 
   const stubs: Record<string, unknown> = {
     providers: {
@@ -102,7 +102,8 @@ function createPanel(records: GenerationRecord[] = []): {
       delete: vi.fn().mockResolvedValue(undefined),
       clear: vi.fn().mockResolvedValue(undefined),
     },
-    storage: { readBlob: vi.fn(), writeBinaryFile, createDirectory: vi.fn() },
+    storage: { readBlob: vi.fn() },
+    assets: { writeAsset: writeAsset },
     editorSettings: { showSettings: vi.fn() },
   };
 
@@ -118,7 +119,7 @@ function createPanel(records: GenerationRecord[] = []): {
       historyAdd,
       historyList,
       historyGet,
-      writeBinaryFile,
+      writeAsset,
     },
   };
 }
@@ -221,9 +222,9 @@ describe('GeneratePanel', () => {
 
     panel.querySelectorAll<HTMLButtonElement>('.gp-result-actions button')[0]?.click();
     await vi.waitFor(() => {
-      expect(stubs.writeBinaryFile).toHaveBeenCalledTimes(1);
+      expect(stubs.writeAsset).toHaveBeenCalledTimes(1);
     });
-    expect(stubs.writeBinaryFile.mock.calls[0][0]).toBe('sprites/generated/a-brass-gear.png');
+    expect(stubs.writeAsset.mock.calls[0][0]).toBe('sprites/generated/a-brass-gear.png');
   });
 
   it('brings a history entry back as the result, with its prompt', async () => {

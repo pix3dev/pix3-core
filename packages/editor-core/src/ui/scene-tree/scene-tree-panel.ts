@@ -4,7 +4,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { ComponentBase, customElement, html, state, inject } from '@/fw';
 import { appState, type SceneDescriptor } from '@/state';
 import { NodeBase, describeUnknownNodeType, isInertNode } from '@pix3/runtime';
-import { getNodeVisuals } from './node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 import type { SceneTreeNode } from './scene-tree-node';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { KeybindingService } from '@/services/editor/KeybindingService';

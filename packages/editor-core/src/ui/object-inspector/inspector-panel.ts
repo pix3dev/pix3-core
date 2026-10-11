@@ -16,8 +16,7 @@ import {
   type AssetPreviewItem,
 } from '@/services/assets/AssetsPreviewService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-import { LightboxService } from '@/services/editor/LightboxService';
-import { HostService } from '@/host/HostService';
+import { AssetFileActivationService } from '@/services/assets/AssetFileActivationService';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { SpineSkeleton2D } from '@pix3/runtime';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
@@ -97,11 +96,8 @@ export class InspectorPanel extends ComponentBase {
   @inject(Polygon2DEditController)
   private readonly polygonEditor!: Polygon2DEditController;
 
-  @inject(LightboxService)
-  private readonly lightbox!: LightboxService;
-
-  @inject(HostService)
-  private readonly hostService!: HostService;
+  @inject(AssetFileActivationService)
+  private readonly assetActivation!: AssetFileActivationService;
 
   @state()
   selectedNodes: NodeBase[] = [];
@@ -628,13 +624,10 @@ export class InspectorPanel extends ComponentBase {
   /** Double-clicking a texture property previews that image full-screen. */
   onOpenTextureResource(resourcePath: string): void {
     const trimmedResourcePath = resourcePath.trim();
-    if (!trimmedResourcePath || !HostService.isInstalled()) {
-      return;
+    if (trimmedResourcePath) {
+      const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
+      this.assetActivation.previewImage(trimmedResourcePath, title);
     }
-
-    const url = this.hostService.host.files.url(this.hostService.wirePath(trimmedResourcePath));
-    const title = trimmedResourcePath.split('/').pop() ?? trimmedResourcePath;
-    this.lightbox.open([{ kind: 'image', title, url, path: trimmedResourcePath }]);
   }
 
   onComponentAudioResourceDrop(

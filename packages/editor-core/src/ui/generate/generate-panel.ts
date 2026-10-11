@@ -12,6 +12,8 @@ import {
   type GenerationRecord,
 } from '@/services/image-gen/GenerationHistoryService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { AssetImportService } from '@/services/assets/AssetImportService';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 import { EditorSettingsService } from '@/services/editor/EditorSettingsService';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { getDroppedAssetResourcePath, hasAssetDragData } from '@/ui/shared/asset-drag-drop';
@@ -55,6 +57,9 @@ export class GeneratePanel extends ComponentBase {
 
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
+
+  @inject(AssetImportService)
+  private readonly assets!: AssetImportService;
 
   @inject(EditorSettingsService)
   private readonly editorSettings!: EditorSettingsService;
@@ -847,7 +852,7 @@ export class GeneratePanel extends ComponentBase {
     if (!result) {
       return null;
     }
-    const relativePath = ensureImageExt(normalizeRelativePath(this.saveName), result.mimeType);
+    const relativePath = ensureImageExt(toProjectPath(this.saveName.trim()), result.mimeType);
     if (!relativePath) {
       this.saveError = 'Enter a file name.';
       return null;
@@ -855,30 +860,12 @@ export class GeneratePanel extends ComponentBase {
     this.saveError = null;
     this.saveMessage = null;
     try {
-      await this.ensureParentDirectory(relativePath);
-      await this.storage.writeBinaryFile(relativePath, await result.blob.arrayBuffer());
+      await this.assets.writeAsset(relativePath, await result.blob.arrayBuffer());
       this.saveMessage = `Saved to ${relativePath}`;
       return relativePath;
     } catch (error) {
       this.saveError = `Save failed: ${describeError(error)}`;
       return null;
-    }
-  }
-
-  private async ensureParentDirectory(relativePath: string): Promise<void> {
-    const segments = relativePath.split('/');
-    segments.pop();
-    let accumulated = '';
-    for (const segment of segments) {
-      if (!segment) {
-        continue;
-      }
-      accumulated = accumulated ? `${accumulated}/${segment}` : segment;
-      try {
-        await this.storage.createDirectory(accumulated);
-      } catch {
-        // directory likely already exists
-      }
     }
   }
 
@@ -1029,13 +1016,6 @@ const slugify = (text: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
-
-const normalizeRelativePath = (path: string): string =>
-  path
-    .trim()
-    .replace(/^res:\/\//, '')
-    .replace(/\\+/g, '/')
-    .replace(/^\/+/, '');
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|webp)$/i;
 

@@ -12,7 +12,7 @@ import {
   SpotLightNode,
 } from '@pix3/runtime';
 
-import { getNodeVisuals } from './node-visuals.helper';
+import { getNodeVisuals } from '@/services/scene/node-visuals';
 
 describe('getNodeVisuals', () => {
   it.each([

@@ -79,6 +79,24 @@ export class AssetImportService {
 
     return { importedPaths, failures };
   }
+
+  /**
+   * Write `data` at the project path `path`, creating its folders first; an existing file is
+   * replaced. The Generate panel's save — the one editor UI that writes a file (a generated image).
+   */
+  async writeAsset(path: string, data: ArrayBuffer): Promise<void> {
+    let folder = '';
+    for (const segment of path.split('/').slice(0, -1)) {
+      if (!segment) continue;
+      folder = folder ? `${folder}/${segment}` : segment;
+      try {
+        await this.storage.createDirectory(folder);
+      } catch {
+        // Already there.
+      }
+    }
+    await this.storage.writeBinaryFile(path, data);
+  }
 }
 
 const TEXT_ASSET_EXTENSIONS =
