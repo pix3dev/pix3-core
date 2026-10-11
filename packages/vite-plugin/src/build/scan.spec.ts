@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { toClassicScriptHtml } from './classic-script.ts';
-import { parseProjectManifest } from './project-manifest.ts';
+import { devSceneManifestSource } from './dev-manifest.ts';
+import { parseProjectManifest, readProjectManifest } from './project-manifest.ts';
 import { isPrefabPath, scanProject } from './scan.ts';
 import { decideStrip, runtimeDependents } from './strip-decision.ts';
 
@@ -234,6 +235,55 @@ describe('scanProject (plan §B.6 item 1)', () => {
       'Requested entry scene is not a project scene: scenes/nope.pix3scene',
       'defaultExportScenePath is not a project scene: scenes/gone.pix3scene',
     ]);
+  });
+
+  it('dev and build boot the same entry scene, a missing pix3({ entryScene }) included', async () => {
+    const scenes = {
+      'scenes/main.pix3scene': 'root: []\n',
+      'scenes/level.pix3scene': 'root: []\n',
+      'scenes/a.pix3scene': 'root: []\n',
+    };
+    const cases: { manifest: string; entryScene: string | null; expected: string }[] = [
+      // The case that differed: a missing option fell back to scenes/main in dev only.
+      {
+        manifest: 'defaultExportScenePath: res://scenes/level.pix3scene\n',
+        entryScene: 'scenes/missing.pix3scene',
+        expected: 'scenes/level.pix3scene',
+      },
+      {
+        manifest: 'defaultExportScenePath: res://scenes/level.pix3scene\n',
+        entryScene: 'res://scenes/a.pix3scene',
+        expected: 'scenes/a.pix3scene',
+      },
+      {
+        manifest: 'defaultExportScenePath: scenes/gone.pix3scene\n',
+        entryScene: 'scenes/missing.pix3scene',
+        expected: 'scenes/main.pix3scene',
+      },
+      { manifest: '', entryScene: null, expected: 'scenes/main.pix3scene' },
+    ];
+    for (const { manifest: text, entryScene, expected } of cases) {
+      const root = project({ ...scenes, 'pix3project.yaml': text });
+      const scan = await scanProject({
+        root,
+        resRoot: '.',
+        manifest: readProjectManifest(root),
+        entryScene,
+      });
+      const devWarnings: string[] = [];
+      const dev = await devSceneManifestSource({
+        root,
+        resRoot: '.',
+        entryScene,
+        base: '/',
+        warn: line => devWarnings.push(line),
+      });
+      expect(scan.entryScenePath, `${text} ${entryScene}`).toBe(expected);
+      expect(dev).toContain(`export const activeScenePath = ${JSON.stringify(expected)};`);
+      expect(devWarnings).toEqual(
+        scan.warnings.filter(line => /entry scene|defaultExport/.test(line))
+      );
+    }
   });
 
   it('classifies prefabs by folder and extension', () => {

@@ -290,6 +290,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                 resRoot: settings.resRoot,
                 entryScene: settings.entryScene,
                 base: baseUrl(),
+                warn,
               });
         case EMBEDDED_ASSETS_ID: {
           if (build?.format !== 'html') return noEmbeddedAssetsSource();

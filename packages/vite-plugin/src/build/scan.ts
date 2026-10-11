@@ -151,6 +151,10 @@ const SPINE_PAGE_IMAGE_PATTERN = /\.(png|jpg|jpeg|webp|ktx2|basis|bmp)$/i;
 export const isPrefabPath = (path: string): boolean =>
   /(^|\/)prefabs\//i.test(path) || /\.prefab$/i.test(path) || /(^|\/)scenes\/ui\//i.test(path);
 
+/** A scene the player can boot into or `changeScene` to: a `.pix3scene` that is not a prefab. */
+export const isPlayableScenePath = (path: string): boolean =>
+  path.toLowerCase().endsWith('.pix3scene') && !isPrefabPath(path);
+
 const hasFileExtension = (path: string): boolean => /\.[a-zA-Z0-9]+$/.test(path);
 
 const extensionOf = (name: string): string => {
@@ -390,9 +394,7 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
   const imports = (name: string): boolean =>
     importsPackage(importedSpecifiers, name) ||
     (dependencies ? importsPackage(dependencies.importedSpecifiers, name) : false);
-  const scenePaths = allSceneLike.filter(
-    path => path.toLowerCase().endsWith('.pix3scene') && !isPrefabPath(path)
-  );
+  const scenePaths = allSceneLike.filter(isPlayableScenePath);
   const entryScenePath = resolveEntryScene(scenePaths, manifest, options.entryScene, warnings);
 
   return {
@@ -427,7 +429,12 @@ export const discoverLocalization = (
   return { defaultLocale: ids.includes('en') ? 'en' : ids[0], locales: ids };
 };
 
-const resolveEntryScene = (
+/**
+ * The scene the player boots into, the same in dev and in a build: `pix3({ entryScene })`, else
+ * `pix3project.yaml` `defaultExportScenePath`, else `scenes/main.pix3scene`, else the first scene.
+ * A named scene that is not one of `scenePaths` is skipped with a warning.
+ */
+export const resolveEntryScene = (
   scenePaths: readonly string[],
   manifest: ProjectManifestInfo,
   requested: string | null | undefined,
