@@ -53,7 +53,7 @@ Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"
 | --- | --- | --- |
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
-| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it. Read-only |
+| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
 | `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails; read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
@@ -125,6 +125,25 @@ exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit
 `design/tests/bots/pix3-test-bot.d.ts` (global, no import); a starter's `pix3 check`
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
 one. A policy written or changed during play needs only `pix3_sync`, not a restart.
+
+The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means the run never started:
+
+```json
+{
+  "ok": true,
+  "verdict": "PASS until[0] … (frame 42, 0.70s game) — ….",
+  "outcome": { "kind": "until", "channel": "until", "index": 0, "frame": 42, "gameTimeMs": 700, "detail": "…" },
+  "metrics": { "frames": 42, "gameTimeMs": 700, "wallMs": 95, "newErrors": 0, "framesPerSecond": 442 },
+  "game": { "provider": "…", "snapshot": { "score": 1 }, "changed": { "score": [0, 1] } },
+  "notes": [],
+  "timeline": []
+}
+```
+
+`outcome.kind` is `until`, `fail`, `timeout`, `error`, `precondition-already-met`,
+`monkey-empty` or, in a bot run, `bot-pass`, `bot-fail`, `bot-error`, `bot-idle`. `game` is there
+only when the game registers a snapshot (below): `game.snapshot` at the outcome frame,
+`game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved.
 
 **Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
 works; a run with a stated success condition does:

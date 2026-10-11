@@ -697,6 +697,51 @@ describe('kit drift', () => {
     expect(dts).not.toMatch(/^\s*(import|export)\s/m);
   });
 
+  it("the pix3_game_run and pix3_scene {find} answers it shows are the code's shapes", () => {
+    const repo = repoRootOfCheckout();
+    const read = (file: string): string => readFileSync(join(repo, file), 'utf8');
+    const gameTest = read('packages/editor-core/src/services/game-test/GameTestService.ts');
+    const bridge = read('packages/editor-core/src/host/debug-bridge.ts');
+    const introspection = read('packages/editor-core/src/core/agent-introspection.ts');
+    const skill = text(EDITOR_SKILL);
+    const examples = [...skill.matchAll(/```json\n([\s\S]*?)\n```/g)].map(
+      m => JSON.parse(m[1]) as Record<string, unknown>
+    );
+    const run = examples.find(example => 'verdict' in example);
+    expect(run, 'a pix3_game_run answer example').toBeDefined();
+    const problems: string[] = [];
+    const keysIn = (where: string, value: unknown, members: string[]): void => {
+      expect(members.length, `${where}: members read off the code`).toBeGreaterThan(2);
+      for (const key of Object.keys(value as object))
+        if (!members.includes(key)) problems.push(`${where}.${key}`);
+    };
+    // `GameRunResult`'s members include its inline `metrics` type's.
+    keysIn('answer', run, interfaceMembers(gameTest, 'GameRunResult'));
+    keysIn('outcome', run?.outcome, interfaceMembers(gameTest, 'GameRunOutcome'));
+    keysIn('metrics', run?.metrics, interfaceMembers(gameTest, 'GameRunResult'));
+    keysIn('game', run?.game, interfaceMembers(gameTest, 'GameRunGameReport'));
+    const union = /export type GameRunOutcomeKind =([\s\S]*?);/.exec(gameTest)?.[1] ?? '';
+    const kinds = [...union.matchAll(/'([a-z-]+)'/g)].map(m => m[1]);
+    const kindLine = /`outcome\.kind` is ([\s\S]*?)\./.exec(skill)?.[1] ?? '';
+    const listed = [...kindLine.matchAll(/`([a-z-]+)`/g)].map(m => m[1]);
+    expect(listed.sort()).toEqual([...kinds].sort());
+    expect(kinds).toContain((run?.outcome as { kind?: string } | undefined)?.kind);
+    // The verdict opens with a word `buildVerdict` writes.
+    const opener = String(run?.verdict).split(' ')[0];
+    expect(gameTest).toContain(`return \`${opener} `);
+    for (const field of ['game.snapshot', 'game.changed', 'outcome.kind'])
+      expect(skill).toContain(`\`${field}\``);
+
+    // `{find}`: `{ok, path, matches: [{nodeId, type, name}]}` — the bridge's literal and NodeSummary.
+    const shown = /`\{ok, path, matches: \[\{([a-zA-Z, ]+)\}\]\}`/.exec(skill)?.[1];
+    expect(shown, 'the pix3_scene {find} answer').toBeDefined();
+    expect(bridge).toContain('return { ok: true, path, matches: findNodes(');
+    expect(shown?.split(', ').sort()).toEqual(
+      interfaceMembers(introspection, 'NodeSummary').sort()
+    );
+    expect(problems).toEqual([]);
+  });
+
   it('names only node types the loader knows', () => {
     // Words shaped like a node type (`…2D`, `…3D`, `…Node`, `…Light`, `…Mesh`, `…Player`) that
     // the nodes skill uses for something else: base classes and engine classes.
