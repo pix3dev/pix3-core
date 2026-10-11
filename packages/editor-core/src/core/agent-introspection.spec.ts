@@ -35,11 +35,20 @@ describe('agent-introspection', () => {
   });
 
   it('componentToDTO exposes data fields and skips framework refs', () => {
-    const dto = componentToDTO({ scriptId: 'core:spin', speed: 2, node: {}, _internal: 1 }, 3);
+    const component = {
+      id: 'box-core:spin-1',
+      type: 'core:spin',
+      speed: 2,
+      node: {},
+      _internal: 1,
+    };
+    const dto = componentToDTO(component, 3);
+    // `scriptId` is the registry type, not the instance id (it once fell back to `id`, as no
+    // component has the `scriptId` / `typeId` fields it looked for first).
     expect(dto).toMatchObject({ index: 3, scriptId: 'core:spin' });
-    // state carries the component's own data fields (incl. scriptId), but never framework refs
+    // state carries the component's own data fields, but never framework refs
     // (node/input/scene/constructor) or underscore-prefixed internals.
-    expect(dto.state).toEqual({ scriptId: 'core:spin', speed: 2 });
+    expect(dto.state).toEqual({ id: 'box-core:spin-1', type: 'core:spin', speed: 2 });
   });
 
   it('liveObjectToDTO reads three-object shape and flags', () => {
