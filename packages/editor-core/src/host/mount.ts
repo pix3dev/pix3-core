@@ -11,6 +11,7 @@ import { ProjectService } from '@/services/project/ProjectService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
+import { FlushLedgerStoreService } from '@/services/project/FlushLedgerStoreService';
 import { SceneDraftService } from '@/services/project/SceneDraftService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { LiveComponentService } from '@/services/scripting/LiveComponentService';
@@ -84,6 +85,8 @@ export async function mountEditorWith(
   flush.start();
   const drafts = service(SceneDraftService);
   drafts.start();
+  const ledgers = service(FlushLedgerStoreService);
+  ledgers.start();
   const syncApply = service(SyncApplyService);
   host.sync.setHandlers({
     flush: async timeoutMs => {
@@ -107,6 +110,7 @@ export async function mountEditorWith(
       host.sync.setHandlers({});
       flush.dispose();
       drafts.dispose();
+      ledgers.dispose();
       writer.dispose();
       service(ExternalReloadService).dispose();
       service(LiveComponentService).dispose();

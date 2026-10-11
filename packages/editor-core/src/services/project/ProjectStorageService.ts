@@ -32,6 +32,9 @@ export class ProjectStorageService {
 
   /** Forget the cached listing and hashes (the host they came from is gone: unmount). */
   reset(): void {
+    // Its frames too: a frame of the old host after the unmount has no host to resolve paths by.
+    this.unsubscribeFs?.();
+    this.unsubscribeFs = null;
     this.manifest = null;
     this.manifestLoad = null;
     this.knownHashes.clear();

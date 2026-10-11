@@ -25,7 +25,14 @@ import {
 } from '@/core/scene-patch/scene-diff';
 import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
-import { findClobberedKeys, planMerge, recordFlushedKeys } from '@/core/scene-patch/scene-merge';
+import {
+  EMPTY_FLUSH_LEDGER,
+  findClobberedKeys,
+  findClobberedNodes,
+  planMerge,
+  recordFlushedKeys,
+  restoreClobberedNodes,
+} from '@/core/scene-patch/scene-merge';
 
 /**
  * `ScenePatchWriter` + `norm` + the §C.3 rule on the template corpus — the S12 harness
@@ -510,7 +517,7 @@ describe('targeted cases', () => {
     const v1 = await doc('B'); // flush 1: rename
     const v2 = await doc('B', 40); // flush 2: width
     const v3 = await doc('C', 40); // flush 3: rename again
-    let ledger = recordFlushedKeys(new Map(), v0, v1);
+    let ledger = recordFlushedKeys(EMPTY_FLUSH_LEDGER, v0, v1);
     ledger = recordFlushedKeys(ledger, v1, v2);
     ledger = recordFlushedKeys(ledger, v2, v3);
     const restored = (E: SavedSceneDocument) =>
@@ -530,8 +537,93 @@ describe('targeted cases', () => {
   it('a key flushed back to its first value is not "clobbered" by that value', async () => {
     const a = await h.norm('root:\n  - id: a\n    type: Group2D\n    name: A\n', 'c.pix3scene');
     const b = await h.norm('root:\n  - id: a\n    type: Group2D\n    name: B\n', 'c.pix3scene');
-    const ledger = recordFlushedKeys(recordFlushedKeys(new Map(), a, b), b, a); // Ctrl+Z, flushed
+    const ledger = recordFlushedKeys(recordFlushedKeys(EMPTY_FLUSH_LEDGER, a, b), b, a); // Ctrl+Z, flushed
     expect(findClobberedKeys(ledger, a)).toEqual([]);
     expect(findClobberedKeys(ledger, b).map(op => op.kind === 'set' && op.value)).toEqual(['A']);
+  });
+
+  describe('structural flushes an agent undid', () => {
+    const doc = (body: string) => h.norm(`root:\n${body}`, 'c.pix3scene');
+    const g = (id: string, indent = '  ', children = '') =>
+      `${indent}- id: ${id}\n${indent}  type: Group2D\n${indent}  name: ${id.toUpperCase()}\n` +
+      (children ? `${indent}  children:\n${children}` : '');
+    const ids = (d: SavedSceneDocument): string => {
+      const walk = (defs: SavedSceneDocument['root'] = []): string =>
+        defs.map(n => (n.children?.length ? `${n.id}(${walk(n.children)})` : n.id)).join(' ');
+      return walk(d.root);
+    };
+    const restoredTo = (E: SavedSceneDocument, flushes: SavedSceneDocument[]) => {
+      let ledger = EMPTY_FLUSH_LEDGER;
+      for (let i = 1; i < flushes.length; i++) {
+        ledger = recordFlushedKeys(ledger, flushes[i - 1]!, flushes[i]!);
+      }
+      const nodes = findClobberedNodes(ledger, E, flushes.at(-1)!);
+      return {
+        labels: nodes.map(n => `${n.nodeId}:${n.kind}`),
+        tree: ids(restoreClobberedNodes(E, nodes)),
+      };
+    };
+
+    it('an added node a stale write dropped is put back where it was, with its subtree', async () => {
+      const v0 = await doc(g('a') + g('b'));
+      const v1 = await doc(g('a') + g('n', '  ', g('m', '      ')) + g('b'));
+      expect(restoredTo(v0, [v0, v1])).toEqual({ labels: ['n:added'], tree: 'a n(m) b' });
+      // The agent read after the flush (and added a node of its own): nothing to restore.
+      const own = await doc(g('a') + g('n', '  ', g('m', '      ')) + g('b') + g('x'));
+      expect(restoredTo(own, [v0, v1]).labels).toEqual([]);
+    });
+
+    it('a node added in one flush and given a child in the next: one restore, the child inside', async () => {
+      const v0 = await doc(g('a'));
+      const v1 = await doc(g('a') + g('n'));
+      const v2 = await doc(g('a') + g('n', '  ', g('m', '      ')));
+      expect(restoredTo(v0, [v0, v1, v2])).toEqual({ labels: ['n:added'], tree: 'a n(m)' });
+      // Read between the flushes: only the child is missing.
+      expect(restoredTo(v1, [v0, v1, v2])).toEqual({ labels: ['m:added'], tree: 'a n(m)' });
+    });
+
+    it('a deleted node a stale write brought back is deleted again', async () => {
+      const v0 = await doc(g('a') + g('b'));
+      const v1 = await doc(g('b'));
+      expect(restoredTo(v0, [v0, v1])).toEqual({ labels: ['a:removed'], tree: 'b' });
+      // Added and deleted again within the window: a read in between brings it back.
+      const v2 = await doc(g('b') + g('t'));
+      const v3 = await doc(g('b'));
+      expect(restoredTo(v2, [v1, v2, v3])).toEqual({ labels: ['t:removed'], tree: 'b' });
+      expect(restoredTo(v1, [v1, v2, v3]).labels).toEqual([]);
+    });
+
+    it('a moved node a stale write put back moves again; a sibling the agent added is no move', async () => {
+      const v0 = await doc(g('a') + g('b') + g('c'));
+      const v1 = await doc(g('c') + g('a') + g('b')); // c to the top
+      expect(restoredTo(v0, [v0, v1])).toEqual({ labels: ['c:moved'], tree: 'c a b' });
+      const agentSibling = await doc(g('x') + g('c') + g('a') + g('b'));
+      expect(restoredTo(agentSibling, [v0, v1]).labels).toEqual([]);
+    });
+
+    it('moved out of a group that was then deleted: the child escapes before the group goes', async () => {
+      const v0 = await doc(g('grp', '  ', g('kid', '      ')) + g('b'));
+      const v1 = await doc(g('kid') + g('b'));
+      expect(restoredTo(v0, [v0, v1])).toEqual({
+        labels: ['grp:removed', 'kid:moved'],
+        tree: 'kid b',
+      });
+      // The diff of that restore patches the stale text the way a flush would.
+      const text = `root:\n${g('grp', '  ', g('kid', '      '))}${g('b')}`;
+      const E = await h.norm(text, 'c.pix3scene');
+      const ledger = recordFlushedKeys(EMPTY_FLUSH_LEDGER, v0, v1);
+      const target = restoreClobberedNodes(E, findClobberedNodes(ledger, E, v1));
+      const patched = applySceneOps(text, diffScenes(E, target));
+      expect(ids(await h.norm(patched, 'c.pix3scene'))).toBe('kid b');
+    });
+
+    it('a restore whose parent is gone by now is skipped, not thrown', async () => {
+      const v0 = await doc(g('p'));
+      const v1 = await doc(g('p', '  ', g('n', '      ')));
+      const ledger = recordFlushedKeys(EMPTY_FLUSH_LEDGER, v0, v1);
+      const nodes = findClobberedNodes(ledger, v0, v1);
+      expect(nodes.map(n => n.kind)).toEqual(['added']);
+      expect(ids(restoreClobberedNodes(await doc(g('q')), nodes))).toBe('q');
+    });
   });
 });

@@ -10,7 +10,15 @@ import {
   type SceneOp,
 } from '@/core/scene-patch/scene-diff';
 import { withLegacyAnchorConversion } from '@/core/scene-patch/legacy-anchor-conversion';
-import { findClobberedKeys, planMerge, type DroppedKey } from '@/core/scene-patch/scene-merge';
+import {
+  findClobberedKeys,
+  findClobberedNodes,
+  planMerge,
+  restoreClobberedNodes,
+  type ClobberedNode,
+  type DroppedKey,
+  type FlushLedger,
+} from '@/core/scene-patch/scene-merge';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { applySceneOps, ScenePatchError } from '@/core/scene-patch/scene-patch-writer';
 import { HostNoticeService, listNoticeNames } from '@/host/HostNoticeService';
@@ -45,8 +53,8 @@ export type ExternalApplyOutcome = 'unchanged' | 'reloaded' | 'merged' | 'missin
  *   4. history is cleared (its closures point at the old nodes);
  *   5. a notice names the dropped keys.
  * - **"Затирание по устаревшему чтению"** — if E puts keys the editor's flushes changed (any
- *   flush since the previous external version) back to a value they replaced, a notice offers to
- *   restore them ("Restore my edit").
+ *   flush since the previous external version) back to a value they replaced, or undoes a node
+ *   they added, deleted or moved, a notice offers to restore them ("Restore my edit").
  */
 @injectable()
 export class SceneMergeService {
@@ -98,7 +106,9 @@ export class SceneMergeService {
     const E: SceneBaseline = { sha: version.hash, text: eText, norm: normOfGraph(eGraph) };
     // Read now, spent only once E is installed: a failed install (the loader rejected the graph)
     // leaves the path pending and retried, and the retry must still see the flushed keys.
-    const clobbered = findClobberedKeys(this.baselines.flushLedger(path), E.norm);
+    const ledger = this.baselines.flushLedger(path);
+    const clobbered = findClobberedKeys(ledger, E.norm);
+    const clobberedNodes = B ? findClobberedNodes(ledger, E.norm, B.norm) : [];
 
     const graph = this.sceneManager.getSceneGraph(descriptor.id);
     const pending =
@@ -114,8 +124,31 @@ export class SceneMergeService {
       outcome = await this.merge(descriptor, path, B, E, eGraph, graph);
     }
     this.baselines.takeFlushLedger(path);
-    if (clobbered.length > 0) this.offerRestore(descriptor, path, clobbered, E.norm);
+    if (clobbered.length > 0 || clobberedNodes.length > 0) {
+      this.offerRestore(descriptor, path, clobbered, clobberedNodes, E.norm);
+    }
     return outcome;
+  }
+
+  /**
+   * A ledger from an earlier session whose last write (`written`) is no longer on disk: the scene
+   * opened on an external version that came while no tab of this browser had it open. The same
+   * "agent overwrote your edit" check as {@link applyExternal}, with the opened version as E.
+   * Returns whether a notice was shown.
+   */
+  offerStaleRestore(
+    descriptor: SceneDescriptor,
+    ledger: FlushLedger,
+    written: SavedSceneDocument
+  ): boolean {
+    const path = toProjectPath(descriptor.filePath);
+    const E = this.baselines.get(path);
+    if (!E) return false;
+    const clobbered = findClobberedKeys(ledger, E.norm);
+    const nodes = findClobberedNodes(ledger, E.norm, written);
+    if (clobbered.length === 0 && nodes.length === 0) return false;
+    this.offerRestore(descriptor, path, clobbered, nodes, E.norm);
+    return true;
   }
 
   /** How long the scene tree highlights the nodes an external version changed. */
@@ -252,18 +285,25 @@ export class SceneMergeService {
     descriptor: SceneDescriptor,
     path: string,
     clobbered: readonly LeafOp[],
+    nodes: readonly ClobberedNode[],
     names: SavedSceneDocument
   ): void {
-    const labels = clobbered.map(op =>
-      this.describe({ op, key: '', nodeId: op.nodeId, reason: 'same-key' }, names)
-    );
+    const labels = [
+      ...nodes.map(node => `${node.name} (${node.kind === 'removed' ? 'deleted' : node.kind})`),
+      ...clobbered.map(op =>
+        this.describe({ op, key: '', nodeId: op.nodeId, reason: 'same-key' }, names)
+      ),
+    ];
     this.notices.show({
       key: `clobber:${path}`,
       tone: 'warn',
       message: `An agent overwrote your edit in ${path}.`,
       detail: `${listNoticeNames(labels)} — it wrote a file it read before you saved them.`,
       actions: [
-        { label: 'Restore my edit', run: () => this.restoreKeys(descriptor, path, clobbered) },
+        {
+          label: 'Restore my edit',
+          run: () => this.restoreKeys(descriptor, path, clobbered, nodes),
+        },
       ],
     });
   }
@@ -271,15 +311,16 @@ export class SceneMergeService {
   private async restoreKeys(
     descriptor: SceneDescriptor,
     path: string,
-    ops: readonly LeafOp[]
+    ops: readonly LeafOp[],
+    nodes: readonly ClobberedNode[]
   ): Promise<void> {
     const B = this.baselines.get(path);
     if (!B) return;
     const graphNow = this.sceneManager.getSceneGraph(descriptor.id);
-    const editorOps =
-      graphNow && descriptor.isDirty
-        ? diffScenes(B.norm, this.flush.editorNorm(graphNow, B.norm))
-        : [];
+    const current =
+      graphNow && descriptor.isDirty ? this.flush.editorNorm(graphNow, B.norm) : B.norm;
+    // The restored nodes go onto the editor's current state, so one diff carries both.
+    const editorOps = diffScenes(B.norm, restoreClobberedNodes(current, nodes));
     // Pending edits of the editor ride along (structure included); the restored keys win.
     const keyed = new Map<string, SceneOp>();
     for (const [index, op] of [...editorOps, ...ops].entries()) {

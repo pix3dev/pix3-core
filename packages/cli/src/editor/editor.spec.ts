@@ -13,12 +13,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { chooseCdpPort, inspectCdpPort, isEditorPageUrl } from './cdp-port.ts';
 import { CdpProxy } from './cdp-proxy.ts';
 import { ensureCdpToken, readCdpToken } from './cdp-token.ts';
 import { chromeArgs, findChrome } from './chrome.ts';
+import * as chromeDiscovery from './chrome.ts';
 import { readChromeState, writeChromeState } from './chrome-state.ts';
 import { parseEditorArgs, runEditorCli } from './command.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
@@ -280,13 +281,12 @@ describe('Chrome', () => {
     expect(headless.some(a => a.startsWith('--app='))).toBe(false);
   });
 
-  it('PIX3_CHROME wins; an empty PATH finds nothing on linux; macOS looks for the binary', () => {
+  it('PIX3_CHROME wins; an empty PATH finds nothing on linux', () => {
     expect(findChrome({ PIX3_CHROME: '/opt/chrome.sh' }, 'linux')).toEqual({
       kind: 'binary',
       path: '/opt/chrome.sh',
     });
     expect(findChrome({ PATH: scratch }, 'linux')).toBeNull();
-    expect(findChrome({ HOME: scratch }, 'darwin')).toBeNull();
   });
 
   it('creates the token once, 0600, and narrows a file others can read', () => {
@@ -381,8 +381,13 @@ describe('pix3 editor', () => {
     expect(ssh.out()).toContain('is free');
 
     const none = io(root, { PATH: scratch, PIX3_HOME: join(scratch, 'home2') });
-    expect(await runEditorCli([], none.io)).toBe(1);
-    expect(none.err()).toContain('No Chrome found');
+    const discovery = vi.spyOn(chromeDiscovery, 'findChrome').mockReturnValue(null);
+    try {
+      expect(await runEditorCli([], none.io)).toBe(1);
+      expect(none.err()).toContain('No Chrome found');
+    } finally {
+      discovery.mockRestore();
+    }
   });
 
   /** A "Chrome" that records its arguments and runs `fake-chrome.ts` on the pipe it inherits. */

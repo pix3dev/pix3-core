@@ -1252,7 +1252,12 @@ describe('pix3 kit', () => {
       dir: root,
       postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes())],
     });
-    // The starter's own tsconfig runs against its node_modules: this checkout's.
+    // Keep the starter's compiler options, but check only the bot contract here. The game's
+    // entry and vite.config.ts import the plugin's dist/, which a fresh checkout has not built
+    // yet; the packed-project release check covers those imports against the shipped packages.
+    const tsconfigPath = join(root, 'tsconfig.json');
+    const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(tsconfigPath, JSON.stringify({ ...tsconfig, include: ['design/tests'] }));
     symlinkSync(join(repoRootOfCheckout(), 'node_modules'), join(root, 'node_modules'), 'dir');
     writeFileSync(
       join(root, 'design/tests/bots/dodge.ts'),

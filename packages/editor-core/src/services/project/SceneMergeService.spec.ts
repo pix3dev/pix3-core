@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceContainer } from '@/fw/di';
 import { CreateGroup2DOperation } from '@/features/scene/CreateGroup2DOperation';
+import { DeleteObjectOperation } from '@/features/scene/DeleteObjectOperation';
+import { ReparentNodeOperation } from '@/features/scene/ReparentNodeOperation';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
 import { UpdateObjectPropertyOperation } from '@/features/properties/UpdateObjectPropertyOperation';
 import { HostNoticeService } from '@/host/HostNoticeService';
@@ -11,6 +13,10 @@ import { FakeHost } from '@/host/testing/fake-host';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
+import {
+  FlushLedgerStoreService,
+  MemoryLedgerStore,
+} from '@/services/project/FlushLedgerStoreService';
 import { FlushService } from '@/services/project/FlushService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { SceneManager } from '@pix3/runtime';
@@ -50,6 +56,8 @@ let host: FakeHost;
 
 async function boot(): Promise<string> {
   resetAppState();
+  // A fresh browser per case: a ledger kept by the previous case's flushes is not this one's.
+  service(FlushLedgerStoreService).useStore(new MemoryLedgerStore());
   host = new FakeHost({
     files: { 'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-1\n', [PATH]: SCENE },
   });
@@ -272,6 +280,71 @@ describe('SceneMergeService — §C.3', () => {
     await agentWrites(stale);
     const notice = notices().find(n => n.message.includes('overwrote'));
     expect(notice?.detail).toContain('Box › properties.width');
+  });
+
+  it('a stale write that drops a node the editor added → notice; "Restore my edit" adds it back', async () => {
+    const sceneId = await boot();
+    await service(OperationService).invokeAndPush(
+      new CreateGroup2DOperation({ groupName: 'Added' })
+    );
+    await service(FlushService).saveScene(sceneId);
+    expect(disk()).toContain('name: Added');
+    const stale = SCENE.replace('name: Other', 'name: Agent'); // read before the flush
+    await agentWrites(stale);
+    expect(disk()).not.toContain('name: Added');
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Added (added)');
+
+    await service(HostNoticeService).runAction(notice!.actions[0].id);
+    expect(disk()).toContain('name: Agent');
+    expect(disk()).toContain('name: Added');
+    expect(disk().startsWith('# Main scene.\n')).toBe(true);
+  });
+
+  it('a stale write that brings back a node the editor deleted → "Restore my edit" deletes it again', async () => {
+    const sceneId = await boot();
+    await service(OperationService).invokeAndPush(
+      new DeleteObjectOperation({ nodeIds: ['other'] })
+    );
+    await service(FlushService).saveScene(sceneId);
+    expect(disk()).not.toContain('id: other');
+    const stale = SCENE.replace('width: 100', 'width: 101');
+    await agentWrites(stale);
+    expect(node('other')).toBeTruthy();
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Other (deleted)');
+
+    await service(HostNoticeService).runAction(notice!.actions[0].id);
+    expect(node('other')).toBeUndefined();
+    expect(disk()).toBe(stale.slice(0, stale.indexOf('  - id: other')));
+  });
+
+  it('a stale write that undoes a move → "Restore my edit" moves it again', async () => {
+    const sceneId = await boot();
+    await service(OperationService).invokeAndPush(
+      new ReparentNodeOperation({ nodeId: 'other', newParentId: 'box' })
+    );
+    await service(FlushService).saveScene(sceneId);
+    await agentWrites(SCENE.replace('name: Box', 'name: Agent Box'));
+    expect(appState.scenes.descriptors[sceneId]).toBeTruthy();
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Other (moved)');
+
+    await service(HostNoticeService).runAction(notice!.actions[0].id);
+    const graph = service(SceneManager).getSceneGraph(sceneId)!;
+    expect(graph.nodeMap.get('other')?.parentNode?.nodeId).toBe('box');
+    expect(disk()).toContain('name: Agent Box');
+    expect(disk()).toMatch(/children:\n\s+- id: other/);
+  });
+
+  it('structural flushes an agent saw are not "overwritten"', async () => {
+    const sceneId = await boot();
+    await service(OperationService).invokeAndPush(
+      new DeleteObjectOperation({ nodeIds: ['other'] })
+    );
+    await service(FlushService).saveScene(sceneId);
+    await agentWrites(disk().replace('name: Box', 'name: Agent Box'));
+    expect(notices().filter(n => n.message.includes('overwrote'))).toEqual([]);
   });
 
   it('an agent that read after the flushes: nothing is "overwritten"', async () => {
