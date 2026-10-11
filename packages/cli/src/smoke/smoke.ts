@@ -26,7 +26,8 @@ import {
 import { ProjectFiles } from '../validate/project.ts';
 import { scanUserScripts } from '../validate/user-scripts.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
-import { compileAndImportScripts, type ScriptImportUrls } from './compile-scripts.ts';
+import type { ScriptImportMap } from '../validate/script-build.ts';
+import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
 import type {
   SmokeError,
@@ -138,7 +139,7 @@ const ENGINE_REPORTS = [
 
 export const runSmokeJob = async (
   job: SmokeJob,
-  imports: ScriptImportUrls
+  imports: ScriptImportMap
 ): Promise<SmokeOutcome> => {
   const startedAt = performance.now();
   let frame = 0;

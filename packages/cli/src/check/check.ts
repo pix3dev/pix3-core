@@ -13,6 +13,7 @@ import {
   ROOT_TSCONFIG,
 } from '../types/project-types.ts';
 import { COMMAND_USAGE } from '../usage.ts';
+import { describeLevel2, formatDiagnostic } from '../validate/diagnostics.ts';
 import type { BundledDiagnostic, BundledValidateReport } from '../validate/entry.ts';
 import { CLI_VERSION } from '../version.ts';
 import {
@@ -219,15 +220,6 @@ const diag = (
 const hasNodeModules = (projectRoot: string): boolean =>
   findUp(projectRoot, 'node_modules') !== null;
 
-const formatDiagnostic = (d: CheckDiagnostic): string => {
-  const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
-  const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
-  let text = `${where}  ${d.severity}  ${d.code}${node}  ${d.message}\n`;
-  if (d.path) text += `    at ${d.path}\n`;
-  if (d.fix) text += `    fix: ${d.fix}\n`;
-  return text;
-};
-
 export const formatCheckHuman = (report: CheckReport): string => {
   let out = '';
   const perCode = new Map<string, number>();
@@ -249,16 +241,7 @@ export const formatCheckHuman = (report: CheckReport): string => {
     : tc.skipped
       ? `typecheck skipped: ${tc.skipped}`
       : 'typecheck did not run';
-  const level2 =
-    report.level2.state === 'ran'
-      ? `level 2 hydrated ${report.level2.filesHydrated} file(s)${
-          report.level2.filesSkippedForScripts
-            ? `, ${report.level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
-            : ''
-        }`
-      : report.level2.state === 'disabled'
-        ? 'level 2 off'
-        : `level 2 skipped: ${report.level2.reason}`;
+  const level2 = describeLevel2(report.level2);
   out += `${typecheckLine}; ${level2}.\n`;
   if (report.kit.version === null) {
     out += `kit: none in this project (pix3 kit installs it).\n`;

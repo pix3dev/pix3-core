@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import type { CliIo } from '../io.ts';
 import { findProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
-import { validateHelp, type Diagnostic } from './diagnostics.ts';
+import { describeLevel2, formatDiagnostic, validateHelp } from './diagnostics.ts';
 import type { ScriptImportMap } from './level2.ts';
 import { ProjectFiles, SCENE_EXTENSION } from './project.ts';
 import { validateProject, type ValidateReport } from './validate.ts';
@@ -76,29 +76,11 @@ const resolveTargets = (
   return { files: [...files] };
 };
 
-const formatDiagnostic = (d: Diagnostic): string => {
-  const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
-  const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
-  let text = `${where}  ${d.severity}  ${d.code}${node}  ${d.message}\n`;
-  if (d.path) text += `    at ${d.path}\n`;
-  if (d.fix) text += `    fix: ${d.fix}\n`;
-  return text;
-};
-
 export const formatHumanReport = (report: ValidateReport): string => {
   let out = '';
   for (const d of report.diagnostics) out += formatDiagnostic(d);
   for (const note of report.notes) out += `note: ${note}\n`;
-  const level2 =
-    report.level2.state === 'ran'
-      ? `level 2 hydrated ${report.level2.filesHydrated} file(s)${
-          report.level2.filesSkippedForScripts
-            ? `, ${report.level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
-            : ''
-        }`
-      : report.level2.state === 'disabled'
-        ? 'level 2 off'
-        : `level 2 skipped: ${report.level2.reason}`;
+  const level2 = describeLevel2(report.level2);
   out +=
     `${report.files.length} file(s) checked, ${report.errorCount} error(s), ` +
     `${report.warningCount} warning(s); ${level2}.\n`;
