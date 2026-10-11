@@ -1,4 +1,5 @@
 import { COMMAND_USAGE } from '../usage.ts';
+import type { BundledValidateReport } from './entry.ts';
 
 /**
  * What `pix3 validate` reports: one {@link Diagnostic} per problem, each with a stable `code`.
@@ -280,3 +281,27 @@ export const compareDiagnostics = (a: Diagnostic, b: Diagnostic): number =>
   (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER) ||
   (a.path ?? '').localeCompare(b.path ?? '') ||
   a.code.localeCompare(b.code);
+
+/** One diagnostic as `pix3 validate` and `pix3 check` print it (path and fix indented below). */
+export const formatDiagnostic = (
+  d: Omit<Diagnostic, 'code'> & { readonly code: string }
+): string => {
+  const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
+  const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
+  let text = `${where}  ${d.severity}  ${d.code}${node}  ${d.message}\n`;
+  if (d.path) text += `    at ${d.path}\n`;
+  if (d.fix) text += `    fix: ${d.fix}\n`;
+  return text;
+};
+
+/** The level-2 part of the human summary line. */
+export const describeLevel2 = (level2: BundledValidateReport['level2']): string =>
+  level2.state === 'ran'
+    ? `level 2 hydrated ${level2.filesHydrated} file(s)${
+        level2.filesSkippedForScripts
+          ? `, ${level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
+          : ''
+      }`
+    : level2.state === 'disabled'
+      ? 'level 2 off'
+      : `level 2 skipped: ${level2.reason}`;

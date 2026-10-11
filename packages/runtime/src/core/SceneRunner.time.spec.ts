@@ -60,8 +60,6 @@ function createAudioStub(): AudioService & {
     }),
     applySnapshot: vi.fn(),
     setPaused: vi.fn(),
-    getActivePlaybackSnapshot: vi.fn(() => []),
-    getActivePlaybackRevision: vi.fn(() => 0),
     getBusVolume: vi.fn(() => masterVolume),
     setBusVolume: vi.fn((_bus: string, volume: number) => {
       masterVolume = volume;

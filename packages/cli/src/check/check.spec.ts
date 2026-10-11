@@ -360,6 +360,19 @@ describe('exit codes and coverage', () => {
     expect(err).toContain('no pix3project.yaml');
   });
 
+  it('exit 2 when --project is followed by an option, not a folder', async () => {
+    // It used to take `--json` as the folder and report "no pix3project.yaml in …/--json".
+    let err = '';
+    const code = await runCheck(['--project', '--json'], {
+      cwd: scratch,
+      stdout: () => {},
+      stderr: t => (err += t),
+      validate,
+    });
+    expect(code).toBe(2);
+    expect(err).toContain('--project needs a folder');
+  });
+
   it('E_EDITOR_UNSYNCED when .pix3/dev.json points at a live editor that cannot flush', async () => {
     const root = newRecipe();
     const server = createServer((req, res) => {

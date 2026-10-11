@@ -1,5 +1,6 @@
 import { parse as parseYaml } from 'yaml';
 
+import { toProjectPath } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
 
 /**
@@ -99,14 +100,6 @@ export const parseSceneText = (text: string): Record<string, unknown> => {
     throw new SceneParseError('not a .pix3scene (no `root:` list)');
   }
   return data;
-};
-
-/** `res://a/b.pix3scene` → `a/b.pix3scene` (null for other schemes). */
-export const resToProjectPath = (reference: string): string | null => {
-  const trimmed = reference.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(trimmed)?.[1]?.toLowerCase();
-  if (scheme && scheme !== 'res') return null;
-  return trimmed.replace(/^res:\/\//i, '').replace(/^\/+/, '') || null;
 };
 
 const numbers = (value: unknown): number[] | null => {
@@ -221,7 +214,7 @@ const prefabRoot = (
   reference: string,
   readPrefab: TreeOptions['readPrefab']
 ): { type?: string; name?: string } => {
-  const projectPath = resToProjectPath(reference);
+  const projectPath = toProjectPath(reference);
   if (!projectPath || !readPrefab) return {};
   const text = readPrefab(projectPath);
   if (text === null) return {};
@@ -593,7 +586,7 @@ export const summarizeScene = (
     if (!isRecord(definition)) return;
     nodes += 1;
     if (typeof definition.instance === 'string') {
-      const target = resToProjectPath(definition.instance);
+      const target = toProjectPath(definition.instance);
       if (target) instances.add(target);
     } else if (typeof definition.type === 'string') {
       types[definition.type] = (types[definition.type] ?? 0) + 1;

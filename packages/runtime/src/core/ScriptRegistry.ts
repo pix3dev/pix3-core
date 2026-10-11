@@ -91,7 +91,7 @@ export class ScriptRegistry {
    * That distinction is not cosmetic. Scene loading hits this for every `user:*` component before
    * project scripts finish compiling — the components are parked and attached on registration, so
    * nothing is wrong — and it used to log `console.error` each time. Opening any project therefore
-   * produced a dozen console errors that meant nothing, and those land in the editor's `read_errors`
+   * produced a dozen console errors that meant nothing, and those land in the editor's `pix3_errors`
    * channel, which is the tool an agent uses to decide whether something is broken. Benign noise in
    * the error channel trains the reader to ignore the error channel, which is how a real failure
    * gets skipped.

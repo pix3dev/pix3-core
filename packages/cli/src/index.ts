@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { relative, resolve } from 'node:path';
 
+import type { CliIo } from './io.ts';
 import { createProject } from './new-project.ts';
 import { listTemplates, oneLine, resolveTemplate } from './templates.ts';
 import { COMMAND_USAGE, isCommandName, USAGE, type CommandName } from './usage.ts';
@@ -46,19 +47,25 @@ const stringFlag = (args: ParsedArgs, name: string): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
+const io: CliIo = {
+  cwd: process.cwd(),
+  stdout: text => void process.stdout.write(text),
+  stderr: text => void process.stderr.write(text),
+};
+
 const printTemplateList = (): void => {
   const templates = listTemplates().filter(t => !t.hidden);
   const width = Math.max(...templates.map(t => t.id.length));
-  process.stdout.write('Starters:\n');
+  io.stdout('Starters:\n');
   for (const t of templates) {
-    process.stdout.write(`  ${t.id.padEnd(width)}  ${t.title} — ${oneLine(t.description)}\n`);
+    io.stdout(`  ${t.id.padEnd(width)}  ${t.title} — ${oneLine(t.description)}\n`);
   }
-  process.stdout.write('\nCreate one:  pix3 new <id> [dir]   (or: npm create pix3)\n');
+  io.stdout('\nCreate one:  pix3 new <id> [dir]   (or: npm create pix3)\n');
 };
 
 const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number> => {
   if (argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write(COMMAND_USAGE.new);
+    io.stdout(COMMAND_USAGE.new);
     return 0;
   }
   const [query, dirArg] = args.positionals;
@@ -68,13 +75,13 @@ const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number
   }
   const resolved = resolveTemplate(query, listTemplates());
   if ('error' in resolved) {
-    process.stderr.write(`pix3: ${resolved.error}\n`);
+    io.stderr(`pix3: ${resolved.error}\n`);
     return 1;
   }
   const dir = resolve(process.cwd(), dirArg ?? `pix3-${resolved.template.id}`);
   // The kit and the script types are prebuilt in a published package (plain file copies); a repo
   // checkout regenerates them first when their sources changed (printed).
-  const log = (line: string): void => void process.stderr.write(`${line}\n`);
+  const log = (line: string): void => io.stderr(`${line}\n`);
   const { ensureKit } = await import('./kit/kit-source.ts');
   const { ensureRuntimeTypes } = await import('./types/runtime-types.ts');
   const { agentKitStep } = await import('./kit/install.ts');
@@ -87,7 +94,7 @@ const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number
     postCreateSteps: [agentKitStep(kit, runtimeTypes)],
   });
   const where = relative(process.cwd(), project.dir) || '.';
-  process.stdout.write(
+  io.stdout(
     `Created ${project.projectName} (${project.template.title}) in ${project.dir}\n` +
       `  ${project.files.length} files, project id ${project.projectId}, agent kit ${kit.manifest.version}\n\n` +
       'Next:\n' +
@@ -104,8 +111,8 @@ const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number
 };
 
 /**
- * Run one command with the arguments after its name. Every command answers `--help` / `-h` with its
- * entry of {@link COMMAND_USAGE} (`new` and `kit` here, the others in their own parsers).
+ * Run one command with the arguments after its name. Every command parses its own arguments and
+ * answers `--help` / `-h` with its entry of {@link COMMAND_USAGE}; all but `new` load on demand.
  */
 const dispatch = async (
   command: CommandName | '__chrome-owner',
@@ -114,71 +121,28 @@ const dispatch = async (
   switch (command) {
     case 'new':
       return runNew(parseArgs(argv), argv);
-    case 'check': // own argument parsing; validator, TypeScript and types load lazily
-      return (await import('./check/check.ts')).runCheck(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'kit': {
-      if (argv.includes('--help') || argv.includes('-h')) {
-        process.stdout.write(COMMAND_USAGE.kit);
-        return 0;
-      }
-      const args = parseArgs(argv);
-      return (await import('./kit/command.ts')).runKitCli({
-        cwd: process.cwd(),
-        projectDir: stringFlag(args, 'project'),
-        update: args.flags.has('update'),
-        migrate: args.flags.has('migrate'),
-      });
-    }
-    case 'editor': // own argument parsing; finds or starts the dev server, opens Chrome
-      return (await import('./editor/command.ts')).runEditorCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
+    case 'check': // validator, TypeScript and types load lazily
+      return (await import('./check/check.ts')).runCheck(argv, io);
+    case 'kit':
+      return (await import('./kit/command.ts')).runKitCli(argv, io);
+    case 'editor': // finds or starts the dev server, opens Chrome
+      return (await import('./editor/command.ts')).runEditorCli(argv, io);
     case '__chrome-owner': // hidden: the detached process `pix3 editor` starts (Chrome + proxy)
       return (await import('./editor/chrome-owner.ts')).runChromeOwner(argv);
-    case 'agent-setup': // own argument parsing; writes the project's MCP config files
-      return (await import('./agent-setup/command.ts')).runAgentSetupCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'smoke': // own argument parsing; the game runs in a worker from the smoke bundle
-      return (await import('./smoke/command.ts')).runSmokeCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'tree': // own argument parsing; plain YAML (the runtime loads only for --props)
-      return (await import('./tree/command.ts')).runTreeCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'validate': // own argument parsing (`--json` takes no value); runtime loads lazily
-      return (await import('./validate/entry.ts')).runValidateCli(argv);
-    case 'character-compile': // own argument parsing; plain Node (PNG headers, yaml)
-      return (await import('./character/command.ts')).runCharacterCompileCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'gap': // own argument parsing; appends to .pix3/gaps.jsonl
-      return (await import('./gap/command.ts')).runGapCli(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
-    case 'sfx': // own argument parsing; offline synth, no dependencies
-      return (await import('./sfx/command.ts')).runSfx(argv, {
-        cwd: process.cwd(),
-        stdout: text => process.stdout.write(text),
-        stderr: text => process.stderr.write(text),
-      });
+    case 'agent-setup': // writes the project's MCP config files
+      return (await import('./agent-setup/command.ts')).runAgentSetupCli(argv, io);
+    case 'smoke': // the game runs in a worker from the smoke bundle
+      return (await import('./smoke/command.ts')).runSmokeCli(argv, io);
+    case 'tree': // plain YAML (the runtime loads only for --props)
+      return (await import('./tree/command.ts')).runTreeCli(argv, io);
+    case 'validate': // `--json` takes no value; the runtime loads lazily
+      return (await import('./validate/entry.ts')).runValidateCli(argv, io);
+    case 'character-compile': // plain Node (PNG headers, yaml)
+      return (await import('./character/command.ts')).runCharacterCompileCli(argv, io);
+    case 'gap': // appends to .pix3/gaps.jsonl
+      return (await import('./gap/command.ts')).runGapCli(argv, io);
+    case 'sfx': // offline synth, no dependencies
+      return (await import('./sfx/command.ts')).runSfx(argv, io);
   }
 };
 

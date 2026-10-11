@@ -185,32 +185,9 @@ describe('SceneRunner camera projection updates', () => {
     expect(camera.aspect).toBe(2);
   });
 
-  it('includes per-frame profiler activities in frame samples, resets missing reports and reuses unchanged heavy payloads', () => {
+  it('includes per-frame profiler activities in frame samples and resets missing reports', () => {
     const renderer = createRendererStub(320, 160);
-    const getActivePlaybackSnapshot = vi
-      .fn()
-      .mockReturnValueOnce([
-        {
-          id: 'playback-17',
-          label: 'hitStone',
-          startedAtMs: 1000,
-          elapsedMs: 125,
-          loop: false,
-          volume: 0.35,
-          playbackRate: 1.05,
-          pan: -0.1,
-        },
-      ])
-      .mockReturnValueOnce([]);
     const audioService = {
-      getActivePlaybackSnapshot,
-      // The runner re-snapshots audio only when this changes (or on its 10 Hz
-      // refresh, frozen below): tick 2 sees no change, tick 3 does.
-      getActivePlaybackRevision: vi
-        .fn()
-        .mockReturnValueOnce(1)
-        .mockReturnValueOnce(1)
-        .mockReturnValue(2),
       stopAll: vi.fn(),
       resetBuses: vi.fn(),
       applySnapshot: vi.fn(),
@@ -249,49 +226,23 @@ describe('SceneRunner camera projection updates', () => {
 
     vi.spyOn(runnerInternals.clock, 'getDelta').mockReturnValue(1 / 60);
     vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(1);
-    // Freeze the wall clock so the heavy-payload refresh (100 ms cadence) fires
-    // on the first sample only; later samples must rely on the revision counter.
-    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(5000);
 
     const samples: import('./SceneRunner').SceneRunnerFrameSample[] = [];
     runner.subscribeFrameStats(sample => {
       samples.push(sample);
     });
 
-    try {
-      runnerInternals.tick();
-      cameraNode.removeComponent(reporter);
-      runnerInternals.tick();
-      runnerInternals.tick();
-    } finally {
-      nowSpy.mockRestore();
-    }
+    runnerInternals.tick();
+    cameraNode.removeComponent(reporter);
+    runnerInternals.tick();
 
-    expect(samples).toHaveLength(3);
+    expect(samples).toHaveLength(2);
     expect(samples[0]?.profilerActivities).toEqual([
       { label: 'Physics', selfTimeMs: 1.5, totalTimeMs: 2.25 },
       { label: 'Audio', selfTimeMs: 0.25 },
     ]);
-    expect(samples[0]?.activeAudioPlaybacks).toEqual([
-      {
-        id: 'playback-17',
-        label: 'hitStone',
-        startedAtMs: 1000,
-        elapsedMs: 125,
-        loop: false,
-        volume: 0.35,
-        playbackRate: 1.05,
-        pan: -0.1,
-      },
-    ]);
     // Reports are per frame: the reporter is gone, so the list is too.
     expect(samples[1]?.profilerActivities).toBeUndefined();
-    // Unchanged active set + no cadence refresh ⇒ the SAME array is reused, not rebuilt.
-    expect(samples[1]?.activeAudioPlaybacks).toBe(samples[0]?.activeAudioPlaybacks);
-    expect(samples[1]?.rendererStats).toBe(samples[0]?.rendererStats);
-    // A revision bump forces a rebuild the very frame it happens: nothing plays now.
-    expect(samples[2]?.activeAudioPlaybacks).toBeUndefined();
-    expect(getActivePlaybackSnapshot).toHaveBeenCalledTimes(2);
   });
 
   /**
@@ -494,7 +445,6 @@ describe('SceneRunner camera projection updates', () => {
       resetBuses: vi.fn(),
       applySnapshot: vi.fn(),
       setPaused: vi.fn(),
-      getActivePlaybackSnapshot: vi.fn(() => []),
     } as unknown as AudioService;
     const runner = new SceneRunner(
       createSceneManagerStub(),
@@ -550,7 +500,6 @@ describe('SceneRunner camera projection updates', () => {
       resetBuses: vi.fn(),
       applySnapshot,
       setPaused: vi.fn(),
-      getActivePlaybackSnapshot: vi.fn(() => []),
     } as unknown as AudioService;
     const runner = new SceneRunner(
       createSceneManagerStub(),
@@ -615,7 +564,6 @@ describe('SceneRunner camera projection updates', () => {
       resetBuses: vi.fn(),
       applySnapshot,
       setPaused: vi.fn(),
-      getActivePlaybackSnapshot: vi.fn(() => []),
     } as unknown as AudioService;
     const runner = new SceneRunner(
       createSceneManagerStub(),
@@ -660,7 +608,6 @@ describe('SceneRunner camera projection updates', () => {
       resetBuses: vi.fn(),
       applySnapshot: vi.fn(),
       setPaused: vi.fn(),
-      getActivePlaybackSnapshot: vi.fn(() => []),
     } as unknown as AudioService;
     const runner = new SceneRunner(
       createSceneManagerStub(),

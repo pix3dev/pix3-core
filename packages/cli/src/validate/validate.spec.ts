@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { runValidate } from './command.ts';
 import { DIAGNOSTIC_CODES, type Diagnostic } from './diagnostics.ts';
-import { scanExportNames } from './user-scripts.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { validateProject, type ValidateOptions, type ValidateReport } from './validate.ts';
 
 /**
@@ -675,6 +675,20 @@ describe('level 2: hydration with compiled user scripts', () => {
     expect(report.notes.some(note => /^SKIPPED: 1 scene\(s\) .*E_SCRIPT_COMPILE/.test(note))).toBe(
       true
     );
+  });
+
+  it('compiles what Vite and pix3 smoke compile: a .wasm import, import.meta.env.MODE', async () => {
+    // Level 2 had no .wasm loader (E_SCRIPT_COMPILE for a script the editor and smoke run).
+    const report = await run({
+      'scripts/codec.wasm': '\0asm',
+      'scripts/Decoder.ts':
+        "import { Script } from '@pix3/runtime';\nimport wasm from './codec.wasm';\nexport class Decoder extends Script { bytes = wasm.length; mode = import.meta.env.MODE; }\n",
+      'scenes/a.pix3scene': scene(
+        '  - id: a\n    type: Node2D\n    components:\n      - type: user:Decoder\n'
+      ),
+    });
+    expect(codesOf(report)).not.toContain('E_SCRIPT_COMPILE');
+    expect(report.level2).toMatchObject({ state: 'ran', filesHydrated: 1 });
   });
 
   it('W_SCRIPT_IMPORT: scripts that throw at import (browser globals at top level)', async () => {

@@ -1,7 +1,8 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import type { CliIo } from '../io.ts';
+import { resolveProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 
 /**
@@ -35,11 +36,7 @@ export interface Gap {
   readonly context?: string;
 }
 
-export interface GapIo {
-  readonly cwd: string;
-  readonly env?: NodeJS.ProcessEnv;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface GapIo extends CliIo {
   readonly now?: () => Date;
 }
 
@@ -156,14 +153,14 @@ export const runGapCli = (argv: readonly string[], io: GapIo): number => {
   const parsed = parseGapArgs(argv);
   if ('error' in parsed) {
     io.stderr(`pix3 gap: ${parsed.error}\n\n${COMMAND_USAGE.gap}`);
-    return 1;
-  }
-  const start = parsed.projectDir ? resolve(io.cwd, parsed.projectDir) : io.cwd;
-  const root = parsed.projectDir ? start : findProjectRoot(start);
-  if (!root || !existsSync(join(root, PROJECT_MANIFEST_FILE))) {
-    io.stderr(`pix3 gap: no ${PROJECT_MANIFEST_FILE} in ${start} or any parent folder.\n`);
     return 2;
   }
+  const project = resolveProjectRoot(io.cwd, parsed.projectDir);
+  if ('error' in project) {
+    io.stderr(`pix3 gap: ${project.error}\n`);
+    return 2;
+  }
+  const { root } = project;
   if (parsed.list) {
     const gaps = readGaps(root);
     if (parsed.json) io.stdout(`${JSON.stringify(gaps, null, 2)}\n`);
@@ -180,7 +177,7 @@ export const runGapCli = (argv: readonly string[], io: GapIo): number => {
   const gap = buildGap(parsed, io.env ?? process.env, (io.now ?? (() => new Date()))());
   if ('error' in gap) {
     io.stderr(`pix3 gap: ${gap.error}\n`);
-    return 1;
+    return 2;
   }
   const path = join(root, GAPS_FILE);
   mkdirSync(dirname(path), { recursive: true });

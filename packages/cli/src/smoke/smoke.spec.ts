@@ -167,6 +167,28 @@ export class Reader extends Script {
     expect(report.game).toEqual({ name: 'reader', snapshot: { ticks: 21 } });
   });
 
+  it('localizes as the player does: locales/*.json with no localization: block', async () => {
+    const root = project({
+      'locales/en.json': '{ "strings": { "hello": "Hi" } }',
+      'scenes/main.pix3scene': scene(component('user:Greeter')),
+      'scripts/Greeter.ts': `import { Script, registerGameDebug, type PropertySchema } from '@pix3/runtime';
+
+export class Greeter extends Script {
+  static getPropertySchema(): PropertySchema {
+    return { nodeType: 'Greeter', properties: [] };
+  }
+  onStart(): void {
+    registerGameDebug({ name: 'greeter', snapshot: () => ({ hello: this.scene?.localization.tr('hello') }) });
+  }
+}
+`,
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 5 }));
+    expect(report.errors).toEqual([]);
+    // Smoke passed only a declared defaultLocale on, so a discovered table never loaded: "hello".
+    expect(report.game).toEqual({ name: 'greeter', snapshot: { hello: 'Hi' } });
+  });
+
   it('reports a throw in onStart with the script name, the node and frame 0', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:StartBoom')),
@@ -477,6 +499,28 @@ export class Reader extends Script {
       ).toMatchObject({
         code: 'E_SMOKE_NO_SCENE',
       });
+    });
+
+    it('reads an instance path and a script export the way the loader and the registry do', () => {
+      const root = project({
+        'scenes/main.pix3scene': scene(
+          component('user:Boss'),
+          `      - id: bat
+        instance: ./scenes/bat.pix3scene
+`
+        ),
+        'scenes/bat.pix3scene': scene(''),
+        'scripts/boss.ts':
+          "import { Script } from '@pix3/runtime';\nclass Impl extends Script {}\nexport { Impl as Boss };\n",
+      });
+      // Before: `./scenes/bat…` was not normalised (bat ran as a top-level scene of its own) and
+      // `export { Impl as Boss }` reached no scene (a change to it widened the run to everything).
+      expect(selectScenesFor({ projectRoot: root, changedFiles: null })).toMatchObject({
+        scenes: ['scenes/main.pix3scene'],
+      });
+      expect(
+        selectScenesFor({ projectRoot: root, changedFiles: ['scripts/boss.ts'] })
+      ).toMatchObject({ mode: 'changed', scenes: ['scenes/main.pix3scene'] });
     });
 
     it('asks git: an uncommitted edit to a game script smokes the game, not the menu', () => {

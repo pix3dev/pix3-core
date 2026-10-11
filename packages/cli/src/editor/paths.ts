@@ -20,6 +20,10 @@ export const chromeProfileFallbackDir = (): string => join(tmpdir(), 'pix3-chrom
 export const chromeStatePath = (env: NodeJS.ProcessEnv = process.env): string =>
   join(pix3Home(env), 'chrome.json');
 
+/** A TCP port number (1–65535). */
+export const isPort = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 65536;
+
 /** The port chrome-devtools-mcp is configured for by default (plan §D.4). */
 export const DEFAULT_CDP_PORT = 9333;
 /** Ports tried locally when 9333 belongs to someone else: 9334–9339 (never for a forward). */

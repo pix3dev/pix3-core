@@ -1,9 +1,10 @@
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import type { CliIo } from '../io.ts';
 import { findProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
-import { validateHelp, type Diagnostic } from './diagnostics.ts';
+import { describeLevel2, formatDiagnostic, validateHelp } from './diagnostics.ts';
 import type { ScriptImportMap } from './level2.ts';
 import { ProjectFiles, SCENE_EXTENSION } from './project.ts';
 import { validateProject, type ValidateReport } from './validate.ts';
@@ -16,10 +17,7 @@ import { validateProject, type ValidateReport } from './validate.ts';
  * (bad arguments, no project found).
  */
 
-export interface ValidateIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface ValidateIo extends CliIo {
   /** Set by the bundled entry; the specs leave it bare. */
   readonly scriptImports?: ScriptImportMap;
   /** Resolved URL of `esbuild`, when the caller can see one (level 2 needs it). */
@@ -47,7 +45,7 @@ const parseValidateArgs = (argv: readonly string[]): ValidateArgs | { error: str
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
-      if (!project) return { error: '--project needs a folder' };
+      if (!project || project.startsWith('--')) return { error: '--project needs a folder' };
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else if (arg.startsWith('-')) return { error: `unknown option ${arg}` };
     else paths.push(arg);
@@ -78,29 +76,11 @@ const resolveTargets = (
   return { files: [...files] };
 };
 
-const formatDiagnostic = (d: Diagnostic): string => {
-  const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
-  const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
-  let text = `${where}  ${d.severity}  ${d.code}${node}  ${d.message}\n`;
-  if (d.path) text += `    at ${d.path}\n`;
-  if (d.fix) text += `    fix: ${d.fix}\n`;
-  return text;
-};
-
 export const formatHumanReport = (report: ValidateReport): string => {
   let out = '';
   for (const d of report.diagnostics) out += formatDiagnostic(d);
   for (const note of report.notes) out += `note: ${note}\n`;
-  const level2 =
-    report.level2.state === 'ran'
-      ? `level 2 hydrated ${report.level2.filesHydrated} file(s)${
-          report.level2.filesSkippedForScripts
-            ? `, ${report.level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
-            : ''
-        }`
-      : report.level2.state === 'disabled'
-        ? 'level 2 off'
-        : `level 2 skipped: ${report.level2.reason}`;
+  const level2 = describeLevel2(report.level2);
   out +=
     `${report.files.length} file(s) checked, ${report.errorCount} error(s), ` +
     `${report.warningCount} warning(s); ${level2}.\n`;

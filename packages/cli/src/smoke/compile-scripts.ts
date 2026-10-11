@@ -1,13 +1,15 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-import { registerProjectScriptExports, type ScriptRegistry } from '@pix3/runtime';
-import type { Plugin } from 'esbuild';
+import type { ScriptRegistry } from '@pix3/runtime';
 
 import type { ProjectFiles } from '../validate/project.ts';
-import { isRecord } from '../validate/yaml-doc.ts';
+import {
+  buildFailures,
+  hostImportsPlugin,
+  importAndRegister,
+  loadEsbuild,
+  scriptBuildOptions,
+  STUB_NAMESPACE,
+  type ScriptImportMap,
+} from '../validate/script-build.ts';
 
 /**
  * Compile the project's scripts for **running**, not just for registering.
@@ -19,11 +21,6 @@ import { isRecord } from '../validate/yaml-doc.ts';
  * CLI's install for `three/*` addons. Only what resolves nowhere is stubbed, and every stub is
  * reported: a game whose physics library became `{}` is not the game.
  */
-
-export interface ScriptImportUrls {
-  readonly runtime: string;
-  readonly three: string;
-}
 
 export type CompileResult =
   | {
@@ -48,88 +45,25 @@ export type CompileResult =
     }
   | { readonly status: 'unavailable'; readonly reason: string };
 
-type EsbuildModule = typeof import('esbuild');
-
 const packageNameOf = (specifier: string): string => {
   const parts = specifier.split('/');
   return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
 };
 
-const runPlugin = (
-  imports: ScriptImportUrls,
-  project: ProjectFiles,
-  stubbed: Set<string>,
-  bundled: Set<string>,
-  fallbackDir: string | undefined
-): Plugin => ({
-  name: 'pix3-smoke-imports',
-  setup(build) {
-    build.onResolve({ filter: /^@pix3\/runtime$/ }, () => ({
-      path: imports.runtime,
-      external: true,
-    }));
-    build.onResolve({ filter: /^three$/ }, () => ({ path: imports.three, external: true }));
-    build.onResolve({ filter: /\?(raw|url)$/ }, args => {
-      const [path, query] = args.path.split('?');
-      return {
-        path: join(args.resolveDir, path),
-        namespace: query === 'raw' ? 'pix3-raw' : 'pix3-url',
-      };
-    });
-    build.onResolve({ filter: /^[^./]/ }, async args => {
-      if (args.kind === 'entry-point' || args.pluginData === 'pix3-smoke') return undefined;
-      if (args.path.startsWith('node:') || args.path.startsWith('virtual:')) {
-        stubbed.add(args.path);
-        return { path: args.path, namespace: 'pix3-stub' };
-      }
-      const attempt = async (resolveDir: string) =>
-        build.resolve(args.path, { kind: args.kind, resolveDir, pluginData: 'pix3-smoke' });
-      let result = await attempt(args.resolveDir);
-      if (result.errors.length > 0 && fallbackDir && packageNameOf(args.path) === 'three') {
-        result = await attempt(fallbackDir);
-      }
-      if (result.errors.length > 0 || !result.path) {
-        stubbed.add(args.path);
-        return { path: args.path, namespace: 'pix3-stub' };
-      }
-      bundled.add(packageNameOf(args.path));
-      return { path: result.path, external: result.external };
-    });
-    build.onLoad({ filter: /.*/, namespace: 'pix3-stub' }, () => ({
-      contents: 'module.exports = {};',
-      loader: 'js',
-    }));
-    build.onLoad({ filter: /.*/, namespace: 'pix3-raw' }, async args => {
-      const { readFile } = await import('node:fs/promises');
-      return {
-        contents: `export default ${JSON.stringify(await readFile(args.path, 'utf8'))};`,
-        loader: 'js',
-      };
-    });
-    build.onLoad({ filter: /.*/, namespace: 'pix3-url' }, args => ({
-      contents: `export default ${JSON.stringify(`res://${project.relativeOf(args.path) ?? args.path}`)};`,
-      loader: 'js',
-    }));
-  },
-});
-
 export const compileAndImportScripts = async (
   project: ProjectFiles,
   entries: readonly string[],
   registry: ScriptRegistry,
-  imports: ScriptImportUrls,
+  imports: ScriptImportMap,
   options: {
     readonly esbuildSpecifier?: string;
     /** Where `three/*` addons resolve when the project has no `three` of its own. */
     readonly fallbackResolveDir?: string;
   } = {}
 ): Promise<CompileResult> => {
-  const esbuildSpecifier = options.esbuildSpecifier ?? 'esbuild';
   if (entries.length === 0) return { status: 'none' };
-  let esbuild: EsbuildModule;
-  try {
-    esbuild = (await import(esbuildSpecifier)) as EsbuildModule;
-  } catch {
+  const esbuild = await loadEsbuild(options.esbuildSpecifier ?? 'esbuild');
+  if (!esbuild) {
     return {
       status: 'unavailable',
       reason:
@@ -138,85 +72,58 @@ export const compileAndImportScripts = async (
   }
   const stubbed = new Set<string>();
   const bundled = new Set<string>();
+  const fallbackDir = options.fallbackResolveDir;
   let code: string;
   try {
     const result = await esbuild.build({
-      stdin: {
-        contents: entries
-          .map(
-            (file, index) =>
-              `export * as __pix3_entry_${index} from ${JSON.stringify(`./${file}`)};`
-          )
-          .join('\n'),
-        resolveDir: project.root,
-        sourcefile: 'pix3-smoke-scripts.ts',
-        loader: 'ts',
-      },
-      bundle: true,
-      write: false,
-      format: 'esm',
+      ...scriptBuildOptions(project, entries, 'pix3-smoke-scripts.ts'),
       platform: 'browser',
-      target: 'es2022',
-      logLevel: 'silent',
       // Stacks point at the project's own files (Node applies it: `setSourceMapsEnabled`).
       sourcemap: 'inline',
       // With a trailing separator: consumers concatenate sourceRoot + source, and without it
       // every stack read `<root>scripts/Foo.ts` (the root never stripped from the report).
       sourceRoot: `${project.root.replace(/[\\/]+$/, '')}/`,
-      loader: {
-        '.glsl': 'text',
-        '.vert': 'text',
-        '.frag': 'text',
-        '.css': 'empty',
-        '.wasm': 'binary',
-      },
-      define: {
-        'import.meta.env.BASE_URL': JSON.stringify('/'),
-        'import.meta.env.DEV': 'true',
-        'import.meta.env.PROD': 'false',
-        'import.meta.env.MODE': JSON.stringify('development'),
-      },
-      plugins: [runPlugin(imports, project, stubbed, bundled, options.fallbackResolveDir)],
+      plugins: [
+        hostImportsPlugin('pix3-smoke-imports', imports, project, async (args, build) => {
+          if (args.pluginData === 'pix3-smoke') return undefined;
+          if (args.path.startsWith('node:') || args.path.startsWith('virtual:')) {
+            stubbed.add(args.path);
+            return { path: args.path, namespace: STUB_NAMESPACE };
+          }
+          const attempt = async (resolveDir: string) =>
+            build.resolve(args.path, { kind: args.kind, resolveDir, pluginData: 'pix3-smoke' });
+          let resolved = await attempt(args.resolveDir);
+          if (resolved.errors.length > 0 && fallbackDir && packageNameOf(args.path) === 'three') {
+            resolved = await attempt(fallbackDir);
+          }
+          if (resolved.errors.length > 0 || !resolved.path) {
+            stubbed.add(args.path);
+            return { path: args.path, namespace: STUB_NAMESPACE };
+          }
+          bundled.add(packageNameOf(args.path));
+          return { path: resolved.path, external: resolved.external };
+        }),
+      ],
     });
-    code = result.outputFiles[0]?.text ?? '';
+    code = result.outputFiles?.[0]?.text ?? '';
   } catch (error) {
-    const failures =
-      (
-        error as {
-          errors?: Array<{ text: string; location?: { file: string; line: number } | null }>;
-        }
-      ).errors ?? [];
     return {
       status: 'compile-failed',
-      failures: (failures.length > 0 ? failures : [{ text: String(error), location: null }]).map(
-        failure => ({
-          message: failure.text,
-          file: failure.location?.file,
-          line: failure.location?.line,
-        })
-      ),
+      failures: buildFailures(error).map(failure => ({
+        message: failure.text,
+        file: failure.location?.file,
+        line: failure.location?.line,
+      })),
     };
   }
-  const dir = mkdtempSync(join(tmpdir(), 'pix3-smoke-scripts-'));
-  const modulePath = join(dir, 'scripts.mjs');
   try {
-    writeFileSync(modulePath, code);
-    const module = (await import(pathToFileURL(modulePath).href)) as Record<string, unknown>;
-    const registered: string[] = [];
-    entries.forEach((file, index) => {
-      const namespace = module[`__pix3_entry_${index}`];
-      if (isRecord(namespace))
-        registered.push(...registerProjectScriptExports(registry, namespace, file));
-    });
     return {
       status: 'loaded',
-      registered,
+      registered: await importAndRegister(code, entries, registry, 'pix3-smoke-scripts-'),
       stubbed: [...stubbed].sort(),
       bundledPackages: [...bundled].sort(),
     };
   } catch (error) {
     return { status: 'import-failed', error, stubbed: [...stubbed].sort() };
-  } finally {
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   }
 };

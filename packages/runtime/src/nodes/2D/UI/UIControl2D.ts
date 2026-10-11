@@ -105,7 +105,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
   // Label state is exposed through accessors that re-render on change. As plain fields these were a
   // trap: the inspector wrote them through a schema `setValue` that called `updateLabel()` by hand,
   // so authoring worked, while a script's `btn.label = 'X'` changed the field and drew nothing —
-  // `getDisplayText()` (and therefore the agent's `game_observe.text`) reported the new text that
+  // `getDisplayText()` (and therefore the text an agent reads back) reported the new text that
   // was never on screen. Setters keep the two paths from diverging.
   private _label: string;
   private _labelKey: string;

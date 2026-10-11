@@ -1,10 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, openSync, readFileSync } from 'node:fs';
+import { mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import WebSocket from 'ws';
 
+import { logTail } from '../fs-util.ts';
 import { inspectCdpPort } from './cdp-port.ts';
 import { CdpProxy, pipeFromStreams } from './cdp-proxy.ts';
 import { ensureCdpToken } from './cdp-token.ts';
@@ -192,15 +194,10 @@ export const startChromeOwner = async (options: StartChromeOwnerOptions): Promis
     if (child.exitCode !== null) break;
     const state = await inspectCdpPort(options.port, { token });
     if (state.kind === 'ours') return child;
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await sleep(150);
   }
   if (child.exitCode === null) child.kill('SIGTERM');
-  let tail = '';
-  try {
-    tail = readFileSync(logPath, 'utf8').trim().split('\n').slice(-12).join('\n');
-  } catch {
-    // no log
-  }
+  const tail = logTail(logPath, 12);
   throw new Error(
     `${child.exitCode !== null ? `the Chrome owner exited (code ${child.exitCode})` : 'the CDP proxy did not come up'} — ${logPath}:\n${tail}`
   );
@@ -232,7 +229,7 @@ export const ensureEditorTab = async (
       if (state.kind !== 'ours') return null;
       const open = state.pages.some(url => url.startsWith(editorUrl));
       if (open || Date.now() >= deadline) return { open, browser: state.browser };
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await sleep(200);
     }
   };
   const before = await listed(options.waitMs ?? 0);
@@ -317,7 +314,7 @@ export const stopChromeOwner = async (ownerPid: number, timeoutMs = 6_000): Prom
     } catch {
       return true;
     }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await sleep(100);
   }
   return false;
 };

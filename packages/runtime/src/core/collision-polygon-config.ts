@@ -4,8 +4,7 @@ import type { Point2D } from './collision-shapes-2d';
  * Read an authored `points` config value into vertices the collision math can use.
  *
  * The value comes out of a `.pix3scene`'s `components: [{ config: { points } }]`
- * bag, which is untyped YAML — and out of the agent's `set_component_property`,
- * which passes model JSON straight through. Three spellings are accepted because
+ * bag, which is untyped YAML a human or a model writes by hand. Three spellings are accepted because
  * all three are things a human or a model plausibly writes:
  *
  * - `[{ x: 1, y: 2 }, ...]` — what the editor writes and what YAML round-trips;

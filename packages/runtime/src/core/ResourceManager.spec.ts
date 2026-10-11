@@ -5,36 +5,25 @@ import { ResourceManager } from './ResourceManager';
 const HELLO_BASE64 = btoa('hello');
 
 describe('ResourceManager embedded resources', () => {
-  it('reports no embedded resources for a plain hosted build', () => {
-    const manager = new ResourceManager('./');
-
-    expect(manager.hasEmbeddedResources).toBe(false);
-    expect(manager.hasEmbeddedResource('res://assets/.atlas/atlas-manifest.json')).toBe(false);
-  });
-
-  it('answers membership for a single-file build through the same path normalization as reads', async () => {
+  it('reads an embedded entry through the same path normalization for every spelling', async () => {
     const manager = new ResourceManager('./', {
       'assets/greeting.txt': { base64: HELLO_BASE64, mimeType: 'text/plain' },
     });
 
-    expect(manager.hasEmbeddedResources).toBe(true);
-    // res:// prefix, leading slash and backslashes all resolve to the same entry
-    // a read would find — the probe must not disagree with readText.
-    expect(manager.hasEmbeddedResource('res://assets/greeting.txt')).toBe(true);
-    expect(manager.hasEmbeddedResource('/assets/greeting.txt')).toBe(true);
-    expect(manager.hasEmbeddedResource('assets\\greeting.txt')).toBe(true);
+    // res:// prefix, leading slash and backslashes all resolve to the same entry.
     await expect(manager.readText('res://assets/greeting.txt')).resolves.toBe('hello');
-
-    // The reason the probe exists: a single-file build has no siblings, so this
-    // one would otherwise fall through to a network request that cannot succeed.
-    expect(manager.hasEmbeddedResource('res://assets/.atlas/atlas-manifest.json')).toBe(false);
+    await expect(manager.readText('/assets/greeting.txt')).resolves.toBe('hello');
+    await expect(manager.readText('assets\\greeting.txt')).resolves.toBe('hello');
   });
+});
 
-  it('does not treat remote URLs as embedded', () => {
-    const manager = new ResourceManager('./', {
-      'assets/greeting.txt': { base64: HELLO_BASE64 },
-    });
-
-    expect(manager.hasEmbeddedResource('https://example.com/assets/greeting.txt')).toBe(false);
+describe('ResourceManager schemes', () => {
+  it('passes data: and blob: URLs through instead of reading them as project paths', () => {
+    // Both lack the `//` the scheme match required, so they became `<base>data:…`.
+    const manager = new ResourceManager('/game/');
+    expect(manager.normalize('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA');
+    expect(manager.normalize('blob:http://localhost/x')).toBe('blob:http://localhost/x');
+    expect(manager.normalize('res://sprites/a.png')).toBe('/game/sprites/a.png');
+    expect(manager.normalize('sprites/a.png')).toBe('/game/sprites/a.png');
   });
 });

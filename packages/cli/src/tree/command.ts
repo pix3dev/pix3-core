@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 
+import type { CliIo } from '../io.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { ProjectFiles } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
@@ -31,11 +32,7 @@ import {
  * Exit: 0 = ok, 1 = a scene does not parse, 2 = bad arguments / no such file.
  */
 
-export interface TreeIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type TreeIo = CliIo;
 
 interface TreeArgs {
   readonly scene?: string;
@@ -226,9 +223,10 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     return 2;
   }
   const scenePath = toProjectRelative(root, absolute);
+  const sceneText = readFileSync(absolute, 'utf8');
   let scene: Record<string, unknown>;
   try {
-    scene = parseSceneText(readFileSync(absolute, 'utf8'));
+    scene = parseSceneText(sceneText);
   } catch (error) {
     if (!(error instanceof SceneParseError)) throw error;
     io.stderr(`pix3 tree: ${scenePath} is ${error.message}.\n`);
@@ -266,7 +264,7 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     return 0;
   }
   const shown = countTreeNodes(nodes);
-  const total = summarizeScene(scenePath, readFileSync(absolute, 'utf8')).nodes;
+  const total = summarizeScene(scenePath, sceneText).nodes;
   const filters = [
     args.types ? `matching ${args.types.join(',')} (with ancestors)` : undefined,
     args.depth !== undefined ? `to depth ${args.depth}` : undefined,

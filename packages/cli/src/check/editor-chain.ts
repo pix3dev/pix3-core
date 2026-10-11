@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { BOT_POLICY_DIRECTORIES, NOT_A_SCRIPT_ENTRY, SCRIPT_DIRECTORIES } from '../script-rule.ts';
+
 /**
  * Contract B of the editor page (plan §B.2): the modules the editor executes — the project's
  * scripts (`scripts/`, `src/scripts/`), its bot policies (`design/tests/bots/`) and every local
@@ -22,7 +24,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
  */
 
 /** Same roots as the plugin's `virtual:pix3/editor-scripts` and `virtual:pix3/bot-policies`. */
-export const EDITOR_CHAIN_DIRS = ['scripts', 'src/scripts', 'design/tests/bots'] as const;
+const EDITOR_CHAIN_DIRS = [...SCRIPT_DIRECTORIES, ...BOT_POLICY_DIRECTORIES];
 
 export type EditorChainIssueKind = 'import-meta-hot' | 'css-import' | 'dynamic-import';
 
@@ -44,7 +46,6 @@ export interface EditorChainScan {
   readonly issues: readonly EditorChainIssue[];
 }
 
-const NOT_A_ROOT = /\.(?:spec|test)\.ts$|\.d\.ts$/;
 const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', '.pix3']);
 const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.js', '.mjs', '.jsx'];
 const STYLE = /\.(?:css|less|sass|scss|styl|stylus|pcss|postcss|sss)(?:\?(.*))?$/;
@@ -335,7 +336,7 @@ const listRoots = (projectRoot: string): string[] => {
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRS.has(entry.name)) walk(join(dir, entry.name));
-      } else if (entry.name.endsWith('.ts') && !NOT_A_ROOT.test(entry.name)) {
+      } else if (entry.name.endsWith('.ts') && !NOT_A_SCRIPT_ENTRY.test(entry.name)) {
         roots.push(join(dir, entry.name));
       }
     }

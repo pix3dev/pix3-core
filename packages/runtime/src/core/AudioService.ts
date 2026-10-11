@@ -83,14 +83,6 @@ export class AudioService {
   private readonly activePlaybackEntries = new Map<AudioPlayback, ActiveAudioPlaybackEntry>();
   private nextPlaybackId = 0;
   /**
-   * Bumped whenever the active-playback set changes (a playback starts, ends or
-   * is stopped). `SceneRunner` compares it frame to frame to decide whether
-   * {@link getActivePlaybackSnapshot} — which copies and sorts every entry —
-   * needs to run at all; in steady state (music looping, no new SFX) it does
-   * not, and the frame sample reuses the previous list by reference.
-   */
-  private activePlaybackRevision = 0;
-  /**
    * Whether audio *should* be audible right now — i.e. the page is visible and focused.
    *
    * Intent, not observation: {@link reconcileContextState} drives the context towards it. Keeping
@@ -386,7 +378,6 @@ export class AudioService {
     const playbacks = Array.from(this.activePlaybacks);
     this.activePlaybacks.clear();
     this.activePlaybackEntries.clear();
-    this.activePlaybackRevision++;
     for (const playback of playbacks) {
       try {
         playback.stop();
@@ -487,7 +478,6 @@ export class AudioService {
       finished = true;
       this.activePlaybacks.delete(playback);
       this.activePlaybackEntries.delete(playback);
-      this.activePlaybackRevision++;
       source.disconnect();
       gainNode.disconnect();
       pannerNode?.disconnect();
@@ -530,15 +520,9 @@ export class AudioService {
       sampleRate,
       bitrateKbps: this.computeBitrateKbps(durationSeconds, options?.sizeBytes),
     });
-    this.activePlaybackRevision++;
     source.start();
 
     return playback;
-  }
-
-  /** Monotonic count of active-playback set changes; see {@link activePlaybackRevision}. */
-  getActivePlaybackRevision(): number {
-    return this.activePlaybackRevision;
   }
 
   getActivePlaybackSnapshot(nowMs: number = this.readNowMs()): ActiveAudioPlaybackSnapshot[] {

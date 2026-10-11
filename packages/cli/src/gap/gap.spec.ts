@@ -77,7 +77,7 @@ describe('pix3 gap', () => {
     const root = project();
     const bad = (argv: string[]) => {
       const run = io(root);
-      expect(runGapCli(argv, run.io)).toBe(1);
+      expect(runGapCli(argv, run.io)).toBe(2);
       return run.err();
     };
     expect(bad([])).toContain('say what was missing');

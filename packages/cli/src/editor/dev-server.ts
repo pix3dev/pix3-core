@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+import { findUp, logTail } from '../fs-util.ts';
 
 /**
  * The dev server half of `pix3 editor` (plan §D.3, §D.4 step 1): `.pix3/dev.json` is where the
@@ -72,15 +75,8 @@ export const findDevServer = async (
 };
 
 /** `node_modules/vite/bin/vite.js` as the project resolves it (the root or an ancestor). */
-export const findViteBin = (root: string): string | null => {
-  for (let dir = root; ; dir = dirname(dir)) {
-    const candidate = join(dir, 'node_modules', 'vite', 'bin', 'vite.js');
-    if (existsSync(candidate)) return candidate;
-    if (dirname(dir) === dir) return null;
-  }
-};
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+export const findViteBin = (root: string): string | null =>
+  findUp(root, join('node_modules', 'vite', 'bin', 'vite.js'));
 
 export interface StartDevServerOptions {
   readonly port?: number;
@@ -128,12 +124,7 @@ export const startDevServer = async (
     }
     await sleep(200);
   }
-  let tail = '';
-  try {
-    tail = readFileSync(join(root, DEV_LOG), 'utf8').split('\n').slice(-15).join('\n');
-  } catch {
-    // no log
-  }
+  const tail = logTail(join(root, DEV_LOG), 15);
   throw new Error(
     child.exitCode !== null
       ? `vite exited with code ${child.exitCode} (see ${DEV_LOG}):\n${tail}`

@@ -161,7 +161,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     }
     const text = project.readText(file);
     texts.set(file, text);
-    // Of the raw bytes (a BOM or invalid UTF-8 must not make this differ from `pix3 read`).
+    // Of the raw bytes (a BOM or invalid UTF-8 must not make two reads of one file differ).
     files.push({ file, sha256: sha256OfFile(project, file) });
     const result = checkSceneLevel1(env, file, text);
     results.set(file, result);

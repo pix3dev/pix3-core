@@ -118,8 +118,8 @@ export function copyAtlasMetadata(source: Texture, target: Texture): void {
  * pixel coordinates (origin top-left, as composited); this converts each to a
  * three.js UV region (origin bottom-left) matching `applyTextureRegionToTexture`.
  * `resolveSheetPath` maps a sheet id to the path {@link AssetLoader.loadTexture}
- * will load it under — a synthetic preseed key in the editor, a real res:// file
- * in exported games — so the same manifest drives both consumers.
+ * will load it under — a synthetic preseed key in the editor's play mode, a real
+ * res:// file for a host that ships a packed atlas (`installAtlasFromManifest`).
  */
 export function createAtlasResolver(
   manifest: AtlasManifest,

@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { parse } from 'yaml';
+import { join } from 'node:path';
 
 import { describeUnsynced, syncEditor } from '../editor-sync.ts';
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { findUp, sha256Hex } from '../fs-util.ts';
+import type { CliIo } from '../io.ts';
+import { PROJECT_MANIFEST_FILE, readManifestKitVersion, resolveProjectRoot } from '../manifest.ts';
 import {
   CHECK_TSCONFIG,
   hasOwnTsconfig,
@@ -12,15 +12,16 @@ import {
   projectTypesCurrent,
   ROOT_TSCONFIG,
 } from '../types/project-types.ts';
+import { COMMAND_USAGE } from '../usage.ts';
+import { describeLevel2, formatDiagnostic } from '../validate/diagnostics.ts';
 import type { BundledDiagnostic, BundledValidateReport } from '../validate/entry.ts';
 import { CLI_VERSION } from '../version.ts';
-import { scanEditorChain, type EditorChainIssueKind } from './editor-chain.ts';
 import {
   installedRuntimeVersion,
   lockstepMismatches,
   runtimeVersionMismatch,
 } from '../version-gate.ts';
-import { COMMAND_USAGE } from '../usage.ts';
+import { scanEditorChain, type EditorChainIssueKind } from './editor-chain.ts';
 import { runTypecheck, type TypecheckResult } from './typecheck.ts';
 import {
   resolveTypeScript,
@@ -166,10 +167,7 @@ export type ValidateFn = (options: {
   hydrate: boolean;
 }) => Promise<BundledValidateReport>;
 
-export interface CheckIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface CheckIo extends CliIo {
   readonly validate?: ValidateFn;
   readonly typescript?: Partial<Omit<ResolveTypeScriptOptions, 'projectRoot' | 'offline'>>;
 }
@@ -199,7 +197,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
-      if (!project) return { error: '--project needs a folder' };
+      if (!project || project.startsWith('--')) return { error: '--project needs a folder' };
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else return { error: `unknown argument ${arg}` };
   }
@@ -213,50 +211,14 @@ const defaultValidate: ValidateFn = async options => {
   );
 };
 
-const sha256File = (path: string): string =>
-  createHash('sha256').update(readFileSync(path)).digest('hex');
-
 const diag = (
   code: CheckCode,
   fields: Omit<CheckDiagnostic, 'severity' | 'code'>
 ): CheckDiagnostic => ({ severity: CHECK_CODES[code].severity, code, ...fields });
 
-/** `metadata.agentKit.version` of the manifest, or null. */
-export const readKitVersion = (projectRoot: string): string | null => {
-  try {
-    const parsed = parse(readFileSync(join(projectRoot, PROJECT_MANIFEST_FILE), 'utf8')) as unknown;
-    const metadata =
-      parsed && typeof parsed === 'object'
-        ? (parsed as { metadata?: { agentKit?: { version?: unknown } } }).metadata
-        : undefined;
-    const version = metadata?.agentKit?.version;
-    return typeof version === 'string' ? version : null;
-  } catch {
-    return null;
-  }
-};
-
 /** Whether a `node_modules` folder is reachable from the project (walking up), as Node resolves. */
-export const hasNodeModules = (projectRoot: string): boolean => {
-  let dir = resolve(projectRoot);
-  for (;;) {
-    if (existsSync(join(dir, 'node_modules'))) return true;
-    const parent = dirname(dir);
-    if (parent === dir) return false;
-    dir = parent;
-  }
-};
-
-export { installedRuntimeVersion };
-
-const formatDiagnostic = (d: CheckDiagnostic): string => {
-  const where = `${d.file}${d.line !== undefined ? `:${d.line}` : ''}`;
-  const node = d.nodeId !== undefined ? ` [${d.nodeId}]` : '';
-  let text = `${where}  ${d.severity}  ${d.code}${node}  ${d.message}\n`;
-  if (d.path) text += `    at ${d.path}\n`;
-  if (d.fix) text += `    fix: ${d.fix}\n`;
-  return text;
-};
+const hasNodeModules = (projectRoot: string): boolean =>
+  findUp(projectRoot, 'node_modules') !== null;
 
 export const formatCheckHuman = (report: CheckReport): string => {
   let out = '';
@@ -279,16 +241,7 @@ export const formatCheckHuman = (report: CheckReport): string => {
     : tc.skipped
       ? `typecheck skipped: ${tc.skipped}`
       : 'typecheck did not run';
-  const level2 =
-    report.level2.state === 'ran'
-      ? `level 2 hydrated ${report.level2.filesHydrated} file(s)${
-          report.level2.filesSkippedForScripts
-            ? `, ${report.level2.filesSkippedForScripts} SKIPPED (scripts do not compile — user: components unchecked)`
-            : ''
-        }`
-      : report.level2.state === 'disabled'
-        ? 'level 2 off'
-        : `level 2 skipped: ${report.level2.reason}`;
+  const level2 = describeLevel2(report.level2);
   out += `${typecheckLine}; ${level2}.\n`;
   if (report.kit.version === null) {
     out += `kit: none in this project (pix3 kit installs it).\n`;
@@ -434,7 +387,7 @@ export const checkProject = async (
   }
 
   // --- kit ------------------------------------------------------------------------------------
-  const kitVersion = readKitVersion(projectRoot);
+  const kitVersion = readManifestKitVersion(projectRoot);
   const kitUpToDate = kitVersion === CLI_VERSION;
   if (kitVersion !== null && !kitUpToDate) {
     diagnostics.push(
@@ -470,10 +423,11 @@ export const checkProject = async (
   for (const file of result?.files ?? []) {
     if (file.startsWith('/') || /^[A-Za-z]:/.test(file)) continue; // outside the project
     const absolute = join(projectRoot, file);
-    if (!files.has(file) && existsSync(absolute)) files.set(file, sha256File(absolute));
+    if (!files.has(file) && existsSync(absolute))
+      files.set(file, sha256Hex(readFileSync(absolute)));
   }
   for (const file of chain.files) {
-    if (!files.has(file)) files.set(file, sha256File(join(projectRoot, file)));
+    if (!files.has(file)) files.set(file, sha256Hex(readFileSync(join(projectRoot, file))));
   }
 
   const all = [...validated.diagnostics, ...[...diagnostics].sort(compare)];
@@ -526,14 +480,12 @@ export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<nu
     );
     return 0;
   }
-  const start = args.project ? resolve(io.cwd, args.project) : io.cwd;
-  const projectRoot = args.project ? start : findProjectRoot(start);
-  if (!projectRoot || !existsSync(join(projectRoot, PROJECT_MANIFEST_FILE))) {
-    io.stderr(
-      `pix3 check: no pix3project.yaml in ${start}${args.project ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.\n`
-    );
+  const project = resolveProjectRoot(io.cwd, args.project);
+  if ('error' in project) {
+    io.stderr(`pix3 check: ${project.error}\n`);
     return 2;
   }
+  const projectRoot = project.root;
   const report = await checkProject(projectRoot, {
     hydrate: args.hydrate,
     offline: args.offline,

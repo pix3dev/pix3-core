@@ -42,7 +42,7 @@ export class SceneManager {
 
   /**
    * Attach every component that could not be instantiated when its scene loaded because the script
-   * type was not registered yet. The editor calls this after project scripts compile — that is the
+   * type was not registered yet. The editor calls this after project scripts (re-)register — that is the
    * moment `user:*` types appear, and before this existed the scene had already dropped them (and
    * the next save wrote the loss to disk).
    *

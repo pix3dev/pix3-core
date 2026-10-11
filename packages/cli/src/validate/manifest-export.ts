@@ -1,8 +1,7 @@
 import { diagnostic, type Diagnostic } from './diagnostics.ts';
+import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import type { ProjectFiles } from './project.ts';
 import { isRecord, parseYamlWithLines } from './yaml-doc.ts';
-
-const MANIFEST = 'pix3project.yaml';
 
 /**
  * `pix3project.yaml` `export:` — the 1.x build's asset selection (`pruneUnusedAssets`,
@@ -12,13 +11,13 @@ const MANIFEST = 'pix3project.yaml';
  * relied on it learns that it does nothing rather than finding out from a missing asset.
  */
 export const checkManifestExport = (project: ProjectFiles): Diagnostic[] => {
-  if (!project.has(MANIFEST)) return [];
-  const parsed = parseYamlWithLines(project.readText(MANIFEST));
+  if (!project.has(PROJECT_MANIFEST_FILE)) return [];
+  const parsed = parseYamlWithLines(project.readText(PROJECT_MANIFEST_FILE));
   if ('errors' in parsed || !isRecord(parsed.data) || !('export' in parsed.data)) return [];
   return [
     diagnostic({
       code: 'W_MANIFEST_EXPORT',
-      file: MANIFEST,
+      file: PROJECT_MANIFEST_FILE,
       path: 'export',
       line: parsed.lineOf(['export']),
       message:

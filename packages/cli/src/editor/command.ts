@@ -1,11 +1,8 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import type { CliIo } from '../io.ts';
+import { resolveProjectRoot } from '../manifest.ts';
 import { chooseCdpPort } from './cdp-port.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
-import { ensureCdpToken } from './cdp-token.ts';
+import { ensureCdpToken, newCdpToken } from './cdp-token.ts';
 import { describeChromeNotFound, ensureProfileDir, findChrome } from './chrome.ts';
 import {
   ensureEditorTab,
@@ -25,6 +22,7 @@ import {
   cdpTokenPath,
   cdpWsEndpoint,
   chromeProfileDir,
+  isPort,
   DEFAULT_CDP_PORT,
   localMcpConfigPath,
 } from './paths.ts';
@@ -59,11 +57,7 @@ import { COMMAND_USAGE } from '../usage.ts';
  * port).
  */
 
-export interface EditorIo {
-  readonly cwd: string;
-  readonly env?: NodeJS.ProcessEnv;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
+export interface EditorIo extends CliIo {
   /** The script that runs `pix3`, for the detached Chrome owner (default: `process.argv[1]`). */
   readonly entry?: string;
 }
@@ -99,7 +93,7 @@ export const parseEditorArgs = (argv: readonly string[]): EditorArgs | { error: 
       const raw = value();
       if (typeof raw !== 'string') return raw;
       const n = Number(raw);
-      return Number.isInteger(n) && n > 0 && n < 65536 ? n : { error: `${arg} needs a port` };
+      return isPort(n) ? n : { error: `${arg} needs a port` };
     };
     switch (arg) {
       case '--stop':
@@ -178,12 +172,6 @@ const editorUrlOf = (url: URL): string => {
   return `${url.origin}${base}/__pix3/`;
 };
 
-const projectRootOf = (io: EditorIo, args: EditorArgs): string | null => {
-  const start = args.projectDir ? resolve(io.cwd, args.projectDir) : io.cwd;
-  const root = args.projectDir ? start : findProjectRoot(start);
-  return root && existsSync(join(root, PROJECT_MANIFEST_FILE)) ? root : null;
-};
-
 export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promise<number> => {
   if (argv.includes('--help') || argv.includes('-h')) {
     io.stdout(COMMAND_USAGE.editor);
@@ -192,7 +180,7 @@ export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promi
   const parsed = parseEditorArgs(argv);
   if ('error' in parsed) {
     io.stderr(`pix3 editor: ${parsed.error}\n\n${COMMAND_USAGE.editor}`);
-    return 1;
+    return 2;
   }
   const env = io.env ?? process.env;
   if (parsed.stopChrome) {
@@ -211,13 +199,12 @@ export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promi
     return 0;
   }
   if (parsed.url) return runRemoteEditor(parsed.url, parsed, io, env);
-  const root = projectRootOf(io, parsed);
-  if (!root) {
-    io.stderr(
-      `pix3 editor: no ${PROJECT_MANIFEST_FILE} in ${parsed.projectDir ? resolve(io.cwd, parsed.projectDir) : io.cwd}${parsed.projectDir ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.\n`
-    );
+  const project = resolveProjectRoot(io.cwd, parsed.projectDir);
+  if ('error' in project) {
+    io.stderr(`pix3 editor: ${project.error}\n`);
     return 2;
   }
+  const { root } = project;
 
   if (parsed.stop) {
     const result = stopDevServer(root);
@@ -266,7 +253,7 @@ export const runEditorCli = async (argv: readonly string[], io: EditorIo): Promi
     const token = readRemoteCdpToken(env);
     const port = remoteCdpPort(parsed.cdpPort, env);
     // Without a token nothing can prove itself: a random one tells a free port from a held one.
-    const probeToken = token ?? randomBytes(32).toString('base64url');
+    const probeToken = token ?? newCdpToken();
     io.stdout(
       `\n${describeRemoteSession({
         editorUrl: info.editorUrl,

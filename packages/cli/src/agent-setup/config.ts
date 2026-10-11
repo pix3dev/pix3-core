@@ -1,16 +1,8 @@
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { cdpWsEndpoint } from '../editor/paths.ts';
+import { narrowTo0600, readTextOrNull, writeAtomic } from '../fs-util.ts';
 
 /**
  * The one-time agent configuration (plan §D.6): chrome-devtools-mcp as the `pix3-browser` MCP
@@ -80,9 +72,6 @@ export const mcpLaunch = (
     : { command: npx[0], args: npx.slice(1) };
 };
 
-const readText = (path: string): string | null =>
-  existsSync(path) ? readFileSync(path, 'utf8') : null;
-
 const mcpConfigText = (port: number, token: string): string =>
   `${JSON.stringify({ wsEndpoint: cdpWsEndpoint(port), wsHeaders: wsHeaders(token) }, null, 2)}\n`;
 
@@ -95,20 +84,15 @@ export type McpConfigFileAction = 'written' | 'updated' | 'unchanged';
  */
 export const writeMcpConfig = (path: string, port: number, token: string): McpConfigFileAction => {
   const text = mcpConfigText(port, token);
-  const existing = readText(path);
-  if (existing !== text) {
-    mkdirSync(dirname(path), { recursive: true });
-    const tmp = `${path}.tmp-${process.pid}`;
-    writeFileSync(tmp, text, { mode: 0o600 });
-    renameSync(tmp, path);
-  }
-  if (process.platform !== 'win32' && (statSync(path).mode & 0o077) !== 0) chmodSync(path, 0o600);
+  const existing = readTextOrNull(path);
+  if (existing !== text) writeAtomic(path, text, { mode: 0o600 });
+  narrowTo0600(path);
   return existing === null ? 'written' : existing === text ? 'unchanged' : 'updated';
 };
 
 /** True when the `--config` file at `path` reaches the proxy on `port` with `token`. */
 export const mcpConfigReaches = (path: string, port: number, token: string): boolean =>
-  readText(path) === mcpConfigText(port, token);
+  readTextOrNull(path) === mcpConfigText(port, token);
 
 // --- Claude Code: .mcp.json --------------------------------------------------------------------
 
@@ -234,13 +218,6 @@ export interface InstallAgentConfigOptions {
   readonly platform?: NodeJS.Platform;
 }
 
-const writeAtomic = (path: string, text: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, text);
-  renameSync(tmp, path);
-};
-
 const fileOf = (target: AgentTarget): string =>
   target === 'claude' ? CLAUDE_CONFIG_FILE : CODEX_CONFIG_FILE;
 
@@ -292,7 +269,7 @@ export const checkAgentConfig = (
   for (const target of options.targets ?? AGENT_TARGETS) {
     const { current, expected } = currentAndExpected(
       target,
-      readText(join(root, fileOf(target))),
+      readTextOrNull(join(root, fileOf(target))),
       launch
     );
     if (current !== null && current !== expected) stale.push(fileOf(target));
@@ -313,7 +290,7 @@ export const installAgentConfig = (
   for (const target of options.targets ?? AGENT_TARGETS) {
     const file = fileOf(target);
     const path = join(root, file);
-    const existing = readText(path);
+    const existing = readTextOrNull(path);
     const { current, expected } = currentAndExpected(target, existing, launch);
     const render = target === 'claude' ? renderClaudeConfig : renderCodexConfig;
     if (current === null) {
