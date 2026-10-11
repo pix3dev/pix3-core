@@ -16,6 +16,7 @@ import { RemoveEffectCommand } from '@/features/effects/RemoveEffectCommand';
 import type { InspectorPanel } from './inspector-panel';
 import { isReadOnlyTab } from '@/services/editor/read-only';
 import { toResourcePath } from '@/services/project/disk/project-paths';
+import { formatBytes } from '@/ui/shared/format-bytes';
 
 /**
  * Renders the inspector's top-level sections (asset inspector, summary + groups, editor flags,
@@ -170,26 +171,13 @@ ${textPreview?.content || 'Empty file'}</pre
             : ''}
           <div class="property-group">
             <span class="property-label">Size</span>
-            <span class="asset-value">${this.formatFileSize(asset.sizeBytes)}</span>
+            <span class="asset-value"
+              >${asset.sizeBytes === null ? '-' : formatBytes(asset.sizeBytes)}</span
+            >
           </div>
         </div>
       </div>
     `;
-  }
-
-  formatFileSize(sizeBytes: number | null): string {
-    if (sizeBytes === null) {
-      return '-';
-    }
-    if (sizeBytes < 1024) {
-      return `${sizeBytes} B`;
-    }
-    const kb = sizeBytes / 1024;
-    if (kb < 1024) {
-      return `${kb.toFixed(1)} KB`;
-    }
-    const mb = kb / 1024;
-    return `${mb.toFixed(2)} MB`;
   }
 
   formatDuration(durationSeconds: number | null): string {

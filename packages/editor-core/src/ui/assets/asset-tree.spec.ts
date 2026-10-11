@@ -8,7 +8,7 @@ import { ASSET_PATH_LIST_MIME } from '@/ui/shared/asset-drag-drop';
 // declare and the workspace does not install; nothing here needs a real layout.
 vi.mock('golden-layout', () => ({ GoldenLayout: class {} }));
 
-const { AssetTree } = await import('./asset-tree');
+await import('./asset-tree');
 
 type AssetTreeElement = HTMLElementTagNameMap['pix3-asset-tree'];
 
@@ -216,19 +216,6 @@ describe('AssetTree', () => {
     const file = new File(['png'], 'hero.png', { type: 'image/png' });
     await drop({ types: ['Files'], files: [file], getData: () => '' } as unknown as DataTransfer);
     expect(assetImportService.importFiles).toHaveBeenCalledWith([file], 'textures');
-  });
-
-  it('formats byte values consistently', () => {
-    const tree = new AssetTree();
-    const formatFileSize = (
-      tree as unknown as {
-        formatFileSize: (sizeBytes: number) => string;
-      }
-    ).formatFileSize.bind(tree);
-
-    expect(formatFileSize(512)).toBe('512 B');
-    expect(formatFileSize(1536)).toBe('1.5 KB');
-    expect(formatFileSize(3 * 1024 * 1024)).toBe('3.00 MB');
   });
 });
 

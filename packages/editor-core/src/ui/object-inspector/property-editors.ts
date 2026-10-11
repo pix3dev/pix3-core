@@ -9,6 +9,7 @@ import { setGestureInProgress } from '@/state/gesture';
 import { html, css, customElement, property, state } from '@/fw';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { ComponentBase } from '@/fw/component-base';
+import { formatBytes } from '@/ui/shared/format-bytes';
 
 export interface Vector2Value {
   x: number;
@@ -38,18 +39,6 @@ function dispatchLocate(source: HTMLElement, url: string): void {
       composed: true,
     })
   );
-}
-
-function formatBytes(size: number): string {
-  if (size < 1024) {
-    return `${size} B`;
-  }
-  const kb = size / 1024;
-  if (kb < 1024) {
-    return `${kb.toFixed(1)} KB`;
-  }
-  const mb = kb / 1024;
-  return `${mb.toFixed(2)} MB`;
 }
 
 /** Axis identity for a number field — drives the coloured chip and reads like Blender/Unity. */
