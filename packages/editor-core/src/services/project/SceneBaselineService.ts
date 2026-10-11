@@ -80,6 +80,11 @@ export class SceneBaselineService {
     this.set(key, next);
   }
 
+  /** The keys flushed since the last external version, left in place (read before an install). */
+  flushLedger(path: string): FlushLedger {
+    return this.ledgers.get(toProjectPath(path)) ?? new Map();
+  }
+
   /**
    * The keys flushed since the last external version, handed over once: the external version
    * that asks for them settles every one of them (`findClobberedKeys`).

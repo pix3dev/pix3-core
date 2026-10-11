@@ -333,4 +333,49 @@ describe('FlushService — several dirty scenes are one changeset (§C.2, §C.4)
     expect(disk()).toContain('width: 222');
     expect(flush.dirtySceneIds()).toEqual([]);
   });
+
+  it('a changeset whose answer was lost after it landed: the next changeset adopts it, no merge', async () => {
+    const OTHER = 'scenes/other.pix3scene';
+    const { flush, sceneId: mainId } = await boot({
+      [OTHER]: SCENE.replace('name: Box', 'name: Other Box'),
+    });
+    await service(CommandDispatcher).execute(
+      new LoadSceneCommand({ filePath: `res://${OTHER}`, sceneId: 'other-scene' })
+    );
+    const editBoth = async (width: number): Promise<void> => {
+      appState.scenes.activeSceneId = 'other-scene';
+      service(SceneManager).setActiveScene('other-scene');
+      await setWidth(width);
+      appState.scenes.activeSceneId = mainId;
+      service(SceneManager).setActiveScene(mainId);
+      await setWidth(width + 1);
+    };
+    await editBoth(110);
+    // The changeset lands, then the connection dies before the answer; the per-scene retries
+    // that follow fail too (the server is gone for a moment).
+    const writeChangeset = host.files.writeChangeset!.bind(host.files);
+    vi.spyOn(host.files, 'writeChangeset').mockImplementationOnce(async entries => {
+      await writeChangeset(entries);
+      throw new TypeError('Failed to fetch');
+    });
+    const perScene = vi
+      .spyOn(host.files, 'write')
+      .mockRejectedValue(new TypeError('Failed to fetch'));
+    expect(await flush.flushDirty(0)).toMatchObject({ ok: false, reason: 'write_failed' });
+    expect(host.text(OTHER)).toContain('width: 110');
+    expect(disk()).toContain('width: 111');
+    perScene.mockRestore();
+
+    // More edits, the server is back: the changeset's If-Match names the old baselines and is
+    // refused with the hashes of our own landed bytes — adopted, and the edits written on top.
+    await editBoth(220);
+    const second = await flush.flushDirty(0);
+    expect(second, JSON.stringify(second)).toMatchObject({ ok: true });
+    expect(host.text(OTHER)).toContain('width: 220');
+    expect(disk()).toContain('width: 221');
+    const baselines = service(SceneBaselineService);
+    expect(baselines.isPendingExternal(PATH)).toBe(false);
+    expect(baselines.isPendingExternal(OTHER)).toBe(false);
+    expect(flush.dirtySceneIds()).toEqual([]);
+  });
 });

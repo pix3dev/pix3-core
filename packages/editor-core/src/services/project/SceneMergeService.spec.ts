@@ -240,6 +240,40 @@ describe('SceneMergeService — §C.3', () => {
     expect(node('added')).toBeTruthy();
   });
 
+  it('"Restore my edit" on a version the patch writer refuses (an alias): a notice, no throw', async () => {
+    const sceneId = await boot();
+    await setProp('box', 'width', 240);
+    await service(FlushService).saveScene(sceneId);
+    // Read before the flush, and rewritten with a YAML anchor/alias the splice writer refuses.
+    const stale = SCENE.replace('    properties:\n', '    properties: &p\n').replace(
+      '    name: Other\n',
+      '    name: Other\n    properties: *p\n'
+    );
+    await agentWrites(stale);
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Box › properties.width');
+    await expect(
+      service(HostNoticeService).runAction(notice!.actions[0].id)
+    ).resolves.toBeUndefined();
+    expect(disk()).toBe(stale);
+    expect(notices().some(n => n.message.includes('Could not restore'))).toBe(true);
+  });
+
+  it('the flush ledger survives an install the loader rejected: the retry still sees the overwrite', async () => {
+    const sceneId = await boot();
+    await setProp('box', 'width', 240);
+    await service(FlushService).saveScene(sceneId);
+    const stale = SCENE.replace('name: Other', 'name: Agent');
+    // The first delivery fails inside the merge, at the install (after the ledger was read); the
+    // path stays pending and is retried — with the ledger intact, the retry detects the overwrite.
+    vi.spyOn(service(CommandDispatcher), 'execute').mockRejectedValueOnce(
+      new Error('reload hiccup')
+    );
+    await agentWrites(stale);
+    const notice = notices().find(n => n.message.includes('overwrote'));
+    expect(notice?.detail).toContain('Box › properties.width');
+  });
+
   it('an agent that read after the flushes: nothing is "overwritten"', async () => {
     const sceneId = await boot();
     await setProp('box', 'width', 240);

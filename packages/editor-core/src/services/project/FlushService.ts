@@ -176,7 +176,8 @@ export class FlushService {
    * others are left dirty for the per-scene flush that follows.
    */
   private async flushTogether(
-    sceneIds: readonly string[]
+    sceneIds: readonly string[],
+    attempt = 0
   ): Promise<{ saved: string[]; conflicts: string[] }> {
     const none = { saved: [], conflicts: [] };
     if (sceneIds.length < 2 || !this.storage.supportsChangesets()) return none;
@@ -206,6 +207,16 @@ export class FlushService {
       }
       if (error instanceof SceneWriteConflictError) {
         const path = toProjectPath(error.path);
+        // As per scene: the disk holds an earlier flush of ours whose answer was lost — adopt it
+        // as the baseline and write the rest on top, instead of handing our own bytes to the merge.
+        // The plugin names the first refused file; one more attempt per scene at most.
+        if (
+          attempt < sceneIds.length &&
+          error.currentHash &&
+          this.baselines.acceptOwnHash(path, error.currentHash)
+        ) {
+          return this.flushTogether(sceneIds, attempt + 1);
+        }
         this.baselines.markPendingExternal(path);
         this.externalChanges.report(path);
         return { saved: [], conflicts: [path] };
