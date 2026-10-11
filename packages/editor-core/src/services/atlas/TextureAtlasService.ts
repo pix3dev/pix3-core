@@ -4,7 +4,7 @@ import { injectable, inject } from '@/fw/di';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { AtlasCacheStore } from '@/services/atlas/AtlasCacheStore';
 import { packMaxRects, type PackItem } from '@/services/atlas/MaxRectsPacker';
-import { sha256Hex } from '@/core/hash';
+import { sha256 } from '@/core/hash';
 import {
   ATLAS_SHEET_SCHEME,
   configure2DTexture,
@@ -454,7 +454,7 @@ export class TextureAtlasService {
     for (const path of include) {
       try {
         const buffer = await (await this.fs.readBlob(stripRes(path))).arrayBuffer();
-        files.push(`${path}|${await sha256Hex(buffer)}`);
+        files.push(`${path}|${await sha256(buffer)}`);
       } catch {
         files.push(`${path}|missing`);
       }
@@ -470,7 +470,7 @@ export class TextureAtlasService {
       filtering,
       files,
     });
-    return sha256Hex(new TextEncoder().encode(payload));
+    return sha256(new TextEncoder().encode(payload));
   }
 
   // --- Packing & compositing ------------------------------------------------

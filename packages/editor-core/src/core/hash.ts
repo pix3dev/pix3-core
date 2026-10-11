@@ -21,6 +21,3 @@ export async function sha256(content: string | Uint8Array | ArrayBuffer): Promis
   // Copy into a fresh ArrayBuffer-backed view: `digest` rejects SharedArrayBuffer views.
   return toHex(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)));
 }
-
-/** {@link sha256} for binary input (atlas cache keys). */
-export const sha256Hex = (data: ArrayBuffer | Uint8Array): Promise<string> => sha256(data);
