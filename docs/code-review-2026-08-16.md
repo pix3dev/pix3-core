@@ -12,12 +12,12 @@ agreement (see §3). Start at §4 for what changed and §5 for what to check bef
 
 ## 1. Baseline (before any change)
 
-| Check | Result |
-|---|---|
-| `npm run type-check` | **0 errors** |
-| `npm run lint` | **0 errors**, 4 warnings (`no-explicit-any` in `Sprite2D.ts:109-110`, `AnimatedSprite3D.ts:100,102`) |
-| `npm run test` | **300 files / 3358 tests passed** (43 s) |
-| `npx knip` | 1 unused file (`src/sw.ts`, a false positive — see L6), 107 "unused exports" (overwhelmingly Lit `@customElement` classes) |
+| Check                | Result                                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `npm run type-check` | **0 errors**                                                                                                               |
+| `npm run lint`       | **0 errors**, 4 warnings (`no-explicit-any` in `Sprite2D.ts:109-110`, `AnimatedSprite3D.ts:100,102`)                       |
+| `npm run test`       | **300 files / 3358 tests passed** (43 s)                                                                                   |
+| `npx knip`           | 1 unused file (`src/sw.ts`, a false positive — see L6), 107 "unused exports" (overwhelmingly Lit `@customElement` classes) |
 
 Scale: `src/` 764 files / 229 kLOC, `pix3-runtime` 249 files / 71 kLOC, `pix3-collab-server`
 42 files / 8.6 kLOC.
@@ -45,11 +45,11 @@ subscriptions in components, no orphaned `window` listeners, no `setInterval` wi
 `onStoreDocument` writes two client-controlled path sets straight to disk without containment:
 
 ```ts
-const relativePath = normalizeStoredScenePath(filePathValue);   // strips res:// and leading '/'
-const fullPath = path.resolve(projectDir, relativePath);        // '..' survives
+const relativePath = normalizeStoredScenePath(filePathValue); // strips res:// and leading '/'
+const fullPath = path.resolve(projectDir, relativePath); // '..' survives
 fs.writeFileSync(fullPath, snapshotValue, 'utf-8');
 // …and for scripts:
-const fullPath = path.join(scriptsDir, scriptPath);             // scriptPath is a Y.Map key
+const fullPath = path.join(scriptsDir, scriptPath); // scriptPath is a Y.Map key
 fs.writeFileSync(fullPath, value.toString(), 'utf-8');
 ```
 
@@ -78,7 +78,7 @@ spec that feeds `../` and an absolute path through `onStoreDocument`.
 `packages/pix3-collab-server/src/core/library/library-router.ts:60-113`
 
 The route never checks that `:id` belongs to the caller. It wipes and rewrites the item directory
-(line 95) *before* touching the database, then calls `upsertLibraryItem`, whose
+(line 95) _before_ touching the database, then calls `upsertLibraryItem`, whose
 `ON CONFLICT(id) DO UPDATE` (`library-service.ts:76-80`) deliberately does **not** filter on
 `owner_id` and does **not** reassign it. So any authenticated user who knows an item UUID can:
 
@@ -98,8 +98,8 @@ exists, it is just not applied here.
 `packages/pix3-collab-server/src/core/library/library-router.ts:116-125`
 
 ```ts
-softDeleteLibraryItem(req.user!.id, itemId, deletedAt);   // owner-scoped — returns false, ignored
-fs.rmSync(getItemDir(itemId), { recursive: true, force: true });   // NOT scoped
+softDeleteLibraryItem(req.user!.id, itemId, deletedAt); // owner-scoped — returns false, ignored
+fs.rmSync(getItemDir(itemId), { recursive: true, force: true }); // NOT scoped
 ```
 
 The tombstone update is correctly owner-scoped and returns `changes > 0`, but its result is
@@ -163,11 +163,13 @@ sliding) in an in-process `Map` (`preview-service.ts:63`). A loop exhausts serve
 
 ```ts
 this.audioLoadInFlight.set(resourcePath, loadPromise);
-loadPromise.finally(() => { this.audioLoadInFlight.delete(resourcePath); });
+loadPromise.finally(() => {
+  this.audioLoadInFlight.delete(resourcePath);
+});
 return loadPromise;
 ```
 
-`.finally()` returns a *new* promise that nobody handles. When `loadPromise` rejects, the caller's
+`.finally()` returns a _new_ promise that nobody handles. When `loadPromise` rejects, the caller's
 own `catch` handles the original, but the derived promise rejects unobserved → `unhandledrejection`.
 That is not cosmetic here: `src/core/agent-introspection.ts:324` and `src/player/player-main.ts:197`
 both listen for `unhandledrejection` and surface it as a runtime error in the Logs panel and the
@@ -243,16 +245,16 @@ Lit event handlers quiet), fix or `void`-mark the 22 sites.
 
 ### LOW
 
-| # | Finding | Location |
-|---|---|---|
-| L1 | The "raw body" upload branch is unreachable: only `express.json()` is mounted, so `req.body` is never a `Buffer` or a `string`. `ApiClient.uploadFile` only ever sends multipart. Dead code that reads like a supported path. | `storage-router.ts:114-125` |
-| L2 | `filePath` is interpolated into request URLs unencoded while `projectId` is encoded — a path containing `?` or `#` truncates, and `..` is normalised away by the URL parser before it reaches the server. | `src/services/cloud/ApiClient.ts:280, 307, 325, 364` |
-| L3 | `console.log` on every texture/audio load in the runtime hot path (5 in `AssetLoader`), plus per-attach/detach logging in three shipped `core:*` behaviours — noise in exported games. | `AssetLoader.ts`, `SineBehavior.ts`, `SimpleMoveBehavior.ts`, `RotateBehavior.ts` |
-| L4 | 41 import cycles (`madge --circular`). Most are the deliberate `NodeBase ↔ SceneService` core; a handful in the editor (`ViewportRenderService ↔ features/properties/*`, `CloudProjectService ↔ LocalSyncService`, `inspector-panel ↔ inspector-*-renderers`) are incidental. | repo-wide |
-| L5 | No spec covers the server auth flow (`auth-router`, `auth-middleware`) or the hocuspocus load/store path — the two places C1, H3 and M1 live. `csrf-guard` and `origin-trust` are well covered by contrast. | `packages/pix3-collab-server` |
-| L6 | `src/sw.ts` reports as an unused file because it is not declared as a knip entry (it is referenced by the Vite PWA config, not by an import). | `knip.json` |
-| L7 | 4 `no-explicit-any` warnings — the only ones in the repo. | `Sprite2D.ts:109-110`, `AnimatedSprite3D.ts:100,102` |
-| L8 | `collab-status-bar.ts` writes `appState.collaboration.remoteUsers` directly from a UI component; presence state is `CollaborationService`'s to own. Permitted by the gateway-scope rule, but it is the one place UI writes a service's own state. | `src/ui/collab/collab-status-bar.ts:91, 167` |
+| #   | Finding                                                                                                                                                                                                                                                                           | Location                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| L1  | The "raw body" upload branch is unreachable: only `express.json()` is mounted, so `req.body` is never a `Buffer` or a `string`. `ApiClient.uploadFile` only ever sends multipart. Dead code that reads like a supported path.                                                     | `storage-router.ts:114-125`                                                       |
+| L2  | `filePath` is interpolated into request URLs unencoded while `projectId` is encoded — a path containing `?` or `#` truncates, and `..` is normalised away by the URL parser before it reaches the server.                                                                         | `src/services/cloud/ApiClient.ts:280, 307, 325, 364`                              |
+| L3  | `console.log` on every texture/audio load in the runtime hot path (5 in `AssetLoader`), plus per-attach/detach logging in three shipped `core:*` behaviours — noise in exported games.                                                                                            | `AssetLoader.ts`, `SineBehavior.ts`, `SimpleMoveBehavior.ts`, `RotateBehavior.ts` |
+| L4  | 41 import cycles (`madge --circular`). Most are the deliberate `NodeBase ↔ SceneService` core; a handful in the editor (`ViewportRenderService ↔ features/properties/*`, `CloudProjectService ↔ LocalSyncService`, `inspector-panel ↔ inspector-*-renderers`) are incidental. | repo-wide                                                                         |
+| L5  | No spec covers the server auth flow (`auth-router`, `auth-middleware`) or the hocuspocus load/store path — the two places C1, H3 and M1 live. `csrf-guard` and `origin-trust` are well covered by contrast.                                                                       | `packages/pix3-collab-server`                                                     |
+| L6  | `src/sw.ts` reports as an unused file because it is not declared as a knip entry (it is referenced by the Vite PWA config, not by an import).                                                                                                                                     | `knip.json`                                                                       |
+| L7  | 4 `no-explicit-any` warnings — the only ones in the repo.                                                                                                                                                                                                                         | `Sprite2D.ts:109-110`, `AnimatedSprite3D.ts:100,102`                              |
+| L8  | `collab-status-bar.ts` writes `appState.collaboration.remoteUsers` directly from a UI component; presence state is `CollaborationService`'s to own. Permitted by the gateway-scope rule, but it is the one place UI writes a service's own state.                                 | `src/ui/collab/collab-status-bar.ts:91, 167`                                      |
 
 ---
 
@@ -274,7 +276,7 @@ defect), L8 (permitted by the current gateway-scope rule), and the knip "unused 
 positives from `@customElement`).
 
 Nothing here touched the `@pix3/runtime` public API or the scene format: fix 6 is internal to
-`AssetLoader`, and fix 2 changed only where the *server* puts bytes, not the YAML or the
+`AssetLoader`, and fix 2 changed only where the _server_ puts bytes, not the YAML or the
 `Y.Map('scene')` shape.
 
 ---
@@ -303,37 +305,37 @@ src/features/scene/CreateSprite2DOperation.spec.ts:205, 209
 Branch `fix/code-review-2026-08-16`, nine commits. Every finding from CRITICAL down to LOW is
 closed except the three listed as deferred in §3.
 
-| Commit | Findings | What changed |
-|---|---|---|
-| `8e92bed` | H3 | `core/config-preflight.ts`: in `NODE_ENV=production` the process exits 1 when `JWT_SECRET` is unset, still the default, or under 32 bytes. `ROOMS_JWT_SECRET` checked when overridden. Development fallback untouched. |
-| `3c99b37` | C1 | `core/storage/contained-path.ts` — one containment rule, now used by all three callers. CRDT persistence extracted to `sync/document-files.ts` (which is what made it testable). Escaping paths are skipped and logged, never rewritten. Also fixed `npm run type-check`, which never covered this package. |
-| `628fabc` | H1, H2 | Ownership gate before any filesystem work on `POST /api/library/items/:id`; `DELETE` now honours the owner-scoped tombstone's verdict. `upsertLibraryItem` carries `WHERE owner_id = excluded.owner_id` and returns whether it applied. |
-| `d374d0a` | H4, M1, M2, M5, L5 | `core/rate-limit.ts` generalised from the rooms bucket, applied to login (per IP *and* per email), register, and preview-session creation; 429s carry `Retry-After`. Login's unknown-account branch burns an equivalent bcrypt comparison. Registration input validated; emails stored and looked up lowercased. First spec for this surface. |
-| `43d350f` | M3 | `AssetLoader` in-flight cleanup goes through `then(clear, clear)` instead of a detached `.finally`, so a failed load rejects once — into the caller — instead of also firing `unhandledrejection`. |
-| `9e21aa1` | M4 | `ServiceContainer.hasService` + `syncViewportTransform`, replacing nine copies of a `catch {}` that discarded real renderer failures including inside undo/redo. |
-| `f4817c8` | M7 | `no-floating-promises` / `no-misused-promises` / `await-thenable` enabled; all 18 sites marked `void`, and one spec that asserted without awaiting an async undo/redo fixed. |
-| `0d21b68` | M6 | Share link is owner-only to create *and* revoke, and idempotent — the existing token comes back unless `rotate: true` is passed. First spec for this router. |
-| `d77810c` | L1, L2, L3, L6, L7 | Last four `any`s removed; dead raw-body upload branch deleted; `/files/*` URLs encoded per segment; 15 per-asset / per-node `console.log`s removed from the runtime; `src/sw.ts` declared as a knip entry. |
+| Commit    | Findings           | What changed                                                                                                                                                                                                                                                                                                                                  |
+| --------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `8e92bed` | H3                 | `core/config-preflight.ts`: in `NODE_ENV=production` the process exits 1 when `JWT_SECRET` is unset, still the default, or under 32 bytes. `ROOMS_JWT_SECRET` checked when overridden. Development fallback untouched.                                                                                                                        |
+| `3c99b37` | C1                 | `core/storage/contained-path.ts` — one containment rule, now used by all three callers. CRDT persistence extracted to `sync/document-files.ts` (which is what made it testable). Escaping paths are skipped and logged, never rewritten. Also fixed `npm run type-check`, which never covered this package.                                   |
+| `628fabc` | H1, H2             | Ownership gate before any filesystem work on `POST /api/library/items/:id`; `DELETE` now honours the owner-scoped tombstone's verdict. `upsertLibraryItem` carries `WHERE owner_id = excluded.owner_id` and returns whether it applied.                                                                                                       |
+| `d374d0a` | H4, M1, M2, M5, L5 | `core/rate-limit.ts` generalised from the rooms bucket, applied to login (per IP _and_ per email), register, and preview-session creation; 429s carry `Retry-After`. Login's unknown-account branch burns an equivalent bcrypt comparison. Registration input validated; emails stored and looked up lowercased. First spec for this surface. |
+| `43d350f` | M3                 | `AssetLoader` in-flight cleanup goes through `then(clear, clear)` instead of a detached `.finally`, so a failed load rejects once — into the caller — instead of also firing `unhandledrejection`.                                                                                                                                            |
+| `9e21aa1` | M4                 | `ServiceContainer.hasService` + `syncViewportTransform`, replacing nine copies of a `catch {}` that discarded real renderer failures including inside undo/redo.                                                                                                                                                                              |
+| `f4817c8` | M7                 | `no-floating-promises` / `no-misused-promises` / `await-thenable` enabled; all 18 sites marked `void`, and one spec that asserted without awaiting an async undo/redo fixed.                                                                                                                                                                  |
+| `0d21b68` | M6                 | Share link is owner-only to create _and_ revoke, and idempotent — the existing token comes back unless `rotate: true` is passed. First spec for this router.                                                                                                                                                                                  |
+| `d77810c` | L1, L2, L3, L6, L7 | Last four `any`s removed; dead raw-body upload branch deleted; `/files/*` URLs encoded per segment; 15 per-asset / per-node `console.log`s removed from the runtime; `src/sw.ts` declared as a knip entry.                                                                                                                                    |
 
 ### Verification
 
 Every fix was checked against the bug it claims to fix by **reinstating the old code and confirming
 the new tests fail** — a test that passes both ways is not evidence:
 
-| Fix | Tests failing against the pre-fix code |
-|---|---|
-| C1 | 6 of 12 (the 6 legitimate round-trip cases keep passing) |
-| H1, H2 | 4 |
-| H4, M1, M5 | 14 of 23 |
-| M3 | 3 of 4 |
-| M6 | 4 of 11 |
+| Fix        | Tests failing against the pre-fix code                   |
+| ---------- | -------------------------------------------------------- |
+| C1         | 6 of 12 (the 6 legitimate round-trip cases keep passing) |
+| H1, H2     | 4                                                        |
+| H4, M1, M5 | 14 of 23                                                 |
+| M3         | 3 of 4                                                   |
+| M6         | 4 of 11                                                  |
 
 Two things that check turned up, which a passing suite had hidden:
 
 - The first HTTP-level timing assertion for M1 **passed against the vulnerable code** — at a test
   salt-round, request overhead swamps the bcrypt difference. It was replaced by a unit assertion in
   `password.spec.ts` at the production cost, which does fail an early-returning implementation.
-- Four operation specs stubbed `ServiceContainer` by hand and relied on `getService` *throwing*.
+- Four operation specs stubbed `ServiceContainer` by hand and relied on `getService` _throwing_.
   They compiled and passed only because the `catch {}` in M4 turned that into success.
 
 Final state: `type-check` 0 errors (now including `pix3-collab-server`, which it did not before),
@@ -345,7 +347,7 @@ new tests), `build` clean, `knip` reports no unused files.
 ## 5. Before deploying
 
 **The JWT preflight will stop a server that is currently on the default secret.** Check the
-environment on the host *before* restarting the service:
+environment on the host _before_ restarting the service:
 
 ```bash
 # Must be >= 32 bytes and not 'change-me-in-production'.
@@ -374,12 +376,12 @@ and it is cheap now that typed linting is already paid for.
 
 **Worth turning on next**, in rough order of value against noise:
 
-| Rule | Why here specifically |
-|---|---|
-| `@typescript-eslint/no-unnecessary-condition` | Would have flagged the unreachable raw-body branches in L1. |
-| `@typescript-eslint/require-await` | Several `async` operation closures never await; harmless but it masks the ones that should. |
-| `no-empty` (currently disabled per-site with comments) | Nine of those disables were M4. With that gone, the rule is close to clean — worth turning on so the next one has to be argued for. |
-| `@typescript-eslint/no-unsafe-argument` and friends | Only after the `unknown`-heavy property-schema `getValue`/`setValue` closures get a typed helper; today it would be hundreds of findings on a deliberate pattern. |
+| Rule                                                   | Why here specifically                                                                                                                                             |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@typescript-eslint/no-unnecessary-condition`          | Would have flagged the unreachable raw-body branches in L1.                                                                                                       |
+| `@typescript-eslint/require-await`                     | Several `async` operation closures never await; harmless but it masks the ones that should.                                                                       |
+| `no-empty` (currently disabled per-site with comments) | Nine of those disables were M4. With that gone, the rule is close to clean — worth turning on so the next one has to be argued for.                               |
+| `@typescript-eslint/no-unsafe-argument` and friends    | Only after the `unknown`-heavy property-schema `getValue`/`setValue` closures get a typed helper; today it would be hundreds of findings on a deliberate pattern. |
 
 **Structural, not lint:**
 
@@ -391,7 +393,7 @@ and it is cheap now that typed linting is already paid for.
 3. **Container stubs in specs are hand-rolled 28 times** and each one is a partial fake. A single
    `makeTestContainer()` helper would have made the M4 breakage a one-line fix instead of four, and
    would stop the next optional-dependency lookup from silently taking the "not registered" path.
-4. **Consider a `catch`-shape rule of thumb**: a bare `catch {}` is only correct when the *only*
+4. **Consider a `catch`-shape rule of thumb**: a bare `catch {}` is only correct when the _only_
    thing in the `try` is the operation allowed to fail. Every instance found here wrapped more than
    that. The fix is usually to ask the question directly (`hasService`) rather than to catch.
 5. **`packages/pix3-collab-server/data/*.sqlite` is tracked in git.** Running the server locally

@@ -14,12 +14,9 @@ The engine's own statement of the format (principles, skinned UI controls, Spine
 
 ## Before you write
 
-- Re-read the file you are about to change — the human may have edited it in the editor.
-- Change only the lines you mean to change. A whole-file rewrite from memory drops what the
-  human (or the editor) wrote since you last read it.
-- If your tools support it, write to a temporary file and rename it over the target. Not
-  required for correctness — the editor waits for the file to stop changing — but cleaner.
-- Then `pix3 check` (see `pix3-verify`).
+Sync, re-read the file, change only the lines you mean to change, then `pix3 check` (`AGENTS.md`
+rules 2 and 4). If your tools support it, write to a temporary file and rename it over the
+target — not required (the editor waits for the file to stop changing), but cleaner.
 
 ## File
 

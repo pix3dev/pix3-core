@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { NON_SHIPPABLE_DIRECTORIES } from '../files/scan.ts';
 import { RESERVED_ROOT_DIR } from '../files/paths.ts';
 import type { LocalizationSettings, ProjectManifestInfo } from './project-manifest.ts';
-import { stripRes } from './project-manifest.ts';
+import { normalizeResRoot, resToAbsolute, stripRes, wireToRes } from './project-manifest.ts';
 
 /**
  * The build's scan of the project (plan §B.6 item 1): every text source outside `node_modules`,
@@ -12,7 +12,7 @@ import { stripRes } from './project-manifest.ts';
  *
  * - `mentionedNames` — every identifier-like token (plus `core:Follow`-shaped ids), the superset
  *   the strip asks "does anything mention this module?" (a false positive costs kilobytes, a
- *   false negative would ship a broken game — `.plans/done/playable-export-size.md` §2 Р4);
+ *   false negative would ship a broken game — `../pix3/.plans/done/playable-export-size.md` §2 Р4);
  * - the asset set: every scene and prefab, everything they and the scripts name by `res://`,
  *   directories those references expand to, Spine atlas pages, the declared locale tables and
  *   their sprites, the project's fonts (no pre-packed atlas: nothing in 2.x writes one);
@@ -227,24 +227,17 @@ const staticDirectoryPrefix = (resourcePath: string): string | null => {
 
 export const scanProject = async (options: ScanOptions): Promise<ProjectScan> => {
   const { root, manifest } = options;
-  const resRoot = stripRes(options.resRoot).replace(/\/+$/, '') || '.';
+  const resRoot = normalizeResRoot(options.resRoot);
   const warnings: string[] = [];
   const mentionedNames = new Set<string>();
   const importedSpecifiers = new Set<string>();
 
-  const resAbsolute = (resPath: string): string =>
-    resRoot === '.'
-      ? join(root, ...resPath.split('/'))
-      : join(root, resRoot, ...resPath.split('/'));
-  const wireToRes = (wirePath: string): string | null => {
-    if (resRoot === '.') return wirePath;
-    return wirePath.startsWith(`${resRoot}/`) ? wirePath.slice(resRoot.length + 1) : null;
-  };
+  const resAbsolute = (resPath: string): string => resToAbsolute(root, resRoot, resPath);
 
   const wirePaths = await listProjectFiles(root);
   const resFiles = new Set<string>();
   for (const wirePath of wirePaths) {
-    const resPath = wireToRes(wirePath);
+    const resPath = wireToRes(wirePath, resRoot);
     if (resPath !== null) resFiles.add(resPath);
   }
 
@@ -298,7 +291,7 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     if (CODE_EXTENSIONS.has(extensionOf(wirePath))) {
       collectImportedSpecifiers(contents, importedSpecifiers);
     }
-    const resPath = wireToRes(wirePath);
+    const resPath = wireToRes(wirePath, resRoot);
     if (resPath !== null && SCANNABLE_RESOURCE.test(resPath)) scanned.add(resPath);
   }
 

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { isAbsolute, relative, sep } from 'node:path';
+import { isAbsolute, sep } from 'node:path';
 
 import type { EnvironmentModuleNode, ViteDevServer } from 'vite';
 
 import { isExcludedPath } from '../files/scan.ts';
+import { relativeInside } from '../module-paths.ts';
 
 /**
  * The scripts the editor executes, and the proof that it executed the bytes on disk (plan §B.2).
@@ -83,10 +84,8 @@ export class ScriptGraph {
     // A pre-bundled dependency in an in-project `cacheDir` is not the project's code.
     if (this.ignored.some(dir => file.startsWith(`${dir}${sep}`) || file.startsWith(`${dir}/`)))
       return null;
-    const rel = relative(this.root, file);
-    if (!rel || rel.startsWith('..') || isAbsolute(rel)) return null;
-    const wirePath = rel.split(sep).join('/');
-    return isExcludedPath(wirePath) ? null : wirePath;
+    const wirePath = relativeInside(this.root, file);
+    return wirePath === null || isExcludedPath(wirePath) ? null : wirePath;
   }
 
   absoluteOf(wirePath: string): string {

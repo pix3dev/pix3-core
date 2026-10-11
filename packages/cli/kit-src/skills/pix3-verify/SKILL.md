@@ -75,6 +75,11 @@ Codes and what they usually mean:
 and loads your scripts to check the properties of `user:` components; with `--no-hydrate` (or
 when scripts cannot be loaded) those are **not** checked — say so if your change depends on them.
 
+**A compile error hides level 2.** With `E_SCRIPT_COMPILE` in the list, every scene with `user:`
+components is skipped at level 2 — `check` says `SKIPPED: N scene(s) …` and the summary line
+reads `level 2 hydrated 0 file(s), N SKIPPED`. Their config/property errors are *missing*, not
+passed: fix the compile error, run `check` again, and only then read the rest.
+
 ### `pix3 smoke` — when no editor is connected
 
 `pix3 smoke <scene>` (after a green `check`) runs that scene in Node: your scripts compiled, the
@@ -91,10 +96,10 @@ pointing at your `.ts` line), `E_SMOKE_CONSOLE_ERROR`, `E_SMOKE_UNHANDLED` (a re
 nobody awaited), `E_SMOKE_DOM` (a browser API the headless run lacks — `domAccess` names it; a
 browser-only feature, not necessarily a bug: say so). `W_SMOKE_MISSING_RESOURCE` is a `res://`
 typo. Exit 2 = it could not run (`E_SMOKE_NO_SCENE`: pass the scene; `E_SMOKE_TIMEOUT`: a loop
-that never ends; `E_RUNTIME_VERSION`: run the project's own `npx pix3 smoke`). Nothing is drawn, heard or tapped: a green smoke run proves the game starts and
-runs without throwing, not that it plays — report it as exactly that, and tell the human what to
-press and what they should see (section 4). With the editor open, `pix3_game_run` (section 3) is
-the stronger check.
+that never ends; `E_RUNTIME_VERSION`: run the project's own `npx pix3 smoke`). Nothing is
+drawn, heard or tapped: a green smoke run proves the game starts and runs without throwing, not
+that it plays — report it as exactly that, and tell the human what to press and what they should
+see (section 4). With the editor open, `pix3_game_run` (section 3) is the stronger check.
 
 **No editor open: the fallback, in this order** — `pix3 check` (green), then
 `pix3 smoke <the scene you changed>` (green), then ask the human to press Play in that scene,
@@ -109,33 +114,15 @@ deleted is gone). The designer is told when one of their unsaved values was repl
 replaced version is kept in the editor's History — nothing is written back over your file and
 there is no merge-log for you to read.
 
-Your protection is the other direction: `pix3_sync` **before** you read (so the designer's
-unsaved edits are on disk), and `pix3_sync` with `expect` **after** you write (so you learn when
-someone else wrote the file after you — `expect_mismatch`). Both in `pix3-editor`.
-
-**A compile error hides level 2.** With `E_SCRIPT_COMPILE` in the list, every scene with `user:`
-components is skipped at level 2 — `check` says `SKIPPED: N scene(s) …` and the summary line
-reads `level 2 hydrated 0 file(s), N SKIPPED`. Their config/property errors are *missing*, not
-passed: fix the compile error, run `check` again, and only then read the rest.
+Your protection is the other direction: `pix3_sync` before you read and with `expect` after you
+write (`pix3-editor` → "The loop").
 
 ## 3. Run the game in the editor
 
-`.claude/skills/pix3-editor/SKILL.md` is the whole procedure. The short form, after a batch
-of edits:
-
-1. `pix3 check --json` → the `sha256` of every file you wrote from `files`.
-2. `pix3_sync {expect: {"<path>": "<sha256>", …}}` through the `pix3-browser` MCP server → must
-   answer `ok:true` (a not-ok answer names what to do: `expect_mismatch`, `stale` with the
-   play owner, `gesture_in_progress`).
-3. `pix3_play {action:"restart"}` (or `start`), then `pix3_game_run` with `until` / `fail`
-   predicates — read `verdict`, then `pix3_errors`, then `pix3_screenshot` + `take_screenshot`.
-4. Input-driven behaviour (taps, keys): the game runs in the editor's Game tab — tap it with
-   chrome-devtools-mcp's own `click_at {x, y}` / `press_key` at the coordinates
-   `pix3_scene {nodeId}` returns as `screen`, then `pix3_scene` / `pix3_errors` to judge.
-
-`pix3_game_run` always judges the running session as it is — it does not restart the game.
-Sound: a synthetic click is not a user gesture, so Web Audio may stay suspended; report it as
-"code path verified, audibility not".
+`.claude/skills/pix3-editor/SKILL.md` is the whole procedure: `pix3 check --json` for the hashes,
+`pix3_sync` with `expect`, `pix3_play` restart, `pix3_game_run` with predicates, `pix3_errors`,
+a screenshot; taps with chrome-devtools-mcp's `click_at` at the `screen` point `pix3_scene`
+gives.
 
 ## 4. Report honestly
 
@@ -161,26 +148,9 @@ or the load error shown on the scene), fix the first one, and check again.
 fails there should be exactly one new thing in it to suspect. Run (`pix3 check`, then the game)
 after each step that can play.
 
-Faults that compile clean and then misbehave:
-
-- **A component threw and froze.** The engine disables a component that throws in
-  `onStart`/`onUpdate` and the game keeps running, looking fine while that part is dead.
-  `pix3_errors` (or `pix3 smoke`'s `E_SMOKE_SCRIPT`) shows the throw — read it right after
-  starting play, before judging anything else.
-- **`Cannot assign to read only property 'position'`** — transforms are mutated, never assigned:
-  `node.position.set(x, y, 0)`, `node.rotation.z = radians`. Never cast to `any` to get past it.
-- **`getComponent` takes the class, never a string**: import the other script's class
-  (`import { Mover } from './Mover'`) and call `node.getComponent(Mover)`. `user:Mover` is only
-  the scene file's name for it.
-- **Keys**: match `event.code` (`'KeyW'`, `'ArrowUp'`, `'Space'`); `event.key` depends on the
-  layout and on Shift.
-- **Moves the wrong way** (sideways, backwards) is a math bug, and flipping signs does not
-  converge. With world +Y up, `rotation.z` turns the node's local +Y (its nose) to
-  `(-sin θ, cos θ)`: forward is `vx = -Math.sin(rot) * speed`, `vy = Math.cos(rot) * speed`, and
-  aiming the nose along `(dx, dy)` is `rotation.z = Math.atan2(-dx, dy)`.
-- **A button does nothing**: something must `connect` to its signal (`pressed` / `click`) on the
-  node id the scene really has — check the id in `pix3 tree`, then that the script carrying the
-  handler is attached and `enabled`.
+Faults that compile clean and then misbehave — a component that threw and froze, an assigned
+`position`, `getComponent` with a string, a wrong-way move, a button nobody connected — are
+`pix3-scripts` → "Traps"; read `pix3_errors` (or `E_SMOKE_SCRIPT`) first.
 
 **Stuck?** Two fixes that did not change the symptom mean the model of the bug is wrong: stop
 editing, re-read the code that should explain it (not from memory), add a `console.log` where the

@@ -1,11 +1,14 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
 
 import { contentTypeFor } from '../files/content-type.ts';
 import { globPatterns, SCRIPT_DIRS } from '../sync/script-graph.ts';
-import type { LocalizationSettings, ProjectManifestInfo } from './project-manifest.ts';
+import {
+  resToAbsolute,
+  type LocalizationSettings,
+  type ProjectManifestInfo,
+} from './project-manifest.ts';
 
 /**
  * The `virtual:pix3/*` modules the player (`@pix3/vite-plugin/player`) imports (plan §B.5). Each
@@ -101,6 +104,10 @@ export interface EmbeddedAssetsResult {
   readonly entries: readonly EmbeddedAssetEntry[];
 }
 
+/** Asset entries largest first, then by path. */
+export const largestFirst = (a: EmbeddedAssetEntry, b: EmbeddedAssetEntry): number =>
+  b.rawBytes - a.rawBytes || (a.path < b.path ? -1 : 1);
+
 /** `{ [resPath]: { base64, mimeType } }` of every shipped asset (single-file build). */
 export const embeddedAssetsSource = async (
   options: EmbeddedAssetsSourceOptions
@@ -110,11 +117,7 @@ export const embeddedAssetsSource = async (
   let rawBytes = 0;
   let base64Bytes = 0;
   for (const resPath of options.assetPaths) {
-    const absolute =
-      options.resRoot === '.'
-        ? join(options.root, ...resPath.split('/'))
-        : join(options.root, options.resRoot, ...resPath.split('/'));
-    const file = await readFile(absolute);
+    const file = await readFile(resToAbsolute(options.root, options.resRoot, resPath));
     const bytes = options.shippedBytes ? options.shippedBytes(resPath, file) : file;
     const base64 = bytes.toString('base64');
     rawBytes += bytes.byteLength;
@@ -124,7 +127,7 @@ export const embeddedAssetsSource = async (
       `${JSON.stringify(resPath)}: { base64: ${JSON.stringify(base64)}, mimeType: ${JSON.stringify(contentTypeFor(resPath).split(';')[0])} }`
     );
   }
-  entries.sort((a, b) => b.rawBytes - a.rawBytes || (a.path < b.path ? -1 : 1));
+  entries.sort(largestFirst);
   return {
     source: `export const embeddedAssets = {\n${lines.join(',\n')}\n};\n`,
     rawBytes,

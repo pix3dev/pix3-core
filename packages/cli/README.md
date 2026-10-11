@@ -31,10 +31,10 @@ command the entry dispatches to an entry there, answered by the bundled bin. `va
 adds its codes, `check --help` the ones it adds.
 
 `pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
-(package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore)
-plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` / `{{PACKAGE_NAME}}` /
-`{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent kit. Nothing in it plays a
-game. Record: `.plans/templates.md`.
+(package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore,
+README.md) plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` /
+`{{PACKAGE_NAME}}` / `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent
+kit. Nothing in it plays a game. Record: `.plans/templates.md`.
 
 Two things a first run trips on: **2.0.0-alpha packages are not published yet** — a new
 project's `npm install` fails until they are; the starter's README says how to link a pix3-core

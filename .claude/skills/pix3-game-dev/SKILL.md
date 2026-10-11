@@ -128,5 +128,5 @@ capability inventory is the catalog — start there every time.
 ## Binding references
 
 - Coding rules (mutation gateway, DI, Lit conventions): `AGENTS.md`.
-- Architecture (operations flow, schema, rendering, state): [docs/architecture.md](../../../docs/architecture.md).
+- Architecture (operations flow, schema, rendering, state, the host seam): [docs/pix3-specification.md](../../../docs/pix3-specification.md) §4 and `CLAUDE.md` → "Architecture essentials".
 - Product/spec source of truth: [docs/pix3-specification.md](../../../docs/pix3-specification.md).

@@ -174,6 +174,20 @@ export const stripRes = (path: string): string =>
     .replace(/^\.\/+/, '')
     .replace(/^\/+/, '');
 
+/** `pix3({ resRoot })` as the build and the server use it: no scheme, no trailing `/`, `'.'` for the root. */
+export const normalizeResRoot = (resRoot: string): string =>
+  stripRes(resRoot).replace(/\/+$/, '') || '.';
+
+/** A project wire path → its `res://`-relative path, or null outside `resRoot`. */
+export const wireToRes = (wirePath: string, resRoot: string): string | null => {
+  if (resRoot === '.') return wirePath;
+  return wirePath.startsWith(`${resRoot}/`) ? wirePath.slice(resRoot.length + 1) : null;
+};
+
+/** The absolute file of a `res://`-relative path. */
+export const resToAbsolute = (root: string, resRoot: string, resPath: string): string =>
+  join(root, resRoot, ...resPath.split('/'));
+
 /** Parse the manifest text (an empty or malformed manifest yields the defaults). */
 export const parseProjectManifest = (text: string, fallbackName: string): ProjectManifestInfo => {
   let parsed: unknown = null;

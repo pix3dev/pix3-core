@@ -1,22 +1,17 @@
 <!-- Pix3 agent kit {{version}} — generated from docs/nodes-and-systems.md, packages/cli/kit-includes/engine-api-map.md and the runtime's component registry. Do not edit: pix3 kit --update regenerates it. -->
 # Script API reference
 
-Generated from the engine's own documentation and code. Grep a heading instead of reading it
-whole. Tool names the in-editor agent uses appear in places: `add_component` /
-`set_component_property` = edit the scene YAML's `components:`; `list_component_types` = the
-"`core:` components" section at the end of this file; `engine_search` / `engine_read` do not
-exist for you — the runtime's declarations are in `.pix3/types/@pix3/runtime/` (or in
-`node_modules/@pix3/runtime` when the project has its own `tsconfig.json`). Source paths quoted here (`src/…`, `packages/…`) are files of the Pix3 engine repository, not of this project.
+Generated from the engine's own documentation and code; `SKILL.md` beside it is the practical
+part. Grep a heading instead of reading it whole. The runtime's declarations are in
+`.pix3/types/@pix3/runtime/` (or `node_modules/@pix3/runtime` when the project has its own
+`tsconfig.json`). Source paths quoted here (`src/…`, `packages/…`) are files of the Pix3 engine
+repository, not of this project.
 
 ## The surface a `Script` sees
 
 {{include:docs/nodes-and-systems.md#Scripts-facing runtime API}}
 
-## Engine API map
-
-### A `Script`
-
-{{include:packages/cli/kit-includes/engine-api-map.md#A `Script`}}
+## Engine API map — beyond `SKILL.md`
 
 ### Nodes
 
@@ -29,10 +24,6 @@ exist for you — the runtime's declarations are in `.pix3/types/@pix3/runtime/`
 ### `this.input`
 
 {{include:packages/cli/kit-includes/engine-api-map.md#`this.input`}}
-
-### Traps
-
-{{include:packages/cli/kit-includes/engine-api-map.md#Traps}}
 
 ## Capability catalog — nodes
 
