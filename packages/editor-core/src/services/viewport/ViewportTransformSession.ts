@@ -9,6 +9,7 @@ import type { Camera3D } from '@pix3/runtime';
 import type { DirectionalLightNode } from '@pix3/runtime';
 import type { SpotLightNode } from '@pix3/runtime';
 import { appState } from '@/state';
+import { setGestureInProgress } from '@/state/gesture';
 import type { OperationService } from '@/services/core/OperationService';
 import {
   TransformCompleteOperation,
@@ -155,7 +156,7 @@ export class ViewportTransformSession {
   private syncGestureFlag(): void {
     const active = this.isGestureActive();
     if (appState.ui.gestureInProgress !== active) {
-      appState.ui.gestureInProgress = active;
+      setGestureInProgress(active);
     }
   }
 
