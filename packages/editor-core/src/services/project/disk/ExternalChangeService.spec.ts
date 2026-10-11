@@ -51,6 +51,32 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('ExternalChangeService — a file that is gone', () => {
+  it('delivers an open scene that was deleted on disk; drops a missing file nobody has open', async () => {
+    const h = createService();
+    appState.scenes.descriptors['s1'] = {
+      id: 's1',
+      filePath: 'res://scenes/open.pix3scene',
+      name: 'Open',
+      version: '1.0.0',
+      isDirty: false,
+      lastSavedAt: null,
+      lastModifiedTime: null,
+    };
+    // Neither file exists in the storage: both were deleted by an agent.
+    h.service.report('res://scenes/open.pix3scene');
+    h.service.report('res://scenes/closed.pix3scene');
+    await h.service.tick();
+    await h.service.tick();
+    // The open scene reaches the consumer (the merge's missing branch: notice + staleScenes);
+    // the other has no one to tell and is dropped.
+    expect(h.batches).toEqual([['scenes/open.pix3scene']]);
+    expect(h.service.getPendingPaths()).toEqual([]);
+    expect(h.diskState.isPendingExternal('scenes/open.pix3scene')).toBe(false);
+    expect(h.diskState.isPendingExternal('scenes/closed.pix3scene')).toBe(false);
+  });
+});
+
 describe('ExternalChangeService — stabilisation window', () => {
   it('delivers a version only after two consecutive identical snapshots', async () => {
     const h = createService();

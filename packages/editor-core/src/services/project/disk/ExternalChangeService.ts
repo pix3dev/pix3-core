@@ -355,7 +355,15 @@ export class ExternalChangeService {
     const failing: PendingEntry[] = [];
     for (const entry of Array.from(this.entries.values())) {
       const snapshot = entry.last!;
-      if (snapshot.missing || this.diskState.acceptOwnHash(entry.path, snapshot.hash)) {
+      if (snapshot.missing) {
+        // A file that is gone: an open scene's goes to the consumer (`SceneMergeService`'s missing
+        // branch — the scene stays in memory, listed in `staleScenes`, with a notice); anything
+        // else has no one to tell.
+        if (isOpenScene(entry.path)) deliverable.push(entry);
+        else this.drop(entry.path);
+        continue;
+      }
+      if (this.diskState.acceptOwnHash(entry.path, snapshot.hash)) {
         // An own write — or a broken version put back to exactly the bytes the editor holds: the
         // graph already matches, so no reload; the pending/unreadable state of the broken version
         // goes (`setUnreadable` below), and the autosave hold with it.
@@ -527,6 +535,13 @@ export class ExternalChangeService {
       .map(e => e.path);
     this.unreadable = unreadable;
   }
+}
+
+/** True when an open scene (a descriptor of `appState.scenes`) is this project path. */
+function isOpenScene(path: string): boolean {
+  return Object.values(appState.scenes.descriptors).some(
+    descriptor => toProjectPath(descriptor.filePath) === path
+  );
 }
 
 function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
