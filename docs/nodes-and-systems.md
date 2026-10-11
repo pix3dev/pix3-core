@@ -7,7 +7,6 @@ that is the rule CLAUDE.md's _Engine vs Game feature decision_ enforces.
 
 - Node detail (every property, per node): [node-types-reference.md](node-types-reference.md)
 - Product/architecture source of truth: [pix3-specification.md](pix3-specification.md)
-- Deep-dive diagrams (operations flow, schema, rendering, state): [architecture.md](architecture.md)
 - Property-schema authoring: [property-schema-reference.md](property-schema-reference.md)
 
 ---
@@ -764,4 +763,4 @@ play-mode hook, so the editor keeps running.
 - Built-in behaviors: `packages/runtime/src/behaviors/`; shader effects: `.../shader-effects/`; animation: `.../animation/`.
 - Editor features (commands/operations): `packages/editor-core/src/features/<area>/`; services: `packages/editor-core/src/services/<domain>/`.
 - Demo scenes + example scripts: `packages/runtime/fixtures/hello-world-scenes/`; `docs/example-scripts/`.
-- Deeper docs: [node-types-reference.md](node-types-reference.md), [pix3-specification.md](pix3-specification.md), [architecture.md](architecture.md), [property-schema-reference.md](property-schema-reference.md).
+- Deeper docs: [node-types-reference.md](node-types-reference.md), [pix3-specification.md](pix3-specification.md) (§4 Architecture), [property-schema-reference.md](property-schema-reference.md).

@@ -80,7 +80,7 @@ same objects; `mergeSchemas(base, extended)` is the helper the spread above does
 
 `PropertyType` union: `'string' | 'number' | 'boolean' | 'vector2' | 'vector3' | 'euler' | 'color' | 'enum' | 'object'` (authoritative list in `property-schema.ts`).
 
-The type picks the Inspector editor, so declaring the *narrow* one matters even when the stored
+The type picks the Inspector editor, so declaring the _narrow_ one matters even when the stored
 value is a string: a hex colour typed `'string'` renders as a full-width text box with no swatch,
 while `'color'` gets the picker + a compact hex field; a fixed value set typed `'string'` renders as
 free text, while `'select'`/`'enum'` (with `ui.options`) gets a dropdown. Numbers, colours and enums
@@ -95,21 +95,28 @@ function twice and renders the colour far too dark (see the colour entry in `CLA
 
 ```typescript
 interface PropertyDefinition {
-  name: string;                     // property key, dotted for components (e.g. "position.x")
+  name: string; // property key, dotted for components (e.g. "position.x")
   type: PropertyType;
   ui?: PropertyUIHints;
-  validation?: PropertyValidation;  // { validate(value): boolean | string; transform?(value): value }
+  validation?: PropertyValidation; // { validate(value): boolean | string; transform?(value): value }
   defaultValue?: unknown;
-  getValue: (node) => unknown;      // read from the live node instance
-  setValue: (node, value) => void;  // write to the live node instance
+  getValue: (node) => unknown; // read from the live node instance
+  setValue: (node, value) => void; // write to the live node instance
 }
 
 interface PropertyUIHints {
-  label?: string; description?: string; group?: string;
-  min?: number; max?: number; step?: number; precision?: number;
-  unit?: string;                    // "°", "px", "ms", …
+  label?: string;
+  description?: string;
+  group?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  precision?: number;
+  unit?: string; // "°", "px", "ms", …
   options?: string[] | Record<string, unknown>; // enum
-  slider?: boolean; hidden?: boolean; readOnly?: boolean;
+  slider?: boolean;
+  hidden?: boolean;
+  readOnly?: boolean;
   colorFormat?: 'hex' | 'rgb' | 'rgba';
 }
 
@@ -135,8 +142,8 @@ pushes a colour into a material — creates two different write paths. The Inspe
 `setValue`, so authoring works. A game script writes the field, and nothing is redrawn:
 
 ```typescript
-bar.setValue(30);  // clamps, then updateBarVisuals() — the bar moves
-bar.value = 30;    // field changes, NOTHING is redrawn
+bar.setValue(30); // clamps, then updateBarVisuals() — the bar moves
+bar.value = 30; // field changes, NOTHING is redrawn
 ```
 
 The second spelling is the natural one, it type-checks, and the getter afterwards returns `30` —

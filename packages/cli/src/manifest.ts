@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
+
+import { findUp, readTextOrNull } from './fs-util.ts';
 
 import type { TargetPlatform, TemplateInfo } from './templates.ts';
 
@@ -12,10 +14,9 @@ export const PROJECT_MANIFEST_FILE = 'pix3project.yaml';
  *
  * Not a top-level `id` — the editor's `normalizeProjectManifest` keeps only the fields it knows and
  * `ProjectService.saveProjectManifest` rewrites the file from that, so a top-level key would be
- * erased the first time a human saved Project Settings. `metadata` is round-tripped verbatim.
- * The editor uses the same key (`PROJECT_ID_METADATA_KEY` in `src/core/ProjectManifest.ts`): it
- * mints one when it creates a project and backfills it once when it opens a project without one.
- * (`appState.project.id` is something else — a per-open session UUID for "Recent projects".)
+ * erased the first time the editor rewrote the manifest. `metadata` is round-tripped verbatim.
+ * The editor uses the same key (`PROJECT_ID_METADATA_KEY` in editor-core's
+ * `src/core/ProjectManifest.ts`) and backfills it once when it opens a project without one.
  */
 const PROJECT_ID_METADATA_KEY = 'projectId';
 
@@ -35,9 +36,9 @@ const qualityFor = (platform: TargetPlatform) => {
 export const createProjectId = (): string => randomUUID();
 
 /**
- * The manifest payload exactly as the editor writes it for a new project from `template`:
- * `ProjectLifecycleService.createManifest` (template defaults from the create dialog) serialised
- * through `ProjectService.saveProjectManifest` (same key order, `stringify(..., { indent: 2 })`).
+ * The manifest of a new project from `template`, in the key order and format the editor's
+ * `ProjectService.saveProjectManifest` writes (`stringify(..., { indent: 2 })`), so the editor's
+ * one rewrite of it (the `projectId` backfill, never needed here) would not reorder a line.
  */
 export const buildManifestPayload = (
   template: TemplateInfo,
@@ -68,15 +69,36 @@ export const renderManifest = (payload: Record<string, unknown>): string =>
 
 /** Nearest ancestor (inclusive) of `start` that holds a `pix3project.yaml`, or null. */
 export const findProjectRoot = (start: string): string | null => {
-  let current = resolve(start);
-  for (;;) {
-    try {
-      readFileSync(join(current, PROJECT_MANIFEST_FILE));
-      return current;
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return null;
-      current = parent;
-    }
+  const manifest = findUp(start, PROJECT_MANIFEST_FILE);
+  return manifest === null ? null : dirname(manifest);
+};
+
+/**
+ * The project a command works on: `--project <dir>` (from `cwd`), else the nearest folder from
+ * `cwd` up that holds the manifest. No manifest there is no project: `error` is the line to print
+ * after the command's `pix3 <command>: ` prefix.
+ */
+export const resolveProjectRoot = (
+  cwd: string,
+  projectDir: string | undefined
+): { readonly root: string } | { readonly error: string } => {
+  const start = resolve(cwd, projectDir ?? '.');
+  const root = projectDir ? start : findProjectRoot(start);
+  if (root && existsSync(join(root, PROJECT_MANIFEST_FILE))) return { root };
+  return {
+    error: `no ${PROJECT_MANIFEST_FILE} in ${start}${projectDir ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.`,
+  };
+};
+
+/** `metadata.agentKit.version` of the project's manifest (the kit `pix3 kit` installed), or null. */
+export const readManifestKitVersion = (projectRoot: string): string | null => {
+  const text = readTextOrNull(join(projectRoot, PROJECT_MANIFEST_FILE));
+  if (text === null) return null;
+  try {
+    const parsed = parse(text) as { metadata?: { agentKit?: { version?: unknown } } } | null;
+    const version = parsed?.metadata?.agentKit?.version;
+    return typeof version === 'string' ? version : null;
+  } catch {
+    return null;
   }
 };

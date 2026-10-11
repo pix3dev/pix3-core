@@ -291,7 +291,7 @@ export type NetSignalPayload = Uint8Array | string | number | boolean | null | o
 /** Receives an inbound signal. `payload` is a view over the receive buffer — copy it if you keep it. */
 export type NetSignalHandler = (payload: Uint8Array, senderClientId: number) => void;
 
-/** Counters for the Game tab, the profiler and bug reports. */
+/** Session counters (`net.stats`) for diagnostics and bug reports. */
 export interface NetworkStats {
   /** Frames handed to the session by the transport. */
   framesReceived: number;
@@ -1189,8 +1189,8 @@ export class NetworkService {
         new NetworkSpawnError(
           'unknown-kind',
           prefabPath,
-          `"${prefabPath}" is not in this build's netKindTable, so it has no wire kind. Export the ` +
-            'project (the exporter emits the table) or call registerNetworkPrefab() on every client.'
+          `"${prefabPath}" is not in this build's netKindTable, so it has no wire kind. Run it from ` +
+            "the plugin's player (the build emits the table) or call registerNetworkPrefab() on every client."
         )
       );
     }

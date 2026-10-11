@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { narrowTo0600 } from '../fs-util.ts';
 import { cdpTokenPath } from './paths.ts';
 
 /**
@@ -15,15 +16,22 @@ import { cdpTokenPath } from './paths.ts';
 const TOKEN_BYTES = 32;
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,}$/;
 
-/** The token, or null when the file is missing or does not hold one. */
-export const readCdpToken = (env: NodeJS.ProcessEnv = process.env): string | null => {
+/** A fresh token (also what a probe without a token proves nothing with). */
+export const newCdpToken = (): string => randomBytes(TOKEN_BYTES).toString('base64url');
+
+/** The token a file holds, or null when it is missing or holds none. */
+export const readTokenFile = (path: string): string | null => {
   try {
-    const token = readFileSync(cdpTokenPath(env), 'utf8').trim();
+    const token = readFileSync(path, 'utf8').trim();
     return TOKEN_SHAPE.test(token) ? token : null;
   } catch {
     return null;
   }
 };
+
+/** The token, or null when the file is missing or does not hold one. */
+export const readCdpToken = (env: NodeJS.ProcessEnv = process.env): string | null =>
+  readTokenFile(cdpTokenPath(env));
 
 /**
  * The token, created when there is none. A file another process wrote in the meantime wins
@@ -34,11 +42,11 @@ export const ensureCdpToken = (env: NodeJS.ProcessEnv = process.env): string => 
   const path = cdpTokenPath(env);
   const existing = readCdpToken(env);
   if (existing) {
-    narrowMode(path);
+    narrowTo0600(path);
     return existing;
   }
   mkdirSync(dirname(path), { recursive: true });
-  const token = randomBytes(TOKEN_BYTES).toString('base64url');
+  const token = newCdpToken();
   try {
     writeFileSync(path, `${token}\n`, { mode: 0o600, flag: 'wx' });
     return token;
@@ -49,16 +57,7 @@ export const ensureCdpToken = (env: NodeJS.ProcessEnv = process.env): string => 
     const theirs = readCdpToken(env);
     if (theirs) return theirs;
     writeFileSync(path, `${token}\n`, { mode: 0o600 });
-    narrowMode(path);
+    narrowTo0600(path);
     return token;
-  }
-};
-
-const narrowMode = (path: string): void => {
-  if (process.platform === 'win32') return;
-  try {
-    if ((statSync(path).mode & 0o077) !== 0) chmodSync(path, 0o600);
-  } catch {
-    // unreadable stat: the read above already succeeded or failed on its own
   }
 };

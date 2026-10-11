@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,6 +53,36 @@ export const cliPackageRoot = (): string => {
  */
 export const runsFromSources = (): boolean => import.meta.url.endsWith('.ts');
 
-/** `dist/<command>/prebuilt/` — a bundle built at `prepack`, or null when running the sources. */
-export const prebuiltDir = (command: 'validate' | 'smoke'): string | null =>
-  runsFromSources() ? null : join(cliPackageRoot(), 'dist', command, 'prebuilt');
+/**
+ * Run `fn` with the folder holding a command's runtime bundle: `dist/<command>/prebuilt/` (built
+ * at `prepack`) when published and `marker` is there, else a temp folder `build` writes from
+ * source (removed afterwards) — so a checkout never runs a stale `dist/`.
+ */
+export const withCommandBundle = async <T>(
+  command: 'validate' | 'smoke',
+  marker: string,
+  build: (outdir: string) => Promise<void>,
+  fn: (bundleDir: string) => Promise<T>
+): Promise<T> => {
+  const prebuilt = runsFromSources() ? null : join(cliPackageRoot(), 'dist', command, 'prebuilt');
+  if (prebuilt && existsSync(join(prebuilt, marker))) return fn(prebuilt);
+  const outdir = mkdtempSync(join(tmpdir(), `pix3-${command}-bundle-`));
+  try {
+    await build(outdir);
+    return await fn(outdir);
+  } finally {
+    rmSync(outdir, { recursive: true, force: true });
+  }
+};
+
+/**
+ * `esbuild` as this package sees it (an optional dependency when published, the repo's in a
+ * checkout) — resolved here, not in a bundle: a checkout's bundle lives in a temp folder.
+ */
+export const resolveEsbuild = (): string | undefined => {
+  try {
+    return import.meta.resolve('esbuild');
+  } catch {
+    return undefined;
+  }
+};

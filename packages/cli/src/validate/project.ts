@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
+import { sha256Hex } from '../fs-util.ts';
+import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { isRecord } from './yaml-doc.ts';
 
 /**
@@ -121,11 +122,9 @@ const decodeURIComponentSafe = (value: string): string => {
   }
 };
 
-/** sha256 of a project file's RAW BYTES — the hash `pix3 read`, `pix3 serve` and `expect` use. */
+/** sha256 of a project file's raw bytes (the report's `files[].sha256`). */
 export const sha256OfFile = (project: ProjectFiles, projectPath: string): string =>
-  createHash('sha256')
-    .update(readFileSync(project.absolute(projectPath)))
-    .digest('hex');
+  sha256Hex(readFileSync(project.absolute(projectPath)));
 
 export interface ProjectManifestInfo {
   readonly targetPlatform?: string;
@@ -133,9 +132,9 @@ export interface ProjectManifestInfo {
 
 /** The bits of `pix3project.yaml` validation cares about; `{}` when absent or unreadable. */
 export const readManifestInfo = (project: ProjectFiles): ProjectManifestInfo => {
-  if (!project.has('pix3project.yaml')) return {};
+  if (!project.has(PROJECT_MANIFEST_FILE)) return {};
   try {
-    const data = parseYaml(project.readText('pix3project.yaml')) as unknown;
+    const data = parseYaml(project.readText(PROJECT_MANIFEST_FILE)) as unknown;
     if (!isRecord(data)) return {};
     return typeof data.targetPlatform === 'string' ? { targetPlatform: data.targetPlatform } : {};
   } catch {

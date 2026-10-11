@@ -1,17 +1,16 @@
-import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-
 import { ensureCdpToken } from '../editor/cdp-token.ts';
 import { readChromeState } from '../editor/chrome-state.ts';
 import { proveCdpProxy } from '../editor/cdp-proof.ts';
 import {
   cdpWsEndpoint,
   DEFAULT_CDP_PORT,
+  isPort,
   localMcpConfigPath,
   remoteMcpConfigPath,
 } from '../editor/paths.ts';
 import { readRemoteCdpToken, remoteCdpPort } from '../editor/remote.ts';
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { resolveProjectRoot } from '../manifest.ts';
+import type { CliIo } from '../io.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import {
   AGENT_TARGETS,
@@ -44,12 +43,7 @@ import {
  * the token go to `~/.pix3/remote-cdp.json` (0600); the project's config names only that file.
  */
 
-export interface AgentSetupIo {
-  readonly cwd: string;
-  readonly env?: NodeJS.ProcessEnv;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type AgentSetupIo = CliIo;
 
 export interface AgentSetupArgs {
   readonly targets: readonly AgentTarget[];
@@ -77,7 +71,7 @@ export const parseAgentSetupArgs = (
         return { error: '--project needs a directory' };
     } else if (arg === '--cdp-port') {
       const n = Number(argv[++i]);
-      if (!Number.isInteger(n) || n <= 0 || n > 65535) return { error: '--cdp-port needs a port' };
+      if (!isPort(n)) return { error: '--cdp-port needs a port' };
       cdpPort = n;
     } else if (arg === 'claude' || arg === 'codex') targets.push(arg);
     else return { error: `agent-setup takes claude or codex, not "${arg}"` };
@@ -102,17 +96,15 @@ export const runAgentSetupCli = async (
   const parsed = parseAgentSetupArgs(argv);
   if ('error' in parsed) {
     io.stderr(`pix3 agent-setup: ${parsed.error}\n\n${COMMAND_USAGE['agent-setup']}`);
-    return 1;
-  }
-  const env = io.env ?? process.env;
-  const start = parsed.projectDir ? resolve(io.cwd, parsed.projectDir) : io.cwd;
-  const root = parsed.projectDir ? start : findProjectRoot(start);
-  if (!root || !existsSync(join(root, PROJECT_MANIFEST_FILE))) {
-    io.stderr(
-      `pix3 agent-setup: no ${PROJECT_MANIFEST_FILE} in ${start}${parsed.projectDir ? '' : ' or any parent folder'}. Run it inside a Pix3 project, or pass --project <dir>.\n`
-    );
     return 2;
   }
+  const env = io.env ?? process.env;
+  const project = resolveProjectRoot(io.cwd, parsed.projectDir);
+  if ('error' in project) {
+    io.stderr(`pix3 agent-setup: ${project.error}\n`);
+    return 2;
+  }
+  const { root } = project;
   let port: number;
   let token: string;
   let configPath: string;

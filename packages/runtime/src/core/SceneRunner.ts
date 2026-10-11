@@ -15,7 +15,7 @@ import { RuntimeRenderer } from './RuntimeRenderer';
 import { InputService } from './InputService';
 import { SceneService, type FrameProfilerActivity } from './SceneService';
 import type { NetworkService } from '../net/NetworkService';
-import { AudioService, type ActiveAudioPlaybackSnapshot } from './AudioService';
+import { AudioService } from './AudioService';
 import { AssetLoader } from './AssetLoader';
 import { loadProjectFonts, type ProjectFontFaceSpec } from './ProjectFontLoader';
 import { ResourceManager } from './ResourceManager';
@@ -44,7 +44,6 @@ import { AutoloadHost } from './autoloads';
 import type { AutoloadConfig } from './ProjectManifest';
 import type { ScriptRegistry } from './ScriptRegistry';
 import type { SceneRaycastHit } from './raycast';
-import type { RuntimeRendererStatsSnapshot } from './RuntimeRenderer';
 import {
   registerRuntimeSceneRoot,
   registerRuntimeLivePropertySink,
@@ -86,31 +85,13 @@ const DEFAULT_FRAME_SCHEDULER: RunnerFrameScheduler = {
  */
 const SLOWMO_MUFFLE_THRESHOLD = 0.999;
 
-/**
- * Refresh period for the frame sample's heavy payloads (renderer stats, the
- * audio playback list). 100 ms = 10 Hz, matching the editor Profiler's UI push
- * cadence (`ProfilerSessionService.LIVE_NOTIFY_INTERVAL_MS`) — nothing reads
- * these payloads more often than that.
- *
- * Measured motivation: with the Profiler open, SkyDefender in play allocated
- * ~190 KB per frame and 5-9 % of frames stalled 20-70 ms in GC pauses; dropping
- * the frame listener alone removed ~40 % of those stalls. The audio snapshot in
- * particular copied and sorted every active playback on every frame.
- */
-const FRAME_SAMPLE_HEAVY_REFRESH_MS = 100;
-
 /** Shared empty list so the per-frame activity reset allocates nothing. */
 const NO_FRAME_PROFILER_ACTIVITIES: readonly FrameProfilerActivity[] = Object.freeze([]);
 
 /**
- * Per-frame stats handed to `subscribeFrameStats` listeners.
- *
- * Two payload tiers. The timing fields (`dt`, `logicMs`, `renderMs`, ...) are
- * exact for the frame they describe — FPS / frame-time history is the whole
- * point of the Profiler. The heavier payloads are refreshed on a cadence
- * instead (see {@link FRAME_SAMPLE_HEAVY_REFRESH_MS}): between refreshes a
- * sample carries the SAME object / array reference as the previous one, so a
- * consumer may compare references to skip work that cannot have changed.
+ * Per-frame stats handed to `subscribeFrameStats` listeners, exact for the frame they describe.
+ * (Draw-call / memory counters are `RuntimeRenderer.getStatsSnapshot()`, the active sounds
+ * `AudioService.getActivePlaybackSnapshot()` — read on demand, not copied into every frame.)
  */
 export interface SceneRunnerFrameSample {
   readonly dt: number;
@@ -120,9 +101,8 @@ export interface SceneRunnerFrameSample {
   readonly renderMs: number;
   /**
    * WORK time only — literally `logicMs + renderMs`. **This is NOT the frame
-   * duration**; `dt` is. Conflating the two is the bug this field's doc comment
-   * exists to prevent: a Profiler that showed `Frame 16.7 ms` next to a
-   * `logic 0.3 + render 1.1` breakdown made hours of a real 50-90 ms hitch hunt
+   * duration**; `dt` is. A readout that showed `Frame 16.7 ms` next to a
+   * `logic 0.3 + render 1.1` breakdown once made a real 50-90 ms hitch hunt
    * useless, because it never said that the other ~15 ms was not the game's
    * work at all (the main thread was idle; frames were simply delivered late).
    * Kept under its original name for compatibility — read {@link unaccountedMs}
@@ -151,16 +131,8 @@ export interface SceneRunnerFrameSample {
    * `fixed` mode, since the whole batch shares one callback.
    */
   readonly rafLatenessMs: number;
-  /** Draw-call / memory counters; refreshed on the heavy cadence, shared between refreshes. */
-  readonly rendererStats: RuntimeRendererStatsSnapshot;
   /** This frame's `FrameProfiler` reports (exact per frame); absent when nothing reported. */
   readonly profilerActivities?: readonly FrameProfilerActivity[];
-  /**
-   * Active audio playbacks; absent when nothing is playing. Rebuilt the frame the
-   * active set changes (so even a one-frame sound is seen) and on the heavy
-   * cadence (to advance `elapsedMs`); otherwise the previous array is reused.
-   */
-  readonly activeAudioPlaybacks?: readonly ActiveAudioPlaybackSnapshot[];
 }
 
 type SceneRunnerFrameListener = (sample: SceneRunnerFrameSample) => void;
@@ -246,11 +218,6 @@ export class SceneRunner {
   private currentRafLatenessMs = 0;
   private currentFrameProfilerActivities: readonly FrameProfilerActivity[] =
     NO_FRAME_PROFILER_ACTIVITIES;
-  /** Heavy-payload cache for frame samples; see {@link SceneRunnerFrameSample}. */
-  private lastHeavySampleAtMs = Number.NEGATIVE_INFINITY;
-  private cachedRendererStats: RuntimeRendererStatsSnapshot | null = null;
-  private cachedAudioPlaybacks: readonly ActiveAudioPlaybackSnapshot[] | undefined = undefined;
-  private cachedAudioRevision = -1;
   /** Lazily created collider wireframe overlay (only while physics debug is on). */
   private physicsDebugOverlay: PhysicsDebugOverlay | null = null;
   /** Separate instance: the 2D solver's wireframe uses the orthographic camera. */
@@ -404,8 +371,7 @@ export class SceneRunner {
    * Configure play-mode localization. Call before `startScene`. `config` comes
    * from the project manifest's `localization` block (null = no localization);
    * `seedLocale` is the editor's current preview locale so play starts in it
-   * (omit in exports to start in `config.defaultLocale`). The generated export
-   * bootstrap instead `await`s `setLocale(defaultLocale)` before start (no seed).
+   * (the player omits it and starts in `config.defaultLocale`).
    */
   setLocalizationConfig(config: LocalizationConfig | null, seedLocale?: string | null): void {
     this.localizationConfig = config;
@@ -802,10 +768,6 @@ export class SceneRunner {
     this.audioService.setPaused(false);
     this.gameTime.reset();
     this.currentFrameProfilerActivities = NO_FRAME_PROFILER_ACTIVITIES;
-    this.lastHeavySampleAtMs = Number.NEGATIVE_INFINITY;
-    this.cachedRendererStats = null;
-    this.cachedAudioPlaybacks = undefined;
-    this.cachedAudioRevision = -1;
     // Reset the AO-suppression memo so the NEXT scene always re-applies its
     // resolved suppression to its GeometryMesh nodes. Without this, a scene that
     // resolves the same suppress value as the previous one would skip the walk
@@ -1305,19 +1267,9 @@ export class SceneRunner {
       renderMs = performance.now() - renderStart;
     }
 
-    // Assembling the sample is not free, so it is skipped entirely when nobody is listening
-    // (a player build, or an editor whose Profiler is off screen). With a listener, only the
-    // timing fields are fresh every frame; the heavy payloads (renderer stats, audio list) are
-    // refreshed on the 10 Hz cadence and otherwise reused by reference — see the
-    // SceneRunnerFrameSample contract. Per frame this now costs one small sample object.
+    // No sample at all when nobody is listening (a player build).
     if (this.frameListeners.size === 0) {
       return;
-    }
-
-    const sampleNowMs = performance.now();
-    const refreshHeavy = sampleNowMs - this.lastHeavySampleAtMs >= FRAME_SAMPLE_HEAVY_REFRESH_MS;
-    if (refreshHeavy) {
-      this.lastHeavySampleAtMs = sampleNowMs;
     }
 
     this.notifyFrameListeners({
@@ -1334,9 +1286,7 @@ export class SceneRunner {
       // frame go" would smooth away precisely the spikes being hunted.
       unaccountedMs: Math.max(0, rawDt * 1000 - (logicMs + renderMs)),
       rafLatenessMs: this.currentRafLatenessMs,
-      rendererStats: this.getRendererStatsSample(refreshHeavy),
       profilerActivities: this.getFrameProfilerActivitiesSnapshot(),
-      activeAudioPlaybacks: this.getActiveAudioPlaybackSnapshot(refreshHeavy),
     });
   }
 
@@ -1990,31 +1940,6 @@ export class SceneRunner {
     return this.currentFrameProfilerActivities.length === 0
       ? undefined
       : this.currentFrameProfilerActivities;
-  }
-
-  private getRendererStatsSample(refresh: boolean): RuntimeRendererStatsSnapshot {
-    if (refresh || !this.cachedRendererStats) {
-      this.cachedRendererStats = this.renderer.getStatsSnapshot();
-    }
-    return this.cachedRendererStats;
-  }
-
-  /**
-   * Rebuilt when the active set changed since the last sample (revision bump —
-   * so a sound that lives a single frame still reaches the Profiler's audio
-   * registry) or on the heavy cadence (to advance `elapsedMs`); otherwise the
-   * cached list is handed out again by reference.
-   */
-  private getActiveAudioPlaybackSnapshot(
-    refresh: boolean
-  ): readonly ActiveAudioPlaybackSnapshot[] | undefined {
-    const revision = this.audioService.getActivePlaybackRevision();
-    if (refresh || revision !== this.cachedAudioRevision) {
-      this.cachedAudioRevision = revision;
-      const snapshot = this.audioService.getActivePlaybackSnapshot();
-      this.cachedAudioPlaybacks = snapshot.length > 0 ? snapshot : undefined;
-    }
-    return this.cachedAudioPlaybacks;
   }
 
   private normalizeFrameProfilerActivities(

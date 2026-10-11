@@ -4,8 +4,8 @@
  * A spawned entity's `Kind` is a `u16` **index into the build's prefab table**, not a string: the
  * hot plane has no room for a path (`FullRecord` is a fixed 20 bytes) and the room validates a
  * spawn against an allowlist that *is* this table's index set. Both sides must therefore agree on
- * the order, which is why the exporter emits the table (`buildSceneManifestTs`) from a
- * deterministic sort and versions it with the `buildId`.
+ * the order, which is why the build emits the table (`netKindTable` in the plugin's
+ * `virtual:pix3/scene-manifest`) from a deterministic sort and versions it with the `buildId`.
  *
  * The table has two segments, in this order:
  *
@@ -43,8 +43,8 @@ function normalizePrefabKey(path: string): string {
 /**
  * Resolves `kind ↔ prefab path` for one build.
  *
- * A host installs the exporter's table with {@link replaceAll}; a test or an in-editor session with
- * no built manifest uses {@link register} instead. `register` **appends**, so it is only safe while
+ * A host installs the build's table with {@link replaceAll}; a test or a session with no scene
+ * manifest uses {@link register} instead. `register` **appends**, so it is only safe while
  * every participant registers the same paths in the same order — that is why `spawn()` refuses an
  * unregistered path rather than quietly auto-registering it, which would let two clients disagree
  * about what kind 0 means.
@@ -193,9 +193,9 @@ export function setNetworkPrefabTable(source: NetKindTableSource | readonly stri
 /**
  * Appends one spawnable prefab to the shared table and returns its kind.
  *
- * This is the **fallback** for a session with no built manifest — a vitest case, or an in-editor
- * "Play Online" before the exporter has run. Every participant must call it with the same paths in
- * the same order, so prefer installing a sorted table with {@link setNetworkPrefabTable}.
+ * This is the **fallback** for a session with no scene manifest (a vitest case, a host other than
+ * the plugin's player). Every participant must call it with the same paths in the same order, so
+ * prefer installing a sorted table with {@link setNetworkPrefabTable}.
  */
 export function registerNetworkPrefab(prefabPath: string): number {
   return sharedTable.register(prefabPath);

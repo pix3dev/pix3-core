@@ -1,18 +1,10 @@
-import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 import { parseDocument } from 'yaml';
 
-import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { readTextOrNull, sha256Hex, writeAtomic } from '../fs-util.ts';
+import { PROJECT_MANIFEST_FILE, readManifestKitVersion } from '../manifest.ts';
+import { isRecord } from '../validate/yaml-doc.ts';
 import {
   AGENTS_ALT_FILE,
   AGENTS_FILE,
@@ -76,28 +68,6 @@ export interface KitMigrationReport {
   readonly kit: KitInstallReport;
 }
 
-type Json = Record<string, unknown>;
-const isRecord = (value: unknown): value is Json =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const readText = (path: string): string | null => {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch {
-    return null;
-  }
-};
-
-const sha256 = (bytes: string | Uint8Array): string =>
-  createHash('sha256').update(bytes).digest('hex');
-
-const writeAtomic = (path: string, contents: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, contents);
-  renameSync(temp, path);
-};
-
 /**
  * Whether an MCP server entry launches the retired 1.x `pix3 mcp` channel: an argument `mcp` and
  * a pix3 CLI as the program (`pix3`, `@pix3/cli[@version]`, or the CLI's own entry file).
@@ -156,7 +126,7 @@ const pruneEmptyDirs = (dir: string, stop: string): void => {
 
 const migrateMcpConfig = (root: string, steps: MigrationStep[]): boolean => {
   const path = join(root, MCP_CONFIG_FILE);
-  const text = readText(path);
+  const text = readTextOrNull(path);
   if (text === null) return false;
   let parsed: unknown;
   try {
@@ -193,7 +163,7 @@ const migrateMcpConfig = (root: string, steps: MigrationStep[]): boolean => {
 };
 
 const checkCodexConfig = (root: string, steps: MigrationStep[]): void => {
-  const text = readText(join(root, CODEX_PROJECT_CONFIG));
+  const text = readTextOrNull(join(root, CODEX_PROJECT_CONFIG));
   if (text === null) return;
   // A `[mcp_servers.<name>]` table whose body launches `pix3 … mcp`.
   const tables = text.split(/^(?=\s*\[)/m);
@@ -212,7 +182,7 @@ const checkCodexConfig = (root: string, steps: MigrationStep[]): void => {
 
 const removeHybridMetadata = (root: string, steps: MigrationStep[]): void => {
   const path = join(root, PROJECT_MANIFEST_FILE);
-  const text = readText(path);
+  const text = readTextOrNull(path);
   if (text === null) return;
   const doc = parseDocument(text);
   const value = doc.getIn(['metadata', 'pix3Hybrid']);
@@ -244,7 +214,7 @@ const removeRetiredKitFiles = (
     if (current.has(file)) continue;
     const path = join(root, file);
     if (!existsSync(path)) continue;
-    if (sha256(readFileSync(path)) === hash) {
+    if (sha256Hex(readFileSync(path)) === hash) {
       rmSync(path);
       pruneEmptyDirs(dirname(path), join(root, '.claude'));
       steps.push({ path: file, action: 'removed', detail: 'a file the 2.x kit no longer ships' });
@@ -273,7 +243,7 @@ const stageEditedLegacyFiles = (
     if (outcome.action !== 'skipped-edited' || outcome.path === CLAUDE_FILE) continue;
     const sourceFile = outcome.path === AGENTS_ALT_FILE ? AGENTS_FILE : outcome.path;
     if (!source.manifest.files.includes(sourceFile)) continue;
-    const current = readText(join(root, outcome.path)) ?? '';
+    const current = readTextOrNull(join(root, outcome.path)) ?? '';
     const markers = legacyMarkersIn(current);
     if (markers.length === 0) continue;
     // The project's own AGENTS.md (the kit went to AGENTS.pix3.md) is not a kit file.
@@ -293,20 +263,11 @@ const stageEditedLegacyFiles = (
 
 const readPreviousVersion = (root: string): string | null => {
   const manifest = readProjectKitManifest(root);
-  if (manifest?.version) return manifest.version;
-  const text = readText(join(root, PROJECT_MANIFEST_FILE));
-  if (text === null) return null;
-  try {
-    const plain = parseDocument(text).toJS() as { metadata?: { agentKit?: { version?: unknown } } };
-    const version = plain?.metadata?.agentKit?.version;
-    return typeof version === 'string' ? version : null;
-  } catch {
-    return null;
-  }
+  return manifest?.version ? manifest.version : readManifestKitVersion(root);
 };
 
 const hasBrowserServer = (root: string): boolean => {
-  const text = readText(join(root, MCP_CONFIG_FILE));
+  const text = readTextOrNull(join(root, MCP_CONFIG_FILE));
   if (text === null) return false;
   try {
     const parsed = JSON.parse(text) as unknown;
@@ -317,10 +278,13 @@ const hasBrowserServer = (root: string): boolean => {
 };
 
 const usesVitePlugin = (root: string): boolean => {
-  const text = readText(join(root, 'package.json'));
+  const text = readTextOrNull(join(root, 'package.json'));
   if (text === null) return false;
   try {
-    const pkg = JSON.parse(text) as { dependencies?: Json; devDependencies?: Json };
+    const pkg = JSON.parse(text) as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
     return Boolean(
       pkg.dependencies?.['@pix3/vite-plugin'] ?? pkg.devDependencies?.['@pix3/vite-plugin']
     );
@@ -350,7 +314,7 @@ export const migrateKit = (
   stageEditedLegacyFiles(root, source, kit, steps, instructions);
   // The 1.x kit's own AGENTS.md, edited since: install treats it as the project's and puts the
   // 2.x kit in AGENTS.pix3.md beside it — but the edited copy still teaches 1.x.
-  const agentsText = readText(join(root, AGENTS_FILE));
+  const agentsText = readTextOrNull(join(root, AGENTS_FILE));
   const agentsMarkers = agentsText === null ? [] : legacyMarkersIn(agentsText);
   if (
     previousFiles[AGENTS_FILE] !== undefined &&

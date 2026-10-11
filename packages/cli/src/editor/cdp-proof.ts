@@ -36,7 +36,11 @@ import {
  */
 
 const CHALLENGE_SHAPE = /^[A-Za-z0-9_-]{16,128}$/;
-const PROBE_TIMEOUT_MS = 1_500;
+/** How long a probe of a CDP port waits for an answer. */
+export const PROBE_TIMEOUT_MS = 1_500;
+
+/** A probe's nonce: never the token, so an unproven port learns nothing it could reuse. */
+export const newChallenge = (): string => randomBytes(24).toString('base64url');
 
 /** `local`: the client dialled the proxy itself; `forward`: a `RemoteForward` of it. */
 export type ProofScope = 'local' | 'forward';
@@ -99,7 +103,7 @@ export const proveCdpProxy = async (
   options: { readonly scope?: ProofScope; readonly fetch?: typeof fetch } = {}
 ): Promise<ProvenPort> => {
   const scope = options.scope ?? 'local';
-  const challenge = randomBytes(24).toString('base64url');
+  const challenge = newChallenge();
   let response: Response;
   try {
     response = await (options.fetch ?? fetch)(`http://127.0.0.1:${port}/json/version`, {

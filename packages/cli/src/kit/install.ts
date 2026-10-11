@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 
+import { readTextOrNull, sha256Hex, writeAtomic } from '../fs-util.ts';
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import type { CreatedProject, PostCreateStep } from '../new-project.ts';
 import {
@@ -78,19 +78,8 @@ export interface InstallKitOptions {
   readonly runtimeTypes?: { readonly dir: string; readonly manifest: RuntimeTypesManifest };
 }
 
-const sha256 = (bytes: string | Uint8Array): string =>
-  createHash('sha256').update(bytes).digest('hex');
-
-const readText = (path: string): string | null => {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch {
-    return null;
-  }
-};
-
 export const readProjectKitManifest = (projectRoot: string): ProjectKitManifest | null => {
-  const text = readText(join(projectRoot, KIT_PROJECT_MANIFEST));
+  const text = readTextOrNull(join(projectRoot, KIT_PROJECT_MANIFEST));
   if (text === null) return null;
   try {
     const parsed = JSON.parse(text) as Partial<ProjectKitManifest>;
@@ -102,17 +91,10 @@ export const readProjectKitManifest = (projectRoot: string): ProjectKitManifest 
   }
 };
 
-const writeAtomic = (path: string, contents: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, contents);
-  renameSync(temp, path);
-};
-
 /** Add {@link GITIGNORE_BLOCK} unless a line already ignores `.pix3`. Returns true when written. */
 export const ensureGitignore = (projectRoot: string): boolean => {
   const path = join(projectRoot, GITIGNORE);
-  const current = readText(path) ?? '';
+  const current = readTextOrNull(path) ?? '';
   const covered = current
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -129,7 +111,7 @@ export const writeAgentKitMetadata = (
   agentKit: { readonly version: string; readonly files: readonly string[] }
 ): boolean => {
   const path = join(projectRoot, PROJECT_MANIFEST_FILE);
-  const text = readText(path);
+  const text = readTextOrNull(path);
   if (text === null) return false;
   const doc = parseDocument(text);
   const next = { version: agentKit.version, files: [...agentKit.files] };
@@ -168,7 +150,7 @@ export const withAltAgentsHeader = (contents: string): string => {
 };
 
 const mentionsAltAgents = (path: string): boolean =>
-  (readText(path) ?? '').includes(AGENTS_ALT_FILE);
+  (readTextOrNull(path) ?? '').includes(AGENTS_ALT_FILE);
 
 const claudeContent = (agentsTarget: string): string =>
   agentsTarget === AGENTS_FILE ? '@AGENTS.md\n' : `@AGENTS.md\n@${AGENTS_ALT_FILE}\n`;
@@ -188,7 +170,7 @@ export const installKit = (
   /** Write `contents` at `path` under the ownership rules; records the outcome. */
   const place = (path: string, contents: string): void => {
     const target = join(projectRoot, path);
-    const next = sha256(contents);
+    const next = sha256Hex(contents);
     const existing = existsSync(target) ? readFileSync(target) : null;
     if (existing === null) {
       writeAtomic(target, contents);
@@ -196,7 +178,7 @@ export const installKit = (
       outcomes.push({ path, action: 'written' });
       return;
     }
-    const current = sha256(existing);
+    const current = sha256Hex(existing);
     if (current === next) {
       owned[path] = next;
       outcomes.push({ path, action: 'unchanged' });
@@ -220,7 +202,8 @@ export const installKit = (
   const agentsPath = join(projectRoot, AGENTS_FILE);
   const ownsAgents =
     !existsSync(agentsPath) ||
-    (owned[AGENTS_FILE] !== undefined && owned[AGENTS_FILE] === sha256(readFileSync(agentsPath)));
+    (owned[AGENTS_FILE] !== undefined &&
+      owned[AGENTS_FILE] === sha256Hex(readFileSync(agentsPath)));
   const agentsTarget =
     owned[AGENTS_ALT_FILE] !== undefined || !ownsAgents ? AGENTS_ALT_FILE : AGENTS_FILE;
 
@@ -242,7 +225,7 @@ export const installKit = (
       const content = claudeContent(agentsTarget);
       const claudeOwned =
         !existsSync(claudePath) ||
-        owned[CLAUDE_FILE] === sha256(readFileSync(claudePath)) ||
+        owned[CLAUDE_FILE] === sha256Hex(readFileSync(claudePath)) ||
         readFileSync(claudePath, 'utf8') === content;
       if (claudeOwned) {
         place(CLAUDE_FILE, content);

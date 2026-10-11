@@ -1,16 +1,12 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
-import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { writeAtomic } from '../fs-util.ts';
+import type { CliIo } from '../io.ts';
+import { resolveProjectRoot } from '../manifest.ts';
 import { COMMAND_USAGE } from '../usage.ts';
+import { isRecord } from '../validate/yaml-doc.ts';
 import {
   CharacterCompileError,
   compileCharacter,
@@ -33,11 +29,7 @@ import {
  * unless `--force`; a file that already has exactly these bytes is left alone.
  */
 
-export interface CharacterCompileIo {
-  readonly cwd: string;
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export type CharacterCompileIo = CliIo;
 
 interface Args {
   readonly spec?: string;
@@ -74,10 +66,6 @@ const parseArgs = (argv: readonly string[]): Args | { error: string } => {
 
 // --- the spec file ----------------------------------------------------------------------------
 
-type Json = Record<string, unknown>;
-const isRecord = (value: unknown): value is Json =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const KNOWN_KEYS = [
   'name',
   'slug',
@@ -98,7 +86,11 @@ export const slugOf = (name: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-const optionalString = (data: Json, key: string, where: string): string | undefined => {
+const optionalString = (
+  data: Record<string, unknown>,
+  key: string,
+  where: string
+): string | undefined => {
   const value = data[key];
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string')
@@ -248,7 +240,7 @@ export const loadCharacterSpec = (specPath: string): LoadedSpec => {
     ...Object.fromEntries(
       ['defaultVariant', 'defaultState', 'separator', 'spriteDirectory', 'prefabDirectory'].flatMap(
         key => {
-          const value = optionalString(data as Json, key, '');
+          const value = optionalString(data as Record<string, unknown>, key, '');
           return value === undefined ? [] : [[key, value]];
         }
       )
@@ -280,13 +272,6 @@ export interface CharacterCompileReport {
   /** Why nothing was written (`ok: false`). */
   readonly error?: string;
 }
-
-const writeAtomic = (path: string, bytes: Uint8Array | string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, bytes);
-  renameSync(temp, path);
-};
 
 const sameBytes = (path: string, bytes: Uint8Array): boolean => {
   if (!existsSync(path)) return false;
@@ -415,13 +400,12 @@ export const runCharacterCompileCli = async (
     );
     return 2;
   }
-  const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
-  if (!root || !existsSync(join(root, PROJECT_MANIFEST_FILE))) {
-    io.stderr(
-      `pix3 character-compile: no ${PROJECT_MANIFEST_FILE} in ${args.project ? root : `${io.cwd} or above`} — run inside a project or pass --project <dir>.\n`
-    );
+  const project = resolveProjectRoot(io.cwd, args.project);
+  if ('error' in project) {
+    io.stderr(`pix3 character-compile: ${project.error}\n`);
     return 2;
   }
+  const { root } = project;
   const specPath = isAbsolute(args.spec) ? args.spec : resolve(io.cwd, args.spec);
   if (!existsSync(specPath)) {
     io.stderr(`pix3 character-compile: ${args.spec} does not exist.\n`);

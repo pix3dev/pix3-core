@@ -1,11 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import {
   collectRenderabilityIssues,
-  registerProjectScriptExports,
   SceneLoader,
   SceneValidationError,
   type ScriptRegistry,
@@ -17,16 +13,24 @@ import {
   MissingResourceError,
   NodeAssetLoader,
 } from '@pix3/runtime/node';
-import type { Plugin } from 'esbuild';
 
 import { diagnostic, type Diagnostic } from './diagnostics.ts';
 import { checkComponentConfig, type Level1Environment } from './level1.ts';
 import type { ProjectFiles } from './project.ts';
+import {
+  buildFailures,
+  hostImportsPlugin,
+  importAndRegister,
+  loadEsbuild,
+  scriptBuildOptions,
+  STUB_NAMESPACE,
+  type ScriptImportMap,
+} from './script-build.ts';
 import { isRecord, type DocPath, type ParsedYaml } from './yaml-doc.ts';
 
 /**
  * Level 2 of `pix3 validate`: the real `SceneLoader`, with the project's scripts compiled by native
- * esbuild and imported — the path the editor takes, minus the browser.
+ * esbuild and imported — what the editor does with them through Vite, minus the browser.
  *
  * It needs no DOM beyond the canvas-only `document` shim (`@pix3/runtime/node`): measured on every
  * template scene in `.plans/measurements/external-agent-phase0-strict-profile.md`. It does run the
@@ -34,13 +38,7 @@ import { isRecord, type DocPath, type ParsedYaml } from './yaml-doc.ts';
  * can be turned off (`--no-hydrate`).
  */
 
-/** What a compiled user script's bare imports are rewritten to. */
-export interface ScriptImportMap {
-  /** Specifier for `@pix3/runtime` — must be the very instance the validator uses. */
-  readonly runtime: string;
-  /** Specifier for `three`. */
-  readonly three: string;
-}
+export type { ScriptImportMap };
 
 /** Bare specifiers kept as-is: right when the host resolves them itself (vitest's aliases). */
 export const BARE_SCRIPT_IMPORTS: ScriptImportMap = { runtime: '@pix3/runtime', three: 'three' };
@@ -51,59 +49,12 @@ export type ScriptLoadResult =
   | { readonly status: 'failed'; readonly diagnostics: Diagnostic[] }
   | { readonly status: 'unavailable'; readonly reason: string };
 
-type EsbuildModule = typeof import('esbuild');
-
-const loadEsbuild = async (specifier: string): Promise<EsbuildModule | null> => {
-  try {
-    return (await import(specifier)) as EsbuildModule;
-  } catch {
-    return null;
-  }
-};
-
 /**
- * Mirrors the editor's script compiler: `@pix3/runtime` and `three` are provided by the host,
- * `?raw` / `?url` / shader / CSS imports work as in the editor, and every other bare import (three
- * addons, rapier, …) becomes an empty module — it exists in the editor's import map, not here, and
- * validation only needs the classes to be defined, not to run.
+ * Compile the project's script entries, import them, register their Script exports. Every bare
+ * import other than `@pix3/runtime` / `three` (three addons, rapier, …) becomes an empty module —
+ * Vite resolves it from the project's node_modules, not here, and validation only needs the
+ * classes to be defined, not to run.
  */
-const hostImportsPlugin = (imports: ScriptImportMap, project: ProjectFiles): Plugin => ({
-  name: 'pix3-validate-host-imports',
-  setup(build) {
-    build.onResolve({ filter: /^@pix3\/runtime$/ }, () => ({
-      path: imports.runtime,
-      external: true,
-    }));
-    build.onResolve({ filter: /^three$/ }, () => ({ path: imports.three, external: true }));
-    build.onResolve({ filter: /\?(raw|url)$/ }, args => {
-      const [path, query] = args.path.split('?');
-      return {
-        path: join(args.resolveDir, path),
-        namespace: query === 'raw' ? 'pix3-raw' : 'pix3-url',
-      };
-    });
-    build.onResolve({ filter: /^[^./]/ }, args =>
-      args.kind === 'entry-point' ? undefined : { path: args.path, namespace: 'pix3-stub' }
-    );
-    build.onLoad({ filter: /.*/, namespace: 'pix3-stub' }, () => ({
-      contents: 'module.exports = {};',
-      loader: 'js',
-    }));
-    build.onLoad({ filter: /.*/, namespace: 'pix3-raw' }, async args => {
-      const { readFile } = await import('node:fs/promises');
-      return {
-        contents: `export default ${JSON.stringify(await readFile(args.path, 'utf8'))};`,
-        loader: 'js',
-      };
-    });
-    build.onLoad({ filter: /.*/, namespace: 'pix3-url' }, args => ({
-      contents: `export default ${JSON.stringify(`res://${project.relativeOf(args.path) ?? args.path}`)};`,
-      loader: 'js',
-    }));
-  },
-});
-
-/** Compile the project's script entries, import them, register their Script exports. */
 export const loadUserScripts = async (
   project: ProjectFiles,
   entries: readonly string[],
@@ -124,45 +75,21 @@ export const loadUserScripts = async (
   let code: string;
   try {
     const result = await esbuild.build({
-      stdin: {
-        contents: entries
-          .map(
-            (file, index) =>
-              `export * as __pix3_entry_${index} from ${JSON.stringify(`./${file}`)};`
-          )
-          .join('\n'),
-        resolveDir: project.root,
-        sourcefile: 'pix3-validate-scripts.ts',
-        loader: 'ts',
-      },
+      ...scriptBuildOptions(project, entries, 'pix3-validate-scripts.ts'),
       // Error locations are reported relative to this; the project root makes them
       // project-relative whatever the process's cwd is.
       absWorkingDir: project.root,
-      bundle: true,
-      write: false,
-      format: 'esm',
       platform: 'neutral',
-      target: 'es2022',
-      logLevel: 'silent',
-      loader: { '.glsl': 'text', '.vert': 'text', '.frag': 'text', '.css': 'empty' },
-      define: {
-        'import.meta.env.BASE_URL': JSON.stringify('/'),
-        'import.meta.env.DEV': 'true',
-        'import.meta.env.PROD': 'false',
-      },
-      plugins: [hostImportsPlugin(imports, project)],
+      plugins: [
+        hostImportsPlugin('pix3-validate-host-imports', imports, project, args => ({
+          path: args.path,
+          namespace: STUB_NAMESPACE,
+        })),
+      ],
     });
-    code = result.outputFiles[0]?.text ?? '';
+    code = result.outputFiles?.[0]?.text ?? '';
   } catch (error) {
-    const failures =
-      (
-        error as {
-          errors?: Array<{ text: string; location?: { file: string; line: number } | null }>;
-        }
-      ).errors ?? [];
-    const diagnostics = (
-      failures.length > 0 ? failures : [{ text: String(error), location: null }]
-    ).map(failure =>
+    const diagnostics = buildFailures(error).map(failure =>
       diagnostic({
         code: 'E_SCRIPT_COMPILE',
         file: failure.location?.file
@@ -174,18 +101,11 @@ export const loadUserScripts = async (
     );
     return { status: 'failed', diagnostics };
   }
-  const dir = mkdtempSync(join(tmpdir(), 'pix3-validate-'));
-  const modulePath = join(dir, 'scripts.mjs');
   try {
-    writeFileSync(modulePath, code);
-    const module = (await import(pathToFileURL(modulePath).href)) as Record<string, unknown>;
-    const registered: string[] = [];
-    entries.forEach((file, index) => {
-      const namespace = module[`__pix3_entry_${index}`];
-      if (isRecord(namespace))
-        registered.push(...registerProjectScriptExports(registry, namespace, file));
-    });
-    return { status: 'loaded', registered };
+    return {
+      status: 'loaded',
+      registered: await importAndRegister(code, entries, registry, 'pix3-validate-'),
+    };
   } catch (error) {
     return {
       status: 'failed',
@@ -197,12 +117,15 @@ export const loadUserScripts = async (
         }),
       ],
     };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 };
 
-const PENDING = /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
+/**
+ * The loader's warning for a component it parked (`component-hydration.ts`): type, node id. Read by
+ * level 2 (`E_PENDING_COMPONENT`) and by `pix3 smoke`; the E_PENDING_COMPONENT spec pins the text.
+ */
+export const PENDING_COMPONENT_WARNING =
+  /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
 const OVERRIDE_TARGET = /Override target "(.*?)" not found/;
 
 export interface HydrateOptions {
@@ -231,7 +154,7 @@ export const hydrateScene = async (options: HydrateOptions): Promise<Diagnostic[
       loader.parseScene(options.text, { filePath: `res://${file}` })
     );
     for (const warning of warnings) {
-      const pending = PENDING.exec(warning.message);
+      const pending = PENDING_COMPONENT_WARNING.exec(warning.message);
       if (pending) {
         out.push(
           diagnostic({

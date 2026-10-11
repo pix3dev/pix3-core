@@ -142,7 +142,7 @@ const isNodeBase = (child: unknown): child is NodeBase =>
 /**
  * Second chance for {@link NodeBase.pendingComponents}: walk a subtree and attach every parked
  * definition whose type has since been registered. Called by the editor after project scripts
- * compile, which is exactly when `user:*` types appear.
+ * (re-)register, which is exactly when `user:*` types appear.
  *
  * @returns how many components were attached.
  */

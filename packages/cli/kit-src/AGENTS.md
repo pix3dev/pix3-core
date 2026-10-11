@@ -16,9 +16,8 @@ a 2D root and background, or a 3D camera and lights) and no scripts. The game is
 2. The one scene or script you are about to change. Nothing else. Do not survey the repo.
    To find it, and to find your way inside it, use `pix3 tree` (every scene and prefab with
    node counts, types and components) and `pix3 tree <scene>` (one line per node: id, type,
-   position, size, layout, components, prefab instances; `--types Label2D,Button2D`,
-   `--depth 2`, `--props`) — not a read of whole scene files. Read the file itself right
-   before you edit it (rule 2).
+   position, size, layout, components, prefab instances) — not a read of whole scene files.
+   Read the file itself right before you edit it (rule 2).
 
 ## Layout
 
@@ -60,33 +59,24 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    speed, a count) and say so in one line. At most ONE question per turn, and only about a
    fork that changes structure ("win by score or by time?"). Never open with a question.
 2. **Sync, then re-read a scene before you edit it.** The human may have moved things in the
-   editor a minute ago, and their unsaved edits reach the disk on a successful `pix3_sync`
-   (`.claude/skills/pix3-editor/SKILL.md`). Edit the lines you mean to change
-   (search/replace), never regenerate a whole scene from memory. After writing, `pix3_sync`
-   again with `expect` = the sha256 of every file you wrote: `expect_mismatch` means someone
-   else wrote the file after you — re-read it and redo your edit on top of what is there.
+   editor a minute ago; a successful `pix3_sync` puts their unsaved edits on disk. Edit the lines
+   you mean to change (search/replace), never regenerate a whole scene from memory. After
+   writing, `pix3_sync` again with `expect` = the sha256 of every file you wrote
+   (`.claude/skills/pix3-editor/SKILL.md`).
 3. **Leave layout, colours and fine-tuning to the human.** If asked "a bit more to the left",
    do it, then offer: "you can drag it in the editor — it saves on its own".
 4. **Run `pix3 check` after every batch of edits** and fix every error before you say "done".
    It checks YAML, node types, properties, `res://` paths, prefabs, components, and
-   type-checks your scripts (tsc). With the editor open in Chrome (the bridge, below), then
-   `pix3_sync` **with `expect`** — the sha256 of every file you wrote, as `pix3 check --json`
-   prints them under `files` — and run the game: `pix3_play` restart, `pix3_game_run`,
-   `pix3_errors`, a screenshot. A sync that is not `ok` is not green.
-   **No editor open?** `pix3 check`, then `pix3 smoke <the scene you changed>` — the
-   game is `pix3 smoke scenes/main.pix3scene`; the menu never presses PLAY headless, so a
-   smoke of the menu says nothing about the game. It runs that scene in Node for 2 s
-   (`--frames N` for more) and exits 1 on any script throw, `console.error` or unhandled
-   rejection, naming script, frame and source line. With no scene it runs several, a line
-   each: the scenes your uncommitted changes reach (git), else every top-level scene, game
-   first. Green means nothing threw; it does not mean it plays (nothing was tapped or drawn)
-   — so then tell the human what to press and what they should see.
+   type-checks your scripts. Then run the game: with the editor open, `pix3_sync` with `expect`
+   and `pix3_play` / `pix3_game_run` / `pix3_errors` / a screenshot (`pix3-editor`); without it,
+   `pix3 smoke <the scene you changed>` — the game, not the menu, which never presses PLAY
+   headless (`pix3-verify`). A sync that is not `ok` is not green, and a green smoke means
+   nothing threw, not that it plays — so tell the human what to press and what they should see.
 5. **Art: placeholder → SVG → a generated image, never emoji.** Placeholder = `ColorRect2D`, or
    a near-white PNG in `sprites/` tinted with a `core:tint` effect. Better art = an SVG you
-   write into `sprites/` — it works on a `Sprite2D` when the root has `xmlns` plus px
-   `width`/`height`; `pix3 validate` checks it (`E_SVG_*`); template in `pix3-nodes` — or an
-   image the human generates. A label/text that is only emoji is refused — emoji are not
-   art. List every placeholder you leave.
+   write into `sprites/` (`pix3-nodes` → "An SVG you write as a sprite") — or an image the
+   human generates. A label/text that is only emoji is refused — emoji are not art. List every
+   placeholder you leave.
 
 ## YAML essentials (`.pix3scene`) — details in `pix3-scene-format`
 
@@ -113,10 +103,9 @@ root:
         properties: { visible: false }
 ```
 
-- The sample assumes a 1080×1920 portrait 2D root; yours may not have one. Read
-  `viewportBaseSize` and `projectType` in `pix3project.yaml` first; a `3d` project may have loose
-  top-level 2D nodes (HUD) with no 2D root at all. Place new HUD relative to the HUD nodes that
-  already exist (same parent, same anchoring), not to an assumed screen size.
+- The sample assumes a 1080×1920 portrait 2D root; yours may not have one — read
+  `viewportBaseSize` and `projectType` in `pix3project.yaml`, and place new HUD relative to the
+  HUD that exists (`pix3-scene-format` → "2D transform").
 - 2D space: design pixels, origin at the screen centre, **X right, Y up**. `position` is the
   node's centre. Tree order is paint order: later/deeper draws on top.
 - **Quote every colour**: `color: "#141a2e"`. Unquoted, `#` starts a YAML comment.
@@ -156,25 +145,13 @@ export class Combo extends Script {
 ## Hosting an existing game
 
 A game that was not made from `npm create pix3` has its own architecture; plug into it, do not
-add a second one.
+add a second one — its event bus or store, its own shake/sound/tween helpers, and cleanup by
+hand of everything that is not a node signal (`pix3-scripts` → "Hosting an existing game").
 
-- **Find its event bus / state store** before writing a script:
-  `grep -rn "CustomEvent\|dispatchEvent\|addEventListener\|subscribe(\|EventTarget\|emit(" src scripts`.
-  Window `CustomEvent`s, an `EventTarget` singleton, or a store with `subscribe()` are all
-  normal; node signals are only one option. Listen to what the game already emits.
-- **Clean up by hand.** `Script.onDetach` auto-disconnects only **node signals** whose target is
-  the script (on its own node or any other). Window listeners, store subscriptions and timers
-  must be removed in `onDetach` (keep the handler in a field; call the
-  unsubscribe the store returned) — otherwise every play/stop in the editor leaves one more
-  live listener behind.
 - **Two instruction files.** The project's own `AGENTS.md` wins on **process** (planning first,
   where config and tests go, commit rules); this kit wins on **Pix3 facts** (the YAML format,
   the runtime API, `pix3 check`).
 - The project's own `package.json` means `npm install` before `pix3 check` can type-check.
-- **Use the game's own feedback mechanisms.** If its camera controller writes the camera's
-  position every frame, an engine `scene.juice.shake('camera')` / `core:Shake` on that 3D camera
-  (or on any node the game positions itself) is overwritten every frame and never shows — call
-  the game's own shake (grep `shake`) instead. The same holds for its own sound/tween helpers.
 
 ## The CLI and the editor bridge
 
@@ -184,22 +161,16 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 `npm run preview` (serve the build), `npm run check` (`pix3 check`), `npm run smoke`
 (`pix3 smoke`; pass the scene after `--`). Elsewhere call `npx pix3 …` or read `package.json`.
 
-- `pix3 check [--json]` — after every batch (rule 4). `--json` prints `files` (`{ file, sha256 }`,
-  sha256 of the raw bytes), `diagnostics`, `typecheck`, `kit`. It flushes the open editor's
-  unsaved edits first (`--no-sync` skips that).
-- `pix3 validate [paths…]` — scenes only, no type-check.
-- `pix3 smoke [scene] [--frames N] [--json]` — run a scene headless (no browser) and report
-  script throws with frame and stack, `console.error`, missing `res://` files (a warning:
-  read the warnings too); exit 1 on errors. `console.log` output is only in `--json`
-  (`logs.lines`, `"[frame 0] …"`).
-  Name the game scene (`pix3 smoke scenes/main.pix3scene`); no scene = the scenes git changes
-  reach, else every top-level scene (`--all` forces that).
+- `pix3 check [--json]` — after every batch (rule 4); `--json` prints `files` (`{ file, sha256 }`)
+  for `pix3_sync`'s `expect`. It flushes the open editor's unsaved edits first (`--no-sync`
+  skips that). `pix3 validate [paths…]` — scenes only, no type-check.
+- `pix3 smoke [scene] [--frames N] [--json]` — run a scene headless (no browser); exit 1 on a
+  script throw, `console.error` or unhandled rejection. Name the game scene.
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
-- `pix3 editor` — find (or start) the project's dev server and open the editor in a Chrome
-  reachable only through its token proxy on port 9333; `pix3 agent-setup [claude|codex]
-  [--repair]` — write the project's MCP config (`.mcp.json`, `.codex/config.toml`, with this
-  machine's token — never commit them) for `chrome-devtools-mcp`, once.
+- `pix3 editor` — find (or start) the dev server and open the editor in a Chrome reachable only
+  through its token proxy; `pix3 agent-setup [claude|codex] [--repair]` — write the project's
+  MCP config for `chrome-devtools-mcp`, once (never commit it).
 - `pix3 gap "<what was missing>" --kind capability|tool|node|doc|other [--detail "…"] [--context "<file or task>"]`
   — when you had to **work around** something Pix3 does not have (an engine capability, a bridge
   tool, a node type, a doc that was missing or wrong), record it once, after the workaround: one

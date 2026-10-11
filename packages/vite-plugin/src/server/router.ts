@@ -62,6 +62,55 @@ export const createRouter = (deps: RouterDeps) => {
   const prefix = `${deps.base}__pix3`;
   const apiPrefix = `${prefix}/api/`;
 
+  type Handler = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    head: boolean
+  ) => Promise<void> | void;
+  /** A handler whose answer is `200` + JSON. */
+  const json =
+    (answer: (req: IncomingMessage, url: URL) => Promise<Record<string, unknown>>): Handler =>
+    async (req, res, url) =>
+      sendJson(res, 200, await answer(req, url));
+  const { files } = deps;
+  const readFile: Handler = (req, res, url, head) => files.readFile(req, res, url, head);
+  const historyVersion: Handler = (_req, res, url, head) => files.historyVersion(res, url, head);
+  const jsonMutation =
+    (op: 'mkdir' | 'delete' | 'move'): Handler =>
+    async (req, res) =>
+      files.jsonMutation(req, res, op, await readJson(req));
+  /** `api path → method → handler`; an unknown pair is a 404. */
+  const apiRoutes: Record<string, Partial<Record<string, Handler>>> = {
+    hello: { GET: json(async () => deps.hello()) },
+    file: { GET: readFile, HEAD: readFile, PUT: (req, res, url) => files.writeFile(req, res, url) },
+    manifest: { GET: json(() => files.manifest()) },
+    hash: { POST: json(async req => files.hashPaths(await readJson(req))) },
+    mkdir: { POST: jsonMutation('mkdir') },
+    delete: { POST: jsonMutation('delete') },
+    move: { POST: jsonMutation('move') },
+    changeset: { POST: (req, res) => files.writeChangeset(req, res) },
+    history: { GET: json((_req, url) => files.historyList(url)) },
+    'history/version': { GET: historyVersion, HEAD: historyVersion },
+    'history/record': {
+      POST: json(async req => ({ ...(await files.historyRecord(await readJson(req))) })),
+    },
+    'history/restore': { POST: (req, res) => files.historyRestore(req, res) },
+    'handover/claim': {
+      POST: json(async req => {
+        const claimed = await files.claim((await readJson(req)).writerId);
+        deps.socket.broadcast({ type: 'pix3:writer', writerId: claimed.writerId });
+        return claimed;
+      }),
+    },
+    sync: { POST: json(async req => deps.barrier.sync(parseSyncRequest(await readJson(req)))) },
+    flush: {
+      POST: json(async req =>
+        deps.barrier.flush(parseTimeout((await readJson(req)).timeoutMs, DEFAULT_SYNC_TIMEOUT_MS))
+      ),
+    },
+  };
+
   const route = async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> => {
     const method = req.method ?? 'GET';
     const path = url.pathname;
@@ -118,69 +167,9 @@ export const createRouter = (deps: RouterDeps) => {
       }
       throw new HttpError(405, 'method', 'GET or PUT.');
     }
-    if (method === 'GET' && api === 'hello') {
-      sendJson(res, 200, deps.hello());
-      return;
-    }
-    if ((method === 'GET' || method === 'HEAD') && api === 'file') {
-      await deps.files.readFile(req, res, url, method === 'HEAD');
-      return;
-    }
-    if (method === 'PUT' && api === 'file') {
-      await deps.files.writeFile(req, res, url);
-      return;
-    }
-    if (method === 'GET' && api === 'manifest') {
-      sendJson(res, 200, await deps.files.manifest());
-      return;
-    }
-    if (method === 'POST' && api === 'hash') {
-      sendJson(res, 200, await deps.files.hashPaths(await readJson(req)));
-      return;
-    }
-    if (method === 'POST' && (api === 'mkdir' || api === 'delete' || api === 'move')) {
-      await deps.files.jsonMutation(req, res, api, await readJson(req));
-      return;
-    }
-    if (method === 'POST' && api === 'changeset') {
-      await deps.files.writeChangeset(req, res);
-      return;
-    }
-    if (method === 'GET' && api === 'history') {
-      sendJson(res, 200, await deps.files.historyList(url));
-      return;
-    }
-    if ((method === 'GET' || method === 'HEAD') && api === 'history/version') {
-      await deps.files.historyVersion(res, url, method === 'HEAD');
-      return;
-    }
-    if (method === 'POST' && api === 'history/record') {
-      sendJson(res, 200, { ...(await deps.files.historyRecord(await readJson(req))) });
-      return;
-    }
-    if (method === 'POST' && api === 'history/restore') {
-      await deps.files.historyRestore(req, res);
-      return;
-    }
-    if (method === 'POST' && api === 'handover/claim') {
-      const body = await readJson(req);
-      const claimed = await deps.files.claim(body.writerId);
-      deps.socket.broadcast({ type: 'pix3:writer', writerId: claimed.writerId });
-      sendJson(res, 200, claimed);
-      return;
-    }
-    if (method === 'POST' && api === 'sync') {
-      const request = parseSyncRequest(await readJson(req));
-      sendJson(res, 200, await deps.barrier.sync(request));
-      return;
-    }
-    if (method === 'POST' && api === 'flush') {
-      const body = await readJson(req);
-      sendJson(
-        res,
-        200,
-        await deps.barrier.flush(parseTimeout(body.timeoutMs, DEFAULT_SYNC_TIMEOUT_MS))
-      );
+    const handler = Object.hasOwn(apiRoutes, api) ? apiRoutes[api][method] : undefined;
+    if (handler) {
+      await handler(req, res, url, method === 'HEAD');
       return;
     }
     throw new HttpError(404, 'not_found', 'Not found.');

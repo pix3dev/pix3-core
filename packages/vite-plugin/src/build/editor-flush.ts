@@ -45,10 +45,6 @@ const readDevInfo = (root: string): DevInfo | null => {
 const fetchWithTimeout = (url: string, init: RequestInit, timeoutMs: number): Promise<Response> =>
   fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 
-/**
- * Flush the editor that `.pix3/dev.json` points at, if any. Throws {@link EditorUnsyncedError}
- * when an editor is connected but did not confirm the flush in time.
- */
 const isTimeout = (error: unknown): boolean =>
   error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
 
@@ -59,6 +55,10 @@ const causeOf = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
 
+/**
+ * Flush the editor that `.pix3/dev.json` points at, if any. Throws {@link EditorUnsyncedError}
+ * when an editor is connected but did not confirm the flush in time.
+ */
 export const flushEditorBeforeBuild = async (
   root: string,
   options: {

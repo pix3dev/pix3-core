@@ -92,25 +92,25 @@ The base class for all 2D scene nodes. Use this for simple grouping or as a cont
 
 **Properties:**
 
-| Property                          | Type    | Default  | Description                                                                                                                   |
-| --------------------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `position`                        | Vector2 | (0, 0)   | X and Y coordinates                                                                                                           |
-| `rotation`                        | number  | 0        | Rotation in degrees                                                                                                           |
-| `scale`                           | Vector2 | (1, 1)   | X and Y scale factors                                                                                                         |
-| `opacity`                         | number  | 1        | Local opacity multiplier, inherited by child 2D nodes                                                                         |
-| `blendMode`                       | enum    | normal   | How the node's own visuals combine with the backdrop: `normal`, `additive`, `multiply`, `subtract`. NOT inherited by children |
-| `zIndex`                          | number  | 0        | Draw-order override, `-4096..4096` (integer). Higher draws on top                                                             |
-| `zAsRelative`                     | boolean | true     | Add `zIndex` to the parent's effective z instead of treating it as absolute                                                   |
-| `layout.enabled`                  | boolean | false    | Anchor this node to its parent's edges (inspector: `layoutEnabled`, section Anchors)                                          |
-| `layout.horizontalAlign`          | enum    | center   | `left`, `center`, `right`, `stretch`                                                                                          |
-| `layout.verticalAlign`            | enum    | center   | `top`, `center`, `bottom`, `stretch`                                                                                          |
+| Property                          | Type    | Default  | Description                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `position`                        | Vector2 | (0, 0)   | X and Y coordinates                                                                                                                                                                                                                                                                                                                                        |
+| `rotation`                        | number  | 0        | Rotation in degrees                                                                                                                                                                                                                                                                                                                                        |
+| `scale`                           | Vector2 | (1, 1)   | X and Y scale factors                                                                                                                                                                                                                                                                                                                                      |
+| `opacity`                         | number  | 1        | Local opacity multiplier, inherited by child 2D nodes                                                                                                                                                                                                                                                                                                      |
+| `blendMode`                       | enum    | normal   | How the node's own visuals combine with the backdrop: `normal`, `additive`, `multiply`, `subtract`. NOT inherited by children                                                                                                                                                                                                                              |
+| `zIndex`                          | number  | 0        | Draw-order override, `-4096..4096` (integer). Higher draws on top                                                                                                                                                                                                                                                                                          |
+| `zAsRelative`                     | boolean | true     | Add `zIndex` to the parent's effective z instead of treating it as absolute                                                                                                                                                                                                                                                                                |
+| `layout.enabled`                  | boolean | false    | Anchor this node to its parent's edges (inspector: `layoutEnabled`, section Anchors)                                                                                                                                                                                                                                                                       |
+| `layout.horizontalAlign`          | enum    | center   | `left`, `center`, `right`, `stretch`                                                                                                                                                                                                                                                                                                                       |
+| `layout.verticalAlign`            | enum    | center   | `top`, `center`, `bottom`, `stretch`                                                                                                                                                                                                                                                                                                                       |
 | `layout.left/right/top/bottom`    | number  | —        | Margins of the anchored sides, px from the parent's edge to the node's (inspector: `layoutLeft` …). They place the node on that axis; its `position` component there is written as `0`, and under `stretch` the size is derived (a square's `size`/`radius`: the side is the stretched span). Omitted in a file → derived once from the rect (spec §7.2.3) |
-| `flow.enabled`                    | boolean | false    | Stack this container's children in tree order instead of leaving them where they were authored                                |
-| `flow.direction`                  | enum    | vertical | `vertical` (a column) or `horizontal` (a row)                                                                                 |
-| `flow.gap`                        | number  | 0        | Space between two children, px                                                                                                |
-| `flow.paddingX` / `flow.paddingY` | number  | 0        | Inset from the container's edges                                                                                              |
-| `flow.align`                      | enum    | start    | Cross-axis placement of each child: `start`, `center`, `end`. Inspector label: **Cross Axis**                                  |
-| `flow.autoSize`                   | boolean | false    | Grow the container along the flow axis so the last child fits                                                                 |
+| `flow.enabled`                    | boolean | false    | Stack this container's children in tree order instead of leaving them where they were authored                                                                                                                                                                                                                                                             |
+| `flow.direction`                  | enum    | vertical | `vertical` (a column) or `horizontal` (a row)                                                                                                                                                                                                                                                                                                              |
+| `flow.gap`                        | number  | 0        | Space between two children, px                                                                                                                                                                                                                                                                                                                             |
+| `flow.paddingX` / `flow.paddingY` | number  | 0        | Inset from the container's edges                                                                                                                                                                                                                                                                                                                           |
+| `flow.align`                      | enum    | start    | Cross-axis placement of each child: `start`, `center`, `end`. Inspector label: **Cross Axis**                                                                                                                                                                                                                                                              |
+| `flow.autoSize`                   | boolean | false    | Grow the container along the flow axis so the last child fits                                                                                                                                                                                                                                                                                              |
 
 **Usage Notes:**
 
@@ -126,9 +126,9 @@ The base class for all 2D scene nodes. Use this for simple grouping or as a cont
   perpendicular placement (`flow.align`), and **Align** / **Distribute** are the
   one-shot operations on a selection (the viewport strip and `Node ▸ Align ▸`).
   Because Anchors and Flow are orthogonal — a panel can stretch to its parent
-  *and* stack its children — the inspector shows them as two sub-blocks of one
+  _and_ stack its children — the inspector shows them as two sub-blocks of one
   **Layout** section, each with its own switch, rather than as one mode selector.
-  A child of a flow container sees only its *driven* Position axis disabled:
+  A child of a flow container sees only its _driven_ Position axis disabled:
   the main axis always, the cross axis only when its own Anchors are off.
 - Cannot have children by default (set `isContainer = true` to enable)
 - Transforms affect all children in local space
@@ -163,12 +163,12 @@ mistake it exists to prevent: build the whole game out of coloured rects, then s
 
 **Properties** (plus everything on [Node2D](#node2d)):
 
-| Property | Type   | Default | Description                     |
-| -------- | ------ | ------- | ------------------------------- |
-| `width`  | number | 100     | Width in design pixels          |
-| `height` | number | 100     | Height in design pixels         |
-| `color`  | color  | #ffffff | Fill colour (authored sRGB hex) |
-| `blocksPointerInput` | boolean | false | Block hover and presses on UI controls behind this visible rectangle |
+| Property             | Type    | Default | Description                                                          |
+| -------------------- | ------- | ------- | -------------------------------------------------------------------- |
+| `width`              | number  | 100     | Width in design pixels                                               |
+| `height`             | number  | 100     | Height in design pixels                                              |
+| `color`              | color   | #ffffff | Fill colour (authored sRGB hex)                                      |
+| `blocksPointerInput` | boolean | false   | Block hover and presses on UI controls behind this visible rectangle |
 
 **Usage Notes:**
 
@@ -1009,7 +1009,7 @@ A `THREE.InstancedMesh` wrapper for rendering many copies of one geometry/materi
 | `castShadow`                                | boolean | —           | Forwarded to the underlying mesh                                                                                |
 | `receiveShadow`                             | boolean | —           | Forwarded to the underlying mesh                                                                                |
 | `frustumCulled`                             | boolean | —           | Forwarded to the underlying mesh                                                                                |
-| `visibleInstanceCount`                      | number  | —           | How many instances currently draw (read-only display; not saved)                                               |
+| `visibleInstanceCount`                      | number  | —           | How many instances currently draw (read-only display; not saved)                                                |
 | `material.type`                             | enum    | `standard`  | Material family — `standard` (PBR) / `lambert` (mobile default) / `basic` (unlit); inspector: **Material Type** |
 | `material.color`                            | color   | `#ffffff`   | Colour every instance shares; a per-instance colour multiplies it                                               |
 | `material.roughness` / `material.metalness` | number  | 0.35 / 0.25 | `standard` only; dropped from the file for the other families                                                   |
@@ -1398,38 +1398,38 @@ filter).
 
 ## Node Properties Quick Reference
 
-| Node Type            | Key Properties                                                                                       |
-| -------------------- | ---------------------------------------------------------------------------------------------------- |
-| NodeBase             | id, name, type, visible, locked                                                                      |
-| Node2D               | position (Vector2), rotation, scale (Vector2), opacity, blendMode, zIndex                            |
-| Node3D               | position (Vector3), rotation (Euler), scale (Vector3)                                                |
-| Sprite2D             | texture, width, height, anchor, aspectRatioLocked                                                    |
-| ColorRect2D          | width, height, color (the only untextured 2D fill)                                                   |
-| TiledSprite2D        | texture, width, height, patchMode, sliceBorderLeft/Right/Top/Bottom, drawCenter (nine-slice)         |
-| AnimatedSprite2D     | animationResourcePath, currentClip, isPlaying, freeOnFinish, width, height, sizeMode                 |
-| Group2D              | width, height (+ flow\* / anchor layout — the 2D container)                                          |
-| ScrollContainer2D    | width, height, scrollY, dragScrollEnabled, inertiaDamping, showScrollbar                             |
-| SpineSkeleton2D      | skeletonPath, atlasPath, animation, loop, skin, timeScale, defaultMix (optional Spine runtime)       |
-| Camera2D             | priority, zoom, offset, followTargetId, limitsEnabled, shakeAmplitude                                |
-| CanvasLayer2D        | width, height (fixed HUD overlay; renders after post)                                                |
-| Camera3D             | projection, fov, near, far                                                                           |
-| VirtualCamera3D      | priority, followTargetId, lookAtTargetId, blendDuration, fov                                         |
-| GeometryMesh         | geometry, size, material, castShadow, receiveShadow                                                  |
-| MeshInstance         | src                                                                                                  |
-| Sprite3D             | texture, width, height (world units), billboard, billboardRoll, opacity                              |
-| AnimatedSprite3D     | width, height, fps, playing, loop, freeOnFinish, billboard (default true)                            |
-| InstancedMesh3D      | maxInstances, enablePerInstanceColor, material.type/color (bulk write\*/flush from scripts)          |
-| DirectionalLightNode | color, intensity, castShadow                                                                         |
-| AmbientLightNode     | color, intensity (flat fill, no shadows)                                                             |
-| HemisphereLightNode  | skyColor, groundColor, intensity                                                                     |
-| PointLightNode       | color, intensity, distance, decay                                                                    |
-| SpotLightNode        | color, intensity, distance, angle, penumbra                                                          |
-| Button2D             | width, height, backgroundColor, buttonAction, textureNormal/Hover/Pressed/Disabled, sliceBorder\*    |
-| Slider2D             | width, minValue, maxValue, value, textureTrack/Fill/Thumb, sliceBorder\*                             |
-| Joystick2D           | enabled, radius, floating, axisHorizontal, axisVertical                                              |
-| Checkbox2D           | size, checked, textureBox, textureBoxChecked, textureMark                                            |
-| Bar2D                | width, value, minValue, maxValue, barColor, backBackgroundColor, textureTrough/Fill, sliceBorder\*   |
-| InventorySlot2D      | width, height, quantity, showQuantity, backdropColor, selectionColor                                 |
-| AudioPlayer          | audioTrack, autoplay, loop, volume, bus, pitchVariation, volumeVariation                             |
-| PostProcess          | affect2D, bloom*, vignette*, chromaticAberration*, aoMode, ssao*, lut\*                              |
-| Group                | NodeBase only — an organisational container                                                          |
+| Node Type            | Key Properties                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| NodeBase             | id, name, type, visible, locked                                                                    |
+| Node2D               | position (Vector2), rotation, scale (Vector2), opacity, blendMode, zIndex                          |
+| Node3D               | position (Vector3), rotation (Euler), scale (Vector3)                                              |
+| Sprite2D             | texture, width, height, anchor, aspectRatioLocked                                                  |
+| ColorRect2D          | width, height, color (the only untextured 2D fill)                                                 |
+| TiledSprite2D        | texture, width, height, patchMode, sliceBorderLeft/Right/Top/Bottom, drawCenter (nine-slice)       |
+| AnimatedSprite2D     | animationResourcePath, currentClip, isPlaying, freeOnFinish, width, height, sizeMode               |
+| Group2D              | width, height (+ flow\* / anchor layout — the 2D container)                                        |
+| ScrollContainer2D    | width, height, scrollY, dragScrollEnabled, inertiaDamping, showScrollbar                           |
+| SpineSkeleton2D      | skeletonPath, atlasPath, animation, loop, skin, timeScale, defaultMix (optional Spine runtime)     |
+| Camera2D             | priority, zoom, offset, followTargetId, limitsEnabled, shakeAmplitude                              |
+| CanvasLayer2D        | width, height (fixed HUD overlay; renders after post)                                              |
+| Camera3D             | projection, fov, near, far                                                                         |
+| VirtualCamera3D      | priority, followTargetId, lookAtTargetId, blendDuration, fov                                       |
+| GeometryMesh         | geometry, size, material, castShadow, receiveShadow                                                |
+| MeshInstance         | src                                                                                                |
+| Sprite3D             | texture, width, height (world units), billboard, billboardRoll, opacity                            |
+| AnimatedSprite3D     | width, height, fps, playing, loop, freeOnFinish, billboard (default true)                          |
+| InstancedMesh3D      | maxInstances, enablePerInstanceColor, material.type/color (bulk write\*/flush from scripts)        |
+| DirectionalLightNode | color, intensity, castShadow                                                                       |
+| AmbientLightNode     | color, intensity (flat fill, no shadows)                                                           |
+| HemisphereLightNode  | skyColor, groundColor, intensity                                                                   |
+| PointLightNode       | color, intensity, distance, decay                                                                  |
+| SpotLightNode        | color, intensity, distance, angle, penumbra                                                        |
+| Button2D             | width, height, backgroundColor, buttonAction, textureNormal/Hover/Pressed/Disabled, sliceBorder\*  |
+| Slider2D             | width, minValue, maxValue, value, textureTrack/Fill/Thumb, sliceBorder\*                           |
+| Joystick2D           | enabled, radius, floating, axisHorizontal, axisVertical                                            |
+| Checkbox2D           | size, checked, textureBox, textureBoxChecked, textureMark                                          |
+| Bar2D                | width, value, minValue, maxValue, barColor, backBackgroundColor, textureTrough/Fill, sliceBorder\* |
+| InventorySlot2D      | width, height, quantity, showQuantity, backdropColor, selectionColor                               |
+| AudioPlayer          | audioTrack, autoplay, loop, volume, bus, pitchVariation, volumeVariation                           |
+| PostProcess          | affect2D, bloom*, vignette*, chromaticAberration*, aoMode, ssao*, lut\*                            |
+| Group                | NodeBase only — an organisational container                                                        |

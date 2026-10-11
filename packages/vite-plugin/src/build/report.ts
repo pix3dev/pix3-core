@@ -1,6 +1,8 @@
 import { writeFileSync } from 'node:fs';
-import { basename, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+
+import { fileOf, isUnder, posixPath, relativeInside } from '../module-paths.ts';
 
 /**
  * `dist/<name>.report.json` (plan §B.6 item 5): why the artifact weighs what it does, written
@@ -110,15 +112,9 @@ export interface ModuleClassifier {
   readonly embeddedAssetsId: string;
 }
 
-const isUnder = (file: string, dir: string | null): boolean => {
-  if (!dir) return false;
-  const rel = relative(dir, file);
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
-};
-
 /** The package name of a `node_modules` id (`@scope/name` or `name`), or null. */
 export const packageNameOf = (id: string): string | null => {
-  const normalized = id.split(sep).join('/');
+  const normalized = posixPath(id);
   const marker = normalized.lastIndexOf('/node_modules/');
   if (marker < 0) return null;
   const parts = normalized.slice(marker + '/node_modules/'.length).split('/');
@@ -136,7 +132,7 @@ export const classifyModule = (
     if (virtual.startsWith('virtual:pix3/')) return { group: 'player', package: null };
     return { group: 'other', package: null };
   }
-  const file = id.split('?')[0];
+  const file = fileOf(id);
   if (isUnder(file, classifier.runtimeSrc)) return { group: 'runtime', package: null };
   if (isUnder(file, classifier.playerDir)) return { group: 'player', package: null };
   const pkg = packageNameOf(file);
@@ -152,17 +148,13 @@ export const classifyModule = (
  */
 export const displayId = (id: string, classifier: ModuleClassifier): string => {
   if (id.startsWith('\0')) return id.slice(1);
-  const file = id.split('?')[0];
-  if (isUnder(file, classifier.runtimeSrc)) {
-    return `@pix3/runtime/src/${relative(classifier.runtimeSrc as string, file)
-      .split(sep)
-      .join('/')}`;
-  }
-  const posix = file.split(sep).join('/');
+  const file = fileOf(id);
+  const inRuntime = classifier.runtimeSrc && relativeInside(classifier.runtimeSrc, file);
+  if (inRuntime) return `@pix3/runtime/src/${inRuntime}`;
+  const posix = posixPath(file);
   const marker = posix.lastIndexOf('/node_modules/');
   if (marker >= 0) return posix.slice(marker + '/node_modules/'.length);
-  const rel = relative(classifier.root, file);
-  return rel && !rel.startsWith('..') ? rel.split(sep).join('/') : posix;
+  return relativeInside(classifier.root, file) ?? posix;
 };
 
 export interface CodeSizes {

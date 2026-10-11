@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
 import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { IGNORED_DIRECTORIES, ProjectFiles, toProjectPath } from '../validate/project.ts';
 
 /**
@@ -18,12 +19,15 @@ import { IGNORED_DIRECTORIES, ProjectFiles, toProjectPath } from '../validate/pr
  *     When any changed scene or script reaches no top-level scene (a helper module, an unused
  *     prefab), or the manifest changed, the answer is "every scene" — never a partial guess.
  *  2. Otherwise every top-level scene (not instanced by another, not under `prefabs/` or `ui/`),
- *     the editor's startup scene (`scenes/main.pix3scene` — the game, "iterate here") first, then
- *     the manifest's entry scene, then the rest by path. Each is a separate run and is reported on
+ *     the conventional game scene (`scenes/main.pix3scene` — "iterate here") first, then the
+ *     manifest's entry scene, then the rest by path. Each is a separate run and is reported on
  *     its own line, so the menu AND the game are both smoked.
  */
 
-/** The editor opens this scene when a project loads (`ProjectService.STARTUP_SCENE_PATH`). */
+/**
+ * The conventional game scene, smoked first. (The editor opens it only when the manifest names no
+ * `defaultExportScenePath`; that entry is usually the menu, so it runs second.)
+ */
 export const STARTUP_SCENE = 'scenes/main.pix3scene';
 
 export type SmokeSelectionMode = 'changed' | 'all';
@@ -40,7 +44,6 @@ export interface SmokeSelection {
 const INSTANCE_LINE = /^\s*(?:-\s+)?instance:\s*["']?(?:res:\/\/)?([^"'\s#]+)/gm;
 const RES_REFERENCE = /res:\/\/[^"'\s#)]+/g;
 const USER_COMPONENT = /\buser:([A-Za-z_$][\w$]*)/g;
-const EXPORTED_CLASS = /\bexport\s+(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g;
 const PREFAB_OR_UI = /(^|\/)(prefabs?|ui)\//i;
 
 /** Game code: a script module, not a declaration file and not a unit test (`*.spec.ts` / `*.test.ts`). */
@@ -68,7 +71,8 @@ const readOr = (project: ProjectFiles, path: string): string => {
 const instancesOf = (project: ProjectFiles, scene: string): string[] => {
   const out: string[] = [];
   for (const match of readOr(project, scene).matchAll(INSTANCE_LINE)) {
-    out.push(match[1].replace(/^\/+/, ''));
+    const target = toProjectPath(match[1]);
+    if (target) out.push(target);
   }
   return out;
 };
@@ -82,7 +86,7 @@ export const topLevelScenes = (project: ProjectFiles): string[] => {
   return scenes.filter(scene => !instanced.has(scene) && !PREFAB_OR_UI.test(scene));
 };
 
-/** Startup scene first, then the manifest's entry scene, then the rest in path order. */
+/** The game scene first, then the manifest's entry scene, then the rest in path order. */
 const ordered = (scenes: readonly string[], manifestDefault: string | undefined): string[] => {
   const rank = (scene: string): number =>
     scene === STARTUP_SCENE ? 0 : scene === manifestDefault ? 1 : 2;
@@ -125,10 +129,10 @@ const scriptClassIndex = (project: ProjectFiles): Map<string, string[]> => {
   const index = new Map<string, string[]>();
   for (const file of project.files) {
     if (!isScript(file)) continue;
-    for (const match of readOr(project, file).matchAll(EXPORTED_CLASS)) {
-      const list = index.get(match[1]) ?? [];
+    for (const name of scanExportNames(readOr(project, file)).names) {
+      const list = index.get(name) ?? [];
       list.push(file);
-      index.set(match[1], list);
+      index.set(name, list);
     }
   }
   return index;

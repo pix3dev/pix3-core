@@ -13,7 +13,8 @@ it. Import only from `@pix3/runtime`, `three`, and other files under the scripts
 against the runtime's declarations (`.pix3/types/`, or your `node_modules` when the project
 has its own `tsconfig.json`); your editor sees the same types through the root `tsconfig.json`.
 
-`reference.md` beside this file has the engine's own API map, the capability catalog and
+`reference.md` beside this file has the rest of the API (wheel and multi-touch input, the full 2D
+physics surface, `registerGameDebug`, cutscenes, multiplayer), the capability catalog and
 **every `core:` component with its config keys and defaults** — reach for a built-in before
 writing a script for the same effect.
 
@@ -156,13 +157,14 @@ before children's.
   `node.disconnect('name', this, handler)`. Every handler connected with `this` as the target
   is **auto-disconnected on detach, like own-node signals** — including ones on another node
   (`gameRoot.connect('score', this, this.onScore)`). Window listeners, store subscriptions and
-  timers are still yours to clean up in `onDetach` (see "Hosting an existing game"). Keep the
+  timers are still yours to clean up in `onDetach` ("Hosting an existing game", below). Keep the
   handler in a field (no `.bind(this)`) so an early manual `disconnect` gets the same function.
 - UI controls (`Button2D`, `Slider2D`, `Checkbox2D`, `Joystick2D`, …) emit `pressed` (touch
   went down inside), `released`, `click` (down and up inside — a completed tap),
   `pointerdown`, `pointerup`; `Checkbox2D` also `toggled`; `Label2D` emits
   `typewriter-complete`. Wire game buttons to `pressed` (instant); `click` can be
-  cancelled by sliding off — use it for menus and anything costly.
+  cancelled by sliding off — use it for menus and anything costly (purchases):
+  `button.connect('click', this, this.onBuy)`.
 - Scripts talk through signals on a shared node such as `game-root` (`score-changed`,
   `lives-changed`, `game-won`, `game-lost`, …). Listen to the ones that exist; add new signal
   names for new mechanics; never rename existing ones.
@@ -261,21 +263,27 @@ before children's.
   (or on any node the game positions itself) is overwritten every frame and never shows. Use the
   game's own shake (`grep -rn "shake" src scripts`) when it has one; the same goes for its own
   sound and tween helpers.
-- The project's own `AGENTS.md` wins on process (planning first, where config goes); this kit
-  wins on Pix3 facts (YAML, runtime API, `pix3 check`).
 
 ## Traps (compile clean, break at runtime)
 
 - Assigning `position` / `rotation` / `scale` throws. Mutate them.
 - A component that throws in `onStart` / `onUpdate` is **auto-disabled** and the game keeps
   running — the thing just freezes. Guard lookups (`if (!node) { console.warn(...); return; }`).
-  With the editor open, `pix3_errors` after a run shows it; without, tell the human to look
-  at the editor's console.
+  `pix3_errors` right after starting play (or `pix3 smoke`'s `E_SMOKE_SCRIPT`) shows the throw —
+  read it before judging anything else.
 - `as any` on `this.node` hides exactly the error above, and from `pix3 check`. Use
   `instanceof` narrowing.
 - Hitstop every frame of an overlap freezes the game — edge-trigger it.
 - A hidden `UIControl2D` takes no input; `onUpdate` still runs on hidden nodes.
 - `getComponent('user:X')` is wrong — pass the class.
+- `event.key` depends on the layout and on Shift — match `event.code`.
+- **Moves the wrong way** (sideways, backwards) is a math bug, and flipping signs does not
+  converge. With world +Y up, `rotation.z` turns the node's local +Y (its nose) to
+  `(-sin θ, cos θ)`: forward is `vx = -Math.sin(rot) * speed`, `vy = Math.cos(rot) * speed`, and
+  aiming the nose along `(dx, dy)` is `rotation.z = Math.atan2(-dx, dy)`.
+- **A button does nothing**: something must `connect` to its signal (`pressed` / `click`) on the
+  node id the scene really has — check the id in `pix3 tree`, then that the script carrying the
+  handler is attached and `enabled`.
 - Ending a run belongs to the one script that owns the rules: call it; do not show the result
   overlay from a second place.
 

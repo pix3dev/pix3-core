@@ -12,7 +12,6 @@ import {
   SceneValidationError,
   ScriptRegistry,
   setPostprocessingModuleLoader,
-  type LocalizationConfig,
   type RuntimeRenderer,
   type ScriptErrorInfo,
 } from '@pix3/runtime';
@@ -23,10 +22,12 @@ import {
   ResourceNotDecodedError,
 } from '@pix3/runtime/node';
 
+import { PENDING_COMPONENT_WARNING } from '../validate/level2.ts';
 import { ProjectFiles } from '../validate/project.ts';
+import { resolveLocalization } from '../validate/resource-files.ts';
+import type { ScriptImportMap } from '../validate/script-build.ts';
 import { scanUserScripts } from '../validate/user-scripts.ts';
-import { isRecord } from '../validate/yaml-doc.ts';
-import { compileAndImportScripts, type ScriptImportUrls } from './compile-scripts.ts';
+import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
 import type {
   SmokeError,
@@ -127,8 +128,6 @@ const DOM_GLOBAL =
 /** `console.log`/`info` lines kept for the report (the rest are counted). */
 const MAX_LOG_LINES = 40;
 
-const PENDING = /Component type "(.*?)" is not registered yet — kept as pending on node "(.*?)"/;
-
 /** Engine re-reports of a failure the error sink already delivered. */
 const ENGINE_REPORTS = [
   /^\[NodeBase\] Script ".*" threw in/,
@@ -138,7 +137,7 @@ const ENGINE_REPORTS = [
 
 export const runSmokeJob = async (
   job: SmokeJob,
-  imports: ScriptImportUrls
+  imports: ScriptImportMap
 ): Promise<SmokeOutcome> => {
   const startedAt = performance.now();
   let frame = 0;
@@ -196,7 +195,7 @@ export const runSmokeJob = async (
     // SceneRunner's own clock; not the game's business.
     if (/^THREE\.THREE\.Clock: This module has been deprecated/.test(message)) return;
     if (/^\[AudioService\] Web Audio API is not supported/.test(message)) return;
-    const pending = PENDING.exec(message);
+    const pending = PENDING_COMPONENT_WARNING.exec(message);
     if (pending) {
       addWarning(
         'W_SMOKE_PENDING_COMPONENT',
@@ -427,8 +426,11 @@ export const runSmokeJob = async (
     });
     // The project's autoloads run here as in the player and the editor's play mode.
     runner.setAutoloads(normalizeAutoloads(job.autoloads), registry);
-    if (isRecord(job.localization) && typeof job.localization.defaultLocale === 'string') {
-      runner.setLocalizationConfig(job.localization as unknown as LocalizationConfig);
+    // The locales the player loads (the plugin's rule: the manifest's block, else locales/*.json).
+    const localization = resolveLocalization(project);
+    if (localization) {
+      const { defaultLocale, fallbackLocale, locales } = localization;
+      runner.setLocalizationConfig({ defaultLocale, fallbackLocale, locales });
     }
 
     // --- Frame 0: load + onAttach/onStart ------------------------------------------------------

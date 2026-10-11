@@ -146,7 +146,7 @@ const readTemplate = (root: string, id: string): TemplateInfo | null => {
   };
 };
 
-/** Every template, hidden ones included, in the editor's order (`order`, then title). */
+/** Every template, hidden ones included, in list order (`order`, then title). */
 export const listTemplates = (root: string = resolveTemplatesRoot()): TemplateInfo[] =>
   readdirSync(root, { withFileTypes: true })
     .filter(entry => entry.isDirectory())

@@ -8,7 +8,7 @@ import { cliPackageRoot } from './package-root.ts';
  *
  * Found from the package root (`package-root.ts`), so it works from the sources, the `tsc`
  * output and the single-file published bin alike. The number is the
- * lockstep product version (root `package.json`, stamped by `scripts/update-version.mjs`).
+ * lockstep product version (root `package.json`, stamped by `scripts/sync-version.mjs`).
  */
 const readVersion = (): string => {
   try {

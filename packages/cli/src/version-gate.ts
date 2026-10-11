@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join } from 'node:path';
 
+import { findUp } from './fs-util.ts';
 import { cliPackageRoot } from './package-root.ts';
 import { CLI_VERSION } from './version.ts';
 
@@ -54,14 +55,8 @@ export const bundledRuntimeVersion = (): string => {
 
 /** The version of `name` a project resolves from `node_modules` (walking up, as Node does), or null. */
 export const installedPackageVersion = (projectRoot: string, name: string): string | null => {
-  let dir = resolve(projectRoot);
-  for (;;) {
-    const candidate = join(dir, 'node_modules', ...name.split('/'), 'package.json');
-    if (existsSync(candidate)) return readVersion(candidate);
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
+  const manifest = findUp(projectRoot, join('node_modules', ...name.split('/'), 'package.json'));
+  return manifest === null ? null : readVersion(manifest);
 };
 
 /** Version of the `@pix3/runtime` a project resolves from `node_modules` (walking up), or null. */

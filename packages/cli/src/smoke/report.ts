@@ -177,8 +177,6 @@ export interface SmokeJob {
   readonly scene: string;
   readonly frames: number;
   readonly viewport: { readonly width: number; readonly height: number };
-  /** `pix3project.yaml` `localization` block, verbatim (null = none). */
-  readonly localization: unknown;
   /** `pix3project.yaml` `autoloads:`, verbatim (the worker normalises it as every host does). */
   readonly autoloads?: unknown;
   /** Where `esbuild` resolves from (the bundle may live in a temp folder). */
