@@ -5,9 +5,11 @@ import { devJsonPath, type DevInfo } from '../dev-info.ts';
 /**
  * Before a build reads the disk (plan §B.6 «npm run build, pix3 check, pix3 smoke»): if
  * `.pix3/dev.json` points at a live dev server, ask it to flush the editor's unsaved scenes first
- * (`POST /__pix3/api/flush`, up to {@link FLUSH_TIMEOUT_MS}). A server that does not answer is
- * treated as gone (a stale `dev.json` after a crash); an editor that cannot flush in time is
- * `E_EDITOR_UNSYNCED` — the build would otherwise ship a scene older than what the designer sees.
+ * (`POST /__pix3/api/flush`, up to {@link FLUSH_TIMEOUT_MS}). A server that refuses the
+ * connection is gone (a stale `dev.json` after a crash); one that accepts it but does not answer
+ * `hello` within {@link PROBE_TIMEOUT_MS} is alive and busy, and — like an editor that cannot flush
+ * in time — is `E_EDITOR_UNSYNCED`: the build would otherwise ship a scene older than what the
+ * designer sees.
  *
  * `PIX3_NO_SYNC=1` skips the step (the CLI's `--no-sync`). The CLI carries its own copy of this logic
  * (`packages/cli/src/editor-sync.ts`); keep the two in step.
@@ -18,7 +20,8 @@ const PROBE_TIMEOUT_MS = 2_000;
 
 export type EditorFlushResult =
   | { readonly status: 'skipped' }
-  | { readonly status: 'no-server' }
+  /** No `dev.json` (no `url`), or one whose server is gone (`url` and why). */
+  | { readonly status: 'no-server'; readonly url?: string; readonly reason?: string }
   | { readonly status: 'no-editor'; readonly url: string }
   | { readonly status: 'flushed'; readonly url: string };
 
@@ -46,20 +49,44 @@ const fetchWithTimeout = (url: string, init: RequestInit, timeoutMs: number): Pr
  * Flush the editor that `.pix3/dev.json` points at, if any. Throws {@link EditorUnsyncedError}
  * when an editor is connected but did not confirm the flush in time.
  */
+const isTimeout = (error: unknown): boolean =>
+  error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+
+const causeOf = (error: unknown): string => {
+  const cause = (error as { cause?: { code?: unknown; message?: unknown } } | null)?.cause;
+  if (typeof cause?.code === 'string') return cause.code;
+  if (typeof cause?.message === 'string') return cause.message;
+  return error instanceof Error ? error.message : String(error);
+};
+
 export const flushEditorBeforeBuild = async (
   root: string,
-  options: { readonly skip?: boolean; readonly timeoutMs?: number } = {}
+  options: {
+    readonly skip?: boolean;
+    readonly timeoutMs?: number;
+    /** How long `hello` may take before a listening server counts as busy (specs). */
+    readonly probeTimeoutMs?: number;
+  } = {}
 ): Promise<EditorFlushResult> => {
   if (options.skip ?? process.env.PIX3_NO_SYNC === '1') return { status: 'skipped' };
   const info = readDevInfo(root);
   if (!info) return { status: 'no-server' };
   const timeoutMs = options.timeoutMs ?? FLUSH_TIMEOUT_MS;
   const api = `${info.url.endsWith('/') ? info.url : `${info.url}/`}__pix3/api/`;
+  const probeMs = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
   try {
-    const hello = await fetchWithTimeout(`${api}hello`, {}, PROBE_TIMEOUT_MS);
-    if (!hello.ok) return { status: 'no-server' };
-  } catch {
-    return { status: 'no-server' };
+    const hello = await fetchWithTimeout(`${api}hello`, {}, probeMs);
+    // Something else answers on that port now (the server is gone, the port reused).
+    if (!hello.ok) return { status: 'no-server', url: info.url, reason: `HTTP ${hello.status}` };
+  } catch (error) {
+    if (isTimeout(error)) {
+      throw new EditorUnsyncedError(
+        `The Pix3 dev server at ${info.url} accepted the connection but did not answer within ` +
+          `${probeMs / 1000} s, so its editor's unsaved scenes could not be flushed. Retry once ` +
+          `it responds, stop it (a stale .pix3/dev.json is ignored), or skip with PIX3_NO_SYNC=1.`
+      );
+    }
+    return { status: 'no-server', url: info.url, reason: causeOf(error) };
   }
   let reply: { ok?: boolean; editor?: boolean; flushed?: boolean; reason?: string };
   try {

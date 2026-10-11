@@ -5,8 +5,8 @@ import { join } from 'node:path';
  * Before `pix3 check` / `pix3 smoke` read the project (plan §B.6 «npm run build, pix3 check,
  * pix3 smoke»): if `.pix3/dev.json` points at a live dev server, ask it to flush the editor's
  * unsaved scenes first (`POST /__pix3/api/flush`, up to {@link EDITOR_FLUSH_TIMEOUT_MS}). A
- * server that does not answer is treated as gone (a stale `dev.json`); an editor that cannot
- * flush in time is `E_EDITOR_UNSYNCED`, because the check would otherwise judge a scene older
+ * server that refuses the connection is gone (a stale `dev.json`); one that accepts it but does
+ * not answer `hello` in time, or an editor that cannot flush in time, is `E_EDITOR_UNSYNCED`, because the check would otherwise judge a scene older
  * than what the designer sees. `--no-sync` skips the step.
  *
  * Same logic as the plugin's `src/build/editor-flush.ts` (which `vite build` runs); keep the two
@@ -37,17 +37,32 @@ const devServerUrl = (projectRoot: string): string | null => {
 /** Flush the editor that `.pix3/dev.json` points at, if any. Never throws. */
 export const syncEditor = async (
   projectRoot: string,
-  options: { readonly noSync?: boolean; readonly timeoutMs?: number } = {}
+  options: {
+    readonly noSync?: boolean;
+    readonly timeoutMs?: number;
+    /** How long `hello` may take before a listening server counts as busy (specs). */
+    readonly probeTimeoutMs?: number;
+  } = {}
 ): Promise<EditorSyncResult> => {
   if (options.noSync) return { status: 'skipped' };
   const url = devServerUrl(projectRoot);
   if (!url) return { status: 'no-server' };
   const timeoutMs = options.timeoutMs ?? EDITOR_FLUSH_TIMEOUT_MS;
   const api = `${url.endsWith('/') ? url : `${url}/`}__pix3/api/`;
+  const probeMs = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
   try {
-    const hello = await fetch(`${api}hello`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    const hello = await fetch(`${api}hello`, { signal: AbortSignal.timeout(probeMs) });
     if (!hello.ok) return { status: 'no-server' };
-  } catch {
+  } catch (error) {
+    // Refused: the server is gone (a stale `dev.json`). Accepted but silent: alive and busy, so
+    // the editor's unsaved scenes are unknown — the same answer as a flush that timed out.
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      return {
+        status: 'unsynced',
+        url,
+        reason: `the dev server accepted the connection but did not answer within ${probeMs / 1000} s`,
+      };
+    }
     return { status: 'no-server' };
   }
   try {
