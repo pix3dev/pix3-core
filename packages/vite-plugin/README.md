@@ -6,6 +6,8 @@ Source layout: `src/index.ts` wires the hooks; `src/vite-config.ts` (the `config
 
 ## Player
 
+In dev, the plugin excludes `@pix3/vite-plugin/player` from dependency prebundling so its `virtual:pix3/*` imports reach Vite's plugin hooks, including when installed from an npm tarball.
+
 `src/main.ts` of a project is `import { startGame } from '@pix3/vite-plugin/player'; startGame('#app');`. The player (`player/index.ts`, emitted to `dist/player/`) boots `@pix3/runtime` on the `virtual:pix3/*` modules the plugin generates: `scene-manifest` (from `pix3project.yaml`: entry scene, scene list, viewport, quality, fonts, locales), `embedded-assets` (`{}` in dev and zip, every asset as base64 in an html build), `project-scripts` (eager glob of `scripts/` and `src/scripts/`, registered as `user:<Export>`), `spine` / `postprocessing` / `network` (static imports in a build that uses them, no-ops otherwise). The entry scene is `pix3({ entryScene })`, else `defaultExportScenePath`, else `scenes/main.pix3scene`, else the first non-prefab scene, in dev and in a build alike (one function, `resolveEntryScene` in `src/build/scan.ts`; a named scene that does not exist is skipped with a warning). In dev `ResourceManager('/<resRoot>/')` fetches from the dev server; a build uses `./`. `window.__PIX3_PLAYER__ = { status, frames, errors, scene, runner }` is what a check reads.
 
 ## Build (`vite build`)

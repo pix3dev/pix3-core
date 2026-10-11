@@ -50,7 +50,9 @@ export const pix3ViteConfig = (options: {
       // One runtime and one three for the game and the editor (plan §B.2, S1), plus the bare
       // subpaths the prebuilt editor imports (`dist/optimize-deps.json`).
       include: ['@pix3/runtime', 'three', ...editorOptimizeDeps(editorCoreDir)],
-      exclude: ['@pix3/editor-core'],
+      // The installed player imports virtual modules resolved by this plugin's Vite hooks;
+      // the dependency optimizer cannot resolve them while prebundling node_modules.
+      exclude: ['@pix3/editor-core', '@pix3/vite-plugin/player'],
     },
     server: { fs: { allow } },
     ...(format

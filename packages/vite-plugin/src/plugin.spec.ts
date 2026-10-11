@@ -31,6 +31,11 @@ afterEach(async () => {
 });
 
 describe('editor page and discovery', () => {
+  it('keeps the installed player out of dependency prebundling so its virtual imports reach Vite', async () => {
+    const p = await start();
+    expect(p.server.config.optimizeDeps.exclude).toContain('@pix3/vite-plugin/player');
+  });
+
   it('serves raw HTML whose only module is the editor host, with no Vite client', async () => {
     const p = await start(runtimeAt('2.0.0-alpha.0'));
     const redirect = await p.fetch('/__pix3', { redirect: 'manual' });
