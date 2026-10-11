@@ -20,7 +20,7 @@ export const toClassicScriptHtml = (html: string): string => {
     .replace(/\bimport\.meta\.resolve\b/g, 'undefined')
     .replace(/\bimport\.meta\b/g, '({})');
 
-  const headOpen = /<head>/i.exec(out);
+  const headOpen = /<head\b[^>]*>/i.exec(out);
   const headClose = /<\/head>/i.exec(out);
   const bodyOpen = /<body\b[^>]*>/i.exec(out);
   if (!headOpen || !headClose || !bodyOpen) return out;

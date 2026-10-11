@@ -15,7 +15,7 @@ import { stripRes } from './project-manifest.ts';
  *   false negative would ship a broken game — `.plans/done/playable-export-size.md` §2 Р4);
  * - the asset set: every scene and prefab, everything they and the scripts name by `res://`,
  *   directories those references expand to, Spine atlas pages, the declared locale tables and
- *   their sprites, the project's fonts, a pre-packed atlas manifest;
+ *   their sprites, the project's fonts (no pre-packed atlas: nothing in 2.x writes one);
  * - whether Spine, `postprocessing` or the multiplayer stack are used at all.
  *
  * Node port of 1.x `ProjectBuildService.collectAssetPaths` / `scanMentionedNames`, widened to
@@ -31,6 +31,18 @@ export interface ScanOptions {
   readonly manifest: ProjectManifestInfo;
   /** `pix3({ entryScene })`: a `res://`-relative scene path. */
   readonly entryScene?: string | null;
+  /**
+   * What the dependencies that declare the runtime mention and import (`scanDependencyImports`):
+   * they count for the `uses*` answers as the project's own sources do.
+   */
+  readonly dependencies?: SourceMentions;
+}
+
+/** Identifiers and bare import specifiers found in a set of sources. */
+export interface SourceMentions {
+  readonly mentionedNames: ReadonlySet<string>;
+  /** `from 'x'`, `import('x')`, `import 'x'`, `require('x')` in code sources. */
+  readonly importedSpecifiers: ReadonlySet<string>;
 }
 
 export interface ProjectScan {
@@ -41,6 +53,8 @@ export interface ProjectScan {
   /** Every shipped file, `res://`-relative and sorted (scenes and prefabs included). */
   readonly assetPaths: readonly string[];
   readonly mentionedNames: ReadonlySet<string>;
+  /** Module specifiers the project's code sources import (see {@link SourceMentions}). */
+  readonly importedSpecifiers: ReadonlySet<string>;
   readonly usesSpine: boolean;
   readonly usesPostProcessing: boolean;
   readonly usesNetwork: boolean;
@@ -71,6 +85,25 @@ const TEXT_SOURCE_EXTENSIONS: ReadonlySet<string> = new Set([
   'html',
   'css',
   'atlas',
+  // Single-file components: a game may hang its HUD on a framework.
+  'vue',
+  'svelte',
+  'astro',
+]);
+/** Text sources whose `import`s are imports (not a `package.json`'s dependency list). */
+const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
+  'ts',
+  'tsx',
+  'mts',
+  'cts',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'html',
+  'vue',
+  'svelte',
+  'astro',
 ]);
 /** Tests and declarations: their mentions would only keep modules the game never runs. */
 const NOT_A_SOURCE = /\.(?:spec|test)\.[cm]?[jt]sx?$|\.d\.[cm]?ts$|^package-lock\.json$/;
@@ -78,9 +111,28 @@ const SCENE_LIKE = /\.(pix3scene|prefab)$/i;
 const SCANNABLE_RESOURCE = /\.(pix3scene|prefab|pix3anim)$/i;
 const RESOURCE_PATH_PATTERN = /res:\/\/([^\s"'`\])]+)/g;
 const MENTIONED_NAME_PATTERN = /[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)*/g;
+const IMPORT_SPECIFIER_PATTERN =
+  /\b(?:from|import)\s*\(?\s*['"`]([^'"`\s]+)['"`]|\brequire\s*\(\s*['"`]([^'"`\s]+)['"`]/g;
+
+/** Every identifier-like token of a text (the strip's mention superset) into `names`. */
+export const collectMentionedNames = (text: string, names: Set<string>): void => {
+  for (const match of text.matchAll(MENTIONED_NAME_PATTERN)) names.add(match[0]);
+};
+
+/** Every module specifier a code text imports, statically or not, into `specifiers`. */
+export const collectImportedSpecifiers = (text: string, specifiers: Set<string>): void => {
+  for (const match of text.matchAll(IMPORT_SPECIFIER_PATTERN)) {
+    specifiers.add(match[1] ?? match[2]);
+  }
+};
+
+/** Whether a set of specifiers imports `name` itself or a subpath of it. */
+const importsPackage = (specifiers: ReadonlySet<string>, name: string): boolean =>
+  [...specifiers].some(specifier => specifier === name || specifier.startsWith(`${name}/`));
 /** Names that mean "this project talks to the multiplayer stack". */
 export const NETWORK_MENTION_NAMES = [
   'network',
+  'netNodes',
   'Network',
   'NetworkService',
   'NetworkedNode',
@@ -91,9 +143,6 @@ export const NETWORK_MENTION_NAMES = [
   'core:ReplicatedTransform',
 ] as const;
 const SPINE_PAGE_IMAGE_PATTERN = /\.(png|jpg|jpeg|webp|ktx2|basis|bmp)$/i;
-/** Where the editor writes a pre-packed atlas (`ATLAS_MANIFEST_PATH` in the runtime). */
-const ATLAS_MANIFEST = 'assets/.atlas/atlas-manifest.json';
-const ATLAS_SHEET_DIR = 'assets/.atlas/';
 
 /**
  * A `.pix3scene` that is instantiated rather than navigated to: `prefabs/`, `.prefab`, and
@@ -181,6 +230,7 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
   const resRoot = stripRes(options.resRoot).replace(/\/+$/, '') || '.';
   const warnings: string[] = [];
   const mentionedNames = new Set<string>();
+  const importedSpecifiers = new Set<string>();
 
   const resAbsolute = (resPath: string): string =>
     resRoot === '.'
@@ -221,7 +271,7 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     }
   };
   const collectFromText = (contents: string): void => {
-    for (const match of contents.matchAll(MENTIONED_NAME_PATTERN)) mentionedNames.add(match[0]);
+    collectMentionedNames(contents, mentionedNames);
     for (const match of contents.matchAll(RESOURCE_PATH_PATTERN)) {
       const resourcePath = (match[1] ?? '').trim();
       if (resourcePath.includes('${') || resourcePath.includes('`')) {
@@ -245,6 +295,9 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     }
     textSourceCount++;
     collectFromText(contents);
+    if (CODE_EXTENSIONS.has(extensionOf(wirePath))) {
+      collectImportedSpecifiers(contents, importedSpecifiers);
+    }
     const resPath = wireToRes(wirePath);
     if (resPath !== null && SCANNABLE_RESOURCE.test(resPath)) scanned.add(resPath);
   }
@@ -318,20 +371,6 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     }
   }
 
-  // A pre-packed atlas (`assets/.atlas/`): the manifest and every sheet it lists.
-  if (resFiles.has(ATLAS_MANIFEST)) {
-    addResource(ATLAS_MANIFEST);
-    try {
-      const parsed = JSON.parse(await readFile(resAbsolute(ATLAS_MANIFEST), 'utf8')) as {
-        sheets?: { id?: string; file?: string }[];
-      };
-      for (const sheet of parsed.sheets ?? []) {
-        addResource(`${ATLAS_SHEET_DIR}${sheet.file ?? `${sheet.id}.png`}`);
-      }
-    } catch {
-      warnings.push(`Failed to read the packed atlas manifest: ${ATLAS_MANIFEST}`);
-    }
-  }
   await drain();
 
   // Only files that exist ship; a reference to nothing is reported, not embedded as a miss.
@@ -352,7 +391,12 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     warnings.push(`Referenced resource not found: res://${resPath}`);
   }
 
-  const mentions = (name: string): boolean => mentionedNames.has(name);
+  const dependencies = options.dependencies;
+  const mentions = (name: string): boolean =>
+    mentionedNames.has(name) || (dependencies?.mentionedNames.has(name) ?? false);
+  const imports = (name: string): boolean =>
+    importsPackage(importedSpecifiers, name) ||
+    (dependencies ? importsPackage(dependencies.importedSpecifiers, name) : false);
   const scenePaths = allSceneLike.filter(
     path => path.toLowerCase().endsWith('.pix3scene') && !isPrefabPath(path)
   );
@@ -363,8 +407,11 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
     entryScenePath,
     assetPaths,
     mentionedNames,
+    importedSpecifiers,
     usesSpine: mentions('SpineSkeleton2D'),
-    usesPostProcessing: mentions('PostProcess'),
+    // A PostProcess node, or a script / library that imports the package itself: then the
+    // runtime's own import shares the one real copy instead of a stub beside it.
+    usesPostProcessing: mentions('PostProcess') || imports('postprocessing'),
     usesNetwork: NETWORK_MENTION_NAMES.some(mentions),
     localization,
     netKindPrefabs: assetPaths

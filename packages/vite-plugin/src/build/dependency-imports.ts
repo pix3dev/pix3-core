@@ -4,6 +4,7 @@ import { extname, join, relative, sep } from 'node:path';
 import * as vite from 'vite';
 
 import { findPackageDir } from '../dev-info.ts';
+import { collectImportedSpecifiers, collectMentionedNames, type SourceMentions } from './scan.ts';
 
 /**
  * N11 (plan §B.6 item 2): what a project dependency imports from `@pix3/runtime`. The scan of
@@ -222,7 +223,7 @@ export interface DependencyScanOptions {
   readonly parse: (code: string) => unknown;
 }
 
-export interface DependencyScan extends RuntimeImportFindings {
+export interface DependencyScan extends RuntimeImportFindings, SourceMentions {
   /** `package → files parsed`, for the log and the report. */
   readonly parsed: Record<string, number>;
 }
@@ -231,12 +232,18 @@ export interface DependencyScan extends RuntimeImportFindings {
  * Parse every source of the given packages that mentions `@pix3/runtime` at all (a cheap text
  * test first: three's one file is a megabyte). Opaque findings carry the package name and the
  * path relative to it.
+ *
+ * Every source read is also scanned the way the project's own are (`mentionedNames`, the import
+ * specifiers): a library script that imports only `Script` and calls `this.scene.tween`,
+ * `.physics2d`, `juice.trail()` or `addComponent('core:Fade')` reaches modules no import names.
  */
 export const scanDependencyImports = async (
   options: DependencyScanOptions
 ): Promise<DependencyScan> => {
   const findings: RuntimeImportFindings = { names: new Set(), opaque: [] };
   const parsed: Record<string, number> = {};
+  const mentionedNames = new Set<string>();
+  const importedSpecifiers = new Set<string>();
   for (const name of options.packages) {
     const dir = findPackageDir(options.root, name);
     if (!dir) continue;
@@ -248,6 +255,8 @@ export const scanDependencyImports = async (
       } catch {
         continue;
       }
+      collectMentionedNames(code, mentionedNames);
+      collectImportedSpecifiers(code, importedSpecifiers);
       if (!code.includes(RUNTIME_SPECIFIER)) continue;
       const label = `${name}/${relative(dir, file).split(sep).join('/')}`;
       try {
@@ -261,5 +270,5 @@ export const scanDependencyImports = async (
       }
     }
   }
-  return { ...findings, parsed };
+  return { ...findings, parsed, mentionedNames, importedSpecifiers };
 };

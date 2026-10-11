@@ -529,6 +529,20 @@ describe('level 1: references and prefabs', () => {
     ]);
   });
 
+  it('W_MANIFEST_EXPORT: the 1.x export: block, which no 2.x build reads', async () => {
+    const root = makeProject({});
+    writeFileSync(
+      join(root, 'pix3project.yaml'),
+      `${MANIFEST}export:\n  pruneUnusedAssets: true\n  includeGlobs: [audio/**]\n`
+    );
+    const report = await validateProject({ projectRoot: root });
+    const found = find(report, 'W_MANIFEST_EXPORT');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ file: 'pix3project.yaml', path: 'export', line: 6 });
+    expect(found[0].fix).toContain('vite.config.ts');
+    expect(codesOf(await run({}))).not.toContain('W_MANIFEST_EXPORT');
+  });
+
   it('W_UNUSED_ASSET: whole-project runs only', async () => {
     const files = {
       'sprites/used.png': PNG,

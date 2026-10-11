@@ -9,11 +9,17 @@
  * The table is only safe because of two invariants, both enforced by
  * `strippable-runtime-modules.spec.ts` against the real import graph of `packages/runtime/src`:
  *
- * 1. Every **value** importer of a listed module is either itself listed
- *    ({@link StrippableRuntimeModule.importers}), neutralised for this purpose
+ * 1. Every **value** importer of a listed module — and every module that reaches it through the
+ *    lazy getter that constructs it (`SceneService.physics2d`, `JuiceApi.trail`) — is either
+ *    itself listed ({@link StrippableRuntimeModule.importers}), neutralised for this purpose
  *    ({@link NEUTRALISED_IMPORTERS}), or explicitly excused as a lazy construction site
- *    ({@link StrippableRuntimeModule.lazyValueImporters}).
+ *    ({@link StrippableRuntimeModule.lazyValueImporters}); and that getter's name is a keep-name.
  * 2. Behaviour ids match `behaviors/register-behaviors.ts`.
+ *
+ * Besides its keep-names, a module is kept by any mention of one of its **value exports** (the
+ * build reads them from the real source: {@link valueExportNames}) — the barrel re-exports every
+ * one, so `import { pointInPolygon } from '@pix3/runtime'` must keep `collision-shapes-2d` rather
+ * than hand the game a stub that throws (or a constant that reads `undefined`).
  *
  * If the runtime grows a new importer of a listed module, the spec fails and the entry has to be
  * re-justified instead of quietly shipping a broken build.
@@ -28,8 +34,10 @@ export interface StrippableRuntimeModule {
    */
   readonly keepWhenMentioned: readonly string[];
   /**
-   * Value importers that are themselves entries in this table. Such a module can only be stripped
-   * once all of them are — the build runs that fixpoint.
+   * Entries of this table that keep this module alive: value importers, and modules that reach
+   * it through a lazy getter of a module that is always kept (`this.scene?.physics2d` in a
+   * behaviour that imports only the service's types). Such a module can only be stripped once all
+   * of them are — the build runs that fixpoint.
    */
   readonly importers?: readonly string[];
   /**
@@ -168,8 +176,10 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     // never writes the word cannot reach that getter — the NetworkService precedent, one line down.
     modulePath: 'core/Collision2DService',
     keepWhenMentioned: ['collision2d', 'Collision2D', 'Hitbox2D', 'core:Hitbox2D'],
-    // Hitbox2DBehavior imports only its TYPES, so it pins nothing; the behaviour is kept in step
-    // with the service through the shared `Hitbox2D` keep-name.
+    // Hitbox2DBehavior imports only its TYPES, but reaches the service through the lazy
+    // `scene.collision2d` getter: a kept behaviour (placed by a scene, or constructed by a script
+    // as `new Hitbox2DBehavior()`) must keep the service — so it is an importer for the fixpoint.
+    importers: ['behaviors/Hitbox2DBehavior'],
     lazyValueImporters: ['core/SceneService'],
   },
   {
@@ -192,8 +202,14 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
       'core:RevoluteJoint2D',
       'RevoluteJoint2D',
     ],
-    // The three behaviours import only types from here (same as Hitbox2D), so the keep-names
-    // above are what tie them together.
+    // The four behaviours import only types from here but reach the service through the lazy
+    // `scene.physics2d` getter (same as Hitbox2D): each one kept keeps the solver.
+    importers: [
+      'behaviors/PhysicsBody2DBehavior',
+      'behaviors/Collider2DBehavior',
+      'behaviors/PhysicsWorld2DBehavior',
+      'behaviors/RevoluteJoint2DBehavior',
+    ],
     lazyValueImporters: ['core/SceneService'],
   },
   {
@@ -244,9 +260,13 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
       'setNetworkPrefabTable',
       'NetworkedNode',
       'ReplicatedTransform',
+      // `SceneService.netNodes` builds a binder on `this.network`: the same lazy construction.
+      'netNodes',
     ],
     importers: ['behaviors/NetworkedNodeBehavior', 'behaviors/ReplicatedTransformBehavior'],
-    lazyValueImporters: ['core/SceneService'],
+    // `NetworkNodeBinder` reads `host.network`, but only `SceneService.netNodes` constructs it
+    // (a keep-name above), so it reaches the service only where the project said so.
+    lazyValueImporters: ['core/SceneService', 'core/NetworkNodeBinder'],
   },
 ];
 
@@ -256,13 +276,16 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
  * it) is kept by.
  */
 export const resolveStrippableRuntimeModules = (
-  mentions: (name: string) => boolean
+  mentions: (name: string) => boolean,
+  /** The module's value exports (from its real source); each one keeps it like a keep-name. */
+  exportsOf: (modulePath: string) => readonly string[] = () => []
 ): readonly StrippableRuntimeModule[] => {
   const byPath = new Map(STRIPPABLE_RUNTIME_MODULES.map(entry => [entry.modulePath, entry]));
   const stripped = new Set(
-    STRIPPABLE_RUNTIME_MODULES.filter(entry => !entry.keepWhenMentioned.some(mentions)).map(
-      entry => entry.modulePath
-    )
+    STRIPPABLE_RUNTIME_MODULES.filter(
+      entry =>
+        !entry.keepWhenMentioned.some(mentions) && !exportsOf(entry.modulePath).some(mentions)
+    ).map(entry => entry.modulePath)
   );
 
   // A module survives as long as anything that imports it survives. Iterate until that settles:
@@ -282,16 +305,14 @@ export const resolveStrippableRuntimeModules = (
   return STRIPPABLE_RUNTIME_MODULES.filter(entry => stripped.has(entry.modulePath));
 };
 
-/**
- * A drop-in replacement for a runtime module's source: same value exports, but every class throws
- * if anything ever constructs it. Derived from the real source rather than hardcoded, so a renamed
- * export cannot silently drift — and if a name is missed, the bundler fails the build with "no
- * matching export" instead of shipping something broken.
- *
- * Types and interfaces need no stubs: the bundler erases type-only usages, so the importing module
- * no longer references those names at all.
- */
-export const buildStrippedModuleSource = (moduleSource: string, modulePath: string): string => {
+interface ValueExports {
+  readonly classNames: ReadonlySet<string>;
+  readonly functionNames: ReadonlySet<string>;
+  readonly otherNames: ReadonlySet<string>;
+}
+
+/** The value exports of a runtime module's source, by kind (what the stub has to re-declare). */
+const valueExportsOf = (moduleSource: string): ValueExports => {
   const classNames = new Set<string>();
   const functionNames = new Set<string>();
   const otherNames = new Set<string>();
@@ -327,6 +348,26 @@ export const buildStrippedModuleSource = (moduleSource: string, modulePath: stri
       }
     }
   }
+  return { classNames, functionNames, otherNames };
+};
+
+/** Every value export name of a module's source (the names that keep it besides the table's). */
+export const valueExportNames = (moduleSource: string): string[] => {
+  const { classNames, functionNames, otherNames } = valueExportsOf(moduleSource);
+  return [...classNames, ...functionNames, ...otherNames];
+};
+
+/**
+ * A drop-in replacement for a runtime module's source: same value exports, but every class throws
+ * if anything ever constructs it. Derived from the real source rather than hardcoded, so a renamed
+ * export cannot silently drift — and if a name is missed, the bundler fails the build with "no
+ * matching export" instead of shipping something broken.
+ *
+ * Types and interfaces need no stubs: the bundler erases type-only usages, so the importing module
+ * no longer references those names at all.
+ */
+export const buildStrippedModuleSource = (moduleSource: string, modulePath: string): string => {
+  const { classNames, functionNames, otherNames } = valueExportsOf(moduleSource);
 
   const strippedError = (name: string): string =>
     JSON.stringify(

@@ -126,6 +126,23 @@ describe('scanDependencyImports / listPackageSources', () => {
     expect(scan.parsed).toEqual({ 'game-kit': 2 });
   });
 
+  it('scans every source it reads for mentions and imports, like the project own', async () => {
+    // A library script that imports only `Script` and reaches the rest through `this.scene`.
+    const root = packageRoot({
+      'node_modules/fx-kit/package.json': '{"name":"fx-kit"}',
+      'node_modules/fx-kit/index.js':
+        "import { Script } from '@pix3/runtime';\nexport class Pulse extends Script {\n  onStart() { this.scene.tween.to(this.node, {}); this.scene.juice.trail(this.node); this.node.addComponent('core:Fade'); }\n}\n",
+      'node_modules/fx-kit/helpers.js':
+        "import { EffectComposer } from 'postprocessing';\nexport const go = s => s.physics2d;\n",
+    });
+    const scan = await scanDependencyImports({ root, packages: ['fx-kit'], parse: parseAst });
+    expect([...scan.names]).toEqual(['Script']);
+    for (const name of ['tween', 'trail', 'core:Fade', 'physics2d', 'EffectComposer']) {
+      expect(scan.mentionedNames.has(name), name).toBe(true);
+    }
+    expect(scan.importedSpecifiers.has('postprocessing')).toBe(true);
+  });
+
   it('reports a file that does not parse as opaque, naming it', async () => {
     const root = packageRoot({
       'node_modules/broken/package.json': '{"name":"broken"}',

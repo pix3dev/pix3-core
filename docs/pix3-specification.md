@@ -634,7 +634,7 @@ still starts.
 
 The project manifest (`pix3project.yaml`) additionally stores `projectType`, `targetPlatform` (`mobile`|`desktop`|`universal`) and `quality` (`antialias`, `shadows`, `maxPixelRatio`; defaults derived from the platform). Play mode (`GamePlaySessionService`) and the player (`runtimeQuality` of `virtual:pix3/scene-manifest`) apply the preset. The editor never writes the manifest (except backfilling `metadata.projectId`); its keys are listed in the kit's `pix3-scene-format/project-files.md` → "`pix3project.yaml`".
 
-The 1.x manifest's `export:` block (`pruneUnusedAssets`, `extraRootScenePaths`, `includeGlobs`, `excludeGlobs`) is still parsed but the 2.x build does not apply it yet; build options are `pix3({ … })` in `vite.config.ts` (`packages/vite-plugin/README.md`), and what a build shipped and why is `dist/<name>.report.json`.
+The 1.x manifest's `export:` block (`pruneUnusedAssets`, `extraRootScenePaths`, `includeGlobs`, `excludeGlobs`) is gone: no 2.x build reads it, the editor's manifest model drops it, and `pix3 validate` warns `W_MANIFEST_EXPORT` where one is left. Build options are `pix3({ … })` in `vite.config.ts` (`packages/vite-plugin/README.md`), and what a build shipped and why is `dist/<name>.report.json`.
 
 `pix3 new` also installs the **agent kit** (`pix3 kit`: `AGENTS.md`, `CLAUDE.md`, `.claude/skills/pix3-*`, the bot-policy types, `.pix3/kit-manifest.json`; `packages/cli/README.md` → "`pix3 kit`"); the agent's MCP configuration is `pix3 agent-setup`. A 1.x kit is migrated by `pix3 kit --migrate` (`.plans/kit.md`).
 

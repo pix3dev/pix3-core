@@ -5,16 +5,20 @@ import { gunzipSync } from 'node:zlib';
 
 import { unzipSync } from 'fflate';
 import { afterEach, describe, expect, it } from 'vitest';
-import { build as viteBuild } from 'vite';
+import { build as viteBuild, type InlineConfig } from 'vite';
 
 import { pix3, type Pix3Options } from '../index.ts';
 import {
   DOT_PNG,
   FIXTURE_FILES,
   FIXTURE_MANIFEST,
+  GLTF_LIB,
   NAMED_IMPORT_LIB,
   NAMESPACE_IMPORT_LIB,
+  POLYGON_LIB,
+  SCENE_API_LIB,
   UNDECLARED_IMPORT_LIB,
+  UNDECLARED_POLYGON_LIB,
   usesLibScript,
   writeFixtureProject,
   type FixtureProjectOptions,
@@ -51,12 +55,17 @@ const project = (files = FIXTURE_FILES, options: FixtureProjectOptions = {}): st
   return root;
 };
 
-const runBuild = async (root: string, options: Pix3Options = {}): Promise<string> => {
+const runBuild = async (
+  root: string,
+  options: Pix3Options = {},
+  extra: InlineConfig = {}
+): Promise<string> => {
   await viteBuild({
     configFile: false,
     root,
     logLevel: 'silent',
     plugins: [pix3(options)],
+    ...extra,
   });
   return join(root, 'dist');
 };
@@ -384,6 +393,158 @@ describe('build: a dependency that imports @pix3/runtime (N11, plan §B.6 item 2
       await runBuild(root, { strip: { keep: ['Slider2D'] } });
       expect(readBuildRecord(root)?.stripped).not.toContain('nodes/2D/UI/Slider2D');
       expect(html(join(root, 'dist'))).not.toContain('Slider2D was stripped');
+    },
+    BUILD_TIMEOUT_MS
+  );
+});
+
+describe('build: what keeps a stripped module or a library stub (review findings)', () => {
+  const script = (
+    name: string,
+    body: string,
+    imports = "import { Script } from '@pix3/runtime';"
+  ) =>
+    `${imports}\nexport class ${name} extends Script {\n  onStart(): void {\n    ${body}\n  }\n}\n`;
+
+  it(
+    'a project script importing postprocessing itself gets the real library, and so does the runtime',
+    async () => {
+      const root = project({
+        ...FIXTURE_FILES,
+        'scripts/Fx.ts': script(
+          'Fx',
+          'void new EffectComposer();',
+          "import { Script } from '@pix3/runtime';\nimport { EffectComposer } from 'postprocessing';"
+        ),
+      });
+      await runBuild(root);
+      const page = html(join(root, 'dist'));
+      expect(page).not.toContain('postprocessing was stripped from this build');
+      expect(report(root).libraries.postprocessing).toBe('bundled (static import)');
+      expect(Object.keys(report(root).code.packages)).toContain('postprocessing');
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'a dependency importing GLTFLoader gets the real loader (only the runtime importer is stubbed)',
+    async () => {
+      const { files, options } = withLib(GLTF_LIB, 'makeLoader', false);
+      const root = project(
+        {
+          ...files,
+          // Called, so the loader survives tree-shaking.
+          'scripts/UsesLib.ts': script(
+            'UsesLib',
+            '(globalThis as { loader?: unknown }).loader = makeLoader();',
+            "import { Script } from '@pix3/runtime';\nimport { makeLoader } from 'model-kit';"
+          ),
+        },
+        options
+      );
+      await runBuild(root);
+      // The real loader is in the bundle for the library (the extension table is its body).
+      expect(html(join(root, 'dist'))).toContain('KHR_materials');
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'a behaviour attached from code keeps the service it reaches through scene.physics2d',
+    async () => {
+      const root = project({
+        ...FIXTURE_FILES,
+        'scripts/AddsBody.ts': script(
+          'AddsBody',
+          'this.node?.addComponent(new PhysicsBody2DBehavior());',
+          "import { Script, PhysicsBody2DBehavior } from '@pix3/runtime';"
+        ),
+      });
+      await runBuild(root);
+      const stripped = readBuildRecord(root)?.stripped ?? [];
+      expect(stripped).not.toContain('behaviors/PhysicsBody2DBehavior');
+      expect(stripped).not.toContain('core/Physics2DService');
+      expect(html(join(root, 'dist'))).not.toContain('Physics2DService was stripped');
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'a non-class export (pointInPolygon) keeps its module, from a script or a declared library',
+    async () => {
+      const fromScript = project({
+        ...FIXTURE_FILES,
+        'scripts/Hit.ts': script(
+          'Hit',
+          'void pointInPolygon;',
+          "import { Script, pointInPolygon } from '@pix3/runtime';"
+        ),
+      });
+      await runBuild(fromScript);
+      expect(readBuildRecord(fromScript)?.stripped).not.toContain('core/collision-shapes-2d');
+      expect(html(join(fromScript, 'dist'))).not.toContain('pointInPolygon was stripped');
+
+      const { files, options } = withLib(POLYGON_LIB, 'inside');
+      const fromLib = project(files, options);
+      await runBuild(fromLib);
+      expect(readBuildRecord(fromLib)?.stripped).not.toContain('core/collision-shapes-2d');
+      expect(readBuildRecord(fromLib)?.stripped).toContain('nodes/2D/UI/Slider2D');
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'the transform net knows every stubbed value export, not only the keep-names',
+    async () => {
+      const { files, options } = withLib(UNDECLARED_POLYGON_LIB, 'inside', false);
+      const root = project(files, options);
+      await expect(runBuild(root)).rejects.toThrow(
+        /undeclared-polygon-lib\/index\.js imports pointInPolygon from @pix3\/runtime, which this build stripped/
+      );
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'a library script reaching scene.tween / scene.physics2d keeps them (its text is scanned)',
+    async () => {
+      const { files, options } = withLib(SCENE_API_LIB, 'pulse');
+      const root = project(files, options);
+      await runBuild(root);
+      const stripped = readBuildRecord(root)?.stripped ?? [];
+      expect(stripped).not.toContain('core/TweenApi');
+      expect(stripped).not.toContain('core/Physics2DService');
+      expect(stripped).toContain('nodes/2D/UI/Slider2D');
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'resolve.preserveSymlinks still strips (real paths compared), and the report says what was',
+    async () => {
+      const root = project();
+      await runBuild(root, {}, { resolve: { preserveSymlinks: true } });
+      const page = html(join(root, 'dist'));
+      expect(page).toContain('Slider2D was stripped from this build');
+      expect(page).toContain('GLTFLoader was stripped from this build');
+      const sizes = report(root);
+      expect(sizes.strip.enabled).toBe(true);
+      expect(sizes.strip.stripped).toContain('nodes/2D/UI/Slider2D');
+      expect(sizes.libraries.GLTFLoader).toMatch(/^stub/);
+      expect(sizes.libraries.yaml).toMatch(/^stub/);
+    },
+    BUILD_TIMEOUT_MS
+  );
+
+  it(
+    'a model named in upper case (crate.GLB) keeps GLTFLoader',
+    async () => {
+      const root = project({
+        ...FIXTURE_FILES,
+        'scripts/LoadsModel.ts': script('LoadsModel', "void 'res://models/crate.GLB';"),
+      });
+      await runBuild(root);
+      expect(report(root).libraries.GLTFLoader).toBe('bundled');
     },
     BUILD_TIMEOUT_MS
   );
