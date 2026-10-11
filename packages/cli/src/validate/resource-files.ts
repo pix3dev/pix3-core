@@ -1,6 +1,7 @@
 import { scanScriptLocalizationKeys } from '@pix3/runtime';
 import { parse as parseYaml } from 'yaml';
 
+import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { diagnostic, type Diagnostic, type DiagnosticCode } from './diagnostics.ts';
 import { toProjectPath, type ProjectFiles } from './project.ts';
 import { inspectProjectSvg, isSvgPath } from './svg.ts';
@@ -130,9 +131,9 @@ export interface LocalizationPlan {
  */
 export const resolveLocalization = (project: ProjectFiles): LocalizationPlan | null => {
   let block: unknown;
-  if (project.has('pix3project.yaml')) {
+  if (project.has(PROJECT_MANIFEST_FILE)) {
     try {
-      const manifest = parseYaml(project.readText('pix3project.yaml')) as unknown;
+      const manifest = parseYaml(project.readText(PROJECT_MANIFEST_FILE)) as unknown;
       block = isRecord(manifest) ? manifest.localization : undefined;
     } catch {
       block = undefined;
@@ -216,13 +217,13 @@ export const checkLocaleTables = (
       let line: number | undefined;
       const at = manifestPathOf(plan, locale);
       if (plan.declared) {
-        const parsed = parseYamlWithLines(project.readText('pix3project.yaml'));
+        const parsed = parseYamlWithLines(project.readText(PROJECT_MANIFEST_FILE));
         line = 'errors' in parsed ? undefined : parsed.lineOf(at);
       }
       diagnostics.push(
         diagnostic({
           code: code('LOCALE_MISSING'),
-          file: plan.declared ? 'pix3project.yaml' : table,
+          file: plan.declared ? PROJECT_MANIFEST_FILE : table,
           ...(plan.declared ? { path: formatPath(at), line } : {}),
           message: `${role} "${locale}" has no table ${table}: the game loads it empty — ${consequence}.`,
           fix: `write ${table} (copy the default locale's table), or drop "${locale}" from localization:`,

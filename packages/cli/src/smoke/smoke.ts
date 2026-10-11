@@ -24,8 +24,8 @@ import {
 
 import { ProjectFiles } from '../validate/project.ts';
 import { resolveLocalization } from '../validate/resource-files.ts';
-import { scanUserScripts } from '../validate/user-scripts.ts';
 import type { ScriptImportMap } from '../validate/script-build.ts';
+import { scanUserScripts } from '../validate/user-scripts.ts';
 import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
 import type {

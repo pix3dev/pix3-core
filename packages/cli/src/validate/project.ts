@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import { sha256Hex } from '../fs-util.ts';
+import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { isRecord } from './yaml-doc.ts';
 
 /**
@@ -131,9 +132,9 @@ export interface ProjectManifestInfo {
 
 /** The bits of `pix3project.yaml` validation cares about; `{}` when absent or unreadable. */
 export const readManifestInfo = (project: ProjectFiles): ProjectManifestInfo => {
-  if (!project.has('pix3project.yaml')) return {};
+  if (!project.has(PROJECT_MANIFEST_FILE)) return {};
   try {
-    const data = parseYaml(project.readText('pix3project.yaml')) as unknown;
+    const data = parseYaml(project.readText(PROJECT_MANIFEST_FILE)) as unknown;
     if (!isRecord(data)) return {};
     return typeof data.targetPlatform === 'string' ? { targetPlatform: data.targetPlatform } : {};
   } catch {

@@ -223,9 +223,10 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     return 2;
   }
   const scenePath = toProjectRelative(root, absolute);
+  const sceneText = readFileSync(absolute, 'utf8');
   let scene: Record<string, unknown>;
   try {
-    scene = parseSceneText(readFileSync(absolute, 'utf8'));
+    scene = parseSceneText(sceneText);
   } catch (error) {
     if (!(error instanceof SceneParseError)) throw error;
     io.stderr(`pix3 tree: ${scenePath} is ${error.message}.\n`);
@@ -263,7 +264,7 @@ export const runTreeCli = async (argv: readonly string[], io: TreeIo): Promise<n
     return 0;
   }
   const shown = countTreeNodes(nodes);
-  const total = summarizeScene(scenePath, readFileSync(absolute, 'utf8')).nodes;
+  const total = summarizeScene(scenePath, sceneText).nodes;
   const filters = [
     args.types ? `matching ${args.types.join(',')} (with ancestors)` : undefined,
     args.depth !== undefined ? `to depth ${args.depth}` : undefined,

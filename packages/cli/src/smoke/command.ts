@@ -8,7 +8,7 @@ import { describeUnsynced, syncEditor } from '../editor-sync.ts';
 import type { CliIo } from '../io.ts';
 import { findProjectRoot, PROJECT_MANIFEST_FILE } from '../manifest.ts';
 import { cliPackageRoot, resolveEsbuild } from '../package-root.ts';
-import { ProjectFiles } from '../validate/project.ts';
+import { ProjectFiles, toProjectPath } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
 import { SMOKE_WORKER_FILE, withSmokeBundle } from './entry.ts';
 import {
@@ -124,10 +124,7 @@ const readManifest = (root: string): ManifestBits => {
     const height = typeof size.height === 'number' && size.height > 0 ? size.height : 1080;
     const defaultScene =
       typeof data.defaultExportScenePath === 'string' && data.defaultExportScenePath.trim()
-        ? data.defaultExportScenePath
-            .trim()
-            .replace(/^res:\/\//i, '')
-            .replace(/^\/+/, '')
+        ? (toProjectPath(data.defaultExportScenePath) ?? undefined)
         : undefined;
     return {
       viewport: { width, height },

@@ -6,9 +6,10 @@ import {
   type ScriptRegistry,
 } from '@pix3/runtime';
 
+import { PROJECT_MANIFEST_FILE } from '../manifest.ts';
+import { scanExportNames } from '../script-rule.ts';
 import { diagnostic, type Diagnostic } from './diagnostics.ts';
 import { toProjectPath, type ProjectFiles } from './project.ts';
-import { scanExportNames } from '../script-rule.ts';
 import { formatPath, isRecord, parseYamlWithLines, type DocPath } from './yaml-doc.ts';
 
 /**
@@ -18,13 +19,12 @@ import { formatPath, isRecord, parseYamlWithLines, type DocPath } from './yaml-d
  * `src/scripts/`, and it must export a Script class named like the file. Anything else and the
  * game starts without the singleton — every `getAutoload` returns null — so each is an error.
  */
-const MANIFEST = 'pix3project.yaml';
 
 const FIX_SHAPE = '- singleton: GameState\n    scriptPath: scripts/GameState.ts';
 
 export const checkAutoloads = (project: ProjectFiles): Diagnostic[] => {
-  if (!project.has(MANIFEST)) return [];
-  const parsed = parseYamlWithLines(project.readText(MANIFEST));
+  if (!project.has(PROJECT_MANIFEST_FILE)) return [];
+  const parsed = parseYamlWithLines(project.readText(PROJECT_MANIFEST_FILE));
   if ('errors' in parsed || !isRecord(parsed.data)) return [];
   const raw = parsed.data.autoloads;
   if (raw === undefined || raw === null) return [];
@@ -33,7 +33,7 @@ export const checkAutoloads = (project: ProjectFiles): Diagnostic[] => {
     out.push(
       diagnostic({
         code: 'E_AUTOLOAD',
-        file: MANIFEST,
+        file: PROJECT_MANIFEST_FILE,
         path: formatPath(at),
         line: parsed.lineOf(at),
         message,
@@ -121,8 +121,8 @@ export const checkAutoloadTypes = (
   project: ProjectFiles,
   registry: ScriptRegistry
 ): Diagnostic[] => {
-  if (!project.has(MANIFEST)) return [];
-  const parsed = parseYamlWithLines(project.readText(MANIFEST));
+  if (!project.has(PROJECT_MANIFEST_FILE)) return [];
+  const parsed = parseYamlWithLines(project.readText(PROJECT_MANIFEST_FILE));
   if ('errors' in parsed || !isRecord(parsed.data) || !Array.isArray(parsed.data.autoloads)) {
     return [];
   }
@@ -141,7 +141,7 @@ export const checkAutoloadTypes = (
     out.push(
       diagnostic({
         code: 'E_AUTOLOAD',
-        file: MANIFEST,
+        file: PROJECT_MANIFEST_FILE,
         path: formatPath(at),
         line: parsed.lineOf(at),
         message: `${file} compiles, but registers no Script class ${type.slice('user:'.length)} (${type}): autoload "${normalized.singleton}" never runs.`,
