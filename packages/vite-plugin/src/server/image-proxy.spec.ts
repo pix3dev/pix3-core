@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -149,8 +149,10 @@ describe('keys', () => {
     });
     const file = join(s.home, 'keys.json');
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ gemini: GEMINI_KEY });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(statSync(s.home).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') {
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(statSync(s.home).mode & 0o077).toBe(0);
+    }
 
     const statusText = await (await s.editor('/__pix3/api/keys')).text();
     expect(statusText).not.toContain(GEMINI_KEY);
@@ -161,14 +163,11 @@ describe('keys', () => {
   });
 
   it('falls back to .pix3/local/keys.json when the home directory is not writable', async () => {
-    if (process.getuid?.() === 0) return; // root writes anywhere
     const parent = mkdtempSync(join(tmpdir(), 'pix3-ro-'));
-    mkdirSync(join(parent, 'locked'));
-    chmodSync(join(parent, 'locked'), 0o500);
-    cleanups.push(() => {
-      chmodSync(join(parent, 'locked'), 0o700);
-      rmSync(parent, { recursive: true, force: true });
-    });
+    // A regular file in the directory path refuses mkdir on Windows and POSIX alike,
+    // including root; chmod does not make a directory unwritable on Windows.
+    writeFileSync(join(parent, 'locked'), 'not a directory');
+    cleanups.push(() => rmSync(parent, { recursive: true, force: true }));
     const s = await setup(undefined, join(parent, 'locked', '.pix3'));
     expect(await json(await putKey(s, 'openai', OPENAI_KEY))).toMatchObject({
       set: true,
@@ -176,7 +175,7 @@ describe('keys', () => {
     });
     const local = join(s.p.root, '.pix3', 'local', 'keys.json');
     expect(JSON.parse(readFileSync(local, 'utf8'))).toEqual({ openai: OPENAI_KEY });
-    expect(statSync(local).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(local).mode & 0o777).toBe(0o600);
     // The proxy reads it from there.
     const answer = await s.editor('/__pix3/api/proxy/openai/v1/images/generations', {
       method: 'POST',

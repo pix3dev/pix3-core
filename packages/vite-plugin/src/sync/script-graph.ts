@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, sep } from 'node:path';
 
-import type { EnvironmentModuleNode, ViteDevServer } from 'vite';
+import { normalizePath, type EnvironmentModuleNode, type ViteDevServer } from 'vite';
 
 import { isExcludedPath } from '../files/scan.ts';
 import { relativeInside } from '../module-paths.ts';
@@ -74,7 +74,7 @@ export class ScriptGraph {
   constructor(root: string, server: () => ViteDevServer | null, ignored: readonly string[] = []) {
     this.root = root;
     this.server = server;
-    this.ignored = ignored.map(dir => dir.replace(/[\\/]+$/, ''));
+    this.ignored = ignored.map(dir => normalizePath(dir).replace(/\/+$/, ''));
   }
 
   /** Module id (absolute path, maybe with a query) → wire path, when it is a project source. */
@@ -82,8 +82,7 @@ export class ScriptGraph {
     const file = id.split('?')[0];
     if (!isAbsolute(file) || !SOURCE_EXTENSION.test(file)) return null;
     // A pre-bundled dependency in an in-project `cacheDir` is not the project's code.
-    if (this.ignored.some(dir => file.startsWith(`${dir}${sep}`) || file.startsWith(`${dir}/`)))
-      return null;
+    if (this.ignored.some(dir => normalizePath(file).startsWith(`${dir}/`))) return null;
     const wirePath = relativeInside(this.root, file);
     return wirePath === null || isExcludedPath(wirePath) ? null : wirePath;
   }
@@ -153,7 +152,7 @@ export class ScriptGraph {
   modulesOf(wirePath: string): EnvironmentModuleNode[] {
     const env = this.graph();
     if (!env) return [];
-    return [...(env.moduleGraph.getModulesByFile(this.absoluteOf(wirePath)) ?? [])];
+    return [...(env.moduleGraph.getModulesByFile(normalizePath(this.absoluteOf(wirePath))) ?? [])];
   }
 
   /** True when the editor executes `wirePath`: globbed, or imported (transitively) by a root. */

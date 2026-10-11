@@ -42,7 +42,7 @@ export const KEYS_FILE = 'keys.json';
 export const LOCAL_KEYS_PATH = '.pix3/local/keys.json';
 
 /** Errors that mean "this directory is not ours to write" — the cue for the project fallback. */
-const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS']);
+const UNWRITABLE = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOTDIR']);
 
 const statusOf = (key: string | undefined): KeyStatus =>
   key ? { set: true, last4: key.length >= 12 ? key.slice(-4) : undefined } : { set: false };

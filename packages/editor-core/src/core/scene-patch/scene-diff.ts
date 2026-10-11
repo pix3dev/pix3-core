@@ -189,8 +189,9 @@ const nodeLeafOps = (
 
 /**
  * `diff(A, B)`: the ops that turn a file whose norm is A into one whose norm is B. Structural ops
- * come first, computed against a simulated id tree (removals top-most only, then adds/moves in B's
- * DFS order); leaf ops of nodes on both sides and of the document head follow.
+ * come first, computed against a simulated id tree (top-most removals, then adds/moves in B's
+ * DFS order); leaf ops of nodes on both sides and of the document head follow. A removal with
+ * surviving descendants waits until the moves finish, so those descendants escape first.
  */
 export const diffScenes = (A: SavedSceneDocument, B: SavedSceneDocument): SceneOp[] => {
   const ia = indexNodes(A);
@@ -205,12 +206,20 @@ export const diffScenes = (A: SavedSceneDocument, B: SavedSceneDocument): SceneO
     parentOf.set(id, entry.parentId);
   }
 
+  const deferredRemovals: SceneOp[] = [];
+  const hasSurvivor = (def: SceneNodeDefinition): boolean =>
+    (def.children ?? []).some(child => ib.has(child.id) || hasSurvivor(child));
   for (const [id, entry] of ia) {
     if (ib.has(id)) continue;
     if (entry.parentId !== null && !ib.has(entry.parentId)) continue;
-    ops.push({ kind: 'removeNode', nodeId: id });
-    const siblings = tree.get(entry.parentId)!;
-    siblings.splice(siblings.indexOf(id), 1);
+    const removal: SceneOp = { kind: 'removeNode', nodeId: id };
+    if (hasSurvivor(entry.def)) {
+      deferredRemovals.push(removal);
+    } else {
+      ops.push(removal);
+      const siblings = tree.get(entry.parentId)!;
+      siblings.splice(siblings.indexOf(id), 1);
+    }
   }
 
   const visit = (
@@ -256,6 +265,8 @@ export const diffScenes = (A: SavedSceneDocument, B: SavedSceneDocument): SceneO
     });
   };
   visit(null, B.root);
+
+  ops.push(...deferredRemovals);
 
   ops.push(...leafOps(null, flattenHead(A), flattenHead(B)));
   for (const [id, eb] of ib) {

@@ -246,7 +246,7 @@ describe('installAgentConfig', () => {
     for (const file of ['.mcp.json', CODEX_CONFIG_FILE]) {
       expect(read(root, file)).not.toContain(TOKEN);
       expect(read(root, file)).not.toContain('--wsHeaders');
-      expect(read(root, file)).toContain(`--config=${CONFIG}`);
+      expect(read(root, file)).toContain(JSON.stringify(`--config=${CONFIG}`));
       // The .bak keeps what was there — the token too; it is the user's to delete.
       expect(read(root, `${file}.bak`)).toContain(TOKEN);
     }
@@ -299,7 +299,7 @@ describe('pix3 agent-setup', () => {
     // The token is in the 0600 --config file, never in the project nor in what is printed.
     const token = readCdpToken(HOME_ENV) as string;
     const config = localMcpConfigPath(HOME_ENV);
-    expect(read(root, '.mcp.json')).toContain(`--config=${config}`);
+    expect(read(root, '.mcp.json')).toContain(JSON.stringify(`--config=${config}`));
     expect(read(root, '.mcp.json')).not.toContain(token);
     expect(readFileSync(config, 'utf8')).toContain(`Bearer ${token}`);
     if (process.platform !== 'win32') expect(statSync(config).mode & 0o777).toBe(0o600);
@@ -349,7 +349,9 @@ describe('pix3 agent-setup', () => {
     expect(await runAgentSetupCli(['codex'], run.io)).toBe(0);
     expect(run.out()).toContain('ws://127.0.0.1:9337/pix3');
     expect(run.out()).toContain('the port it recorded');
-    expect(read(root, CODEX_CONFIG_FILE)).toContain(`--config=${localMcpConfigPath(env)}`);
+    expect(read(root, CODEX_CONFIG_FILE)).toContain(
+      JSON.stringify(`--config=${localMcpConfigPath(env)}`)
+    );
     expect(readFileSync(localMcpConfigPath(env), 'utf8')).toContain('ws://127.0.0.1:9337/pix3');
     // pix3 editor moved again: the --config file follows, the project files stay as they are.
     writeChromeState({ port: 9338, profile: '/p', startedAt: 'now' }, env);
@@ -398,8 +400,10 @@ describe('pix3 agent-setup', () => {
       // The port is stored: the next run needs no --cdp-port.
       expect(JSON.parse(readFileSync(remoteCdpPortPath(env), 'utf8'))).toEqual({ port });
       // The project's files and the output name the config file, never the token.
-      for (const text of [read(root, '.mcp.json'), read(root, CODEX_CONFIG_FILE), run.out()]) {
-        expect(text).toContain(`--config=${config}`);
+      expect(run.out()).toContain(`--config=${config}`);
+      expect(run.out()).not.toContain(TOKEN);
+      for (const text of [read(root, '.mcp.json'), read(root, CODEX_CONFIG_FILE)]) {
+        expect(text).toContain(JSON.stringify(`--config=${config}`));
         expect(text).not.toContain(TOKEN);
       }
       // A local entry is drift for a remote setup (and back): --repair switches.

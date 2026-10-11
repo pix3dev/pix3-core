@@ -3,8 +3,9 @@
 // `import.meta.hot`, no CSS import, no non-literal `import()`. Also prints the sizes (S7: ≤ 8 MB).
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const dist = new URL('../dist/', import.meta.url).pathname;
+const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const problems = [];
 const files = [];
 const walk = dir => {

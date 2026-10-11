@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseAst } from 'vite';
+import { normalizePath, parseAst } from 'vite';
 
 import {
   collectRuntimeImports,
@@ -113,7 +113,7 @@ describe('scanDependencyImports / listPackageSources', () => {
     });
     expect(
       listPackageSources(join(root, 'node_modules/game-kit')).map(file =>
-        file.slice(root.length + '/node_modules/game-kit/'.length)
+        normalizePath(file).slice(root.length + '/node_modules/game-kit/'.length)
       )
     ).toEqual(['dist/index.js', 'dist/other.js', 'src/index.ts']);
     const scan = await scanDependencyImports({

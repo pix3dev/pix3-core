@@ -6,6 +6,7 @@ import { MemoryStorage, wire } from './memory-storage.spec-helper';
 
 const EMPTY_NORM = { version: '1.0.0', root: [] };
 const SCENE = (name: string) => `version: 1.0.0\nroot:\n  - id: n\n    name: ${name}\n`;
+const services = new Set<ExternalChangeService>();
 
 function createService() {
   const storage = new MemoryStorage();
@@ -17,6 +18,7 @@ function createService() {
     logger,
     hostService: { projectPath: (path: string) => path, info: { tabId: 'me' } },
   });
+  services.add(service);
   let now = 1_000_000;
   // Timers never fire on their own: the spec drives every step with `tick()`.
   service.configureForTests({ now: () => now, stabilityIntervalMs: 1e9 });
@@ -48,6 +50,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const service of services) service.dispose();
+  services.clear();
   vi.restoreAllMocks();
 });
 
@@ -182,16 +186,20 @@ describe('ExternalChangeService — stabilisation window', () => {
 
   it('keeps re-reading a file past its "not readable" notice without a new report', async () => {
     const h = createService();
-    // Real timers this time (the loop must schedule its own re-reads), fast interval.
-    h.service.configureForTests({ stabilityIntervalMs: 5 });
     const path = 'scenes/a.pix3scene';
     const good = SCENE('loaded');
     h.storage.files.set(path, good);
     await h.diskState.setFromText(path, good, EMPTY_NORM);
     h.storage.files.set(path, 'root: [\n  - id: broken');
     h.service.report(path);
-    await vi.waitFor(() => expect(h.diskState.isPendingExternal(path)).toBe(true));
-    await new Promise(resolve => setTimeout(resolve, 30));
+    // Establish the settled parse failure before moving the synthetic clock. A fixed sleep
+    // races the asynchronous byte hashing, especially with Windows timer granularity.
+    await h.service.tick();
+    await h.service.tick();
+    expect(h.service.getUnreadablePaths()).toEqual([]);
+    // Real timers now: all subsequent re-reads must come from the loop, without another report.
+    h.service.configureForTests({ stabilityIntervalMs: 5 });
+    await h.service.tick();
     h.advance(UNREADABLE_NOTICE_MS);
     await vi.waitFor(() => expect(h.service.getUnreadablePaths()).toEqual([path]));
 

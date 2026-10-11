@@ -317,7 +317,16 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
         await Promise.resolve();
       }
       await new Promise<void>(resolveTurn => {
-        setTimeout(resolveTurn, 0);
+        // A posted message grants a real task turn without a timer's minimum delay (which can
+        // be ~16 ms on Windows). Hundreds of zero-delay timers made a six-second simulation
+        // take several seconds of wall-clock time even though the game uses manual time.
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => {
+          channel.port1.close();
+          channel.port2.close();
+          resolveTurn();
+        };
+        channel.port2.postMessage(null);
       });
     }
   };

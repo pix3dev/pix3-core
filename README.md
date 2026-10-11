@@ -2,7 +2,7 @@
 
 Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript project; `@pix3/vite-plugin` serves the editor on the same dev server at `/__pix3/`, writes scene edits back to the files, and builds playable HTML. Coding agents (Codex, Claude Code) work on the same files and drive the open editor through Chrome DevTools MCP.
 
-> **Status: pre-alpha.** The repository is seeded; `2.0.0-alpha.1` is the end of phase P1. Nothing here is published yet: the 1.6.x packages on npm come from [`pix3`](https://github.com/pix3dev/pix3).
+> **Status: development alpha.** P1 is implemented; cross-platform checks and end-to-end dogfood are being completed before `2.0.0-alpha.1`. Nothing here is published yet: the 1.6.x packages on npm come from [`pix3`](https://github.com/pix3dev/pix3).
 
 | Package                                        | npm                 | What it is                                                                                                          |
 | ---------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -22,6 +22,10 @@ npm test
 npm run lint
 npm run type-check
 ```
+
+CI runs these checks and the package scan on Linux, Windows and macOS. For changes to the scene
+writer, also run `npm run test:corpus` (requires the sibling `../DeepCore` checkout, or pass a
+project directory with `npm run test:corpus -- <dir>`).
 
 Docs: [`docs/pix3-specification.md`](docs/pix3-specification.md) (version of record), [`docs/nodes-and-systems.md`](docs/nodes-and-systems.md), [`docs/node-types-reference.md`](docs/node-types-reference.md). Code rules: [`AGENTS.md`](AGENTS.md).
 

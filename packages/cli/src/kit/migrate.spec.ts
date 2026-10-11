@@ -16,6 +16,7 @@ import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createProject } from '../new-project.ts';
+import { readManifestKitVersion } from '../manifest.ts';
 import { listTemplates } from '../templates.ts';
 import { ensureRuntimeTypes } from '../types/runtime-types.ts';
 import { USAGE } from '../usage.ts';
@@ -262,7 +263,7 @@ describe('pix3 kit --migrate', () => {
 
   const deepCore = join(repoRootOfCheckout(), '..', 'DeepCore');
   it.skipIf(!existsSync(join(deepCore, 'pix3project.yaml')))(
-    'a copy of DeepCore (1.6.2 kit): .mcp.json, pix3Hybrid and the 1.x kit text go, its own files stay',
+    'a copy of DeepCore (1.x kit): .mcp.json, pix3Hybrid and the 1.x kit text go, its own files stay',
     () => {
       const copy = join(scratch, 'DeepCore');
       cpSync(deepCore, copy, {
@@ -276,12 +277,14 @@ describe('pix3 kit --migrate', () => {
         file,
         existsSync(join(copy, file)) ? sha256(readFileSync(join(copy, file))) : null,
       ]);
+      const previousVersion = readProjectKitManifest(copy)?.version ?? readManifestKitVersion(copy);
+      expect(previousVersion).toMatch(/^1\./);
       const report = migrateKit(copy, kit);
       for (const [file, hash] of own) {
         if (hash)
           expect(sha256(readFileSync(join(copy, file as string))), file as string).toBe(hash);
       }
-      expect(report.from).toBe('1.6.2');
+      expect(report.from).toBe(previousVersion);
       const mcpLeft = existsSync(join(copy, '.mcp.json'))
         ? (JSON.parse(readFileSync(join(copy, '.mcp.json'), 'utf8')) as {
             mcpServers?: Record<string, unknown>;
@@ -305,7 +308,7 @@ describe('pix3 kit --migrate', () => {
           target
         ).toBe(true);
       }
-      expect(formatMigrationReport(report, copy)).toContain('1.6.2 →');
+      expect(formatMigrationReport(report, copy)).toContain(`${previousVersion} →`);
     },
     120_000
   );

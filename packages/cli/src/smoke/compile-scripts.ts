@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 import type { ScriptRegistry } from '@pix3/runtime';
 
 import type { ProjectFiles } from '../validate/project.ts';
@@ -78,11 +80,12 @@ export const compileAndImportScripts = async (
     const result = await esbuild.build({
       ...scriptBuildOptions(project, entries, 'pix3-smoke-scripts.ts'),
       platform: 'browser',
+      // Sources in the map are relative to this root, not the invoking CLI's cwd.
+      absWorkingDir: project.root,
       // Stacks point at the project's own files (Node applies it: `setSourceMapsEnabled`).
       sourcemap: 'inline',
-      // With a trailing separator: consumers concatenate sourceRoot + source, and without it
-      // every stack read `<root>scripts/Foo.ts` (the root never stripped from the report).
-      sourceRoot: `${project.root.replace(/[\\/]+$/, '')}/`,
+      // A directory URL keeps Windows drive letters and separators unambiguous for Node.
+      sourceRoot: `${pathToFileURL(project.root).href.replace(/\/$/, '')}/`,
       plugins: [
         hostImportsPlugin('pix3-smoke-imports', imports, project, async (args, build) => {
           if (args.pluginData === 'pix3-smoke') return undefined;

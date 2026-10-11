@@ -1,6 +1,16 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { copyFile, mkdir, open, readdir, readFile, rename, rm, unlink } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  unlink,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -208,8 +218,12 @@ export const stageTransaction = async (
       }
       const old = join(txDir, 'old', String(n));
       await copyFile(file.absolute, old);
-      const oldHandle = await open(old, 'r');
+      // Windows requires a writable handle for fsync. A copied read-only file must also be
+      // writable while opening it; restore its original mode on the handle before syncing.
+      await chmod(old, file.mode | 0o600);
+      const oldHandle = await open(old, 'r+');
       try {
+        await oldHandle.chmod(file.mode);
         await oldHandle.sync();
       } finally {
         await oldHandle.close();

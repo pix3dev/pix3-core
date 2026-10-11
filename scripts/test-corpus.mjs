@@ -20,13 +20,14 @@ if (!existsSync(join(project, 'pix3project.yaml'))) {
 }
 console.log(`test:corpus: starters + fixture corpus + ${project}`);
 const result = spawnSync(
-  'npx',
+  process.execPath,
   [
-    'vitest',
+    join(root, 'node_modules', 'vitest', 'vitest.mjs'),
     'run',
     'packages/runtime/src/core/scene-saver-stability.spec.ts',
     'packages/editor-core/src/core/scene-patch/scene-patch.spec.ts',
   ],
   { cwd: root, stdio: 'inherit', env: { ...process.env, PIX3_EXTRA_CORPUS: project } }
 );
+if (result.error) console.error(`test:corpus: ${result.error.message}`);
 process.exit(result.status ?? 1);

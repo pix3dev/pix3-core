@@ -112,10 +112,19 @@ const fail = (where, message) => failures.push(`${where}: ${message}`);
 const run = (command, commandArgs, options = {}) => {
   const printable = [command, ...commandArgs].join(' ');
   console.log(`\n$ ${printable}${options.cwd ? `   (in ${options.cwd})` : ''}`);
+  // npm.cmd cannot be spawned without a shell on Windows. Invoke its JS entry with Node
+  // instead, keeping every argument separate (including temp directories with spaces).
+  const npmCli = process.env.npm_execpath;
+  if (command === 'npm' && process.platform === 'win32') {
+    if (!npmCli) throw new Error('Run release:check through npm run release:check.');
+    command = process.execPath;
+    commandArgs = [npmCli, ...commandArgs];
+  }
   const result = spawnSync(command, commandArgs, {
     stdio: 'inherit',
     ...options,
   });
+  if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${printable} exited with ${result.status ?? result.signal}`);
   }

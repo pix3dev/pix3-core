@@ -224,26 +224,30 @@ export const expandTemplate = (
     sources.add(path);
     return text;
   };
-  const text = template.replace(COMMENT_LINE, '').replace(DIRECTIVE, (whole, kind, spec) => {
-    if (whole === '{{version}}') return options.version;
-    if (kind === 'generated') return renderGenerated(String(spec), options, where);
-    const [target, ...rest] = String(spec)
-      .split('|')
-      .map(part => part.trim());
-    const hash = target.indexOf('#');
-    const at = target.indexOf('@');
-    if (hash > 0) {
-      return unlinkRelative(
-        extractSection(read(target.slice(0, hash)), target.slice(hash + 1), rest, where)
-      );
-    }
-    if (at > 0) {
-      return unlinkRelative(
-        extractParagraph(read(target.slice(0, at)), target.slice(at + 1), where)
-      );
-    }
-    return unlinkRelative(trimBlock(read(target).split(/\r?\n/)).join('\n'));
-  });
+  // Generated kit bytes (and ownership hashes) must not depend on Git's checkout line endings.
+  const text = template
+    .replace(/\r\n/g, '\n')
+    .replace(COMMENT_LINE, '')
+    .replace(DIRECTIVE, (whole, kind, spec) => {
+      if (whole === '{{version}}') return options.version;
+      if (kind === 'generated') return renderGenerated(String(spec), options, where);
+      const [target, ...rest] = String(spec)
+        .split('|')
+        .map(part => part.trim());
+      const hash = target.indexOf('#');
+      const at = target.indexOf('@');
+      if (hash > 0) {
+        return unlinkRelative(
+          extractSection(read(target.slice(0, hash)), target.slice(hash + 1), rest, where)
+        );
+      }
+      if (at > 0) {
+        return unlinkRelative(
+          extractParagraph(read(target.slice(0, at)), target.slice(at + 1), where)
+        );
+      }
+      return unlinkRelative(trimBlock(read(target).split(/\r?\n/)).join('\n'));
+    });
   const leftover = /\{\{[^}]*\}\}/.exec(text);
   if (leftover) throw new KitTemplateError(`${where}: unresolved directive ${leftover[0]}`);
   return { text, sources: [...sources] };

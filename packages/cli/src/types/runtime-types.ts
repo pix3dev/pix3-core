@@ -24,8 +24,8 @@ import { CLI_VERSION } from '../version.ts';
  * типы"), so `pix3 check` can type-check the scripts of a project that has no `node_modules`.
  *
  * Layout of `<package>/runtime-types/` (gitignored; built at `prepack` by
- * `scripts/build-runtime-types.mjs`, and on demand in a repo checkout when the runtime sources are
- * newer than the last build):
+ * `scripts/build-runtime-types.mjs`; checkout commands use the same layout in an immutable,
+ * source-stamped temp cache so prepack cannot replace files a check is reading):
  *
  * - `@pix3/runtime/**` — `tsc -p packages/runtime/tsconfig.types.json` (declarations of what
  *   `src/index.ts` reaches; specs, `testing/`, `main.ts` never), plus a `package.json` with the
@@ -273,7 +273,7 @@ export const expandRuntimeTypes = (
 
 /**
  * The directory holding the shipped runtime types, current for this CLI. In a repo checkout it is
- * rebuilt when the runtime sources changed since the last build (a few seconds, printed); a
+ * built into an immutable temp cache for each source stamp (a few seconds, printed); a
  * published package carries it as `dist/runtime-types.json` (`prepack`), expanded on first use.
  */
 export const ensureRuntimeTypes = (
@@ -281,18 +281,37 @@ export const ensureRuntimeTypes = (
 ): { dir: string; manifest: RuntimeTypesManifest } => {
   const dir = runtimeTypesDir();
   const runtimePackage = repoRuntimePackage();
-  const current = readRuntimeTypesManifest(dir);
   if (runtimePackage) {
-    if (
-      current &&
-      current.format === RUNTIME_TYPES_FORMAT &&
-      current.sourceStamp === runtimeSourceStamp(runtimePackage)
-    ) {
-      return { dir, manifest: current };
+    // Checkout consumers use an immutable, source-stamped cache. Prepack rebuilds the shipped
+    // directory, so sharing it with concurrently running checks can remove files they are reading.
+    const stamp = runtimeSourceStamp(runtimePackage);
+    const checkout = createHash('sha256').update(packageRoot()).digest('hex').slice(0, 16);
+    const cachedDir = join(tmpdir(), `pix3-runtime-types-${checkout}-${stamp}`);
+    const current = readRuntimeTypesManifest(cachedDir);
+    if (current?.format === RUNTIME_TYPES_FORMAT && current.sourceStamp === stamp) {
+      return { dir: cachedDir, manifest: current };
     }
     options.log?.('Building the @pix3/runtime type declarations from the repo sources…');
-    return { dir, manifest: buildRuntimeTypes({ log: options.log }) };
+    const next = mkdtempSync(`${cachedDir}.tmp-`);
+    try {
+      const manifest = buildRuntimeTypes({ outDir: next, log: options.log });
+      try {
+        // Only complete trees become visible. Concurrent builders may race to publish the same
+        // cache; the loser uses the winner's complete tree and removes only its own staging tree.
+        renameSync(next, cachedDir);
+        return { dir: cachedDir, manifest };
+      } catch (error) {
+        const winner = readRuntimeTypesManifest(cachedDir);
+        if (winner?.format === RUNTIME_TYPES_FORMAT && winner.sourceStamp === stamp) {
+          return { dir: cachedDir, manifest: winner };
+        }
+        throw error;
+      }
+    } finally {
+      rmSync(next, { recursive: true, force: true });
+    }
   }
+  const current = readRuntimeTypesManifest(dir);
   // Published package: expanded from `dist/runtime-types.json` on first use.
   if (current?.format === RUNTIME_TYPES_FORMAT && current.cliVersion === CLI_VERSION) {
     return { dir, manifest: current };

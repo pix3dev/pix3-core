@@ -16,6 +16,8 @@ import { installCanvas2DStub, type Canvas2DStubHandle } from '@pix3/runtime/test
 type DragLike = Pick<DragEvent, 'dataTransfer'>;
 let InspectorPanel: typeof import('./inspector-panel').InspectorPanel;
 
+vi.mock('golden-layout', () => ({}));
+
 function createDragEvent(resourcePath: string): DragLike {
   const transfer = {
     getData: (type: string): string => {
@@ -56,7 +58,6 @@ class ModelConsumer {
 }
 
 beforeAll(async () => {
-  vi.mock('golden-layout', () => ({}));
   ({ InspectorPanel } = await import('./inspector-panel'));
 });
 

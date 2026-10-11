@@ -97,7 +97,17 @@ const createNullRenderer = (
 const flushPending = async (rounds = 1): Promise<void> => {
   for (let round = 0; round < rounds; round += 1) {
     for (let i = 0; i < 4; i += 1) await Promise.resolve();
-    await new Promise<void>(resolveTurn => setTimeout(resolveTurn, 0));
+    await new Promise<void>(resolveTurn => {
+      // Grant a real task turn without Windows' minimum timer delay, matching the runtime's
+      // headless harness. Manual game time should not cost one wall-clock timer per frame.
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        channel.port2.close();
+        resolveTurn();
+      };
+      channel.port2.postMessage(null);
+    });
   }
 };
 

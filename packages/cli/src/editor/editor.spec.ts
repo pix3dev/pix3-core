@@ -661,5 +661,5 @@ describe('pix3 editor', () => {
 
 beforeAll(() => {
   // Nothing here touches the real ~/.pix3: every state test passes PIX3_HOME.
-  expect(chromeStatePath({ PIX3_HOME: '/x' })).toBe('/x/chrome.json');
+  expect(chromeStatePath({ PIX3_HOME: '/x' })).toBe(join('/x', 'chrome.json'));
 });

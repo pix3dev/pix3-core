@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Lexer } from 'yaml';
+import { Lexer, parse, stringify } from 'yaml';
 import {
   getNodePropertySchema,
   Node2D,
@@ -376,6 +376,35 @@ describe.each(corpus.map(scene => [scene.name, scene] as const))('%s', (_name, s
 describe('targeted cases', () => {
   const tapper = corpus.find(s => s.name === 'recipe-tapper-2d:scenes/main.pix3scene')!;
   const h = createSceneHarness(tapper.projectDir);
+
+  it.each(['yaml', 'json'])(
+    'moves surviving descendants before deleting their ancestors (%s)',
+    format => {
+      const kept = { id: 'kept', type: 'Group2D', name: 'Kept' };
+      const other = { id: 'other', type: 'Group2D', name: 'Other' };
+      const before: SavedSceneDocument = {
+        version: '1',
+        root: [
+          {
+            id: 'gone',
+            type: 'Group2D',
+            children: [{ id: 'inner', type: 'Group2D', children: [kept] }],
+          },
+          other,
+        ],
+      };
+      for (const root of [
+        [kept, other],
+        [{ ...other, children: [kept] }],
+        [{ id: 'new', type: 'Group2D', children: [kept] }, other],
+      ]) {
+        const after: SavedSceneDocument = { version: '1', root };
+        const text = format === 'json' ? JSON.stringify(before) : stringify(before);
+        const patched = applySceneOps(text, diffScenes(before, after));
+        expect(parse(patched)).toEqual(after);
+      }
+    }
+  );
 
   it('N2: an omitted default and an agent writing it explicitly are the same document', async () => {
     const text =

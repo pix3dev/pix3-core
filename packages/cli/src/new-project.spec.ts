@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -38,7 +38,9 @@ afterEach(() => {
 const walk = (dir: string, base: string = dir): string[] =>
   readdirSync(dir).flatMap(name => {
     const full = join(dir, name);
-    return statSync(full).isDirectory() ? walk(full, base) : [relative(base, full)];
+    return statSync(full).isDirectory()
+      ? walk(full, base)
+      : [relative(base, full).split(sep).join('/')];
   });
 
 describe('templates', () => {

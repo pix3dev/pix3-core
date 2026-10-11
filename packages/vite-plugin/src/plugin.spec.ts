@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Plugin } from 'vite';
+import { normalizePath, type Plugin } from 'vite';
 import { WebSocket } from 'ws';
 
 import { ScriptGraph } from './sync/script-graph.ts';
@@ -798,6 +798,14 @@ describe('sync barrier', () => {
 });
 
 describe('the script graph', () => {
+  it('excludes cache modules when Vite normalizes native filesystem paths', () => {
+    const root = resolve('graph-project');
+    const cache = join(root, '.vite-cache');
+    const graph = new ScriptGraph(root, () => null, [cache]);
+    expect(graph.wirePathOf(normalizePath(join(cache, 'deps/three.js')))).toBeNull();
+    expect(graph.wirePathOf(normalizePath(join(root, 'scripts/A.ts')))).toBe('scripts/A.ts');
+  });
+
   it('takes project sources, not an in-project cacheDir, node_modules or other files', () => {
     const graph = new ScriptGraph('/p', () => null, ['/p/.vite-cache/']);
     expect(graph.wirePathOf('/p/scripts/A.ts?t=1')).toBe('scripts/A.ts');
