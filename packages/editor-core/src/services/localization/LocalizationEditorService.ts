@@ -60,9 +60,8 @@ const LOCALE_DISPLAY_NAMES: Record<string, string> = {
  * {@link LocalizationService} (the active-localization pointer while editing, so
  * viewport label proxies resolve translations), loads `locales/*.json` at project
  * open, and exposes an authoring API (read/edit/save tables, switch preview
- * locale, missing-key diff). It mirrors UI-facing counters into
- * `appState.localization`; the actual tables stay here (state-vs-scene-graph
- * separation). All *undoable* mutations run through Commands/Operations that call
+ * locale, missing-key diff). It bumps `appState.localization.revision` on every
+ * change; the actual tables stay here (state-vs-scene-graph separation). All *undoable* mutations run through Commands/Operations that call
  * into this service — the service persists + feeds the preview + bumps `revision`.
  *
  * **The files are the truth** (`.plans/write-model.md` W20): every table has a baseline (the
@@ -172,7 +171,7 @@ export class LocalizationEditorService {
     this.previewLocale = '';
 
     if (!key) {
-      this.mirrorSlice();
+      this.bumpRevision();
       return;
     }
 
@@ -181,7 +180,7 @@ export class LocalizationEditorService {
     } catch (error) {
       console.warn('[Localization] Failed to load project locales', error);
     }
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   /** Resolve the effective settings (manifest block, else auto-discovered from `locales/`). */
@@ -265,7 +264,7 @@ export class LocalizationEditorService {
       async () => {
         this.tables.set(locale, drafted);
         this.preview?.setTable(drafted);
-        this.mirrorSlice();
+        this.bumpRevision();
         await this.saveLocale(locale);
       }
     );
@@ -399,7 +398,7 @@ export class LocalizationEditorService {
     if (!this.settings.locales.includes(locale)) return;
     this.previewLocale = locale;
     await this.preview.setLocale(locale);
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   /** Set/clear a single entry (translation or sprite path). Persists the file and re-feeds the preview. */
@@ -418,7 +417,7 @@ export class LocalizationEditorService {
     }
     this.preview?.setTable(table);
     await this.saveLocale(locale);
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   /** Remove a key from every locale. Returns the removed values for undo. */
@@ -435,7 +434,7 @@ export class LocalizationEditorService {
         await this.saveLocale(locale);
       }
     }
-    this.mirrorSlice();
+    this.bumpRevision();
     return removed;
   }
 
@@ -467,7 +466,7 @@ export class LocalizationEditorService {
       this.preview?.setTable(table);
       await this.saveLocale(locale);
     }
-    this.mirrorSlice();
+    this.bumpRevision();
     return moved;
   }
 
@@ -487,7 +486,7 @@ export class LocalizationEditorService {
     for (const key of seeded) table[section][key] = '';
     this.preview?.setTable(table);
     await this.saveLocale(locale);
-    this.mirrorSlice();
+    this.bumpRevision();
     return seeded;
   }
 
@@ -512,7 +511,7 @@ export class LocalizationEditorService {
     if (!changed) return;
     this.preview?.setTable(table);
     await this.saveLocale(locale);
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   /** Re-insert removed key values across locales (undo of {@link removeKey}). */
@@ -527,7 +526,7 @@ export class LocalizationEditorService {
       this.preview?.setTable(table);
       await this.saveLocale(locale);
     }
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   private ensureTable(locale: string): LocaleTable {
@@ -705,7 +704,7 @@ export class LocalizationEditorService {
     const changed = diffLocaleTables(before, merged);
     for (const listener of [...this.externalListeners]) listener(locale, changed);
     this.preview?.setTable(merged);
-    this.mirrorSlice();
+    this.bumpRevision();
     return 'followed';
   }
 
@@ -730,7 +729,7 @@ export class LocalizationEditorService {
               else table[section][key] = written;
             }
             this.preview?.setTable(table);
-            this.mirrorSlice();
+            this.bumpRevision();
             await this.saveLocale(locale);
           },
         },
@@ -758,7 +757,7 @@ export class LocalizationEditorService {
     }
     this.ensurePreview().setTable(table);
     void this.preview?.setLocale(this.previewLocale);
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   private removeTable(locale: string): void {
@@ -808,25 +807,16 @@ export class LocalizationEditorService {
         }
       }
     }
-    this.mirrorSlice();
+    this.bumpRevision();
   }
 
   private isDeclared(): boolean {
     return (appState.project.manifest?.localization?.locales.length ?? 0) > 0;
   }
 
-  private mirrorSlice(): void {
-    const slice = appState.localization;
-    const locales = this.getLocales();
-    const missingCounts: Record<string, number> = {};
-    for (const locale of locales) {
-      missingCounts[locale] = this.getMissing(locale).length;
-    }
-    slice.locales = locales;
-    slice.defaultLocale = this.getDefaultLocale();
-    slice.previewLocale = this.previewLocale;
-    slice.missingCounts = missingCounts;
-    slice.revision += 1;
+  /** Subscribed panels and widgets re-read (the tables live here, not in `appState`). */
+  private bumpRevision(): void {
+    appState.localization.revision += 1;
   }
 }
 

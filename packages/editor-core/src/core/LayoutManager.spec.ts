@@ -4,7 +4,6 @@ const loadLayout = vi.fn();
 const registerComponentFactoryFunction = vi.fn();
 const stackAddItem = vi.fn();
 let lastActiveComponentItem: unknown;
-let activeContentItemChangedHandler: ((...args: unknown[]) => void) | undefined;
 
 class FakeGoldenLayout {
   public resizeWithContainerAutomatically = false;
@@ -56,11 +55,7 @@ class FakeGoldenLayout {
     registerComponentFactoryFunction(componentType, callback);
   }
 
-  on(name: string, handler: (...args: unknown[]) => void) {
-    if (name === 'activeContentItemChanged') {
-      activeContentItemChangedHandler = handler;
-    }
-  }
+  on() {}
 
   destroy() {}
 }
@@ -75,7 +70,6 @@ describe('LayoutManagerService', () => {
     registerComponentFactoryFunction.mockReset();
     stackAddItem.mockReset();
     lastActiveComponentItem = undefined;
-    activeContentItemChangedHandler = undefined;
   });
 
   afterEach(() => {
@@ -160,23 +154,6 @@ describe('LayoutManagerService', () => {
     expect(lastActiveComponentItem).toMatchObject({ componentType: 'history' });
   });
 
-  it('tracks active non-editor panel in ui state', async () => {
-    const { LayoutManagerService } = await import('./LayoutManager');
-    const { appState, resetAppState } = await import('@/state');
-
-    resetAppState();
-    const host = document.createElement('div');
-    const service = new LayoutManagerService();
-
-    await service.initialize(host);
-    activeContentItemChangedHandler?.({
-      type: 'component',
-      componentType: 'history',
-      parent: (new FakeGoldenLayout(host).rootItem as { contentItems: unknown[] }).contentItems[0],
-    });
-
-    expect(appState.ui.focusedPanelId).toBe('history');
-  });
   /**
    * `showPanel()` is the one path behind every `Window ▸ <panel>` row (and behind the
    * `reveal*Panel()` family, which now delegates to it), so these pin its three contracts:

@@ -69,7 +69,6 @@ describe('ReloadSceneCommand history', () => {
       expect((await result).didMutate).toBe(true);
       expect(historyA.canUndo).toBe(false);
       expect(historyB.canUndo).toBe(true);
-      expect(appState.operations.lastUndoableCommandId).toBe('edit-B');
     }
   );
 

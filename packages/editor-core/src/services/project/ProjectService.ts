@@ -80,7 +80,6 @@ export class ProjectService {
       const persisted = this.loadAssetBrowserState();
       if (persisted) {
         appState.project.assetBrowserExpandedPaths = persisted.expandedPaths;
-        appState.project.assetBrowserSelectedPath = persisted.selectedPath;
         appState.project.assetBrowserViewMode = persisted.viewMode;
         appState.project.assetBrowserGroupedExpandedKeys = persisted.groupedExpandedKeys;
         appState.project.assetsThumbnailSize = persisted.thumbnailSize ?? 104;
@@ -323,7 +322,6 @@ export class ProjectService {
       )
     ) as import('@/services/editor/EditorTabService').EditorTabService;
 
-    appState.scenes.pendingScenePaths = [ProjectService.STARTUP_SCENE_RESOURCE_PATH];
     appState.project.lastOpenedScenePath = ProjectService.STARTUP_SCENE_RESOURCE_PATH;
     await editorTabService.focusOrOpenScene(ProjectService.STARTUP_SCENE_RESOURCE_PATH);
   }
@@ -351,7 +349,6 @@ export class ProjectService {
     appState.scenes.loadState = 'idle';
     appState.scenes.loadError = null;
     appState.scenes.lastLoadedAt = null;
-    appState.scenes.pendingScenePaths = [];
     appState.scenes.nodeDataChangeSignal = 0;
     appState.scenes.editorCameraStates = {};
     appState.scenes.navigation2DCameraStates = {};
@@ -360,7 +357,6 @@ export class ProjectService {
     appState.tabs.activeTabId = null;
     appState.selection.nodeIds = [];
     appState.selection.primaryNodeId = null;
-    appState.selection.hoveredNodeId = null;
   }
 }
 

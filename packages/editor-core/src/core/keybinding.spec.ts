@@ -140,7 +140,6 @@ describe('keybinding.ts', () => {
     const mockContext: EditorContextState = {
       focusedArea: 'viewport',
       isInputFocused: false,
-      isModalOpen: false,
     };
 
     it('should return true when no context clause is provided', () => {
@@ -169,7 +168,7 @@ describe('keybinding.ts', () => {
 
     it('should evaluate complex expressions', () => {
       expect(
-        evaluateContext('(viewportFocused || sceneTreeFocused) && !isModalOpen', mockContext)
+        evaluateContext('(viewportFocused || sceneTreeFocused) && !isInputFocused', mockContext)
       ).toBe(true);
     });
 
@@ -180,15 +179,6 @@ describe('keybinding.ts', () => {
       };
       expect(evaluateContext('!isInputFocused', inputFocusedContext)).toBe(false);
       expect(evaluateContext('isInputFocused', inputFocusedContext)).toBe(true);
-    });
-
-    it('should handle modal open context', () => {
-      const modalContext: EditorContextState = {
-        ...mockContext,
-        isModalOpen: true,
-      };
-      expect(evaluateContext('!isModalOpen', modalContext)).toBe(false);
-      expect(evaluateContext('isModalOpen', modalContext)).toBe(true);
     });
   });
 });

@@ -42,12 +42,12 @@ export interface CommandMetadata {
    *
    * Examples:
    * - '!isInputFocused' - Execute only when not typing in an input
-   * - 'viewportFocused && !isModalOpen' - Execute only in viewport when no modal is open
+   * - 'viewportFocused && !isInputFocused' - Execute only in viewport when not typing
    * - '(viewportFocused || sceneTreeFocused) && !isInputFocused'
    *
    * Available context keys:
    * - viewportFocused, sceneTreeFocused, inspectorFocused, assetsFocused
-   * - isInputFocused, isModalOpen
+   * - isInputFocused
    */
   readonly when?: KeybindingContext;
   /**

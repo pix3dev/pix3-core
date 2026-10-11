@@ -169,8 +169,6 @@ export class OperationService {
     this.disposeHistorySubscription();
     this.subscribedHistory = manager;
     this.disposeHistorySubscription = manager.subscribe(snapshot => {
-      const lastEntry = snapshot.undoEntries[snapshot.undoEntries.length - 1];
-      this.state.operations.lastUndoableCommandId = lastEntry?.metadata.commandId ?? null;
       this.emit({
         type: 'history:changed',
         snapshot,
@@ -301,22 +299,12 @@ export class OperationService {
       return false;
     }
 
-    this.state.operations.isExecuting = true;
-
-    try {
-      const undone = await this.history.undo();
-      if (undone) {
-        this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
-        this.emit({ type: 'operation:undone', entry, timestamp: Date.now() });
-        const nextSnapshot = this.history.snapshot();
-        const nextUndoEntry = nextSnapshot.undoEntries[nextSnapshot.undoEntries.length - 1] ?? null;
-        this.state.operations.lastUndoableCommandId = nextUndoEntry?.metadata.commandId ?? null;
-        this.state.operations.lastCommandId = entry.metadata.commandId ?? null;
-      }
-      return undone;
-    } finally {
-      this.state.operations.isExecuting = false;
+    const undone = await this.history.undo();
+    if (undone) {
+      this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
+      this.emit({ type: 'operation:undone', entry, timestamp: Date.now() });
     }
+    return undone;
   }
 
   async redo(): Promise<boolean> {
@@ -333,22 +321,12 @@ export class OperationService {
       return false;
     }
 
-    this.state.operations.isExecuting = true;
-
-    try {
-      const redone = await this.history.redo();
-      if (redone) {
-        this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
-        this.emit({ type: 'operation:redone', entry, timestamp: Date.now() });
-        const nextSnapshot = this.history.snapshot();
-        const nextUndoEntry = nextSnapshot.undoEntries[nextSnapshot.undoEntries.length - 1] ?? null;
-        this.state.operations.lastUndoableCommandId = nextUndoEntry?.metadata.commandId ?? null;
-        this.state.operations.lastCommandId = entry.metadata.commandId ?? null;
-      }
-      return redone;
-    } finally {
-      this.state.operations.isExecuting = false;
+    const redone = await this.history.redo();
+    if (redone) {
+      this.state.scenes.nodeDataChangeSignal = this.state.scenes.nodeDataChangeSignal + 1;
+      this.emit({ type: 'operation:redone', entry, timestamp: Date.now() });
     }
+    return redone;
   }
 
   /** Clear one scene's history, returning whether it had undo/redo entries. */
@@ -358,9 +336,6 @@ export class OperationService {
     const hadHistory = !!history && (history.canUndo || history.canRedo);
     if (history) {
       this.invalidateHistory(history);
-    }
-    if (sceneId === this.state.scenes.activeSceneId) {
-      this.state.operations.lastUndoableCommandId = null;
     }
     return hadHistory;
   }
@@ -384,14 +359,14 @@ export class OperationService {
   ): Promise<ExecutionResult> {
     const sceneId = context.state.scenes.activeSceneId;
     const metadata = operation.metadata;
-    this.beginOperation(metadata, context.state);
+    this.beginOperation(metadata);
 
     try {
       const result = await operation.perform(context);
       const normalized = this.normalizeInvokeResult(result, options);
       return { context, sceneId, metadata, result: normalized as OperationInvokeResult };
     } catch (error) {
-      this.failOperation(metadata, context.state, error);
+      this.failOperation(metadata, error);
       throw error;
     }
   }
@@ -493,15 +468,11 @@ export class OperationService {
     };
   }
 
-  private beginOperation(metadata: OperationMetadata, state: AppState): void {
+  private beginOperation(metadata: OperationMetadata): void {
     this.logger.debug('beginOperation: Starting', {
       operationId: metadata.id,
       operationTitle: metadata.title,
-      pendingCount: state.operations.pendingCommandCount + 1,
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount + 1);
-    state.operations.isExecuting = true;
-    state.operations.lastCommandId = metadata.id;
     this.emit({ type: 'operation:invoked', metadata, timestamp: Date.now() });
   }
 
@@ -518,12 +489,8 @@ export class OperationService {
       operationTitle: metadata.title,
       didMutate,
       pushedToHistory,
-      pendingCount: Math.max(0, state.operations.pendingCommandCount - 1),
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount - 1);
-    state.operations.isExecuting = state.operations.pendingCommandCount > 0;
     if (didMutate) {
-      state.operations.lastCommandId = metadata.id;
       state.scenes.nodeDataChangeSignal = state.scenes.nodeDataChangeSignal + 1;
     }
     this.emit({
@@ -537,15 +504,12 @@ export class OperationService {
     });
   }
 
-  private failOperation(metadata: OperationMetadata, state: AppState, error: unknown): void {
+  private failOperation(metadata: OperationMetadata, error: unknown): void {
     this.logger.error('failOperation: Operation failed', {
       operationId: metadata.id,
       operationTitle: metadata.title,
       error,
-      pendingCount: Math.max(0, state.operations.pendingCommandCount - 1),
     });
-    state.operations.pendingCommandCount = Math.max(0, state.operations.pendingCommandCount - 1);
-    state.operations.isExecuting = state.operations.pendingCommandCount > 0;
     this.emit({ type: 'operation:failed', metadata, error, timestamp: Date.now() });
   }
 

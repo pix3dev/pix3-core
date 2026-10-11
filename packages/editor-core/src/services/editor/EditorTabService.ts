@@ -824,7 +824,6 @@ export class EditorTabService {
         appState.scenes.activeSceneId = null;
         appState.selection.nodeIds = [];
         appState.selection.primaryNodeId = null;
-        appState.selection.hoveredNodeId = null;
       }
 
       this.sceneManager.removeSceneGraph(sceneId);

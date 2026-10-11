@@ -1,9 +1,5 @@
 import type { ProjectManifest } from '@/core/ProjectManifest';
 
-export type ThemeName = 'dark' | 'light' | 'high-contrast';
-
-const DEFAULT_THEME: ThemeName = 'dark';
-
 export type SceneLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 export type EditorTabType = 'scene' | 'game';
@@ -72,8 +68,6 @@ export interface ScenesState {
   loadError: string | null;
   /** Timestamp (ms) when the most recent scene finished loading. */
   lastLoadedAt: number | null;
-  /** FIFO queue of scene file paths scheduled for loading. */
-  pendingScenePaths: string[];
   /** Counter incremented when node data (properties, scripts) changes but hierarchy remains unchanged. */
   nodeDataChangeSignal: number;
 
@@ -101,7 +95,7 @@ export interface ScenesState {
   peekSoloByScene: Record<string, string[]>;
 }
 
-export type ProjectStatus = 'idle' | 'selecting' | 'opening' | 'ready' | 'error';
+export type ProjectStatus = 'idle' | 'opening' | 'ready' | 'error';
 /** Where the project lives: always the plugin's file API in 2.x (plan §F, D3). */
 export type ProjectBackend = 'host';
 
@@ -153,8 +147,6 @@ export interface ProjectState {
   lastOpenedScenePath: string | null;
   /** Asset browser expanded folder paths (persisted per project). */
   assetBrowserExpandedPaths: string[];
-  /** Asset browser selected path (persisted per project). */
-  assetBrowserSelectedPath: string | null;
   /** Asset browser view mode: raw folder structure or grouped by asset type (persisted per project). */
   assetBrowserViewMode: AssetBrowserViewMode;
   /** Asset browser expanded keys for the "group by type" view (persisted per project). */
@@ -182,8 +174,6 @@ export interface SelectionState {
   nodeIds: string[];
   /** Primary node (e.g., manipulator focus). */
   primaryNodeId: string | null;
-  /** Node hovered by cursor-driven affordances. */
-  hoveredNodeId: string | null;
   /**
    * Figma-style selection isolation scope: the container node whose direct
    * children are the click/hover-selectable set in the viewport. `null` means
@@ -204,17 +194,6 @@ export interface EditorContextState {
   focusedArea: FocusedArea;
   /** True if an input element (input, textarea, contenteditable) has focus. */
   isInputFocused: boolean;
-  /** True if a modal dialog is currently open. */
-  isModalOpen: boolean;
-}
-
-export interface PanelVisibilityState {
-  sceneTree: boolean;
-  viewport: boolean;
-  inspector: boolean;
-  assets: boolean;
-  animationTimeline: boolean;
-  logs: boolean;
 }
 
 export type NavigationMode = '2d' | '3d';
@@ -258,11 +237,7 @@ export interface PlayModeError {
 }
 
 export interface UIState {
-  theme: ThemeName;
   isLayoutReady: boolean;
-  focusedPanelId: string | null;
-  commandPaletteOpen: boolean;
-  panelVisibility: PanelVisibilityState;
   navigationMode: NavigationMode;
   /**
    * Active transform tool of the viewport. The gizmo itself lives in
@@ -329,29 +304,12 @@ export interface UIState {
   gestureInProgress: boolean;
 }
 
-export interface OperationState {
-  /** True while a command/operation is executing. */
-  isExecuting: boolean;
-  /** Count of pending commands queued for execution. */
-  pendingCommandCount: number;
-  /** Identifier/name of the most recently executed command. */
-  lastCommandId: string | null;
-  /** Identifier of the last command that produced undo data. */
-  lastUndoableCommandId: string | null;
-}
-
 /**
- * UI-facing localization state. IDs/counters only — the actual locale tables
- * live in `LocalizationEditorService` (same state-vs-scene-graph separation).
- * `previewLocale` is the editor-viewport preview; `revision` bumps on any table
- * edit so subscribed panels/widgets re-read. Empty `locales` ⇒ inert.
+ * UI-facing localization state: a counter only — the locale tables, the locales and the preview
+ * locale live in `LocalizationEditorService` (same state-vs-scene-graph separation). `revision`
+ * bumps on any change so subscribed panels/widgets re-read.
  */
 export interface LocalizationState {
-  locales: string[];
-  defaultLocale: string;
-  previewLocale: string;
-  /** Per-locale count of keys missing vs. the default locale (panel badges). */
-  missingCounts: Record<string, number>;
   revision: number;
 }
 
@@ -362,7 +320,6 @@ export interface AppState {
   selection: SelectionState;
   editorContext: EditorContextState;
   ui: UIState;
-  operations: OperationState;
   localization: LocalizationState;
 }
 
@@ -375,7 +332,6 @@ export const createInitialAppState = (): AppState => ({
     errorMessage: null,
     lastOpenedScenePath: null,
     assetBrowserExpandedPaths: [],
-    assetBrowserSelectedPath: null,
     assetBrowserViewMode: 'folders',
     assetBrowserGroupedExpandedKeys: [],
     assetsThumbnailSize: 104,
@@ -394,7 +350,6 @@ export const createInitialAppState = (): AppState => ({
     loadState: 'idle',
     loadError: null,
     lastLoadedAt: null,
-    pendingScenePaths: [],
     nodeDataChangeSignal: 0,
     editorCameraStates: {},
     navigation2DCameraStates: {},
@@ -409,27 +364,14 @@ export const createInitialAppState = (): AppState => ({
   selection: {
     nodeIds: [],
     primaryNodeId: null,
-    hoveredNodeId: null,
     focusNodeId: null,
   },
   editorContext: {
     focusedArea: null,
     isInputFocused: false,
-    isModalOpen: false,
   },
   ui: {
-    theme: DEFAULT_THEME,
     isLayoutReady: false,
-    focusedPanelId: null,
-    commandPaletteOpen: false,
-    panelVisibility: {
-      sceneTree: true,
-      viewport: true,
-      inspector: true,
-      assets: true,
-      animationTimeline: true,
-      logs: true,
-    },
     navigationMode: '3d',
     transformMode: 'select',
     navigation2D: {
@@ -459,17 +401,7 @@ export const createInitialAppState = (): AppState => ({
     playStartedAt: null,
     gestureInProgress: false,
   },
-  operations: {
-    isExecuting: false,
-    pendingCommandCount: 0,
-    lastCommandId: null,
-    lastUndoableCommandId: null,
-  },
   localization: {
-    locales: [],
-    defaultLocale: '',
-    previewLocale: '',
-    missingCounts: {},
     revision: 0,
   },
 });

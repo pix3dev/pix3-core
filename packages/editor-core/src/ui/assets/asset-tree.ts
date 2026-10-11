@@ -493,7 +493,6 @@ export class AssetTree extends ComponentBase {
       appState.project.assetBrowserGroupedExpandedKeys = Array.from(expandedKeys);
     }
 
-    appState.project.assetBrowserSelectedPath = this.selectedPath;
     appState.project.assetBrowserViewMode = this.viewMode;
 
     this.projectService.saveAssetBrowserState({
@@ -514,7 +513,6 @@ export class AssetTree extends ComponentBase {
     if (loadedState) {
       // Update appState with loaded state
       appState.project.assetBrowserExpandedPaths = loadedState.expandedPaths;
-      appState.project.assetBrowserSelectedPath = loadedState.selectedPath;
       appState.project.assetBrowserViewMode = loadedState.viewMode;
       appState.project.assetBrowserGroupedExpandedKeys = loadedState.groupedExpandedKeys;
       this.viewMode = loadedState.viewMode;

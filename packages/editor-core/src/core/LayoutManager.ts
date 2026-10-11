@@ -8,7 +8,7 @@ import {
 } from 'golden-layout';
 import { injectable, inject } from '@/fw/di';
 import { subscribe } from 'valtio/vanilla';
-import { appState, type AppState, type EditorTab, type PanelVisibilityState } from '@/state';
+import { appState, type AppState, type EditorTab } from '@/state';
 import { IconService, IconSize } from '@/services/editor/IconService';
 
 export const PANEL_COMPONENT_TYPES = {
@@ -122,15 +122,6 @@ const PANEL_HOME_NEIGHBOURS: Partial<Record<PanelComponentType, readonly PanelCo
     PANEL_COMPONENT_TYPES.assets,
     PANEL_COMPONENT_TYPES.logs,
   ],
-};
-
-const DEFAULT_PANEL_VISIBILITY: PanelVisibilityState = {
-  sceneTree: true,
-  viewport: true,
-  inspector: true,
-  assets: true,
-  animationTimeline: true,
-  logs: true,
 };
 
 const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
@@ -968,8 +959,6 @@ export class LayoutManagerService {
           const componentType = itemInfo?.componentType;
           if (!componentType) return;
 
-          this.state.ui.focusedPanelId = componentType;
-
           if (!this.isEditorTabComponentType(componentType)) {
             return;
           }
@@ -1013,33 +1002,7 @@ export class LayoutManagerService {
       this.lastIsPlaying = playing;
     });
 
-    // Inline logic from InitializeLayoutCommand
-    const previousLayoutReady = this.state.ui.isLayoutReady;
-    const previousPanelVisibility = { ...this.state.ui.panelVisibility };
-    const previousFocusedPanelId = this.state.ui.focusedPanelId;
-
-    const nextPanelVisibility = { ...DEFAULT_PANEL_VISIBILITY };
-    const nextFocusedPanelId = 'viewport';
-
-    const didMutate =
-      previousLayoutReady === false ||
-      !(
-        previousPanelVisibility.sceneTree === nextPanelVisibility.sceneTree &&
-        previousPanelVisibility.viewport === nextPanelVisibility.viewport &&
-        previousPanelVisibility.inspector === nextPanelVisibility.inspector &&
-        previousPanelVisibility.assets === nextPanelVisibility.assets &&
-        previousPanelVisibility.animationTimeline === nextPanelVisibility.animationTimeline &&
-        previousPanelVisibility.logs === nextPanelVisibility.logs
-      ) ||
-      previousFocusedPanelId !== nextFocusedPanelId;
-
-    if (!didMutate) {
-      return;
-    }
-
     this.state.ui.isLayoutReady = true;
-    this.state.ui.panelVisibility = nextPanelVisibility;
-    this.state.ui.focusedPanelId = nextFocusedPanelId;
   }
 
   dispose(): void {
