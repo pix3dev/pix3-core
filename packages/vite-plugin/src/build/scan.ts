@@ -12,7 +12,7 @@ import { normalizeResRoot, resToAbsolute, stripRes, wireToRes } from './project-
  *
  * - `mentionedNames` — every identifier-like token (plus `core:Follow`-shaped ids), the superset
  *   the strip asks "does anything mention this module?" (a false positive costs kilobytes, a
- *   false negative would ship a broken game — `.plans/done/playable-export-size.md` §2 Р4);
+ *   false negative would ship a broken game — `../pix3/.plans/done/playable-export-size.md` §2 Р4);
  * - the asset set: every scene and prefab, everything they and the scripts name by `res://`,
  *   directories those references expand to, Spine atlas pages, the declared locale tables and
  *   their sprites, the project's fonts (no pre-packed atlas: nothing in 2.x writes one);
