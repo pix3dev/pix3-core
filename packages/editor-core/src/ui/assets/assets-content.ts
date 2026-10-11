@@ -16,12 +16,12 @@ import {
   ASSET_PATH_MIME,
   ASSET_RESOURCE_LIST_MIME,
   ASSET_RESOURCE_MIME,
-  toProjectResourcePath,
 } from '@/ui/shared/asset-drag-drop';
 import { DropdownPortal } from '@/ui/shared/dropdown-portal';
 import { appState } from '@/state';
 import { subscribe } from 'valtio/vanilla';
 import './assets-content.ts.css';
+import { toResourcePath } from '@/services/project/disk/project-paths';
 
 /** Content-pane layout mode. */
 type ContentView = 'grid' | 'list';
@@ -500,7 +500,7 @@ export class AssetsContent extends ComponentBase {
       name: item.name,
       path: item.path,
       kind: item.kind,
-      resourcePath: toProjectResourcePath(item.path),
+      resourcePath: toResourcePath(item.path),
       extension: item.extension,
     };
   }
@@ -963,7 +963,7 @@ export class AssetsContent extends ComponentBase {
     // read to create nodes, and a folder is not an asset resource.
     const resourcePaths = itemsToDrag
       .filter(candidate => candidate.kind === 'file')
-      .map(candidate => toProjectResourcePath(candidate.path));
+      .map(candidate => toResourcePath(candidate.path));
     // Every drop target (viewport, scene tree, inspector slots) copies a reference; nothing moves.
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('text/plain', plainPaths.join('\n'));

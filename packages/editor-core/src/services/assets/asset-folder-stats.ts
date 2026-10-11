@@ -1,5 +1,6 @@
 import type { FileDescriptor } from '@/services/project/file-descriptor';
 import type { ProjectService } from '@/services/project/ProjectService';
+import { toFolderPath } from '@/services/project/disk/project-paths';
 
 /** Recursive stats for a project directory (nested files + folders). */
 export interface DirectoryStats {
@@ -12,21 +13,12 @@ export interface DirectoryStats {
 /** Minimal surface the walk needs — keeps callers testable. */
 type DirectoryLister = Pick<ProjectService, 'listDirectory'>;
 
-function normalizePath(path: string): string {
-  const normalized = path
-    .replace(/\\+/g, '/')
-    .replace(/^\.\//, '')
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '');
-  return normalized || '.';
-}
-
 /**
  * Same exclusion rules the asset tree uses: dot-entries and `node_modules`
  * anywhere in the path are ignored.
  */
 function shouldExcludeEntry(entry: FileDescriptor): boolean {
-  const normalizedPath = normalizePath(entry.path);
+  const normalizedPath = toFolderPath(entry.path);
   const pathSegments = normalizedPath.split('/').filter(segment => segment.length > 0);
 
   if (entry.name.startsWith('.')) {

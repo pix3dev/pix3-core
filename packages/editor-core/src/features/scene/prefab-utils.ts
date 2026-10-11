@@ -1,4 +1,5 @@
 import { NODE2D_MARGIN_SIDES, Node2D, type NodeBase } from '@pix3/runtime';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 export interface PrefabMetadata {
   localId: string;
@@ -97,4 +98,4 @@ export const isInstancePlacementProperty = (node: NodeBase, propertyName: string
  * character compiler — writes to `prefabs/`, so the folder is the convention editor UX can key off.
  */
 export const isPrefabScenePath = (filePath: string): boolean =>
-  /(^|\/)prefabs\//.test(filePath.replace(/^res:\/\//, '').replace(/\\/g, '/'));
+  /(^|\/)prefabs\//.test(toProjectPath(filePath));

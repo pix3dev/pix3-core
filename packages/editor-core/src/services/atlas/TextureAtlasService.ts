@@ -15,6 +15,7 @@ import {
   type AtlasManifest,
   type AssetLoader,
 } from '@pix3/runtime';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /** Bump to invalidate every cached atlas when the packing algorithm changes. */
 const PACKER_VERSION = 1;
@@ -216,7 +217,7 @@ export class TextureAtlasService {
 
     // Animation resources: their frame textures belong to AnimatedSprite2D → eligible.
     // A missing animation resource just leaves its sprite un-atlased.
-    const animFiles = [...animPaths].map(stripRes);
+    const animFiles = [...animPaths].map(toProjectPath);
     for (const refs of await this.scanFiles(animFiles, text => matchAll(text, IMAGE_REF_PATTERN))) {
       refs?.forEach(ref => eligible.add(ref));
     }
@@ -256,7 +257,7 @@ export class TextureAtlasService {
       // resolveSpinePagePath passes through — so normalize instead of blindly
       // prefixing, or the entry would read `res://res://…` and match nothing.
       parseSpineAtlasPageNames(text).map(
-        pageName => `res://${stripRes(resolveSpinePagePath(path, pageName))}`
+        pageName => `res://${toProjectPath(resolveSpinePagePath(path, pageName))}`
       )
     );
     spineScans.forEach(pages => pages?.forEach(page => ineligible.add(page)));
@@ -333,7 +334,8 @@ export class TextureAtlasService {
    * excluded (reference-art) prefixes.
    */
   private dirPrefixOf(raw: string): string | null {
-    let path = stripRes(raw);
+    // Not `toProjectPath`: a trailing `/` is what marks a template path as a directory.
+    let path = raw.replace(/^res:\/\//, '');
     if (!path) {
       return null;
     }
@@ -416,7 +418,7 @@ export class TextureAtlasService {
 
   private async hashFast(inputs: ClassifiedInputs, filtering: string): Promise<string> {
     const files = inputs.include.map(
-      path => `${path}|${inputs.sizeMap.get(stripRes(path)) ?? '?'}`
+      path => `${path}|${inputs.sizeMap.get(toProjectPath(path)) ?? '?'}`
     );
     return this.hashPayload(files, filtering);
   }
@@ -445,7 +447,7 @@ export class TextureAtlasService {
 
     for (const resourcePath of include) {
       try {
-        const blob = await this.fs.readBlob(stripRes(resourcePath));
+        const blob = await this.fs.readBlob(toProjectPath(resourcePath));
         const bitmap = await createImageBitmap(blob);
         const { width, height } = bitmap;
         const tooLarge =
@@ -585,10 +587,6 @@ export class TextureAtlasService {
 
 function sheetKey(hash: string, sheetId: string): string {
   return `${ATLAS_SHEET_SCHEME}${hash}/${sheetId}`;
-}
-
-function stripRes(path: string): string {
-  return path.startsWith('res://') ? path.slice(6) : path;
 }
 
 function matchAll(text: string, pattern: RegExp): string[] {

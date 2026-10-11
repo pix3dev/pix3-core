@@ -19,6 +19,7 @@ import {
 } from './grouped-asset-tree';
 import './asset-tree.ts.css';
 import { isReadOnlyTab } from '@/services/editor/read-only';
+import { toFolderPath, toProjectPath, toResourcePath } from '@/services/project/disk/project-paths';
 
 @customElement('pix3-asset-tree')
 export class AssetTree extends ComponentBase {
@@ -221,7 +222,7 @@ export class AssetTree extends ComponentBase {
    * segments) are not present in the grouped tree and report a miss.
    */
   private async selectPathInGroupedTree(targetPath: string): Promise<boolean> {
-    const normalized = this.normalizePath(this.normalizeTreePath(targetPath));
+    const normalized = toFolderPath(targetPath);
     if (!normalized || normalized === '.') {
       return false;
     }
@@ -283,7 +284,7 @@ export class AssetTree extends ComponentBase {
         if (category.nodeType !== 'category' || !category.folderPath) {
           continue;
         }
-        if (this.normalizePath(category.folderPath) !== parentPath) {
+        if (toFolderPath(category.folderPath) !== parentPath) {
           continue;
         }
         category.expanded = true;
@@ -324,7 +325,7 @@ export class AssetTree extends ComponentBase {
     ancestors: Node[] = []
   ): { node: Node; ancestors: Node[] } | null {
     for (const node of nodes) {
-      const nodePath = this.normalizePath(node.path);
+      const nodePath = toFolderPath(node.path);
       if (nodePath === normalizedPath) {
         return { node, ancestors: [...ancestors] };
       }
@@ -351,15 +352,6 @@ export class AssetTree extends ComponentBase {
       .filter(segment => segment.length > 0 && segment !== '.');
   }
 
-  private normalizePath(path: string): string {
-    const normalized = path
-      .replace(/\\+/g, '/')
-      .replace(/^\.\//, '')
-      .replace(/^\/+/, '')
-      .replace(/\/+$/, '');
-    return normalized || '.';
-  }
-
   private sortNodes(nodes: Node[]): Node[] {
     return nodes.sort(
       (a, b) =>
@@ -372,7 +364,7 @@ export class AssetTree extends ComponentBase {
     for (const node of nodes) {
       if (node.kind === 'directory') {
         if (node.expanded) {
-          expandedPaths.add(this.normalizePath(node.path));
+          expandedPaths.add(toFolderPath(node.path));
         }
         if (node.children && node.children.length > 0) {
           this.collectExpandedPaths(node.children, expandedPaths);
@@ -542,7 +534,7 @@ export class AssetTree extends ComponentBase {
   }
 
   private shouldExcludeEntry(entry: FileDescriptor): boolean {
-    const normalizedPath = this.normalizePath(entry.path);
+    const normalizedPath = toFolderPath(entry.path);
     const pathSegments = normalizedPath.split('/').filter(segment => segment.length > 0);
 
     if (entry.name.startsWith('.')) {
@@ -691,7 +683,7 @@ export class AssetTree extends ComponentBase {
       return;
     }
 
-    const normalizedPath = this.normalizeTreePath(node.path);
+    const normalizedPath = toProjectPath(node.path);
     if (!normalizedPath) {
       console.warn('[AssetTree] Asset path is empty', node);
       return;
@@ -701,7 +693,7 @@ export class AssetTree extends ComponentBase {
       name: node.name,
       path: node.path,
       kind: node.kind,
-      resourcePath: this.buildResourcePath(normalizedPath),
+      resourcePath: toResourcePath(normalizedPath),
       extension: this.getFileExtension(node.name),
     };
 
@@ -733,14 +725,6 @@ export class AssetTree extends ComponentBase {
     );
   }
 
-  private buildResourcePath(normalizedPath: string): string {
-    return `res://${normalizedPath}`;
-  }
-
-  private normalizeTreePath(path: string): string {
-    return path.replace(/^(\.?\/)+/, '').replace(/^\/+/, '');
-  }
-
   private getFileExtension(name: string): string {
     const lastDot = name.lastIndexOf('.');
     if (lastDot === -1 || lastDot === name.length - 1) {
@@ -756,7 +740,7 @@ export class AssetTree extends ComponentBase {
     const sizeBytes = await this.getNodeSizeBytes(entry);
 
     if (entry.kind === 'directory') {
-      const isExpanded = expandedPaths?.has(this.normalizePath(entry.path)) ?? false;
+      const isExpanded = expandedPaths?.has(toFolderPath(entry.path)) ?? false;
       // The folders-only tree only expands directories that contain subdirectories;
       // a shallow listing tells us whether to render the expand triangle at all.
       const childEntries = await this.listDirectory(entry.path);

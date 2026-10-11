@@ -15,6 +15,7 @@ import { AddEffectCommand } from '@/features/effects/AddEffectCommand';
 import { RemoveEffectCommand } from '@/features/effects/RemoveEffectCommand';
 import type { InspectorPanel } from './inspector-panel';
 import { isReadOnlyTab } from '@/services/editor/read-only';
+import { toResourcePath } from '@/services/project/disk/project-paths';
 
 /**
  * Renders the inspector's top-level sections (asset inspector, summary + groups, editor flags,
@@ -37,7 +38,7 @@ export class InspectorSectionRenderers {
     const textPreview = isText
       ? this.host.resourcePreview.getTextAssetPreview(asset.path, asset.previewText)
       : null;
-    const resourceUrl = asset.path === '.' ? 'res://' : `res://${asset.path}`;
+    const resourceUrl = toResourcePath(asset.path);
 
     return html`
       <div class="property-section">

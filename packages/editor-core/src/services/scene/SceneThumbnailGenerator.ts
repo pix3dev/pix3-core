@@ -22,7 +22,7 @@ import {
   type SceneGraph,
 } from '@pix3/runtime';
 import { appState } from '@/state';
-import { toProjectResourcePath } from '@/ui/shared/asset-drag-drop';
+import { toResourcePath } from '@/services/project/disk/project-paths';
 
 /** Long edge of the generated thumbnail, in device-independent pixels. */
 const THUMBNAIL_MAX_SIZE = 320;
@@ -81,7 +81,7 @@ export class SceneThumbnailGenerator {
    */
   public async generate(blob: Blob, filePath: string): Promise<string> {
     const text = await blob.text();
-    const resourcePath = toProjectResourcePath(filePath);
+    const resourcePath = toResourcePath(filePath);
     const graph = await this.sceneManager.parseScene(text, { filePath: resourcePath });
 
     try {

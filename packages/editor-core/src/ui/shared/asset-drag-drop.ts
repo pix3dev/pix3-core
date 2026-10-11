@@ -22,15 +22,6 @@ const PREFAB_EXTENSIONS = new Set(['pix3scene']);
 
 export type SceneCreateAssetKind = 'image' | 'animation' | 'model' | 'prefab';
 
-export const toProjectResourcePath = (path: string): string => {
-  const normalizedPath = path
-    .replace(/\\+/g, '/')
-    .replace(/^(\.?\/)+/, '')
-    .replace(/^\/+/, '');
-
-  return normalizedPath.length > 0 ? `res://${normalizedPath}` : 'res://';
-};
-
 const normalizeDroppedAssetResourcePath = (raw: string | null | undefined): string | null => {
   if (!raw) {
     return null;

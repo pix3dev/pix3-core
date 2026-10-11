@@ -14,6 +14,7 @@ import {
   type ProjectManifest,
 } from '@/core/ProjectManifest';
 import { loadProjectFonts, setProjectAODefault, setProjectTextureFiltering } from '@pix3/runtime';
+import { toProjectPath, toResourcePath } from '@/services/project/disk/project-paths';
 
 const PROJECT_MANIFEST_PATH = 'pix3project.yaml';
 const ASSET_BROWSER_STORAGE_PREFIX = 'pix3.assetBrowser:v1:';
@@ -97,7 +98,7 @@ export class ProjectService {
   /** `res://` path of the scene the editor opens first. */
   entryScenePath(manifest: ProjectManifest | null = appState.project.manifest): string {
     const path = manifest?.defaultExportScenePath || ProjectService.STARTUP_SCENE_PATH;
-    return `res://${path.replace(/^res:\/\//i, '')}`;
+    return toResourcePath(path);
   }
 
   saveAssetBrowserState(patch: Partial<AssetBrowserPersistedState>): void {
@@ -192,8 +193,7 @@ export class ProjectService {
       // system substitute in the editor while the game (which loads them in `SceneRunner`)
       // draws it correctly — the two would disagree on the same scene.
       void loadProjectFonts(manifest.fonts, {
-        readBlob: (resourcePath: string) =>
-          this.storage.readBlob(resourcePath.replace(/^res:\/\//, '')),
+        readBlob: (resourcePath: string) => this.storage.readBlob(toProjectPath(resourcePath)),
       }).then(report => {
         if (report.failed.length > 0) {
           console.warn(

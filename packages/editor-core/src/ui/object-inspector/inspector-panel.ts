@@ -44,6 +44,7 @@ import './inspector-panel.ts.css';
 import './inspector-controls.ts.css';
 import './model-asset-preview';
 import './property-editors';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /**
  * Poll cadence for the play-mode live read-out (~12.5 Hz). Fast enough to feel
@@ -1054,9 +1055,7 @@ export class InspectorPanel extends ComponentBase {
 
     this.tracingPolygonComponentIds = [...this.tracingPolygonComponentIds, componentId];
     try {
-      const blob = await this.projectStorage.readBlob(
-        texturePath.startsWith('res://') ? texturePath.substring(6) : texturePath
-      );
+      const blob = await this.projectStorage.readBlob(toProjectPath(texturePath));
       const mask = await readAlphaMask(blob);
       if (!mask) {
         return;

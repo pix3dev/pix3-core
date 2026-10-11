@@ -1,6 +1,7 @@
 import { inject, injectable } from '@/fw/di';
 import { ResourceManager as RuntimeResourceManager } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 const RES_SCHEME = 'res';
 
@@ -30,7 +31,7 @@ class EditorResourceManager extends RuntimeResourceManager {
       return super.readText(resource);
     }
     try {
-      return await this.storage.readTextFile(this.stripScheme(resource));
+      return await this.storage.readTextFile(toProjectPath(resource));
     } catch (error) {
       throw isNotFound(error) ? missingResource(resource, error) : error;
     }
@@ -41,7 +42,7 @@ class EditorResourceManager extends RuntimeResourceManager {
       return super.readBlob(resource);
     }
     try {
-      return await this.storage.readBlob(this.stripScheme(resource));
+      return await this.storage.readBlob(toProjectPath(resource));
     } catch (error) {
       throw isNotFound(error) ? missingResource(resource, error) : error;
     }
@@ -52,10 +53,6 @@ class EditorResourceManager extends RuntimeResourceManager {
       return this.storage.normalizeResourcePath(resource);
     }
     return super.normalize(resource);
-  }
-
-  private stripScheme(resource: string): string {
-    return resource.startsWith('res://') ? resource.substring(6) : resource;
   }
 }
 

@@ -1,5 +1,6 @@
 import { injectable, inject } from '@/fw/di';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
+import { toFolderPath } from '@/services/project/disk/project-paths';
 
 export interface AssetImportFailure {
   /** Original file name that failed to import. */
@@ -90,13 +91,7 @@ export function isTextAsset(file: File): boolean {
 
 /** Normalizes a target directory to the project convention (forward slashes, no leading `./`, `.` for root). */
 export function normalizeImportDirectory(directory: string): string {
-  const normalized = directory
-    .replace(/\\+/g, '/')
-    .replace(/^\.\/+/, '')
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-    .trim();
-  return normalized.length === 0 ? '.' : normalized;
+  return toFolderPath(directory.trim());
 }
 
 /**

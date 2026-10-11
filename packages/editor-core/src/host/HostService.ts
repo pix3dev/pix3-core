@@ -1,6 +1,7 @@
 import { injectable } from '@/fw/di';
 
 import type { EditorHost, HostInfo } from './EditorHost';
+import { toFolderPath } from '@/services/project/disk/project-paths';
 
 let installed: EditorHost | null = null;
 
@@ -42,15 +43,7 @@ export class HostService {
 
   /** `res://scenes/a.pix3scene`, `./scenes/a.pix3scene`, `scenes/a.pix3scene` → `scenes/a.pix3scene`. */
   static normalize(path: string): string {
-    if (!path || path === '.') return '.';
-    return (
-      path
-        .replace(/\\+/g, '/')
-        .replace(/^res:\/\//i, '')
-        .replace(/^\.\/+/, '')
-        .replace(/^\/+/, '')
-        .replace(/\/+$/, '') || '.'
-    );
+    return toFolderPath(path);
   }
 
   /** Project path → wire path (prefixed with `resRoot` unless root-relative). */

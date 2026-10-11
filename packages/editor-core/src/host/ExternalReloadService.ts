@@ -7,7 +7,8 @@ import {
 } from '@/services/localization/LocalizationEditorService';
 import { SceneMergeService } from '@/services/project/SceneMergeService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
-import { toProjectPath } from '@/services/project/disk/project-paths';
+import { isSceneFilePath, toProjectPath } from '@/services/project/disk/project-paths';
+import { optionalService } from '@/services/project/disk/optional-service';
 import { ProjectService } from '@/services/project/ProjectService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { appState } from '@/state';
@@ -62,8 +63,13 @@ export class ExternalReloadService {
     }
     const locales = [...changed].filter(path => localeOfPath(path) !== null);
     for (const path of locales) await this.localization.applyExternal(path);
-    if (locales.length > 0) viewport()?.refreshLocalizedLabels();
-    const prefabsChanged = [...changed].filter(path => /\.(?:prefab|pix3scene)$/i.test(path));
+    if (locales.length > 0) {
+      optionalService(
+        ServiceContainer.getInstance(),
+        ViewportRendererService
+      )?.refreshLocalizedLabels();
+    }
+    const prefabsChanged = [...changed].filter(isSceneFilePath);
     for (const descriptor of Object.values(appState.scenes.descriptors)) {
       const path = toProjectPath(descriptor.filePath);
       if (changed.has(path)) {
@@ -91,11 +97,4 @@ export class ExternalReloadService {
     }
     return { failed };
   }
-}
-
-/** The viewport, when one is mounted (labels show the preview locale's strings). */
-function viewport(): ViewportRendererService | null {
-  const container = ServiceContainer.getInstance();
-  const token = container.getOrCreateToken(ViewportRendererService);
-  return container.hasService(token) ? container.getService<ViewportRendererService>(token) : null;
 }

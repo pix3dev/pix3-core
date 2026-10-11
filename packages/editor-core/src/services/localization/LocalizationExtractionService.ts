@@ -10,6 +10,7 @@ import {
 } from '@pix3/runtime';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
+import { toProjectPath } from '@/services/project/disk/project-paths';
 
 /** Directory names never descended into during scene discovery. */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'exports', '.git', '.yalc']);
@@ -170,13 +171,13 @@ export class LocalizationExtractionService {
     }
 
     for (const scenePath of scenePaths) {
-      if (normalizePath(scenePath) === activeScenePath) continue;
+      if (toProjectPath(scenePath) === activeScenePath) continue;
       scannedScenes += 1;
       try {
         const text = await this.storage.readTextFile(scenePath);
         const hits = scanSceneDefinitionText(text);
         if (hits.length > 0) {
-          hitsByScene.push({ scenePath: normalizePath(scenePath), extractable: false, hits });
+          hitsByScene.push({ scenePath: toProjectPath(scenePath), extractable: false, hits });
         }
       } catch {
         // Unreadable/unparsable scene — skip; the panel summary still counts it.
@@ -189,7 +190,7 @@ export class LocalizationExtractionService {
   private getActiveScenePath(): string {
     const activeId = appState.scenes.activeSceneId;
     const descriptor = activeId ? appState.scenes.descriptors[activeId] : null;
-    return descriptor ? normalizePath(descriptor.filePath) : '';
+    return descriptor ? toProjectPath(descriptor.filePath) : '';
   }
 
   // ---- scripts --------------------------------------------------------------
@@ -368,12 +369,4 @@ export function slugifyKey(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '.')
     .replace(/^\.+|\.+$/g, '');
-}
-
-/** Strip `res://` / leading `./` so descriptor paths and discovered paths compare. */
-function normalizePath(path: string): string {
-  return path
-    .replace(/^res:\/\//, '')
-    .replace(/^\.\//, '')
-    .replace(/^\/+/, '');
 }

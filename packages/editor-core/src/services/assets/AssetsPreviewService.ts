@@ -14,6 +14,7 @@ import {
   type AnimationResource,
 } from '@pix3/runtime';
 import { isManagedSpriteFolder } from '@/features/scene/animation-asset-utils';
+import { toFolderPath, toResourcePath } from '@/services/project/disk/project-paths';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 const AUDIO_EXTENSIONS = new Set(['wav', 'mp3', 'ogg']);
@@ -218,16 +219,16 @@ export class AssetsPreviewService {
   }
 
   public selectItem(path: string): void {
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     this.state.selectedItemPath = normalizedPath;
     this.state.selectedItem =
-      this.state.items.find(item => this.normalizePath(item.path) === normalizedPath) ?? null;
+      this.state.items.find(item => toFolderPath(item.path) === normalizedPath) ?? null;
     this.notify();
   }
 
   public requestThumbnail(path: string): void {
-    const normalizedPath = this.normalizePath(path);
-    const item = this.state.items.find(entry => this.normalizePath(entry.path) === normalizedPath);
+    const normalizedPath = toFolderPath(path);
+    const item = this.state.items.find(entry => toFolderPath(entry.path) === normalizedPath);
     if (!item || !isRenderedThumbnailType(item.previewType) || item.kind !== 'file') {
       return;
     }
@@ -260,10 +261,10 @@ export class AssetsPreviewService {
       return;
     }
 
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     const selectedFolderPath =
       kind === 'directory' ? normalizedPath : this.getParentPath(normalizedPath);
-    const normalizedFolderPath = this.normalizePath(selectedFolderPath);
+    const normalizedFolderPath = toFolderPath(selectedFolderPath);
 
     if (this.state.selectedFolderPath === normalizedFolderPath) {
       if (kind === 'file') {
@@ -277,7 +278,7 @@ export class AssetsPreviewService {
     this.state.selectedItemPath = kind === 'file' ? normalizedPath : null;
     this.state.selectedItem =
       kind === 'file'
-        ? (this.state.items.find(item => this.normalizePath(item.path) === normalizedPath) ?? null)
+        ? (this.state.items.find(item => toFolderPath(item.path) === normalizedPath) ?? null)
         : null;
     await this.setSelectedFolder(normalizedFolderPath);
   }
@@ -360,8 +361,8 @@ export class AssetsPreviewService {
       return false;
     }
 
-    const currentPath = this.normalizePath(this.state.selectedFolderPath);
-    const modifiedPath = this.normalizePath(modifiedDirectory);
+    const currentPath = toFolderPath(this.state.selectedFolderPath);
+    const modifiedPath = toFolderPath(modifiedDirectory);
 
     if (modifiedPath === '.') {
       return true;
@@ -375,9 +376,9 @@ export class AssetsPreviewService {
   }
 
   private async setSelectedFolder(folderPath: string): Promise<void> {
-    const normalized = this.normalizePath(folderPath);
+    const normalized = toFolderPath(folderPath);
     this.state.selectedFolderPath = normalized;
-    this.state.displayPath = this.toResourcePath(normalized);
+    this.state.displayPath = toResourcePath(normalized);
     this.notify();
     await this.loadFolder(normalized);
   }
@@ -420,7 +421,7 @@ export class AssetsPreviewService {
       this.state.items = items;
       if (this.state.selectedItemPath) {
         this.state.selectedItem =
-          items.find(item => this.normalizePath(item.path) === this.state.selectedItemPath) ?? null;
+          items.find(item => toFolderPath(item.path) === this.state.selectedItemPath) ?? null;
         if (!this.state.selectedItem) {
           this.state.selectedItemPath = null;
         }
@@ -490,7 +491,7 @@ export class AssetsPreviewService {
     name: string,
     path: string
   ): Promise<AssetPreviewItem | null> {
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     const cached = this.spriteFolderCache.get(normalizedPath);
     const animationPath =
       cached !== undefined ? cached : await this.resolveManagedSpriteAnimation(normalizedPath);
@@ -814,7 +815,7 @@ export class AssetsPreviewService {
     requestVersion: number,
     prioritize: boolean
   ): void {
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     this.queuedThumbnailVersions.set(normalizedPath, requestVersion);
 
     if (!this.inFlightThumbnails.has(normalizedPath)) {
@@ -870,8 +871,8 @@ export class AssetsPreviewService {
       return;
     }
 
-    const normalizedPath = this.normalizePath(path);
-    const item = this.state.items.find(entry => this.normalizePath(entry.path) === normalizedPath);
+    const normalizedPath = toFolderPath(path);
+    const item = this.state.items.find(entry => toFolderPath(entry.path) === normalizedPath);
     if (
       !item ||
       item.kind !== 'file' ||
@@ -935,11 +936,11 @@ export class AssetsPreviewService {
   }
 
   private updateItem(path: string, updater: (item: AssetPreviewItem) => AssetPreviewItem): void {
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     let didUpdate = false;
 
     this.state.items = this.state.items.map(item => {
-      if (this.normalizePath(item.path) !== normalizedPath) {
+      if (toFolderPath(item.path) !== normalizedPath) {
         return item;
       }
 
@@ -953,9 +954,8 @@ export class AssetsPreviewService {
 
     if (this.state.selectedItemPath) {
       this.state.selectedItem =
-        this.state.items.find(
-          item => this.normalizePath(item.path) === this.state.selectedItemPath
-        ) ?? null;
+        this.state.items.find(item => toFolderPath(item.path) === this.state.selectedItemPath) ??
+        null;
     }
 
     this.notify();
@@ -970,7 +970,7 @@ export class AssetsPreviewService {
       return null;
     }
 
-    return `${this.normalizePath(path)}::${lastModified}::${sizeBytes}`;
+    return `${toFolderPath(path)}::${lastModified}::${sizeBytes}`;
   }
 
   private async getImageDimensions(
@@ -1100,7 +1100,7 @@ export class AssetsPreviewService {
   }
 
   private async loadResourceObjectUrl(resourcePath: string): Promise<string | null> {
-    const relativePath = this.normalizePath(resourcePath.replace(/^res:\/\//, ''));
+    const relativePath = toFolderPath(resourcePath);
     try {
       const blob = await this.storage.readBlob(relativePath);
       if (!blob) {
@@ -1122,9 +1122,9 @@ export class AssetsPreviewService {
    * user hits play.
    */
   public async requestAnimationFrames(path: string): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
+    const normalizedPath = toFolderPath(path);
     const requestVersion = this.requestVersion;
-    const item = this.state.items.find(entry => this.normalizePath(entry.path) === normalizedPath);
+    const item = this.state.items.find(entry => toFolderPath(entry.path) === normalizedPath);
     if (!item || item.kind !== 'file' || !item.animation || item.animation.framesLoaded) {
       return;
     }
@@ -1144,9 +1144,7 @@ export class AssetsPreviewService {
       return;
     }
 
-    const index = this.state.items.findIndex(
-      entry => this.normalizePath(entry.path) === normalizedPath
-    );
+    const index = this.state.items.findIndex(entry => toFolderPath(entry.path) === normalizedPath);
     if (index < 0) {
       return;
     }
@@ -1204,17 +1202,8 @@ export class AssetsPreviewService {
     return 'file';
   }
 
-  private normalizePath(path: string): string {
-    const normalized = path
-      .replace(/\\+/g, '/')
-      .replace(/^\.\//, '')
-      .replace(/^\/+/, '')
-      .replace(/\/+$/, '');
-    return normalized.length > 0 ? normalized : '.';
-  }
-
   private getParentPath(path: string): string {
-    const normalized = this.normalizePath(path);
+    const normalized = toFolderPath(path);
     if (normalized === '.') {
       return '.';
     }
@@ -1224,13 +1213,6 @@ export class AssetsPreviewService {
       return '.';
     }
     return parts.slice(0, -1).join('/');
-  }
-
-  private toResourcePath(path: string): string {
-    if (path === '.') {
-      return 'res://';
-    }
-    return `res://${path}`;
   }
 
   private waitForNextFrame(): Promise<void> {

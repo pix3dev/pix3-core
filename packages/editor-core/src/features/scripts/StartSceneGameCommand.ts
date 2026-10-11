@@ -9,6 +9,7 @@ import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { OperationService } from '@/services/core/OperationService';
 import { SetPlayModeOperation, type PlayOwner } from '@/features/scripts/SetPlayModeOperation';
 import { ensureSceneActive, openGameSurface } from '@/features/scripts/play-workspace';
+import { toResourcePath } from '@/services/project/disk/project-paths';
 
 export interface StartSceneGameParams {
   /** Scene to play — `res://` path or project-relative (`scenes/x.pix3scene`). */
@@ -82,8 +83,7 @@ export class StartSceneGameCommand extends CommandBase<void, void> {
       container.getOrCreateToken(OperationService)
     );
 
-    const raw = this.params.scenePath.trim().replace(/\\/g, '/');
-    const resourcePath = /^res:\/\//i.test(raw) ? raw : `res://${raw.replace(/^\/+/, '')}`;
+    const resourcePath = toResourcePath(this.params.scenePath.trim());
 
     // Making it the active scene (its editor tab) is what the runner clones from.
     await ensureSceneActive(container, resourcePath);
