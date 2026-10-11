@@ -47,7 +47,6 @@ export class RemoveNodeFromGroupOperation implements Operation<OperationInvokeRe
     }
 
     node.removeFromGroup(group);
-    sceneManager.removeNodeFromGroup(node, group, sceneId);
     this.markSceneDirty(state, sceneId);
 
     return {
@@ -56,12 +55,10 @@ export class RemoveNodeFromGroupOperation implements Operation<OperationInvokeRe
         label: `Remove "${node.name}" from group "${group}"`,
         undo: async () => {
           node.addToGroup(group);
-          sceneManager.addNodeToGroup(node, group, sceneId);
           this.markSceneDirty(state, sceneId);
         },
         redo: async () => {
           node.removeFromGroup(group);
-          sceneManager.removeNodeFromGroup(node, group, sceneId);
           this.markSceneDirty(state, sceneId);
         },
       },

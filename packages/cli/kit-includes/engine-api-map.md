@@ -28,6 +28,10 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
 - Cameras: `getActiveCamera()`, `getActiveCamera2D()`. `getPointer2DWorldPosition(pointerId)`
   is null once that finger is up (Godot's `get_global_mouse_position()` for the primary one).
 - Autoloads by name too: `scene.getAutoload<GameState>('GameState')`.
+- Groups (a node's `groups: [enemies]` in the scene, `node.addToGroup('enemies')` at run time):
+  `scene.getNodesInGroup('enemies')` lists the running scene's members in tree order;
+  `scene.callGroup('enemies', 'onAlarm', 3)` calls that method on every component that has it
+  (returns the count, warns once when none has it).
 - Real-time overlays that survive hitstop: `scene.fadeToBlack(sec, onDone?)`,
   `scene.fadeFromBlack(sec, onDone?)`, `scene.switchCameraWithFade(cameraId, outSec, inSec,
   onDone?)`, `scene.flash({ color, intensity, durationSec })`.

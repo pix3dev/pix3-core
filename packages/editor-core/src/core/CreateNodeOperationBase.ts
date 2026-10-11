@@ -106,7 +106,7 @@ export abstract class CreateNodeOperationBase<TParams> implements Operation<Oper
     // only index the root, every subsequent lookup of a child via
     // sceneGraph.nodeMap (inspector edits, gizmos, reparent, alignment) silently
     // no-ops until a reload rebuilds the map.
-    this.registerSubtree(sceneManager, sceneGraph, node, sceneId);
+    this.registerSubtree(sceneGraph, node);
 
     SceneStateUpdater.updateHierarchyState(state, sceneId, sceneGraph);
     SceneStateUpdater.markSceneDirty(state, sceneId);
@@ -120,7 +120,7 @@ export abstract class CreateNodeOperationBase<TParams> implements Operation<Oper
       commit: {
         label: `Create ${nodeName}`,
         undo: () => {
-          this.unregisterSubtree(sceneManager, sceneGraph, node, sceneId);
+          this.unregisterSubtree(sceneGraph, node);
           removeNodeFromSceneGraph(sceneGraph, node);
 
           SceneStateUpdater.updateHierarchyState(state, sceneId, sceneGraph);
@@ -129,7 +129,7 @@ export abstract class CreateNodeOperationBase<TParams> implements Operation<Oper
         },
         redo: () => {
           insertNodeAtIndex(sceneGraph, node, resolveCommittedParent(), insertIndex);
-          this.registerSubtree(sceneManager, sceneGraph, node, sceneId);
+          this.registerSubtree(sceneGraph, node);
           SceneStateUpdater.updateHierarchyState(state, sceneId, sceneGraph);
           SceneStateUpdater.markSceneDirty(state, sceneId);
           SceneStateUpdater.selectNode(state, createdNodeId);
@@ -157,30 +157,14 @@ export abstract class CreateNodeOperationBase<TParams> implements Operation<Oper
     }
   }
 
-  private registerSubtree(
-    sceneManager: SceneManager,
-    sceneGraph: SceneGraph,
-    root: SceneGraph['rootNodes'][0],
-    sceneId: string
-  ): void {
+  private registerSubtree(sceneGraph: SceneGraph, root: SceneGraph['rootNodes'][0]): void {
     this.forEachInSubtree(root, node => {
       sceneGraph.nodeMap.set(node.nodeId, node);
-      for (const group of node.groups) {
-        sceneManager.addNodeToGroup(node, group, sceneId);
-      }
     });
   }
 
-  private unregisterSubtree(
-    sceneManager: SceneManager,
-    sceneGraph: SceneGraph,
-    root: SceneGraph['rootNodes'][0],
-    sceneId: string
-  ): void {
+  private unregisterSubtree(sceneGraph: SceneGraph, root: SceneGraph['rootNodes'][0]): void {
     this.forEachInSubtree(root, node => {
-      for (const group of node.groups) {
-        sceneManager.removeNodeFromGroup(node, group, sceneId);
-      }
       sceneGraph.nodeMap.delete(node.nodeId);
     });
   }

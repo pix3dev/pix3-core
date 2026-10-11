@@ -130,7 +130,7 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
       }
 
       this.insertNode(sceneGraph.rootNodes, duplicatedRoot, sourceParent, insertIndex);
-      this.registerSubtree(sceneManager, sceneGraph.nodeMap, duplicatedRoot, activeSceneId);
+      this.registerSubtree(sceneGraph.nodeMap, duplicatedRoot);
 
       this.createdEntries.push({
         node: duplicatedRoot,
@@ -174,7 +174,7 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
     }
 
     for (let i = this.createdEntries.length - 1; i >= 0; i -= 1) {
-      this.unregisterSubtree(sceneManager, sceneGraph.nodeMap, this.createdEntries[i].node);
+      this.unregisterSubtree(sceneGraph.nodeMap, this.createdEntries[i].node);
       this.removeNode(sceneGraph.rootNodes, this.createdEntries[i].node);
     }
 
@@ -203,12 +203,7 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
       const parent = entry.parentId ? (sceneGraph.nodeMap.get(entry.parentId) ?? null) : null;
       const parentNode = parent instanceof NodeBase ? parent : null;
       this.insertNode(sceneGraph.rootNodes, entry.node, parentNode, entry.index);
-      this.registerSubtree(
-        sceneManager,
-        sceneGraph.nodeMap,
-        entry.node,
-        this.activeSceneIdAtCommit
-      );
+      this.registerSubtree(sceneGraph.nodeMap, entry.node);
     }
 
     SceneStateUpdater.updateHierarchyState(state, this.activeSceneIdAtCommit, sceneGraph);
@@ -394,39 +389,21 @@ export class DuplicateNodesOperation implements Operation<OperationInvokeResult>
     }
   }
 
-  private registerSubtree(
-    sceneManager: SceneManager,
-    nodeMap: Map<string, NodeBase>,
-    node: NodeBase,
-    sceneId: string
-  ): void {
+  private registerSubtree(nodeMap: Map<string, NodeBase>, node: NodeBase): void {
     nodeMap.set(node.nodeId, node);
-    for (const group of node.groups) {
-      sceneManager.addNodeToGroup(node, group, sceneId);
-    }
-
     for (const child of node.children) {
       if (child instanceof NodeBase) {
-        this.registerSubtree(sceneManager, nodeMap, child, sceneId);
+        this.registerSubtree(nodeMap, child);
       }
     }
   }
 
-  private unregisterSubtree(
-    sceneManager: SceneManager,
-    nodeMap: Map<string, NodeBase>,
-    node: NodeBase
-  ): void {
+  private unregisterSubtree(nodeMap: Map<string, NodeBase>, node: NodeBase): void {
     for (const child of node.children) {
       if (child instanceof NodeBase) {
-        this.unregisterSubtree(sceneManager, nodeMap, child);
+        this.unregisterSubtree(nodeMap, child);
       }
     }
-
-    for (const group of node.groups) {
-      sceneManager.removeNodeFromGroup(node, group, this.activeSceneIdAtCommit ?? undefined);
-    }
-
     nodeMap.delete(node.nodeId);
   }
 }

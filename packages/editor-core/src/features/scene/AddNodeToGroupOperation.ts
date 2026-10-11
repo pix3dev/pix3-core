@@ -47,7 +47,6 @@ export class AddNodeToGroupOperation implements Operation<OperationInvokeResult>
     }
 
     node.addToGroup(group);
-    sceneManager.addNodeToGroup(node, group, sceneId);
     this.markSceneDirty(state, sceneId);
 
     return {
@@ -56,12 +55,10 @@ export class AddNodeToGroupOperation implements Operation<OperationInvokeResult>
         label: `Add "${node.name}" to group "${group}"`,
         undo: async () => {
           node.removeFromGroup(group);
-          sceneManager.removeNodeFromGroup(node, group, sceneId);
           this.markSceneDirty(state, sceneId);
         },
         redo: async () => {
           node.addToGroup(group);
-          sceneManager.addNodeToGroup(node, group, sceneId);
           this.markSceneDirty(state, sceneId);
         },
       },

@@ -732,6 +732,66 @@ export class SceneService {
     return this.findNodeById(query) ?? this.findNodeByName(query);
   }
 
+  // ── Groups (spec §6.19) ───────────────────────────────────────────────────
+  //
+  // Membership is the nodes' own `groups` set (`node.addToGroup` / `removeFromGroup`, the scene
+  // file's `groups: []`), read at call time — there is no index to keep in sync, so a node added
+  // to a group, spawned, freed or carried in by `changeScene` is seen on the next query.
+
+  /**
+   * Every node of the running scene in `group`, in tree order (depth-first, parents before their
+   * children, roots in order). Empty outside a running game. The autoloads' hidden root is not
+   * part of the scene, as for {@link findNode}.
+   */
+  getNodesInGroup(group: string): NodeBase[] {
+    const name = group.trim();
+    const found: NodeBase[] = [];
+    if (!name) {
+      return found;
+    }
+    const visit = (node: NodeBase): void => {
+      if (node.groups.has(name)) {
+        found.push(node);
+      }
+      for (const child of node.children) {
+        if (child instanceof NodeBase) {
+          visit(child);
+        }
+      }
+    };
+    for (const root of this.getRootNodes()) {
+      visit(root);
+    }
+    return found;
+  }
+
+  /**
+   * Godot's `call_group`: call `method(...args)` on every component of every node in `group` that
+   * has a function of that name (the node list is taken before the first call, so a method that
+   * frees or regroups nodes does not change who is called). A component without the method is
+   * skipped; when the group has nodes but none of their components has it, one warning names the
+   * group and the method. Returns how many calls were made.
+   */
+  callGroup(group: string, method: string, ...args: unknown[]): number {
+    const nodes = this.getNodesInGroup(group);
+    let called = 0;
+    for (const node of nodes) {
+      for (const component of [...node.components]) {
+        const candidate: unknown = Reflect.get(component, method);
+        if (typeof candidate === 'function') {
+          (candidate as (...values: unknown[]) => unknown).apply(component, args);
+          called += 1;
+        }
+      }
+    }
+    if (nodes.length > 0 && called === 0) {
+      console.warn(
+        `[SceneService] callGroup("${group}", "${method}"): no component of the ${nodes.length} node(s) in the group has that method.`
+      );
+    }
+    return called;
+  }
+
   /**
    * Returns the internal orthographic camera used for 2D UI rendering.
    */

@@ -16,8 +16,7 @@ function makeGraph(marker: string): SceneGraph {
   const nodeMap = new Map<string, NodeBase>();
   // A sentinel entry lets a test assert the graph was NOT disposed (dispose
   // clears nodeMap) when we merely switch the active pointer.
-  // `groups` must be iterable — setActiveSceneGraph builds a group map over it.
-  nodeMap.set(marker, { nodeId: marker, groups: new Set<string>() } as unknown as NodeBase);
+  nodeMap.set(marker, { nodeId: marker } as unknown as NodeBase);
   return { version: '1.0.0', rootNodes: [], nodeMap, metadata: {} };
 }
 

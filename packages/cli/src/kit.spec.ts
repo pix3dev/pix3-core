@@ -352,6 +352,20 @@ describe('kit drift', () => {
     expect(typeof runtime.registerGameDebug).toBe('function');
   });
 
+  it('calls only scene.* methods SceneService has, groups included', () => {
+    // `this.scene.foo(…)` / `scene.foo(…)` in prose or code: `foo` must be a SceneService member
+    // (a method or a getter such as `tween`, whose own members are not checked here).
+    const named = new Set<string>();
+    for (const [, content] of texts) {
+      for (const match of content.matchAll(/\bscene\??\.(\w+)\(/g)) named.add(match[1]);
+    }
+    expect([...named]).toEqual(
+      expect.arrayContaining(['getNodesInGroup', 'callGroup', 'getAutoload', 'changeScene'])
+    );
+    const prototype = runtime.SceneService.prototype as object;
+    expect([...named].filter(name => !(name in prototype))).toEqual([]);
+  });
+
   it('names only sync and bridge reasons the code produces', () => {
     const known = new Set<string>([...BRIDGE_REASONS, ...syncReasons()]);
     expect(known.has('stale')).toBe(true);
