@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -235,6 +235,41 @@ describe('file API', () => {
     expect(body.error).toBe('base_mismatch');
     expect(body.currentHash).toBe(sha(SCENE));
     expect(readFileSync(join(p.root, 'scenes/a.pix3scene'), 'utf8')).toBe(SCENE);
+  });
+
+  it('hashes for real on an If-Match check: a same-size rewrite within one timestamp tick is a 412', async () => {
+    const p = await start();
+    const file = join(p.root, 'scenes/a.pix3scene');
+    const first = 'root: [a]\n';
+    const second = 'root: [b]\n'; // same length
+    await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: first,
+      headers: { 'If-None-Match': '*' },
+    });
+    // The hash cache is keyed ino:size:mtimeNs. Pin the mtime, read the ETag (cached under that
+    // key), then rewrite the file in place — same inode, same size — with the same mtime: the
+    // agent's write within one tick of the editor's read.
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    const read = await p.fetch('/__pix3/api/file?path=scenes/a.pix3scene');
+    expect(read.headers.get('etag')).toBe(`"${sha(first)}"`);
+    writeFileSync(file, second);
+    utimesSync(file, 1_700_000_000, 1_700_000_000);
+    // A cheap read may still answer the cached sha; the write precondition must not.
+    const stale = await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: 'editor bytes',
+      headers: { 'If-Match': `"${sha(first)}"` },
+    });
+    expect(stale.status).toBe(412);
+    expect((await json(stale)).currentHash).toBe(sha(second));
+    expect(readFileSync(file, 'utf8')).toBe(second);
+    const fresh = await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: 'editor bytes',
+      headers: { 'If-Match': `"${sha(second)}"` },
+    });
+    expect(fresh.status).toBe(200);
   });
 
   it('refuses paths outside the root and the plugin-private part of .pix3', async () => {
