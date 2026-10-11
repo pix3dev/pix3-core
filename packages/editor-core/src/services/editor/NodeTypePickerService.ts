@@ -1,66 +1,31 @@
 import { injectable } from '@/fw/di';
+import { ModalRequests, type ModalRequest } from '@/services/editor/modal-requests';
 
-export interface NodeTypePickerInstance {
-  id: string;
-  resolve: (nodeTypeId: string | null) => void;
-}
+export type NodeTypePickerInstance = ModalRequest<object, string>;
 
+/** The node type browser: one at a time; resolves to the chosen node type id, or null. */
 @injectable()
 export class NodeTypePickerService {
-  private activePicker: NodeTypePickerInstance | null = null;
-  private listeners = new Set<(activePicker: NodeTypePickerInstance | null) => void>();
-  private nextId = 0;
+  private readonly requests = new ModalRequests<object, string>('node-type-picker', true);
 
-  public async showPicker(): Promise<string | null> {
-    if (this.activePicker) {
-      return null;
-    }
-
-    return new Promise(resolve => {
-      const id = `node-type-picker-${this.nextId++}`;
-      this.activePicker = {
-        id,
-        resolve: (nodeTypeId: string | null) => {
-          this.activePicker = null;
-          this.notifyListeners();
-          resolve(nodeTypeId);
-        },
-      };
-
-      this.notifyListeners();
-    });
+  showPicker(): Promise<string | null> {
+    return this.requests.request({});
   }
 
-  public select(pickerId: string, nodeTypeId: string): void {
-    if (!this.activePicker || this.activePicker.id !== pickerId) {
-      return;
-    }
-
-    this.activePicker.resolve(nodeTypeId);
+  select(pickerId: string, nodeTypeId: string): void {
+    this.requests.settle(pickerId, nodeTypeId);
   }
 
-  public cancel(pickerId: string): void {
-    if (!this.activePicker || this.activePicker.id !== pickerId) {
-      return;
-    }
-
-    this.activePicker.resolve(null);
+  cancel(pickerId: string): void {
+    this.requests.settle(pickerId, null);
   }
 
-  public subscribe(listener: (activePicker: NodeTypePickerInstance | null) => void): () => void {
-    this.listeners.add(listener);
-    listener(this.activePicker);
-    return () => this.listeners.delete(listener);
+  subscribe(listener: (activePicker: NodeTypePickerInstance | null) => void): () => void {
+    listener(this.requests.active());
+    return this.requests.onChange(() => listener(this.requests.active()));
   }
 
-  private notifyListeners(): void {
-    for (const listener of this.listeners) {
-      listener(this.activePicker);
-    }
-  }
-
-  public dispose(): void {
-    this.activePicker = null;
-    this.listeners.clear();
+  dispose(): void {
+    this.requests.dispose();
   }
 }

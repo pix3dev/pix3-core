@@ -1,4 +1,5 @@
 import { injectable } from '@/fw/di';
+import { ModalRequests, type ModalRequest } from '@/services/editor/modal-requests';
 
 export interface AssetImportDialogParams {
   /** Project-relative directory the imported files will be copied into (`.` = project root). */
@@ -10,11 +11,10 @@ export interface AssetImportDialogResult {
   importedPaths: string[];
 }
 
-export interface AssetImportDialogInstance {
-  id: string;
-  params: AssetImportDialogParams;
-  resolve: (result: AssetImportDialogResult | null) => void;
-}
+export type AssetImportDialogInstance = ModalRequest<
+  { readonly params: AssetImportDialogParams },
+  AssetImportDialogResult
+>;
 
 /**
  * Tracks the single active "Import assets" dialog and exposes a Promise-based API.
@@ -22,61 +22,29 @@ export interface AssetImportDialogInstance {
  */
 @injectable()
 export class AssetImportDialogService {
-  private activeDialog: AssetImportDialogInstance | null = null;
-  private listeners = new Set<(activeDialog: AssetImportDialogInstance | null) => void>();
-  private nextId = 0;
+  private readonly requests = new ModalRequests<
+    { readonly params: AssetImportDialogParams },
+    AssetImportDialogResult
+  >('asset-import', true);
 
-  async showDialog(params: AssetImportDialogParams): Promise<AssetImportDialogResult | null> {
-    if (this.activeDialog) {
-      return null;
-    }
-
-    return new Promise(resolve => {
-      const id = `asset-import-${this.nextId++}`;
-      this.activeDialog = {
-        id,
-        params,
-        resolve: (result: AssetImportDialogResult | null) => {
-          this.activeDialog = null;
-          this.notifyListeners();
-          resolve(result);
-        },
-      };
-
-      this.notifyListeners();
-    });
+  showDialog(params: AssetImportDialogParams): Promise<AssetImportDialogResult | null> {
+    return this.requests.request({ params });
   }
 
   confirm(dialogId: string, result: AssetImportDialogResult): void {
-    if (this.activeDialog?.id !== dialogId) {
-      return;
-    }
-
-    this.activeDialog.resolve(result);
+    this.requests.settle(dialogId, result);
   }
 
   cancel(dialogId: string): void {
-    if (this.activeDialog?.id !== dialogId) {
-      return;
-    }
-
-    this.activeDialog.resolve(null);
+    this.requests.settle(dialogId, null);
   }
 
   subscribe(listener: (activeDialog: AssetImportDialogInstance | null) => void): () => void {
-    this.listeners.add(listener);
-    listener(this.activeDialog);
-    return () => this.listeners.delete(listener);
+    listener(this.requests.active());
+    return this.requests.onChange(() => listener(this.requests.active()));
   }
 
   dispose(): void {
-    this.activeDialog = null;
-    this.listeners.clear();
-  }
-
-  private notifyListeners(): void {
-    for (const listener of this.listeners) {
-      listener(this.activeDialog);
-    }
+    this.requests.dispose();
   }
 }

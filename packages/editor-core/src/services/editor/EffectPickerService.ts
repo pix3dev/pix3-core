@@ -1,18 +1,18 @@
 import { injectable } from '@/fw/di';
 import type { ShaderEffectTarget } from '@pix3/runtime';
+import { ModalRequests, type ModalRequest } from '@/services/editor/modal-requests';
 
-export interface EffectPickerInstance {
-  id: string;
+interface EffectPickerParams {
   /** Effect type ids already attached — hidden from the picker (one-per-type). */
-  excludeTypes: string[];
+  readonly excludeTypes: string[];
   /**
    * Material family of the host stack — the picker lists only effects that
    * support it. Omitted keeps the legacy (unfiltered) behavior.
    */
-  target?: ShaderEffectTarget;
-  resolve: (result: string | null) => void;
-  reject: (error: Error) => void;
+  readonly target?: ShaderEffectTarget;
 }
+
+export type EffectPickerInstance = ModalRequest<EffectPickerParams, string>;
 
 /**
  * Modal picker for attaching a shader effect to a mesh — mirrors
@@ -21,62 +21,29 @@ export interface EffectPickerInstance {
  */
 @injectable()
 export class EffectPickerService {
-  private pickers = new Map<string, EffectPickerInstance>();
-  private nextId = 0;
-  private listeners = new Set<(pickers: EffectPickerInstance[]) => void>();
+  private readonly requests = new ModalRequests<EffectPickerParams, string>('effect-picker');
 
-  public async showPicker(
-    excludeTypes: string[] = [],
-    target?: ShaderEffectTarget
-  ): Promise<string | null> {
-    return new Promise((resolve, reject) => {
-      const id = `effect-picker-${this.nextId++}`;
-      const instance: EffectPickerInstance = {
-        id,
-        excludeTypes,
-        target,
-        resolve: (result: string | null) => {
-          this.pickers.delete(id);
-          this.notifyListeners();
-          resolve(result);
-        },
-        reject: (error: Error) => {
-          this.pickers.delete(id);
-          this.notifyListeners();
-          reject(error);
-        },
-      };
-      this.pickers.set(id, instance);
-      this.notifyListeners();
-    });
+  showPicker(excludeTypes: string[] = [], target?: ShaderEffectTarget): Promise<string | null> {
+    return this.requests.request({ excludeTypes, target });
   }
 
-  public getPickers(): EffectPickerInstance[] {
-    return Array.from(this.pickers.values());
+  getPickers(): EffectPickerInstance[] {
+    return this.requests.list();
   }
 
-  public subscribe(listener: (pickers: EffectPickerInstance[]) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  subscribe(listener: (pickers: EffectPickerInstance[]) => void): () => void {
+    return this.requests.onChange(() => listener(this.requests.list()));
   }
 
-  public select(pickerId: string, effectType: string): void {
-    this.pickers.get(pickerId)?.resolve(effectType);
+  select(pickerId: string, effectType: string): void {
+    this.requests.settle(pickerId, effectType);
   }
 
-  public cancel(pickerId: string): void {
-    this.pickers.get(pickerId)?.resolve(null);
+  cancel(pickerId: string): void {
+    this.requests.settle(pickerId, null);
   }
 
-  private notifyListeners(): void {
-    const pickers = this.getPickers();
-    for (const listener of this.listeners) {
-      listener(pickers);
-    }
-  }
-
-  public dispose(): void {
-    this.pickers.clear();
-    this.listeners.clear();
+  dispose(): void {
+    this.requests.dispose();
   }
 }
