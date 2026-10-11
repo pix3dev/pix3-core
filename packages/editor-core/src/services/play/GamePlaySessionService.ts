@@ -125,8 +125,9 @@ export class GamePlaySessionService {
    */
   private startGeneration = 0;
   /**
-   * Pending "the tab host went away" teardown. Deferred by a turn because a Studio ⇄ Vibe swap
-   * unmounts one stage and mounts the other in *either* order; see {@link unregisterTabHost}.
+   * Pending "the tab host went away" teardown. Deferred by a turn because a host swap (the Game
+   * tab re-mounted by a layout change) unmounts one stage and mounts the other in *either* order;
+   * see {@link unregisterTabHost}.
    */
   private pendingTabHostRelease: ReturnType<typeof setTimeout> | null = null;
   private readonly onPopoutAspectChange = (event: Event): void => {
@@ -232,8 +233,8 @@ export class GamePlaySessionService {
       return;
     }
 
-    // Give the incoming stage a turn to claim the seat before tearing the game down. A Studio ⇄ Vibe
-    // switch is a component swap, and the unmount can land before *or* after the new mount: stopping
+    // Give the incoming stage a turn to claim the seat before tearing the game down. A host swap
+    // is a component swap, and the unmount can land before *or* after the new mount: stopping
     // the runtime synchronously here would kill (and then have to restart) a session that is about
     // to be handed over, which is exactly what threw away the player's progress.
     this.cancelPendingTabHostRelease();
@@ -250,9 +251,9 @@ export class GamePlaySessionService {
   /**
    * Move a live tab-hosted game to the newly registered mount instead of restarting it.
    *
-   * Studio's Game tab and the Vibe stage are two seats for one session, so re-parenting the canvas
-   * (which carries the WebGL context, the running scene graph, the score and the audio with it) is
-   * what makes the mode switch feel like a camera move rather than a reset. Only same-document moves
+   * A re-mounted Game tab is a new seat for the same session, so re-parenting the canvas (which
+   * carries the WebGL context, the running scene graph, the score and the audio with it) keeps the
+   * game running instead of resetting it. Only same-document moves
    * qualify — a canvas cannot take its GL context into the popout window.
    *
    * @returns true when the game was handed over and no restart is needed.
@@ -433,8 +434,8 @@ export class GamePlaySessionService {
 
   /**
    * Run `task` after every play-session task queued before it. EVERY launch goes through here —
-   * a restart used to bypass the queue, so the Vibe stage's own "restart the game I just mounted"
-   * could interleave with the launch its host registration had already queued. Two launches in
+   * a restart used to bypass the queue, so a host's own "restart the game I just mounted" could
+   * interleave with the launch its host registration had already queued. Two launches in
    * flight at once means two runtimes: the loser is dropped from `this.runner` without ever being
    * stopped, and keeps ticking (audio included) behind the visible game.
    *

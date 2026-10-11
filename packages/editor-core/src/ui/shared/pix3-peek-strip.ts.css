@@ -272,8 +272,7 @@ pix3-peek-strip .peek__pill:hover .peek__pill-action {
   color: var(--fg-0);
 }
 
-/* Inside a viewport (Studio and Vibe's scene view alike, since both render `pix3-editor-tab`):
-   a bottom-left overlay painted over the canvas, sitting with the transform-mode and zoom
+/* Inside a viewport (`pix3-editor-tab`): a bottom-left overlay painted over the canvas, sitting with the transform-mode and zoom
    overlays rather than with the toolbar chrome.
 
    `pointer-events` is the same two-step the toolbar islands use — none on the positioned box so

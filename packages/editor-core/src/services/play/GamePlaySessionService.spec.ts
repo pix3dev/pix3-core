@@ -183,7 +183,7 @@ describe('GamePlaySessionService — pause decision', () => {
 });
 
 /**
- * The seat swap between Studio's Game tab and the Vibe stage.
+ * The seat swap when the Game tab's host is re-mounted.
  *
  * Both register as the same host kind, so `syncRuntimeToUiState` sees no kind change and would
  * happily leave the running game attached to the element that is going away. The contract here:
@@ -302,7 +302,7 @@ describe('GamePlaySessionService — tab host swap', () => {
 });
 
 /**
- * Every launch has to go through one queue. The Vibe stage registers its host (which queues a
+ * Every launch has to go through one queue. A game host registers itself (which queues a
  * launch) and then asks for a restart of its own; when those two ran concurrently, the loser was
  * dropped from `this.runner` without ever being stopped and kept ticking — a second, invisible game
  * playing sounds behind the visible one.
