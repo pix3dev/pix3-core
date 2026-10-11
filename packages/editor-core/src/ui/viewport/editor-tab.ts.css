@@ -124,6 +124,12 @@
   padding: 0 0.35rem;
 }
 
+.top-toolbar .toolbar-button--mode {
+  --accent: var(--pix3-nav-border);
+  --accent-soft: color-mix(in srgb, var(--pix3-nav-border) 15%, transparent);
+  --accent-line: color-mix(in srgb, var(--pix3-nav-border) 45%, transparent);
+}
+
 .top-toolbar .toolbar-button--camera-projection .toolbar-icon {
   width: 1.35rem;
   height: 1.35rem;

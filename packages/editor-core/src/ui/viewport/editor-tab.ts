@@ -701,8 +701,8 @@ export class EditorTabComponent extends ComponentBase {
 
   /**
    * Derive which layers/navigation modes the active scene needs from its
-   * content and adapt the viewport accordingly: the toolbar hides the layer and
-   * navigation controls that don't apply, and — for the active tab — navigation
+   * content and adapt the viewport accordingly: the toolbar hides layer controls
+   * that don't apply but always shows the navigation mode, and — for the active tab — navigation
    * is locked to the only available mode when the scene is single-dimensional.
    */
   private syncSceneLayerCapabilities(): void {

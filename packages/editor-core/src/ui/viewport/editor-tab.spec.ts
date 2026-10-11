@@ -568,8 +568,9 @@ describe('EditorTabComponent', () => {
     expect(panel.shadowRoot?.querySelector('.viewport-marquee-selection')).toBeNull();
   });
 
-  it('hides both layer buttons and the navigation toggle for a 2D-only scene', async () => {
+  it('hides layer buttons but shows a disabled 2D mode button for a 2D-only scene', async () => {
     appState.scenes.activeSceneId = 'scene-1';
+    appState.ui.navigationMode = '2d';
 
     const panel = new EditorTabComponent();
     const services = stubPanelServices(panel);
@@ -581,14 +582,18 @@ describe('EditorTabComponent', () => {
     await panel.updateComplete;
 
     const root = panel.shadowRoot;
-    // A single-layer scene has nothing to reveal by hiding a layer, so neither
-    // layer button nor the mode toggle is shown.
+    // A single-layer scene hides layer controls but keeps its navigation mode visible.
     expect(root?.querySelector('[aria-label="Show 2D content"]')).toBeNull();
     expect(root?.querySelector('[aria-label="Show 3D content"]')).toBeNull();
-    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).toBeNull();
+    const modeButton = root?.querySelector<HTMLButtonElement>('.toolbar-button--mode');
+    expect(modeButton?.textContent?.trim()).toBe('2D');
+    expect(modeButton?.disabled).toBe(true);
+    services.commandDispatcher.execute.mockClear();
+    modeButton?.click();
+    expect(services.commandDispatcher.execute).not.toHaveBeenCalled();
   });
 
-  it('hides both layer buttons and the navigation toggle for a 3D-only scene', async () => {
+  it('hides layer buttons but shows a disabled 3D mode button for a 3D-only scene', async () => {
     appState.scenes.activeSceneId = 'scene-1';
 
     const panel = new EditorTabComponent();
@@ -603,7 +608,12 @@ describe('EditorTabComponent', () => {
     const root = panel.shadowRoot;
     expect(root?.querySelector('[aria-label="Show 2D content"]')).toBeNull();
     expect(root?.querySelector('[aria-label="Show 3D content"]')).toBeNull();
-    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).toBeNull();
+    const modeButton = root?.querySelector<HTMLButtonElement>('.toolbar-button--mode');
+    expect(modeButton?.textContent?.trim()).toBe('3D');
+    expect(modeButton?.disabled).toBe(true);
+    services.commandDispatcher.execute.mockClear();
+    modeButton?.click();
+    expect(services.commandDispatcher.execute).not.toHaveBeenCalled();
   });
 
   it('shows both layer buttons and the navigation toggle for a mixed scene', async () => {
@@ -624,7 +634,12 @@ describe('EditorTabComponent', () => {
     const root = panel.shadowRoot;
     expect(root?.querySelector('[aria-label="Show 2D content"]')).not.toBeNull();
     expect(root?.querySelector('[aria-label="Show 3D content"]')).not.toBeNull();
-    expect(root?.querySelector('[aria-label="Toggle navigation mode"]')).not.toBeNull();
+    const modeButton = root?.querySelector<HTMLButtonElement>('.toolbar-button--mode');
+    expect(modeButton).not.toBeNull();
+    expect(modeButton?.disabled).toBe(false);
+    services.commandDispatcher.execute.mockClear();
+    modeButton?.click();
+    expect(services.commandDispatcher.execute).toHaveBeenCalledTimes(1);
   });
 });
 

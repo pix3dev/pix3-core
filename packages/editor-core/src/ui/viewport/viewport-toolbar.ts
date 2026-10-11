@@ -22,7 +22,7 @@ export interface ViewportToolbarState {
    * then. With a single layer there is nothing to reveal by hiding it.
    */
   readonly canToggleLayerVisibility: boolean;
-  /** Both navigation modes are usable — the mode toggle is shown only when true. */
+  /** Both navigation modes are usable — otherwise the visible mode button is disabled. */
   readonly canToggleNavigationMode: boolean;
   readonly previewCameraLabel: string;
   readonly previewCameraItems: DropdownItem[];
@@ -144,14 +144,17 @@ export function renderViewportToolbar(
       @pointerup=${(e: Event) => e.stopPropagation()}
     >
       <div class="toolbar-group" role="toolbar" aria-label="Viewport controls">
-        ${handlers.onToggleNavigationMode && state.navigationMode && state.canToggleNavigationMode
+        ${state.navigationMode
           ? renderToolbarButton(
               {
-                ariaLabel: 'Toggle navigation mode',
-                title: 'Toggle Navigation Mode (N)',
+                ariaLabel: `Navigation mode: ${state.navigationMode.toUpperCase()}`,
+                title: state.canToggleNavigationMode
+                  ? 'Toggle Navigation Mode (N)'
+                  : `Navigation Mode: ${state.navigationMode.toUpperCase()} (scene has only ${state.navigationMode.toUpperCase()} content)`,
                 text: state.navigationMode === '3d' ? '3D' : '2D',
                 isPressed: true,
-                onClick: handlers.onToggleNavigationMode,
+                isDisabled: !state.canToggleNavigationMode || !handlers.onToggleNavigationMode,
+                onClick: () => handlers.onToggleNavigationMode?.(),
                 extraClass: 'toolbar-button--mode',
               },
               iconService
