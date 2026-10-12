@@ -129,6 +129,15 @@ pix3-toolbar[variant='panel'] pix3-dropdown-button:hover:not([disabled]) {
   min-width: 0;
 }
 
+.dropdown__item-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  flex-shrink: 0;
+  color: var(--pix3-accent-color);
+}
+
 .dropdown__divider {
   height: 1px;
   margin: 0.25rem 0;

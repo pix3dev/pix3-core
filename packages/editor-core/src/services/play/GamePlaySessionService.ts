@@ -307,6 +307,17 @@ export class GamePlaySessionService {
     this.queueSync();
   }
 
+  /**
+   * Close the game window the way its own close button does — a run hosted there stops first —
+   * so the next `game.start` lands in the Game tab. A no-op when no window is open.
+   */
+  async closePopout(): Promise<void> {
+    const popup = this.popoutWindow;
+    if (!popup) return;
+    await this.handlePopoutWindowClosed();
+    if (!popup.closed) popup.close();
+  }
+
   async restart(): Promise<void> {
     this.initialize();
     await this.enqueue(() => this.restartRuntime());

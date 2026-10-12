@@ -1,4 +1,5 @@
 import { ComponentBase, customElement, html, property, state, inject } from '@/fw';
+import { nothing } from 'lit';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { DropdownPortal } from './dropdown-portal';
 import './pix3-dropdown-button.ts.css';
@@ -9,6 +10,8 @@ export interface DropdownItem {
   icon?: string;
   disabled?: boolean;
   divider?: boolean;
+  /** A choice of a set (the run mode): drawn with a check, announced as `menuitemradio`. */
+  checked?: boolean;
 }
 
 @customElement('pix3-dropdown-button')
@@ -199,7 +202,8 @@ export class Pix3DropdownButton extends ComponentBase {
                 html`${item.divider
                   ? html`<div class="dropdown__divider" role="separator"></div>`
                   : html`<button
-                      role="menuitem"
+                      role=${item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                      aria-checked=${item.checked === undefined ? nothing : String(item.checked)}
                       class="dropdown__item ${item.disabled ? 'dropdown__item--disabled' : ''}"
                       ?disabled=${item.disabled}
                       @click=${() => this.selectItem(item)}
@@ -210,6 +214,13 @@ export class Pix3DropdownButton extends ComponentBase {
                           >`
                         : null}
                       <span class="dropdown__item-label">${item.label}</span>
+                      ${item.checked === undefined
+                        ? null
+                        : html`<span class="dropdown__item-check" aria-hidden="true"
+                            >${item.checked
+                              ? this.iconService.getIcon('check', IconSize.SMALL)
+                              : null}</span
+                          >`}
                     </button>`}`
             )}
       </div>

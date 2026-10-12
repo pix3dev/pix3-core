@@ -58,12 +58,13 @@
     },
     "packages/vite-plugin": {
       // `src/client/index.ts`: the editor page's client, served by path (`/@fs/…`, CLIENT_ENTRY).
-      // `player/debug/index.ts`: the debug overlay, imported by file path from `virtual:pix3/debug`.
+      // `player/debug/index.ts`: the debug overlay, imported by file path from `virtual:pix3/dev`, as is `player/dev/editor-link.ts`.
       "entry": [
         "src/index.ts!",
         "src/client/index.ts!",
         "player/index.ts!",
-        "player/debug/index.ts!"
+        "player/debug/index.ts!",
+        "player/dev/editor-link.ts!"
       ],
       "project": [
         "src/**/*.ts!",

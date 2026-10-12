@@ -22,8 +22,8 @@ import {
   type BuildState,
 } from './build/plan.ts';
 import {
-  DEBUG_ID,
-  debugSource,
+  DEV_ID,
+  devSource,
   EMBEDDED_ASSETS_ID,
   embeddedAssetsSource,
   GLTF_LOADER_STUB_ID,
@@ -133,9 +133,16 @@ const CLIENT_ENTRY = fileURLToPath(
 const PLAYER_ENTRY = fileURLToPath(
   new URL(FROM_SOURCE ? '../player/index.ts' : './player/index.js', import.meta.url)
 );
-/** The player's debug overlay (`/?debug` in dev), imported by path from `virtual:pix3/debug`. */
+/** The player's dev tools, imported by path from `virtual:pix3/dev`: the debug overlay (`/?debug`)… */
 const DEBUG_OVERLAY_ENTRY = fileURLToPath(
   new URL(FROM_SOURCE ? '../player/debug/index.ts' : './player/debug/index.js', import.meta.url)
+);
+/** …and the "Pix3 editor" link on the game. */
+const EDITOR_LINK_ENTRY = fileURLToPath(
+  new URL(
+    FROM_SOURCE ? '../player/dev/editor-link.ts' : './player/dev/editor-link.js',
+    import.meta.url
+  )
 );
 
 export function pix3(options: Pix3Options = {}): Plugin[] {
@@ -334,10 +341,14 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           return postprocessingStubSource();
         case NETWORK_ID:
           return networkSource(build ? build.scan.usesNetwork : true);
-        case DEBUG_ID:
+        case DEV_ID:
           return config?.command === 'serve'
-            ? debugSource('dev', normalizePath(DEBUG_OVERLAY_ENTRY))
-            : debugSource('none');
+            ? devSource('dev', {
+                overlayPath: normalizePath(DEBUG_OVERLAY_ENTRY),
+                editorLinkPath: normalizePath(EDITOR_LINK_ENTRY),
+                editorUrl: settings.editor ? `${baseUrl()}__pix3/` : null,
+              })
+            : devSource('none');
         default:
           return null;
       }

@@ -60,13 +60,16 @@ declare module 'virtual:pix3/network' {
   export function installNetworkService(runner: SceneRunner): void;
 }
 
-declare module 'virtual:pix3/debug' {
+declare module 'virtual:pix3/dev' {
   import type { AudioService, RuntimeRenderer, SceneRunner } from '@pix3/runtime';
+  /** Dev: the URL's `?scene=` (`res://` stripped), or null. Build: always null. */
+  export function devSceneOverride(): string | null;
   /**
-   * Dev: mounts the debug overlay when the URL has `?debug`. Build: a no-op. The argument is
-   * `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot import it).
+   * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link. Build: a no-op.
+   * The argument is `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot
+   * import it).
    */
-  export function installDebug(context: {
+  export function installDevTools(context: {
     readonly runner: SceneRunner;
     readonly renderer: RuntimeRenderer;
     readonly audio: AudioService;

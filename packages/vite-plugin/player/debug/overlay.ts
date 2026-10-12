@@ -1,3 +1,4 @@
+import { openEditor } from '../dev/editor-link';
 import { LONG_FRAME_MS, type FrameRing } from './frame-stats';
 import type { DebugSession, DebugSnapshot } from './session';
 
@@ -92,6 +93,7 @@ const writeCollapsed = (collapsed: boolean): void => {
 
 export class DebugOverlay {
   private readonly host = document.createElement('div');
+  private readonly root: ShadowRoot;
   private readonly panel: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly fps: HTMLElement;
@@ -102,9 +104,13 @@ export class DebugOverlay {
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticks = 0;
 
-  constructor(private readonly session: DebugSession) {
+  constructor(
+    private readonly session: DebugSession,
+    private readonly editorUrl: string | null = null
+  ) {
     this.host.className = 'pix3-debug-overlay';
     const root = this.host.attachShadow({ mode: 'open' });
+    this.root = root;
     root.innerHTML = `<style>${STYLE}</style>
 <div class="panel" part="panel">
   <header>
@@ -112,6 +118,7 @@ export class DebugOverlay {
     <span class="fps">– fps</span>
     <button type="button" data-action="pause" aria-pressed="false" title="Freeze the game (manual time mode)">Pause</button>
     <button type="button" data-action="step" title="Advance one frame while paused" disabled>Step</button>
+    ${editorUrl ? '<button type="button" data-action="editor" title="Open this project in the Pix3 editor">Editor</button>' : ''}
     <button type="button" data-action="collapse" title="Collapse">Hide</button>
   </header>
   <div class="body">
@@ -195,6 +202,16 @@ export class DebugOverlay {
       case 'reset':
         this.session.resetStats();
         break;
+      case 'editor':
+        if (this.editorUrl) {
+          const button = this.root.querySelector('[data-action="editor"]') as HTMLButtonElement;
+          void openEditor(this.editorUrl).then(outcome => {
+            if (outcome !== 'already-open') return;
+            button.textContent = 'Editor is open';
+            setTimeout(() => (button.textContent = 'Editor'), 3000);
+          });
+        }
+        return;
       case 'collapse':
         this.setCollapsed(!this.panel.classList.contains('collapsed'));
         break;

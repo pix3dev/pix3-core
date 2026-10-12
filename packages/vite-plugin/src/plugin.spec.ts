@@ -142,17 +142,32 @@ describe('editor page and discovery', () => {
     ]);
   });
 
-  it('debug mode: virtual:pix3/debug loads the overlay by its file, behind ?debug', async () => {
+  it('dev tools: virtual:pix3/dev loads the overlay behind ?debug, else the editor link', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
-    const code = await (await p.fetch('/@id/__x00__virtual:pix3/debug')).text();
+    const code = await (await p.fetch('/@id/__x00__virtual:pix3/dev')).text();
     expect(code).toContain("has('debug')");
     expect(code).toContain('mountDebugOverlay');
-    // Vite rewrote the overlay's path to a URL it serves.
-    const url = /import\((["'])([^"']*player\/debug\/index\.ts)\1\)/.exec(code)?.[2];
-    expect(url).toBeTruthy();
-    const overlay = await p.fetch(url as string);
-    expect(overlay.status).toBe(200);
-    expect(await overlay.text()).toContain('export function mountDebugOverlay');
+    expect(code).toContain('mountEditorLink');
+    expect(code).toContain('const editorUrl = "/__pix3/"');
+    expect(code).toContain("params.get('scene')");
+    // Vite rewrote both paths to URLs it serves.
+    for (const [file, exported] of [
+      ['player/debug/index.ts', 'export function mountDebugOverlay'],
+      ['player/dev/editor-link.ts', 'export function mountEditorLink'],
+    ]) {
+      const pattern = new RegExp(`import\\((["'])([^"']*${file.replace(/[./]/g, '\\$&')})\\1\\)`);
+      const url = pattern.exec(code)?.[2];
+      expect(url, file).toBeTruthy();
+      const served = await p.fetch(url as string);
+      expect(served.status).toBe(200);
+      expect(await served.text()).toContain(exported);
+    }
+  });
+
+  it('dev tools: no editor link when the plugin serves no editor', async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE }, { editor: false });
+    const code = await (await p.fetch('/@id/__x00__virtual:pix3/dev')).text();
+    expect(code).toContain('const editorUrl = null');
   });
 
   it('answers hello with the revision, seq and versions', async () => {

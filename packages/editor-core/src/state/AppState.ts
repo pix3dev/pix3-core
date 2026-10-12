@@ -217,6 +217,13 @@ export interface Navigation2DSettings {
 export type GameAspectRatio = 'free' | '16:9-landscape' | '16:9-portrait' | '4:3';
 
 /**
+ * Where the toolbar's Play runs the game: the editor's own runner in the Game tab or the game
+ * window (`tab`, `window`), or the game's page on the dev server, plain or with the debug overlay
+ * (`browser`, `debug`). The last one picked; `SetPlayTargetOperation`.
+ */
+export type PlayTarget = 'tab' | 'window' | 'browser' | 'debug';
+
+/**
  * Details of the most recent runtime/script failure raised while the game was
  * launching or playing. Surfaced in the Game tab and the Logs panel so a broken
  * script no longer fails silently. Ephemeral UI state — never part of undo
@@ -293,6 +300,8 @@ export interface UIState {
   isPlaying: boolean;
   /** True when a dedicated external game preview window is open */
   isGamePopoutOpen: boolean;
+  /** Where the toolbar's Play runs the game (the last mode picked; persisted per browser). */
+  playTarget: PlayTarget;
   playModeStatus: 'stopped' | 'playing' | 'paused';
   /** Most recent runtime/script failure while playing, or null when clean. */
   playModeError: PlayModeError | null;
@@ -395,6 +404,7 @@ export const createInitialAppState = (): AppState => ({
     gameAspectRatio: 'free',
     isPlaying: false,
     isGamePopoutOpen: false,
+    playTarget: 'tab',
     playModeStatus: 'stopped',
     playModeError: null,
     playOwner: null,

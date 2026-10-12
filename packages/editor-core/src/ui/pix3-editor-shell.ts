@@ -50,7 +50,13 @@ import { StartMainSceneGameCommand } from '@/features/scripts/StartMainSceneGame
 import { StopGameCommand } from '@/features/scripts/StopGameCommand';
 import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
 import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
-import { OpenDebugWindowCommand } from '@/features/scripts/OpenDebugWindowCommand';
+import {
+  createPlayInCommands,
+  PLAY_TARGET_INFO,
+  PlayCommand,
+  PlayEntryCommand,
+  type PlayDependencies,
+} from '@/features/scripts/PlayCommands';
 import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
@@ -81,6 +87,9 @@ import './shared/pix3-toolbar';
 import './shared/pix3-toolbar-button';
 import './shared/pix3-dropdown-button';
 import type { DropdownItem } from './shared/pix3-dropdown-button';
+import type { PlayTarget } from '@/state/AppState';
+
+const PLAY_TARGETS: readonly PlayTarget[] = ['tab', 'window', 'browser', 'debug'];
 import './shared/pix3-main-menu';
 import './shared/pix3-confirm-dialog';
 import './shared/pix3-behavior-picker';
@@ -278,7 +287,9 @@ export class Pix3EditorShell extends ComponentBase {
       new RestartGameCommand(this.gamePlaySessionService),
       new PauseGameCommand(this.gamePlaySessionService),
       new OpenGamePopoutWindowCommand(this.gamePlaySessionService),
-      new OpenDebugWindowCommand(this.hostService, this.flushService),
+      new PlayCommand(this.playDependencies()),
+      new PlayEntryCommand(this.playDependencies()),
+      ...createPlayInCommands(this.playDependencies()),
       new OpenEditorSettingsCommand(),
       new FocusAnimationTimelineCommand(),
       new OpenLocalizationPanelCommand(),
@@ -391,14 +402,31 @@ export class Pix3EditorShell extends ComponentBase {
     `;
   }
 
+  private playDependencies(): PlayDependencies {
+    return {
+      session: this.gamePlaySessionService,
+      host: this.hostService,
+      flush: this.flushService,
+    };
+  }
+
   private renderToolbar() {
     const isPlaying = appState.ui.isPlaying;
+    const target = appState.ui.playTarget;
+    // The run modes first, the one Play uses checked: picking one runs in it and makes it Play's.
+    // Then Play Game — the entry scene, in that mode — the deliberate full-flow run, since the
+    // entry scene is a menu on most projects.
     const runOptions: DropdownItem[] = [
-      // Scene first: it is what the toolbar's own Play button does, and the entry scene is a menu on
-      // every recipe project — a full-flow run is the deliberate choice, not the default.
-      { id: 'game.start', label: 'Play Scene', icon: 'play', disabled: isPlaying },
-      { id: 'game.start-main', label: 'Play Game', icon: 'film', disabled: isPlaying },
+      ...PLAY_TARGETS.map(option => ({
+        id: `game.play-in-${option}`,
+        label: PLAY_TARGET_INFO[option].title,
+        icon: PLAY_TARGET_INFO[option].icon,
+        checked: option === target,
+      })),
+      { id: 'run-options-divider', label: '', divider: true },
+      { id: 'game.play-entry', label: 'Play Game (entry scene)', icon: 'film' },
     ];
+    const playLabel = `Play (${PLAY_TARGET_INFO[target].label})`;
     return html`
       <pix3-toolbar aria-label="Editor toolbar">
         <pix3-main-menu slot="start"></pix3-main-menu>
@@ -407,10 +435,11 @@ export class Pix3EditorShell extends ComponentBase {
             <pix3-toolbar-button
               icon=${isPlaying ? 'square' : 'play'}
               iconOnly
-              label=${isPlaying ? 'Stop' : 'Play'}
+              label=${isPlaying ? 'Stop' : playLabel}
+              title=${isPlaying ? 'Stop' : playLabel}
               ?toggled=${isPlaying}
               @click=${() => this.togglePlayMode()}
-              aria-label=${isPlaying ? 'Stop Scene' : 'Play Scene'}
+              aria-label=${isPlaying ? 'Stop' : playLabel}
             ></pix3-toolbar-button>
             <pix3-dropdown-button
               class="run-options-dropdown"
@@ -434,7 +463,7 @@ export class Pix3EditorShell extends ComponentBase {
   }
 
   private togglePlayMode(): void {
-    void this.commandDispatcher.executeById(appState.ui.isPlaying ? 'game.stop' : 'game.start');
+    void this.commandDispatcher.executeById(appState.ui.isPlaying ? 'game.stop' : 'game.play');
   }
 
   private onRunOptionSelect = (event: CustomEvent<DropdownItem>): void => {

@@ -19,6 +19,7 @@ import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLo
 import { appState } from '@/state';
 
 import { installDebugBridge } from './debug-bridge';
+import { installEditorPresence } from './editor-presence';
 import type { EditorHost } from './EditorHost';
 import { ExternalReloadService } from './ExternalReloadService';
 import { HostService } from './HostService';
@@ -98,6 +99,7 @@ export async function mountEditorWith(
   });
 
   installDebugBridge();
+  disposers.push(installEditorPresence());
 
   if (options.shell !== false) {
     await import('@/ui/pix3-editor-shell');

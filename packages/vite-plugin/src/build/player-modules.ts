@@ -25,7 +25,7 @@ export const PROJECT_SCRIPTS_ID = 'virtual:pix3/project-scripts';
 export const SPINE_ID = 'virtual:pix3/spine';
 export const POSTPROCESSING_ID = 'virtual:pix3/postprocessing';
 export const NETWORK_ID = 'virtual:pix3/network';
-export const DEBUG_ID = 'virtual:pix3/debug';
+export const DEV_ID = 'virtual:pix3/dev';
 /** What `postprocessing` resolves to in a single-file build whose scenes place no `PostProcess`. */
 export const POSTPROCESSING_STUB_ID = 'virtual:pix3/postprocessing-stub';
 
@@ -41,7 +41,7 @@ export const PLAYER_VIRTUAL_IDS: readonly string[] = [
   SPINE_ID,
   POSTPROCESSING_ID,
   NETWORK_ID,
-  DEBUG_ID,
+  DEV_ID,
   POSTPROCESSING_STUB_ID,
   YAML_STUB_ID,
   GLTF_LOADER_STUB_ID,
@@ -276,28 +276,60 @@ export const networkSource = (usesNetwork: boolean): string =>
         '',
       ].join('\n');
 
+export interface DevSourceOptions {
+  /** This package's `player/debug/index` (the debug overlay), as a file path. */
+  readonly overlayPath: string;
+  /** This package's `player/dev/editor-link` (the "Pix3 editor" link), as a file path. */
+  readonly editorLinkPath: string;
+  /** `<base>__pix3/` when the plugin serves the editor, else null (no link). */
+  readonly editorUrl: string | null;
+}
+
 /**
- * `virtual:pix3/debug`: the debug mode (`/?debug`). In dev, `installDebug` imports the overlay
- * (`overlayPath`, this package's `player/debug/index`) when the page URL carries `debug`, so a
- * plain `/` loads none of it; a build gets a no-op and the overlay never reaches the bundle (a
- * single-file HTML cannot fetch a chunk anyway). The overlay is imported by its file path, not
- * by a package subpath: Vite's resolver answers bare specifiers from `exports` before any
- * plugin's `resolveId` runs.
+ * `virtual:pix3/dev`: the player's dev-only hooks. In dev:
+ *
+ * - `devSceneOverride()` is the URL's `?scene=` (`res://` stripped), the scene the editor's
+ *   "Play in Browser Tab / with Profiler" asks for; the player checks it against its scene list;
+ * - `installDevTools(context)` imports the debug overlay when the URL has `debug`, otherwise the
+ *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
+ *   module and `/?clean` none.
+ *
+ * In a build both are no-ops and nothing of the overlay or the link is bundled (a single-file
+ * HTML cannot fetch a chunk anyway). The modules are imported by file path, not by a package
+ * subpath: Vite's resolver answers bare specifiers from `exports` before any plugin's
+ * `resolveId` runs.
  */
-export const debugSource = (mode: 'dev' | 'none', overlayPath = ''): string =>
-  mode === 'dev'
-    ? [
-        `export function installDebug(context) {`,
-        `  if (!new URLSearchParams(location.search).has('debug')) return;`,
-        `  import(${JSON.stringify(overlayPath)}).then(`,
-        `    overlay => overlay.mountDebugOverlay(context),`,
-        `    error => console.error('[pix3] The debug overlay failed to load:', error)`,
-        `  );`,
-        `}`,
-        '',
-      ].join('\n')
-    : [
-        '// A build has no debug mode: the overlay is dev-only.',
-        'export function installDebug() {}',
-        '',
-      ].join('\n');
+export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): string => {
+  if (mode === 'none' || !options) {
+    return [
+      '// A build has no dev tools: the debug overlay, the editor link and ?scene= are dev-only.',
+      'export function devSceneOverride() { return null; }',
+      'export function installDevTools() {}',
+      '',
+    ].join('\n');
+  }
+  return [
+    `const editorUrl = ${JSON.stringify(options.editorUrl)};`,
+    `const params = new URLSearchParams(location.search);`,
+    `const failed = what => error => console.error('[pix3] The ' + what + ' failed to load:', error);`,
+    `export function devSceneOverride() {`,
+    `  const scene = params.get('scene');`,
+    `  return scene ? scene.replace(/^res:\\/\\//i, '').replace(/^\\/+/, '') : null;`,
+    `}`,
+    `export function installDevTools(context) {`,
+    `  if (params.has('debug')) {`,
+    `    import(${JSON.stringify(options.overlayPath)}).then(`,
+    `      overlay => overlay.mountDebugOverlay(context, { editorUrl }),`,
+    `      failed('debug overlay')`,
+    `    );`,
+    `    return;`,
+    `  }`,
+    `  if (!editorUrl || window.top !== window || params.has('clean')) return;`,
+    `  import(${JSON.stringify(options.editorLinkPath)}).then(`,
+    `    link => link.mountEditorLink(editorUrl),`,
+    `    failed('editor link')`,
+    `  );`,
+    `}`,
+    '',
+  ].join('\n');
+};

@@ -10,7 +10,7 @@ import {
   SceneRunner,
   ScriptRegistry,
 } from '@pix3/runtime';
-import { installDebug } from 'virtual:pix3/debug';
+import { devSceneOverride, installDevTools } from 'virtual:pix3/dev';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
 import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
@@ -38,8 +38,9 @@ import 'virtual:pix3/postprocessing';
  * `index.html` (zip). Port of the 1.x `runtime/src/main.ts` + `register-project-scripts.ts`.
  *
  * `window.__PIX3_PLAYER__` is the gate's witness: `status`, `frames` (loop iterations), `errors`.
- * In dev, `/?debug` adds the debug overlay (`player/debug/`, `virtual:pix3/debug`) and
- * `__PIX3_PLAYER__.debug.snapshot()`.
+ * In dev (`virtual:pix3/dev`), `/?debug` adds the debug overlay (`player/debug/`) and
+ * `__PIX3_PLAYER__.debug.snapshot()`, a plain page gets the "Pix3 editor" link
+ * (`player/dev/`), and `?scene=<res path>` boots that scene.
  */
 
 export interface Pix3PlayerState {
@@ -88,6 +89,20 @@ const installState = (): Pix3PlayerState => {
   return state;
 };
 
+/**
+ * Dev only: the `?scene=` the editor's Play in Browser Tab / with Profiler asks for, when it is one
+ * of the project's scenes (a prefab or a typo falls back to the entry scene, with a warning).
+ */
+const requestedScene = (): string | null => {
+  const scene = devSceneOverride();
+  if (!scene) return null;
+  if (scenePaths.includes(scene)) return scene;
+  console.warn(
+    `[pix3] ?scene=${scene} is not one of the project's scenes; starting the entry scene.`
+  );
+  return null;
+};
+
 /** Boot the game into `target` (a selector or an element; `#app` by default). */
 export async function startGame(
   target: string | HTMLElement = '#app',
@@ -112,7 +127,7 @@ export async function startGame(
     // and `yaml.stringify` into the bundle (CLAUDE.md «Playable export size»).
     const sceneManager = new SceneManager(sceneLoader);
 
-    const scenePath = options.scene || activeScenePath || scenePaths[0];
+    const scenePath = options.scene || requestedScene() || activeScenePath || scenePaths[0];
     if (!scenePath) throw new Error('No scenes found in this project.');
     state.scene = scenePath;
 
@@ -148,7 +163,7 @@ export async function startGame(
     installNetworkService(runner);
     // Debug mode (`/?debug`, dev only): the overlay subscribes before the scene loads, so a
     // failed boot still shows its errors there.
-    installDebug({ runner, renderer, audio: audioService, state });
+    installDevTools({ runner, renderer, audio: audioService, state });
     runner.setBatching2DEnabled(true);
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {
