@@ -25,6 +25,7 @@ export const PROJECT_SCRIPTS_ID = 'virtual:pix3/project-scripts';
 export const SPINE_ID = 'virtual:pix3/spine';
 export const POSTPROCESSING_ID = 'virtual:pix3/postprocessing';
 export const NETWORK_ID = 'virtual:pix3/network';
+export const DEBUG_ID = 'virtual:pix3/debug';
 /** What `postprocessing` resolves to in a single-file build whose scenes place no `PostProcess`. */
 export const POSTPROCESSING_STUB_ID = 'virtual:pix3/postprocessing-stub';
 
@@ -40,6 +41,7 @@ export const PLAYER_VIRTUAL_IDS: readonly string[] = [
   SPINE_ID,
   POSTPROCESSING_ID,
   NETWORK_ID,
+  DEBUG_ID,
   POSTPROCESSING_STUB_ID,
   YAML_STUB_ID,
   GLTF_LOADER_STUB_ID,
@@ -271,5 +273,31 @@ export const networkSource = (usesNetwork: boolean): string =>
     : [
         '// Nothing in this project mentions multiplayer: `net/**` is not bundled.',
         'export function installNetworkService() {}',
+        '',
+      ].join('\n');
+
+/**
+ * `virtual:pix3/debug`: the debug mode (`/?debug`). In dev, `installDebug` imports the overlay
+ * (`overlayPath`, this package's `player/debug/index`) when the page URL carries `debug`, so a
+ * plain `/` loads none of it; a build gets a no-op and the overlay never reaches the bundle (a
+ * single-file HTML cannot fetch a chunk anyway). The overlay is imported by its file path, not
+ * by a package subpath: Vite's resolver answers bare specifiers from `exports` before any
+ * plugin's `resolveId` runs.
+ */
+export const debugSource = (mode: 'dev' | 'none', overlayPath = ''): string =>
+  mode === 'dev'
+    ? [
+        `export function installDebug(context) {`,
+        `  if (!new URLSearchParams(location.search).has('debug')) return;`,
+        `  import(${JSON.stringify(overlayPath)}).then(`,
+        `    overlay => overlay.mountDebugOverlay(context),`,
+        `    error => console.error('[pix3] The debug overlay failed to load:', error)`,
+        `  );`,
+        `}`,
+        '',
+      ].join('\n')
+    : [
+        '// A build has no debug mode: the overlay is dev-only.',
+        'export function installDebug() {}',
         '',
       ].join('\n');

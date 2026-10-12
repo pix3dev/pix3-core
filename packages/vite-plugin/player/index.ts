@@ -10,6 +10,7 @@ import {
   SceneRunner,
   ScriptRegistry,
 } from '@pix3/runtime';
+import { installDebug } from 'virtual:pix3/debug';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
 import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
@@ -37,6 +38,8 @@ import 'virtual:pix3/postprocessing';
  * `index.html` (zip). Port of the 1.x `runtime/src/main.ts` + `register-project-scripts.ts`.
  *
  * `window.__PIX3_PLAYER__` is the gate's witness: `status`, `frames` (loop iterations), `errors`.
+ * In dev, `/?debug` adds the debug overlay (`player/debug/`, `virtual:pix3/debug`) and
+ * `__PIX3_PLAYER__.debug.snapshot()`.
  */
 
 export interface Pix3PlayerState {
@@ -47,6 +50,8 @@ export interface Pix3PlayerState {
   /** The scene the player booted into. */
   scene: string | null;
   runner: SceneRunner | null;
+  /** Debug mode only (`/?debug` in dev): the overlay's numbers, for an agent over CDP. */
+  debug?: { snapshot(): unknown };
 }
 
 declare global {
@@ -141,6 +146,9 @@ export async function startGame(
     // Multiplayer (D5): owned by the runner, inert until a script connects; the generated module
     // is a no-op when nothing in the project mentions the network.
     installNetworkService(runner);
+    // Debug mode (`/?debug`, dev only): the overlay subscribes before the scene loads, so a
+    // failed boot still shows its errors there.
+    installDebug({ runner, renderer, audio: audioService, state });
     runner.setBatching2DEnabled(true);
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {

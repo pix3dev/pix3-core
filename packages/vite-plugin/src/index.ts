@@ -22,6 +22,8 @@ import {
   type BuildState,
 } from './build/plan.ts';
 import {
+  DEBUG_ID,
+  debugSource,
   EMBEDDED_ASSETS_ID,
   embeddedAssetsSource,
   GLTF_LOADER_STUB_ID,
@@ -130,6 +132,10 @@ const CLIENT_ENTRY = fileURLToPath(
 /** The player (`player/` beside `src/`; `dist/player/` once built). */
 const PLAYER_ENTRY = fileURLToPath(
   new URL(FROM_SOURCE ? '../player/index.ts' : './player/index.js', import.meta.url)
+);
+/** The player's debug overlay (`/?debug` in dev), imported by path from `virtual:pix3/debug`. */
+const DEBUG_OVERLAY_ENTRY = fileURLToPath(
+  new URL(FROM_SOURCE ? '../player/debug/index.ts' : './player/debug/index.js', import.meta.url)
 );
 
 export function pix3(options: Pix3Options = {}): Plugin[] {
@@ -328,6 +334,10 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
           return postprocessingStubSource();
         case NETWORK_ID:
           return networkSource(build ? build.scan.usesNetwork : true);
+        case DEBUG_ID:
+          return config?.command === 'serve'
+            ? debugSource('dev', normalizePath(DEBUG_OVERLAY_ENTRY))
+            : debugSource('none');
         default:
           return null;
       }

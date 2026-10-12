@@ -19,6 +19,8 @@ export default defineConfig({
       'packages/create-pix3/src/**/*.spec.ts',
       // Plugin specs are Node too; they start real Vite dev servers on port 0.
       'packages/vite-plugin/src/**/*.spec.ts',
+      // The player's DOM-side modules (the debug overlay): happy-dom.
+      'packages/vite-plugin/player/**/*.spec.ts',
       // The editor port (.plans/editor-core-port.md): specs join lane by lane.
       'packages/editor-core/src/**/*.spec.ts',
     ],

@@ -31,6 +31,8 @@ import { ScriptExecutionService } from '@/services/play/ScriptExecutionService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { EditorTabService } from '@/services/editor/EditorTabService';
+import { HostService } from '@/host/HostService';
+import { FlushService } from '@/services/project/FlushService';
 import { ProjectStorageService } from '@/services/project/ProjectStorageService';
 import { PeekService } from '@/services/viewport/PeekService';
 import { SaveActiveResourceCommand } from '@/features/editor/SaveActiveResourceCommand';
@@ -48,6 +50,7 @@ import { StartMainSceneGameCommand } from '@/features/scripts/StartMainSceneGame
 import { StopGameCommand } from '@/features/scripts/StopGameCommand';
 import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
 import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
+import { OpenDebugWindowCommand } from '@/features/scripts/OpenDebugWindowCommand';
 import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
@@ -159,6 +162,12 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(ProjectStorageService)
   private readonly storage!: ProjectStorageService;
 
+  @inject(HostService)
+  private readonly hostService!: HostService;
+
+  @inject(FlushService)
+  private readonly flushService!: FlushService;
+
   @state() private isLayoutReady = appState.ui.isLayoutReady;
   @state() private dialogs: DialogInstance[] = [];
   @state() private componentPickers: ComponentPickerInstance[] = [];
@@ -269,6 +278,7 @@ export class Pix3EditorShell extends ComponentBase {
       new RestartGameCommand(this.gamePlaySessionService),
       new PauseGameCommand(this.gamePlaySessionService),
       new OpenGamePopoutWindowCommand(this.gamePlaySessionService),
+      new OpenDebugWindowCommand(this.hostService, this.flushService),
       new OpenEditorSettingsCommand(),
       new FocusAnimationTimelineCommand(),
       new OpenLocalizationPanelCommand(),

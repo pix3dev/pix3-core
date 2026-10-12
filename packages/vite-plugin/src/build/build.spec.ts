@@ -149,6 +149,10 @@ describe('build: html (single file)', () => {
       expect(page).not.toMatch(/YAMLParseError|LineCounter|composeDoc/);
       // The player's manifest from pix3project.yaml.
       expect(page).toMatch(/width:640,height:360|"width":640,"height":360/);
+      // Debug mode is dev-only: neither the overlay nor its loader ships.
+      expect(page).not.toContain('pix3-debug-overlay');
+      expect(page).not.toContain('Pix3 debug');
+      expect(page).not.toMatch(/has\(["'`]debug["'`]\)/);
 
       const record = readBuildRecord(root);
       expect(record?.format).toBe('html');

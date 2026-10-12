@@ -142,6 +142,19 @@ describe('editor page and discovery', () => {
     ]);
   });
 
+  it('debug mode: virtual:pix3/debug loads the overlay by its file, behind ?debug', async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE });
+    const code = await (await p.fetch('/@id/__x00__virtual:pix3/debug')).text();
+    expect(code).toContain("has('debug')");
+    expect(code).toContain('mountDebugOverlay');
+    // Vite rewrote the overlay's path to a URL it serves.
+    const url = /import\((["'])([^"']*player\/debug\/index\.ts)\1\)/.exec(code)?.[2];
+    expect(url).toBeTruthy();
+    const overlay = await p.fetch(url as string);
+    expect(overlay.status).toBe(200);
+    expect(await overlay.text()).toContain('export function mountDebugOverlay');
+  });
+
   it('answers hello with the revision, seq and versions', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const hello = await json(await p.fetch('/__pix3/api/hello'));
