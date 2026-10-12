@@ -1073,7 +1073,7 @@ The editor's modes go through `game.start` / `game.start-main`, so play ownershi
 - **Pause / Step** switch the runner to `manual` time mode (audio muted by the mode) and back to the mode it had; Step runs one `stepFrames(1)` tick. A game that drives its own manual ticks is left alone. Hide collapses the panel to its header (remembered per browser); **Editor** is the link above.
 - **For agents:** `window.__PIX3_PLAYER__.debug.snapshot()` returns the same numbers as JSON.
 
-Record: `.plans/player-build.md` P33, P34. Check: `../pix3-core-spikes/debug-e2e/run.mjs`.
+Record: `.plans/player-build.md` P33, P34. Check: `../pix3-e2e/debug-e2e/run.mjs`.
 
 ## 7. Scene File Format (\*.pix3scene)
 

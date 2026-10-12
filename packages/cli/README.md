@@ -585,7 +585,7 @@ table in `~/.codex/config.toml`).
 
 **The proxy (plan §D.5).** Chrome opens no debugging port; the only way in is the proxy with the
 token, so another local user, a web page or a process that cannot read `~/.pix3/cdp-token`
-cannot drive the editor's Chrome (checked: `../pix3-core-spikes/editor-e2e/gate-p2.mjs`). Same-user
+cannot drive the editor's Chrome (checked: `../pix3-e2e/editor-e2e/gate-p2.mjs`). Same-user
 processes can read the token file — the boundary is the user account, as for any file in the
 home directory. Chrome on macOS / Windows is untested (`.plans/agent-bridge.md` debt).
 

@@ -36,7 +36,7 @@ import {
 
 /**
  * `ScenePatchWriter` + `norm` + the §C.3 rule on the template corpus — the S12 harness
- * (`../pix3-core-spikes/s12-patch/src/run-corpus.ts`) as a spec. Every case starts from a fresh
+ * (the P0 spike's `s12-patch/src/run-corpus.ts`) as a spec. Every case starts from a fresh
  * graph, edits it the way an operation does (`PropertyDefinition.setValue`, tree surgery), then
  * `patched = applySceneOps(text, diff(norm(text), normOf(graph)))` must satisfy
  * `norm(patched) == normOf(graph)`, keep every comment, and stay within the line budget.

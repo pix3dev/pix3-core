@@ -25,7 +25,7 @@ says so (AGENTS.md rule 13).
 
 - `npm test` (289 files, 3 403 tests), `npm run lint`, `npm run type-check` clean; `npm run test:corpus` (+ `../DeepCore`) 197/197.
 - Both starters generated outside pix3-core by `node packages/create-pix3/index.js` with `node_modules` linked to the checkout: `vite build` → `dist/index.html` 1112 KiB (2d) / 1114 KiB (3d), entry `scenes/main.pix3scene`, 43 / 42 runtime modules stripped, no warnings; `pix3 check` OK (project tsconfig, 0 errors); `pix3 smoke` first frame ok.
-- `../pix3-core-spikes/build-check/run.mjs` (now builds a starter made by the checkout's create-pix3; default `--template 2d`): 12/12 for `2d` and `3d` — `vite preview`, `file://`, sandboxed iframe all `running`, frames counting, no errors.
+- `../pix3-e2e/build-check/run.mjs` (now builds a starter made by the checkout's create-pix3; default `--template 2d`): 12/12 for `2d` and `3d` — `vite preview`, `file://`, sandboxed iframe all `running`, frames counting, no errors.
 - Headless Chrome on `npm run dev` of each starter: `/__pix3/` mounts (`__PIX3_DEBUG__.status().activeScene = res://scenes/main.pix3scene`, writer `self`, nothing dirty, scene tree `Game Root` + children, no page exception, no console error; the Run menu is Play Game / Play Scene / Stop / Restart / Pause — no build), `/` runs (`__PIX3_PLAYER__.status = running`, no errors).
 
 ## Left
