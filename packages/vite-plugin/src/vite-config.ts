@@ -32,8 +32,9 @@ export const pix3ViteConfig = (options: {
   const { user, format } = options;
   const projectRoot = resolve(user.root ?? process.cwd());
   const linkedEditorCore = findPackageDir(projectRoot, '@pix3/editor-core');
-  // Vite checks `fs.allow` against real paths; a workspace or pnpm link points elsewhere.
-  const editorCoreDir = linkedEditorCore ? realpathSync(linkedEditorCore) : null;
+  // Vite checks `fs.allow` against real paths (`.native`: long names on Windows, as Vite resolves
+  // them); a workspace or pnpm link points elsewhere.
+  const editorCoreDir = linkedEditorCore ? realpathSync.native(linkedEditorCore) : null;
   // An explicit `fs.allow` switches off Vite's workspace-root default; keep it when the user
   // set none, and add this package (the page client and the player are served from it by
   // `/@fs/`) and the prebuilt editor (served from wherever npm put it: hoisted, pnpm, a

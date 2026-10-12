@@ -173,7 +173,7 @@ describe('changeset transaction and recovery (ProjectFiles)', () => {
   });
 
   const makeRoot = (initial: Record<string, string>): string => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-tx-')));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'pix3-tx-')));
     roots.push(root);
     for (const [path, text] of Object.entries(initial)) {
       mkdirSync(dirname(join(root, path)), { recursive: true });

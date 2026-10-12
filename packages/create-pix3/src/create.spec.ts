@@ -11,7 +11,7 @@ import { parseArgs, pix3Entry } from './create.js';
 
 const BIN = fileURLToPath(new URL('../index.js', import.meta.url));
 // macOS's temp directory can be reached through /var and its real path /private/var.
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'create-pix3-')));
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'create-pix3-')));
 
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });

@@ -206,7 +206,7 @@ describe('version journal routes (dev server)', () => {
 
 describe('start-up snapshot across restarts (ProjectFiles)', () => {
   it('records a file changed while no dev server ran, and nothing for an unchanged one', async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-history-')));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'pix3-history-')));
     try {
       mkdirSync(join(root, 'scenes'));
       writeFileSync(join(root, SCENE), V1);
@@ -236,7 +236,7 @@ describe('VersionJournal retention', () => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   });
   const journalAt = (clock: { now: number }): { journal: VersionJournal; root: string } => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-history-')));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'pix3-history-')));
     roots.push(root);
     return { journal: new VersionJournal({ root, now: () => clock.now }), root };
   };

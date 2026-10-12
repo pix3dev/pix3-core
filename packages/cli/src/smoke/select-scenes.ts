@@ -166,9 +166,11 @@ export const gitChangedFiles = (root: string): string[] | null => {
   if (!top) return null;
   const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.']);
   if (status === null) return null;
+  // `.native`: git answers with long names, a root under a Windows 8.3 short name (`RUNNER~1`)
+  // would otherwise put every changed file outside it.
   let realRoot = root;
   try {
-    realRoot = realpathSync(root);
+    realRoot = realpathSync.native(root);
   } catch {
     // keep the given path
   }

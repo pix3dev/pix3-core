@@ -57,7 +57,7 @@ export const startProject = async (
   /** Plugins after `pix3()` (a spec that holds a transform to open a race window). */
   plugins: Plugin[] = []
 ): Promise<TestProject> => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-plugin-')));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'pix3-plugin-')));
   const write = (path: string, content: string): void => {
     const absolute = join(root, ...path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });

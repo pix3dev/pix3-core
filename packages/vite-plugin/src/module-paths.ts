@@ -28,7 +28,7 @@ export const realFileOf = (id: string): string => {
   let real = realPaths.get(file);
   if (real === undefined) {
     try {
-      real = realpathSync(file);
+      real = realpathSync.native(file);
     } catch {
       real = file;
     }

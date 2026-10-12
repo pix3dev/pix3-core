@@ -158,7 +158,7 @@ export const writeFixtureProject = (
   files: Readonly<Record<string, string | Buffer>> = FIXTURE_FILES,
   options: FixtureProjectOptions = {}
 ): string => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'pix3-build-')));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'pix3-build-')));
   for (const [path, content] of Object.entries(files)) {
     const absolute = join(root, ...path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });

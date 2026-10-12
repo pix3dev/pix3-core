@@ -14,7 +14,7 @@ const HIDDEN_KEY = 'pix3:editor-link:hidden';
 export type OpenEditorOutcome = 'navigated' | 'already-open';
 
 /** True when an editor tab of this origin answers within {@link ANSWER_MS}. */
-export const isEditorOpen = (timeoutMs = ANSWER_MS): Promise<boolean> =>
+export const isEditorOpen = (timeoutMs: number = ANSWER_MS): Promise<boolean> =>
   new Promise(resolve => {
     if (typeof BroadcastChannel === 'undefined') {
       resolve(false);

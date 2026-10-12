@@ -110,9 +110,11 @@ Authoritative code rules for pix3-core (runtime, CLI, editor-core, Vite plugin, 
 11. **Verify against an independent measurement, not the tool's own output.** A restamped anchor satisfying the equation the restamp was derived from proves nothing; decode the source file and compute the answer another way. Real examples from this repo: the trim tool's anchor was confirmed by computing the PNG's alpha bounding box separately, the chroma key by predicting the affected pixel count from the source pixels, a bulk flip by comparing the output against a mirrored read of its input, and the video importer against a clip authored so a failed seek would show up as repeated pixels.
 12. **Suspect the harness before declaring a bug.** Measurement mistakes outnumber real regressions here: a wrong property name, `display: contents` reporting 0×0, a reading taken after playback ended, or dispatching only `change` at a control that reads its value in `@input`. Re-check how you measured, then report.
 13. **An implementation contract is derived, not authoritative.** A `.plans/` contract section can be incomplete or can have drifted from the product spec it was written against. Before implementing, read the source-of-truth section it derives from (a decision table, a drag matrix) and say so when the two disagree — implementing the contract literally and silently is how a row of a matrix ends up as a dead affordance.
+14. **`npm run verify` before every push to `main`.** It runs what CI runs, in CI's order: lint, type-check, the specs, then `release:check --pack-only` (each package's `prepack` build and the tarball scan — the step that catches a build-only config such as the player's `isolatedDeclarations`). Push only on a green run; when it fails, fix it or say so — do not push and let CI find it. CI also runs on Windows and macOS; a path built from `os.tmpdir()` or compared with one goes through `realpathSync.native` (Windows runners hand out 8.3 short names like `RUNNER~1`, which the JS `realpathSync` keeps), and joins/compares use `node:path`, never `/` by hand.
 
 ## Development Commands
 
+- `npm run verify`: what CI runs (lint, type-check, test, `release:check --pack-only`); run it before every push.
 - `npm test`: Vitest.
 - `npm run lint`: ESLint.
 - `npm run type-check`: tsc per package.

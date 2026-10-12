@@ -82,6 +82,7 @@ Every doc below is bigger than the answer to any single task. **Locate the ancho
 ## Commands
 
 ```bash
+npm run verify         # what CI runs: lint, type-check, test, release:check --pack-only — before every push (AGENTS.md rule 14)
 npm test               # vitest: every package's specs (happy-dom; Node specs opt in per file)
 npm run lint           # eslint over runtime, cli, vite-plugin, editor-core
 npm run type-check     # tsc per package
