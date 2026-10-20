@@ -10,6 +10,32 @@ the editor saves their edits to the same files. The files are the whole contract
 A project made by `npm create pix3` starts **empty**: one entry scene (`scenes/main.pix3scene`,
 a 2D root and background, or a 3D camera and lights) and no scripts. The game is yours to build.
 
+## New-game architecture and UX gate
+
+For a new game, keep the standard `startGame` + `pix3()` player/editor path. Use
+`.pix3scene` files and Script components so the human can inspect and iterate on
+the actual game in `/__pix3/`. A runtime import wrapped around a custom canvas or
+DOM game is not equivalent. The consumer path is for an explicitly required host.
+
+Before implementation, translate supplied references into player actions, visible
+feedback, hierarchy, control sizes and asset requirements. Treat a reference's
+visual inventory slots as a requirement for visual selection, not merely a color
+palette. Do not substitute numeric controls or prose for recognizable content.
+
+Build and review a reusable UI kit using runtime UI nodes and skin textures:
+panels, slots, tabs, buttons, bars, icons, selected/pressed/disabled states.
+Use native InputService actions and control signals, including Joystick2D for
+touch movement. Do not introduce a parallel DOM UI or browser-input layer.
+Before implementing animation, camera, physics or input, consult the installed
+`.claude/skills/pix3-nodes/SKILL.md` and `.claude/skills/pix3-scripts/SKILL.md`
+(and their references); use `.claude/skills/pix3-editor/SKILL.md` for iteration.
+
+Completion requires inspection of the running editor and game at the target
+device size, an interaction check through actual input, and comparison to the
+reference. Check control sizes in screen pixels; on touch devices, also verify
+simultaneous actions such as movement and jump when the game uses them. A build,
+a debug command or a screenshot alone is not enough.
+
 ## Read first
 
 1. `README.md` — file layout of this project.
@@ -63,8 +89,9 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    you mean to change (search/replace), never regenerate a whole scene from memory. After
    writing, `pix3_sync` again with `expect` = the sha256 of every file you wrote
    (`.claude/skills/pix3-editor/SKILL.md`).
-3. **Leave layout, colours and fine-tuning to the human.** If asked "a bit more to the left",
-   do it, then offer: "you can drag it in the editor — it saves on its own".
+3. **Own the requested UX and visual quality.** Implement layout, colours and fine-tuning
+   against the references, then verify them at the target device size. Keep the result
+   editable in the editor; that is an iteration tool, not a reason to leave polish undone.
 4. **Run `pix3 check` after every batch of edits** and fix every error before you say "done".
    It checks YAML, node types, properties, `res://` paths, prefabs, components, and
    type-checks your scripts. Then run the game: with the editor open, `pix3_sync` with `expect`
