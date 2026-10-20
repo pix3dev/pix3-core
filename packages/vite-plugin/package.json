@@ -1,6 +1,6 @@
 {
   "name": "@pix3/vite-plugin",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0-alpha.1",
   "description": "Pix3 editor, file API, sync barrier and build as a Vite plugin.",
   "type": "module",
   "repository": {
@@ -43,7 +43,7 @@
     "yaml": "^2.6.0"
   },
   "peerDependencies": {
-    "@pix3/runtime": "2.0.0-alpha.0",
+    "@pix3/runtime": "2.0.0-alpha.1",
     "vite": "^7 || ^8"
   },
   "devDependencies": {

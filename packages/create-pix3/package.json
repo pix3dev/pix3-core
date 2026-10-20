@@ -1,6 +1,6 @@
 {
   "name": "create-pix3",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0-alpha.1",
   "description": "npm create pix3@latest — scaffold an empty 2D or 3D Vite + TS game project with the Pix3 editor.",
   "type": "module",
   "repository": {
@@ -24,7 +24,7 @@
     "node": ">=24.15.0 <25"
   },
   "dependencies": {
-    "@pix3/cli": "2.0.0-alpha.0"
+    "@pix3/cli": "2.0.0-alpha.1"
   },
   "license": "Apache-2.0",
   "publishConfig": {
