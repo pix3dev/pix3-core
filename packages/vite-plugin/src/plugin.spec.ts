@@ -175,7 +175,10 @@ describe('editor page and discovery', () => {
     const hello = await json(await p.fetch('/__pix3/api/hello'));
     expect(hello.seq).toBe(0);
     expect(typeof hello.revision).toBe('string');
-    expect((hello.versions as Record<string, unknown>).plugin).toBe('2.0.0-alpha.0');
+    const { version } = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+    ) as { version: string };
+    expect((hello.versions as Record<string, unknown>).plugin).toBe(version);
     expect(hello.writerId).toBeNull();
   });
 });
