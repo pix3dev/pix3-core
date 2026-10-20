@@ -2,7 +2,22 @@
 
 Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript project; `@pix3/vite-plugin` serves the editor on the same dev server at `/__pix3/`, writes scene edits back to the files, and builds playable HTML. Coding agents (Codex, Claude Code) work on the same files and drive the open editor through Chrome DevTools MCP.
 
-> **Status: development alpha.** P1 is implemented; cross-platform checks and end-to-end dogfood are being completed before `2.0.0-alpha.1`. Nothing here is published yet: the 1.6.x packages on npm come from [`pix3`](https://github.com/pix3dev/pix3).
+> **Status: development alpha.** `2.0.0-alpha.1` is on npm under the `next` tag. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3`](https://github.com/pix3dev/pix3).
+
+## Building a new game with an agent
+
+`create-pix3` / `pix3 new` installs the agent kit. Before writing game code in this
+engine checkout, read `.claude/skills/pix3-game-dev/SKILL.md` and
+`docs/nodes-and-systems.md`. In a generated game project, start with the installed
+`pix3-nodes`, `pix3-scripts` and `pix3-editor` skills. Keep `startGame` + the Vite
+plugin, authored `.pix3scene` files, native runtime UI controls and InputService.
+The actual game must be editable and testable at `/__pix3/`; importing
+RuntimeRenderer around a custom HTML/canvas game is not the default new-game workflow.
+
+Treat visual references as UX requirements: identify the player's actions,
+recognizable content, feedback and target device sizes. Create a reusable skinned
+UI kit, then verify it through real input and visual inspection in the editor.
+Do not leave layout and polish to the human merely because an editor is available.
 
 | Package                                        | npm                 | What it is                                                                                                          |
 | ---------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
