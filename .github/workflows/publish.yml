@@ -1,0 +1,99 @@
+name: Publish
+
+# Publishes the five lockstep packages to npm via Trusted Publishing (OIDC): no NPM_TOKEN, and
+# npm attaches provenance on its own. README → "Releasing" is the procedure; this is its step 3.
+#
+#   1. Tag push `v2.0.0-alpha.N` (the tag must equal the root package.json version) — publishes.
+#   2. Manual: Actions → "Publish" → Run workflow. On a `v*` tag ref with `dry_run` off it
+#      publishes; anywhere else it is a dry run (`npm publish --dry-run`, nothing leaves CI).
+#
+# A prerelease goes to `next`, a plain `X.Y.Z` to `latest`. A package whose version is already
+# on npm is skipped, so re-running a half-failed publish finishes it.
+#
+# npmjs.com: each package's trusted publisher must name pix3dev/pix3-core, workflow `publish.yml`,
+# environment `npm`.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (npm publish --dry-run); a real publish also needs a v* tag ref
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: npm >= 11.5.1 (trusted publishing)
+        run: |
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number);process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm -v)" \
+            || npm install -g npm@11
+          npm -v
+
+      - name: Version, dist-tag, dry run
+        id: plan
+        env:
+          DRY_INPUT: ${{ inputs.dry_run }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then tag=next; else tag=latest; fi
+          dry=true
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" == v* ]]; then
+            if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME, but package.json says $version"
+              exit 1
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == push || "$DRY_INPUT" == false ]]; then dry=false; fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "dry=$dry" >> "$GITHUB_OUTPUT"
+          echo "### $version → \`$tag\`$([[ $dry == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm test
+      # The full check (pack, scan, a scratch 2D project on the tarballs: install, check, smoke,
+      # build) — README step 2, on the commit that is about to ship.
+      - name: Release check
+        run: npm run release:check
+
+      - name: Publish
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          DRY: ${{ steps.plan.outputs.dry }}
+        run: |
+          # Dependency order: each package's internal dependencies are on npm before it.
+          for dir in runtime editor-core vite-plugin cli create-pix3; do
+            name=$(node -p "require('./packages/$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already on npm, skipped"
+              echo "- $name@$VERSION: already published" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            flags=(--tag "$TAG")
+            [[ "$DRY" == true ]] && flags+=(--dry-run)
+            npm publish -w "packages/$dir" "${flags[@]}"
+            echo "- $name@$VERSION → \`$TAG\`$([[ $DRY == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
+          done
