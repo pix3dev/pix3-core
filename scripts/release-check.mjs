@@ -62,6 +62,13 @@ const ALLOWED = {
   runtime: [/^src\/testing\//],
 };
 
+/** Text a package's files may contain that the FORBIDDEN_TEXT rules below would refuse. */
+const ALLOWED_TEXT = {
+  // feather-icons ships a webpack bundle that names its own CI checkout; the editor's source maps
+  // embed it, and on a GitHub runner (home /home/runner) it reads as our home directory.
+  'editor-core': [/\/\*! \/home\/runner\/work\/feather\/feather\/[\w./-]* \*\//g],
+};
+
 /** Paths that must never be in a tarball. */
 const FORBIDDEN_PATHS = [
   [/\.(spec|test)\.[cm]?[jt]sx?$/, 'a spec'],
@@ -216,7 +223,11 @@ const checkContents = (dir, pkg, extracted, files) => {
   for (const path of files) {
     const absolute = join(extracted, path);
     if (statSync(absolute).size > 32 * 1024 * 1024) continue;
-    const text = readFileSync(absolute, 'latin1');
+    let text = readFileSync(absolute, 'latin1');
+    // Blank allowed snippets out, same length, so line numbers stay right.
+    for (const pattern of ALLOWED_TEXT[dir] ?? []) {
+      text = text.replace(pattern, match => ' '.repeat(match.length));
+    }
     for (const [pattern, what] of FORBIDDEN_TEXT) {
       const match = pattern.exec(text);
       if (match) {
