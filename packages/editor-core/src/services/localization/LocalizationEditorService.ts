@@ -95,6 +95,8 @@ export class LocalizationEditorService {
   private settings: LocalizationSettings | null = null;
   /** Identity of the project whose tables are currently loaded (guards re-loads). */
   private loadedProjectKey: string | null = null;
+  /** The manifest's `localization` block the tables were loaded for (see {@link manifestKey}). */
+  private loadedManifestKey = '';
   private previewLocale = '';
   private disposeProjectSub?: () => void;
   private disposeFsSub?: () => void;
@@ -111,7 +113,8 @@ export class LocalizationEditorService {
     if (this.initialized) return;
     this.initialized = true;
     this.disposeProjectSub = subscribe(appState.project, () => {
-      this.loading = this.syncFromProject();
+      const sync = () => this.syncFromProject();
+      this.loading = this.loading.then(sync, sync);
     });
     if (HostService.isInstalled()) {
       // A deletion is final: it needs no settling, and ExternalChangeService does not deliver it.
@@ -143,6 +146,7 @@ export class LocalizationEditorService {
     this.tables.clear();
     this.settings = null;
     this.loadedProjectKey = null;
+    this.loadedManifestKey = '';
     this.previewLocale = '';
     this.initialized = false;
   }
@@ -154,11 +158,20 @@ export class LocalizationEditorService {
     return p.id ? `${p.backend}:${p.id}` : null;
   }
 
-  /** (Re)load tables when a different project opens, or clear on close. */
+  /**
+   * (Re)load tables when a different project opens, or clear on close; take in a changed
+   * `localization` block of `pix3project.yaml` (re-read when it changes on disk).
+   */
   private async syncFromProject(): Promise<void> {
     const key = this.projectKey();
-    if (key === this.loadedProjectKey) return;
+    if (key === this.loadedProjectKey) {
+      if (key && manifestKey() !== this.loadedManifestKey) {
+        await this.enqueue(() => this.reconcileSettings());
+      }
+      return;
+    }
     this.loadedProjectKey = key;
+    this.loadedManifestKey = manifestKey();
 
     // Reset state for the new (or absent) project.
     setActiveLocalization(null);
@@ -181,6 +194,50 @@ export class LocalizationEditorService {
       console.warn('[Localization] Failed to load project locales', error);
     }
     this.bumpRevision();
+  }
+
+  /**
+   * The manifest's locale set or default changed: tables of locales it adds are read (and their
+   * drafts offered), tables of locales it drops go, the preview follows the new default. Runs on
+   * the write queue, so no write of a table is under way meanwhile.
+   */
+  private async reconcileSettings(): Promise<void> {
+    this.loadedManifestKey = manifestKey();
+    const next = await this.resolveSettings();
+    const before = this.settings?.locales ?? [];
+    const after = next?.locales ?? [];
+    for (const locale of before.filter(l => !after.includes(l))) {
+      this.tables.delete(locale);
+      this.baselines.delete(locale);
+      this.ledgers.delete(locale);
+      this.preview?.setTable(emptyTable(locale));
+    }
+    const added = after.filter(l => !before.includes(l));
+    for (const locale of added) {
+      const { table, baseline } = await this.readTableFile(locale);
+      this.tables.set(locale, table);
+      if (baseline) this.baselines.set(locale, baseline);
+    }
+    this.settings = next;
+    if (!next) {
+      this.previewLocale = '';
+      setActiveLocalization(null);
+      this.preview?.dispose();
+      this.preview = null;
+      this.bumpRevision();
+      return;
+    }
+    const preview = this.ensurePreview();
+    preview.configure({
+      defaultLocale: next.defaultLocale,
+      fallbackLocale: next.fallbackLocale,
+      locales: next.locales,
+    });
+    for (const table of this.tables.values()) preview.setTable(table);
+    if (!next.locales.includes(this.previewLocale)) this.previewLocale = next.defaultLocale;
+    void preview.setLocale(this.previewLocale);
+    this.bumpRevision();
+    for (const locale of added) await this.offerDraft(locale);
   }
 
   /** Resolve the effective settings (manifest block, else auto-discovered from `locales/`). */
@@ -825,6 +882,12 @@ export class LocalizationEditorService {
 const pathOf = (locale: string): string => `${LOCALES_DIR}/${locale}.json`;
 
 const emptyTable = (locale: string): LocaleTable => ({ locale, strings: {}, sprites: {} });
+
+/** The manifest's `localization` block as a comparable string ('' when absent). */
+const manifestKey = (): string => {
+  const settings = appState.project.manifest?.localization;
+  return settings ? JSON.stringify(settings) : '';
+};
 
 function unreadable(path: string, error: unknown): 'unreadable' {
   console.warn(

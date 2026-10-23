@@ -100,6 +100,7 @@ export class LocalizationPanel extends ComponentBase {
     this.disposeSub = subscribe(appState.localization, () => {
       this.revision = appState.localization.revision;
       this.syncTargetLocale();
+      this.guardRename();
     });
     this.disposeExternalSub = this.service.onExternalKeys((locale, keys) => {
       const typing = this.typing;
@@ -122,6 +123,23 @@ export class LocalizationPanel extends ComponentBase {
     this.disposeExternalSub?.();
     this.disposeExternalSub = undefined;
     super.disconnectedCallback();
+  }
+
+  /**
+   * The key being renamed left the tables (an agent removed or renamed it on disk): the rename
+   * ends here, before the re-render drops its row — a blur of that input would rename a key that
+   * no longer exists.
+   */
+  private guardRename(): void {
+    const key = this.renamingKey;
+    if (key === null || this.service.getAllKeys(this.section).includes(key)) return;
+    this.renamingKey = null;
+    this.notices.show({
+      key: `locale-renaming:${key}`,
+      tone: 'warn',
+      message: `"${key}" was removed on disk while you were renaming it.`,
+      detail: 'Nothing was renamed.',
+    });
   }
 
   /** Keep the target column valid as locale files appear and disappear. */
@@ -209,6 +227,17 @@ export class LocalizationPanel extends ComponentBase {
     if (this.renamingKey !== oldKey) return; // already committed or cancelled
     this.renamingKey = null;
     if (newKey && newKey !== oldKey) {
+      const taken = this.service
+        .getLocales()
+        .some(locale => this.service.hasEntry(locale, newKey, this.section));
+      if (taken) {
+        this.notices.show({
+          key: `locale-renaming:${oldKey}`,
+          tone: 'warn',
+          message: `"${oldKey}" was not renamed: "${newKey}" already exists.`,
+        });
+        return;
+      }
       void this.commandDispatcher.execute(
         new RenameLocalizationKeyCommand({ oldKey, newKey, section: this.section })
       );

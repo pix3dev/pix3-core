@@ -158,6 +158,40 @@ describe('LocalizationEditorService — following the disk', () => {
     await vi.waitFor(() => expect(loc.getLocales()).toEqual(['en']));
   });
 
+  it('a changed locale set in pix3project.yaml: added tables are read, dropped ones go', async () => {
+    const manifest = (locales: string[], def = 'en'): string =>
+      'version: 1.0.0\nmetadata:\n  projectId: p-1\n' +
+      `localization:\n  defaultLocale: ${def}\n  locales: [${locales.join(', ')}]\n`;
+    host = new FakeHost({
+      files: {
+        'pix3project.yaml': manifest(['en', 'de']),
+        [EN]: file({ hello: 'Hello' }),
+        'locales/de.json': file({ hello: 'Hallo' }),
+        'locales/fr.json': file({ hello: 'Bonjour' }),
+      },
+    });
+    const loc = await boot({}, host);
+    // A file outside the declared set is not a table…
+    await host.externalWrite('locales/fr.json', file({ hello: 'Salut' }));
+    await service(ExternalReloadService).apply(['locales/fr.json']);
+    expect(loc.getLocales()).toEqual(['en', 'de']);
+
+    // …until the manifest lists it.
+    await host.externalWrite('pix3project.yaml', manifest(['fr', 'en'], 'fr'));
+    await service(ExternalReloadService).apply(['pix3project.yaml']);
+    await vi.waitFor(() => expect(loc.getLocales()).toEqual(['fr', 'en']));
+    expect(loc.getDefaultLocale()).toBe('fr');
+    expect(loc.getPreviewLocale()).toBe('en'); // the author's choice, still a locale
+    expect(loc.getEntry('fr', 'hello')).toBe('Salut');
+    expect(loc.hasEntry('de', 'hello')).toBe(false);
+
+    // The new table is followed and written like any other.
+    await loc.setEntry('fr', 'bye', 'Au revoir');
+    expect(strings('locales/fr.json')).toEqual({ hello: 'Salut', bye: 'Au revoir' });
+    expect(writes.map(w => w.path)).toEqual(['locales/fr.json']);
+    expect(host.text('locales/de.json')).toBe(file({ hello: 'Hallo' }));
+  });
+
   it('a read that fails keeps the table: only a missing file is a deletion', async () => {
     const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
     const read = host.files.read.bind(host.files);
