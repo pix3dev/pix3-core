@@ -6,7 +6,7 @@ import { EditorHostConnection } from './index.ts';
 
 /**
  * `EditorHostConnection` is the `EditorHost` `@pix3/editor-core` mounts against. The contract
- * lives in editor-core (`.plans/editor-core-port.md` D1); this type-level check is the only edge
+ * lives in editor-core (`.plans/done/editor-core-port.md` D1); this type-level check is the only edge
  * between the packages, so the plugin's build carries no editor-core code.
  */
 const conforms = (connection: EditorHostConnection): EditorHost => connection;

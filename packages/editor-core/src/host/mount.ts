@@ -39,7 +39,7 @@ const service = <T>(ctor: new (...args: never[]) => T): T => {
 export const EDITOR_SHELL_TAG = 'pix3-editor';
 
 /**
- * Boot the editor into `el` against `host` (`.plans/editor-core-port.md` §2.1): no router, no
+ * Boot the editor into `el` against `host` (`.plans/done/editor-core-port.md` §2.1): no router, no
  * welcome screen, no project picker — one host, one project. The order matters: the host first
  * (every storage call goes through it), then runtime services and scripts, then the project, then
  * the writer claim and the sync handlers, then the UI.

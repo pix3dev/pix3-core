@@ -53,7 +53,7 @@ interface PendingEntry {
 }
 
 /**
- * The external-change path (pix3-core plan §C.3, port phase — `.plans/editor-core-port.md` D5):
+ * The external-change path (pix3-core plan §C.3, port phase — `.plans/done/editor-core-port.md` D5):
  *
  * 1. **Stabilisation.** A reported path (a `pix3:fs` frame, a refused pre-write check) is re-read every {@link STABILITY_INTERVAL_MS}; it has arrived once two
  *    consecutive snapshots (size + sha256) match. Every path reported while any of them is still

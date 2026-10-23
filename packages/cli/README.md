@@ -40,7 +40,7 @@ install).
 (package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore,
 README.md) plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` /
 `{{PACKAGE_NAME}}` / `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent
-kit. Nothing in it plays a game. Record: `.plans/templates.md`.
+kit. Nothing in it plays a game. Record: `.plans/done/templates.md`.
 
 Two things a first run trips on: **2.0.0-alpha packages are not published yet** — a new
 project's `npm install` fails until they are; the starter's README says how to link a pix3-core
@@ -587,7 +587,7 @@ table in `~/.codex/config.toml`).
 token, so another local user, a web page or a process that cannot read `~/.pix3/cdp-token`
 cannot drive the editor's Chrome (checked: `../pix3-e2e/editor-e2e/gate-p2.mjs`). Same-user
 processes can read the token file — the boundary is the user account, as for any file in the
-home directory. Chrome on macOS / Windows is untested (`.plans/agent-bridge.md` debt).
+home directory. Chrome on macOS / Windows is untested (`.plans/done/agent-bridge.md` debt).
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
 

@@ -19,7 +19,7 @@ import {
  * the port only when the answer's `X-Pix3-Proof` is right — the proxy answers it on every reply,
  * a 401 included. chrome-devtools-mcp cannot do this (it sends its `--wsHeaders` on connect); for
  * it the guard is `ExitOnForwardFailure` (the README's SSH lines) — recorded in
- * `.plans/agent-bridge.md` (A20–A23, A28). Locally the same rule holds for `pix3 editor`'s port
+ * `.plans/done/agent-bridge.md` (A20–A23, A28). Locally the same rule holds for `pix3 editor`'s port
  * check (`cdp-port.ts`, A26): no port gets the token before its proof.
  *
  * **The proof is bound to the port the client dialled** (A28): `HMAC-SHA256(sha256(token),

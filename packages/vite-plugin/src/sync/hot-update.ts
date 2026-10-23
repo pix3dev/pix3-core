@@ -11,7 +11,7 @@ import { isGlobbedScript, resolvedId, sha256Hex, type ScriptGraph } from './scri
  * The plugin's `hotUpdate` — not the legacy `handleHotUpdate`: Vite (6+, the environment API)
  * calls the legacy hook for `update` only, so a script file created or deleted outside a sync
  * never reached the editor — its roots kept the old glob until the next sync, and a play restart
- * ran without the new class (`.plans/scripts-vite.md` S13). This hook sees every kind.
+ * ran without the new class (`.plans/done/scripts-vite.md` S13). This hook sees every kind.
  *
  * `undefined` leaves Vite's default propagation alone; `[]` means this hook did it.
  */

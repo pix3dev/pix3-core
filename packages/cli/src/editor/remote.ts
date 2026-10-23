@@ -20,7 +20,7 @@ import {
  * `RemoteForward` brings the proxy's port back to the remote host's loopback, where the agent's
  * chrome-devtools-mcp connects with the token. The token travels once, over SSH, from the
  * human's `~/.pix3/cdp-token` to the remote's `~/.pix3/remote-cdp-token`
- * (decisions A20–A23, A28 in `.plans/agent-bridge.md`). Both machines name the same remote
+ * (decisions A20–A23, A28 in `.plans/done/agent-bridge.md`). Both machines name the same remote
  * port: the remote's `--cdp-port` (stored), the human's `RemoteForward` line and `--remote-port`
  * (the proxy signs a `forward` proof only for it).
  */

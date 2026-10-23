@@ -1,5 +1,5 @@
 /**
- * `EditorHost.files` over `/__pix3/api/*` (`.plans/editor-core-port.md` §1.2). A failed call
+ * `EditorHost.files` over `/__pix3/api/*` (`.plans/done/editor-core-port.md` §1.2). A failed call
  * rejects with an `Error` carrying `failure: {code, status, message, currentHash?}` — the shape
  * `@pix3/editor-core`'s `hostFailureOf` reads.
  */

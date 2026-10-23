@@ -136,7 +136,7 @@ export class ScriptGraph {
    * `pix3:scripts`, its `load()` done at the old `seq` — is handed to the next request for the same
    * URL (`transformRequest` dedupes on the URL without `?t=`), and its result is even cached after
    * the invalidation. The sync's own re-import then executed the previous `__pix3Revision`
-   * (`.plans/scripts-vite.md` S15). Vite's own clock is used, so the invalidation is strictly later
+   * (`.plans/done/scripts-vite.md` S15). Vite's own clock is used, so the invalidation is strictly later
    * than every request that started before it.
    */
   hardInvalidateRoots(): void {
@@ -172,7 +172,7 @@ export class ScriptGraph {
   }
 
   /**
-   * Project modules only the bot policies reach (`.plans/scripts-vite.md` S4/S11): reachable from
+   * Project modules only the bot policies reach (`.plans/done/scripts-vite.md` S4/S11): reachable from
    * `virtual:pix3/bot-policies` and not from `virtual:pix3/editor-scripts`, so the game the editor
    * plays never runs them and a change to one need not wait for play to stop. Read from the client
    * graph as it is now (after the barrier's propagation); a module the graph has not seen is not

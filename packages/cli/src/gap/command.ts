@@ -15,7 +15,7 @@ import { COMMAND_USAGE } from '../usage.ts';
  *
  * A CLI command, not a bridge tool: every coding agent has a shell, it works without the editor
  * open (and on a Remote SSH host, where the project is), and the bridge's tool table stays what
- * the editor does (decision A25 in `.plans/agent-bridge.md`). `pix3 gap --list` reads it back.
+ * the editor does (decision A25 in `.plans/done/agent-bridge.md`). `pix3 gap --list` reads it back.
  */
 
 export const GAPS_FILE = join('.pix3', 'gaps.jsonl');

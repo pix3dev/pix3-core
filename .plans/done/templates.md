@@ -5,6 +5,8 @@ Date: 2026-10-10. Owner decision of that day, overriding `../pix3/.plans/pix3-co
 project is §B.5 «Шаблон», which stays authoritative. Where this file disagrees with the plan it
 says so (AGENTS.md rule 13).
 
+Status (2026-10-24): complete — T1–T9 in code (T9 `b6566ad`), all three «Left» items closed or accepted; shipped in `2.0.0-alpha.1` (`6bc2382`). Paths re-checked after the 2026-10-11 clean-up merges.
+
 `CP` = `packages/create-pix3`, `CLI` = `packages/cli/src`, `RT` = `packages/runtime`.
 
 ## Decisions
@@ -30,6 +32,6 @@ says so (AGENTS.md rule 13).
 
 ## Left
 
-- The kit itself is still the 1.x one (`.mcp.json` with `pix3 mcp --workspace`, the live-channel section, `pix3-verify`): its rework is plan §F.5 and the bridge work, not this change. (Done: `.plans/agent-bridge.md` A11, `.plans/kit.md`.)
-- `create-pix3` is not linted (ESLint covers runtime, cli, vite-plugin, editor-core); `tsc --checkJs` covers it.
-- The starters do not ship `pix3 editor` / `agent-setup` scripts; they arrive with the bridge. (Done: `npm run editor`, `.plans/kit.md` K4; `agent-setup` stays a one-time `npx pix3 agent-setup`.)
+- The kit itself is still the 1.x one (`.mcp.json` with `pix3 mcp --workspace`, the live-channel section, `pix3-verify`): its rework is plan §F.5 and the bridge work, not this change. (Done: `.plans/done/agent-bridge.md` A11, `.plans/done/kit.md`.)
+- `create-pix3` is not linted (ESLint covers runtime, cli, vite-plugin, editor-core); `tsc --checkJs` covers it. (Accepted, 2026-10-24: still outside `npm run lint` / `eslint.config.js`; `npm run type-check` runs `tsc -p packages/create-pix3`, `create.spec.ts` covers the bin.)
+- The starters do not ship `pix3 editor` / `agent-setup` scripts; they arrive with the bridge. (Done: `npm run editor`, `.plans/done/kit.md` K4; `agent-setup` stays a one-time `npx pix3 agent-setup`.)

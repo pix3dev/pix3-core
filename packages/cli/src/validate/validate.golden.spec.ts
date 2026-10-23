@@ -18,7 +18,7 @@ import { validateProject } from './validate.ts';
  * printed, so a new one is visible in the test output rather than silently accepted.
  */
 
-/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/done/templates.md`). */
 const CORPUS_ROOT = fileURLToPath(
   new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
 );

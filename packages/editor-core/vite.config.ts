@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * Prebuilt `@pix3/editor-core` (`.plans/editor-core-port.md` §4): one ESM entry with literal lazy
+ * Prebuilt `@pix3/editor-core` (`.plans/done/editor-core-port.md` §4): one ESM entry with literal lazy
  * chunks, one `editor.css` (the plugin links it from the raw editor page — no CSS import may
  * reach the editor chain, plan §B.2 contract B), the editor's images, the bare subpaths the
  * plugin must pre-bundle, and the notices of what is inlined.

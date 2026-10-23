@@ -99,7 +99,7 @@ export type ProjectStatus = 'idle' | 'opening' | 'ready' | 'error';
 /** Where the project lives: always the plugin's file API in 2.x (plan §F, D3). */
 export type ProjectBackend = 'host';
 
-/** The editor tab's link to the dev server (`EditorHost`), see `.plans/editor-core-port.md` §2.5. */
+/** The editor tab's link to the dev server (`EditorHost`), see `.plans/done/editor-core-port.md` §2.5. */
 export interface HostConnectionState {
   connection: 'open' | 'closed';
   /** Whether this tab may write: it holds the writer claim, another tab does, or nobody claimed. */

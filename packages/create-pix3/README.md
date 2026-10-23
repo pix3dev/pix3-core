@@ -47,4 +47,4 @@ installed from the tarballs.
 
 The 1.x recipes and playable templates are gone from here (owner decision 2026-10-10); the ones the
 loader/saver/patch goldens need are test fixtures in `packages/runtime/fixtures/scene-corpus/`.
-Record: `.plans/templates.md`.
+Record: `.plans/done/templates.md`.

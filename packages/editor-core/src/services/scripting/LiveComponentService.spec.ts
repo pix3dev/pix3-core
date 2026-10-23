@@ -16,7 +16,7 @@ import { appState, resetAppState } from '@/state';
 
 /**
  * A synced script edit replaces the live components built from the old class
- * (`.plans/scripts-vite.md` S7): same id and slot, the file's config, unsaved edits kept, no
+ * (`.plans/done/scripts-vite.md` S7): same id and slot, the file's config, unsaved edits kept, no
  * history entry, no dirty mark.
  */
 

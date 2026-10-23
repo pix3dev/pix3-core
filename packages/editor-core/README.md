@@ -9,4 +9,4 @@ The Pix3 editor (Lit, Valtio, Golden Layout), shipped as prebuilt ESM and mounte
 - **Dev loop:** `npm run dev -w packages/editor-core` (watch build), then reload the editor tab. There is no HMR for the editor by design (plan §B.2 variant B).
 - **Tests:** specs run under the root vitest config with `FakeHost` (`src/host/testing/fake-host.ts`) in place of a dev server.
 
-Port record and decisions: `.plans/editor-core-port.md`. The snapshot it started from is `pix3` at `5442a097`.
+Port record and decisions: `.plans/done/editor-core-port.md`. The snapshot it started from is `pix3` at `5442a097`.

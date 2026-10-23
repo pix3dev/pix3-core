@@ -1,7 +1,7 @@
 /**
  * Tool names of the retired in-editor agent (`AgentToolRegistry` in the 1.x editor, last seen at
  * `35ac1c6:packages/editor-core/src/services/agent/AgentToolRegistry.ts`), frozen here when the
- * editor-core port dropped the registry (plan `.plans/editor-core-port.md` D15).
+ * editor-core port dropped the registry (plan `.plans/done/editor-core-port.md` D15).
  *
  * `kit.spec.ts` uses it to keep the kit from telling an external agent to call a tool the live
  * channel never had. Only snake_case names (the ones that guard can match) are listed. Retired

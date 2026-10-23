@@ -28,7 +28,7 @@ const hasStale = (graph: SceneGraph, registry: ScriptRegistry): boolean => {
 const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /**
- * Live script components follow their script (`.plans/scripts-vite.md` S7). A synced script
+ * Live script components follow their script (`.plans/done/scripts-vite.md` S7). A synced script
  * edit re-registers `user:<Name>` with a new class; every component built from the old class in
  * an open scene is replaced by one of the new class — same id, `enabled` and slot — so the
  * inspector's new schema works on a matching instance and the editor runs the code on disk.

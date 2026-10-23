@@ -20,7 +20,7 @@ import type { KitSource } from './kit-source.ts';
 /**
  * `pix3 kit --migrate` — a 1.x project's agent kit to the 2.x kit (plan §A.4 step 2, §F.5).
  *
- * **What it covers — the kit, nothing else** (`.plans/kit.md` K5):
+ * **What it covers — the kit, nothing else** (`.plans/done/kit.md` K5):
  *
  * 1. `.mcp.json`: the `pix3 mcp --workspace` server the 1.x kit pinned there (`npx -y
  *    @pix3/cli@1.x mcp --workspace`, or the dev form `node …/packages/cli/src/index.ts mcp`) is

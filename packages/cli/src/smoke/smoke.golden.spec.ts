@@ -22,7 +22,7 @@ import { STARTUP_SCENE } from './select-scenes.ts';
  * the reason and asserted to fail with exactly that — never silenced.
  */
 
-/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/done/templates.md`). */
 const CORPUS_ROOT = fileURLToPath(
   new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
 );

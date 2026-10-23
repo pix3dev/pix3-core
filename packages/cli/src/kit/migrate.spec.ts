@@ -34,7 +34,7 @@ import {
 } from './migrate.ts';
 
 /**
- * `pix3 kit --migrate` (plan §A.4 step 2, `.plans/kit.md` K5): a 1.x kit → the 2.x kit, never
+ * `pix3 kit --migrate` (plan §A.4 step 2, `.plans/done/kit.md` K5): a 1.x kit → the 2.x kit, never
  * clobbering a file someone edited, and saying what it changed.
  */
 

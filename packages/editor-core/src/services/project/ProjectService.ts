@@ -59,7 +59,7 @@ export class ProjectService {
   /**
    * Open the dev server's project: read (and id-backfill) the manifest, publish it to `appState`.
    * The entry scene is `defaultExportScenePath` (plan text says `entryScene`; the manifest key is
-   * `defaultExportScenePath` — `.plans/editor-core-port.md` §8.1), else `scenes/main.pix3scene`.
+   * `defaultExportScenePath` — `.plans/done/editor-core-port.md` §8.1), else `scenes/main.pix3scene`.
    */
   async openHostProject(): Promise<void> {
     const info = this.hostService.info;

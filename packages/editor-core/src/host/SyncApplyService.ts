@@ -12,7 +12,7 @@ import { ExternalReloadService } from './ExternalReloadService';
  * What a sync during play cannot apply. A bot policy is not part of the game: the page already
  * re-imported `virtual:pix3/bot-policies` for this sync and `GameBotHost` reads the roots on every
  * run, so the next `pix3_game_run {bot}` uses the new file without a restart. The same holds for a
- * module only policies import (`policyOnly`, from the plugin's module graph — `.plans/scripts-vite.md`
+ * module only policies import (`policyOnly`, from the plugin's module graph — `.plans/done/scripts-vite.md`
  * S11): a helper under `design/tests/lib/` the game never runs.
  */
 export function pendingDuringPlay(

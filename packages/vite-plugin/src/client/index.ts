@@ -207,7 +207,7 @@ const VITE_CLIENT_MESSAGE =
   '[pix3] /@vite/client is loaded on the editor page: a non-literal import(), import.meta.hot or a CSS import reached the editor chain (plan §B.2, contract B; `pix3 check` names the file).';
 
 /**
- * The page's `EditorHost` (`@pix3/editor-core` defines the contract, `.plans/editor-core-port.md`
+ * The page's `EditorHost` (`@pix3/editor-core` defines the contract, `.plans/done/editor-core-port.md`
  * §1): what `mountEditor(el, host)` talks to. Structural — the type lives in editor-core and this
  * package only checks conformance in a spec, so no runtime edge exists between the two.
  */

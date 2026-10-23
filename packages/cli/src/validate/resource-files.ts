@@ -17,7 +17,7 @@ import { formatPath, isRecord, parseYamlWithLines, type DocPath } from './yaml-d
  * that draws nothing: an error, as for a scene's own reference. A locale table is an error when it
  * is the default or the fallback locale's — the runtime keeps an empty table and every `labelKey`
  * shows the key itself — and a warning for any other declared locale, whose texts fall back to
- * the fallback locale's (a wrong language, but readable). Recorded in `.plans/kit.md` (K9).
+ * the fallback locale's (a wrong language, but readable). Recorded in `.plans/done/kit.md` (K9).
  */
 
 // --- .pix3anim -----------------------------------------------------------------------------------

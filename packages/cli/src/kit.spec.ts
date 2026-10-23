@@ -50,7 +50,7 @@ import { kitSrcDir, repoRootOfCheckout, type KitSource } from './kit/kit-source.
 import { createProject } from './new-project.ts';
 import { listTemplates } from './templates.ts';
 
-/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/done/templates.md`). */
 const CORPUS_ROOT = fileURLToPath(new URL('../../runtime/fixtures/scene-corpus', import.meta.url));
 import { ensureRuntimeTypes } from './types/runtime-types.ts';
 import { GAP_KINDS, GAPS_FILE } from './gap/command.ts';
@@ -336,7 +336,7 @@ describe('kit drift', () => {
   });
 
   it('quotes only verdict phrases and APIs the running game really has', () => {
-    // The verification guidance folded in from 1.x (`.plans/kit.md` K3) quotes what a run
+    // The verification guidance folded in from 1.x (`.plans/done/kit.md` K3) quotes what a run
     // answers; an upper-case phrase in backticks must be one GameTestService produces.
     const source = readFileSync(
       join(repoRootOfCheckout(), 'packages/editor-core/src/services/game-test/GameTestService.ts'),

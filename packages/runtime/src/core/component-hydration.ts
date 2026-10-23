@@ -212,7 +212,7 @@ export function isStaleComponent(
  * - its type is gone (file deleted, class renamed): the definition is **parked** in
  *   {@link NodeBase.pendingComponents}, as {@link attachComponentDefinitions} parks a type it
  *   cannot resolve — kept for the save, attached again by {@link resolvePendingComponents} when
- *   the type comes back (`.plans/scripts-vite.md` S12).
+ *   the type comes back (`.plans/done/scripts-vite.md` S12).
  *
  * `configOf` decides the config (default: the old instance's `config`, which is what a save
  * writes for it). A registered type that fails to instantiate keeps its old instance. The old

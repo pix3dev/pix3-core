@@ -1,4 +1,4 @@
-// Gate on the prebuilt editor (`.plans/editor-core-port.md` D12, plan §B.2 contract B): the editor
+// Gate on the prebuilt editor (`.plans/done/editor-core-port.md` D12, plan §B.2 contract B): the editor
 // page carries no `/@vite/client`, so nothing in `dist/` may make Vite inject it — no
 // `import.meta.hot`, no CSS import, no non-literal `import()`. Also prints the sizes (S7: ≤ 8 MB).
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';

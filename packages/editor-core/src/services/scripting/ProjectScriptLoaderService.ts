@@ -32,7 +32,7 @@ const projectPathOfGlobKey = (key: string): string => key.replace(/^(\.\.?\/|\/)
 
 /**
  * Registers the project's script components from the host's script roots (plan
- * `.plans/editor-core-port.md` §3, D7).
+ * `.plans/done/editor-core-port.md` §3, D7).
  *
  * The editor compiles nothing: Vite imports `scripts/` and `src/scripts/` through the plugin's
  * `virtual:pix3/editor-scripts` root, and the host hands the evaluated modules over as
@@ -41,7 +41,7 @@ const projectPathOfGlobKey = (key: string): string => key.replace(/^(\.\.?\/|\/)
  * and `pix3 validate` applies headless (`project-script-registration.ts` in the runtime).
  *
  * Live components built from a class that changed are replaced by instances of the new class
- * ({@link LiveComponentService}, `.plans/scripts-vite.md` S7); {@link componentsSettled} resolves
+ * ({@link LiveComponentService}, `.plans/done/scripts-vite.md` S7); {@link componentsSettled} resolves
  * when that is done. Components parked on nodes because their type was missing at load are
  * attached right away.
  */
@@ -126,7 +126,7 @@ export class ProjectScriptLoaderService {
   /**
    * {@link registerRoots} now, or — during play mode — once play stops (the running game keeps
    * the classes it started with). The latest roots win. A sync during play queues the roots the
-   * page re-imported for it, so a restart runs the classes on disk (`.plans/scripts-vite.md` S13).
+   * page re-imported for it, so a restart runs the classes on disk (`.plans/done/scripts-vite.md` S13).
    */
   queueRoots(roots: ScriptRoots): void {
     if (!appState.ui.isPlaying) {

@@ -6,7 +6,7 @@ import { isRecord, parseYamlWithLines } from './yaml-doc.ts';
 /**
  * `pix3project.yaml` `export:` — the 1.x build's asset selection (`pruneUnusedAssets`,
  * `extraRootScenePaths`, `includeGlobs`, `excludeGlobs`). No 2.x build reads it and the editor's
- * manifest model no longer carries it (`.plans/player-build.md` P26): what ships is decided by
+ * manifest model no longer carries it (`.plans/done/player-build.md` P26): what ships is decided by
  * the scan, and build options are `pix3({ … })` in `vite.config.ts`. A warning, so an author who
  * relied on it learns that it does nothing rather than finding out from a missing asset.
  */

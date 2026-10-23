@@ -3163,7 +3163,7 @@ export class ViewportRendererService {
   /**
    * Repaint every node drawn from an image file whose pixels just changed on disk
    * (an agent regenerated a sprite) — called by `ExternalReloadService` for each
-   * settled image of an external batch (`.plans/editor-core-port.md`, texture
+   * settled image of an external batch (`.plans/done/editor-core-port.md`, texture
    * refresh). Edit mode only: during play the batch is held (ExternalChangeService
    * step 4) and arrives here when play stops.
    *

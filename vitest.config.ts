@@ -21,7 +21,7 @@ export default defineConfig({
       'packages/vite-plugin/src/**/*.spec.ts',
       // The player's DOM-side modules (the debug overlay): happy-dom.
       'packages/vite-plugin/player/**/*.spec.ts',
-      // The editor port (.plans/editor-core-port.md): specs join lane by lane.
+      // The editor port (.plans/done/editor-core-port.md): specs join lane by lane.
       'packages/editor-core/src/**/*.spec.ts',
     ],
     // The default 'forks' pool reports "No test suite found" for every spec on win32-arm64

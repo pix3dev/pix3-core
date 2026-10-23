@@ -6,7 +6,7 @@ import { pipeFromStreams, type CdpPipe } from './cdp-proxy.ts';
 /**
  * A stand-in for Chrome's CDP over `--remote-debugging-pipe`, for the specs of the proxy and of
  * `pix3 editor` (never shipped: nothing `index.ts` loads imports it). It models what the proxy
- * relies on, as measured on Chrome 155 (`.plans/agent-bridge.md`, A14):
+ * relies on, as measured on Chrome 155 (`.plans/done/agent-bridge.md`, A14):
  *
  * - flat sessions: `Target.attachToBrowserTarget` (a browser session), `Target.attachToTarget
  *   {flatten}` (a page session, its `Target.attachedToTarget` sent on the calling session),

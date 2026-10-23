@@ -15,7 +15,7 @@ import { cliPackageRoot } from './package-root.ts';
  *    `<repo>/packages/create-pix3/templates/` directly, so editing one needs no rebuild,
  *    and a leftover `templates/` copy in the checkout can never shadow the source.
  *
- * Templates compose (`.plans/templates.md`): a template's `template.yaml` may name a layer it
+ * Templates compose (`.plans/done/templates.md`): a template's `template.yaml` may name a layer it
  * `extends` — a sibling folder with only `files/` (`base`: package.json, vite.config.ts,
  * index.html, src/main.ts, tsconfig.json …). The project gets the layer's files first, then the
  * template's own on top. A folder without `template.yaml` is a layer, never listed.

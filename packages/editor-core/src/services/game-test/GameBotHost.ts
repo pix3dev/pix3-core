@@ -13,7 +13,7 @@
  * and a policy that does not compile shows Vite's own error in the page.
  *
  * The editor writes no project files: the policy types (`design/tests/bots/pix3-test-bot.d.ts`)
- * come with the agent kit (`packages/cli/kit-src/design/tests/bots/`, `.plans/scripts-vite.md` S8).
+ * come with the agent kit (`packages/cli/kit-src/design/tests/bots/`, `.plans/done/scripts-vite.md` S8).
  */
 
 import { inject, injectable } from '@/fw/di';

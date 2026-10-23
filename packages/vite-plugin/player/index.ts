@@ -175,7 +175,7 @@ export async function startGame(
     }
     // No pre-packed atlas: nothing in 2.x writes `assets/.atlas/atlas-manifest.json` (the editor
     // packs into IndexedDB for its own play mode), so the player does not probe for one
-    // (.plans/player-build.md P26).
+    // (.plans/done/player-build.md P26).
     // `loadAndStartScene` reads, parses and runs the graph directly; `startScene` would clone it
     // through the serializer, which a player does not need (and must not bundle).
     await runner.loadAndStartScene(scenePath);

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createProject } from '../new-project.ts';
 import { listTemplates } from '../templates.ts';
 
-/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/templates.md`). */
+/** The 1.x recipes, kept as fixture projects in the template layout (`.plans/done/templates.md`). */
 const CORPUS_ROOT = fileURLToPath(
   new URL('../../../runtime/fixtures/scene-corpus', import.meta.url)
 );

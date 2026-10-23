@@ -15,7 +15,7 @@ import { AddComponentOperation } from './AddComponentOperation';
 import { RemoveComponentOperation } from './RemoveComponentOperation';
 
 /**
- * Undo of Add Component and redo of Remove Component after a live swap (`.plans/scripts-vite.md`
+ * Undo of Add Component and redo of Remove Component after a live swap (`.plans/done/scripts-vite.md`
  * S7): a re-registered script replaced the instance the history entry captured; the entry must
  * find the component by id, or the undo/redo is a no-op on screen.
  */
