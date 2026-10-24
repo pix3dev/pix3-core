@@ -108,7 +108,7 @@ describe('Node2D anchor layout', () => {
 });
 
 /**
- * W21 (`.plans/write-model.md`): the `layout:` block stores the margins of the anchored axes, the
+ * W21 (`.plans/done/write-model.md`): the `layout:` block stores the margins of the anchored axes, the
  * saver writes nothing they derive, and a file without them (every scene before W21) derives them
  * once from the rect against the parent's authored size — the same placement as before.
  */

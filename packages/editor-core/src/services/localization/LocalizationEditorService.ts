@@ -64,7 +64,7 @@ const LOCALE_DISPLAY_NAMES: Record<string, string> = {
  * change; the actual tables stay here (state-vs-scene-graph separation). All *undoable* mutations run through Commands/Operations that call
  * into this service — the service persists + feeds the preview + bumps `revision`.
  *
- * **The files are the truth** (`.plans/write-model.md` W20): every table has a baseline (the
+ * **The files are the truth** (`.plans/done/write-model.md` W20): every table has a baseline (the
  * last disk version the editor confirmed); a write is `If-Match` on it (`createOnly` for a new
  * file); a refused write and an external version (`ExternalReloadService`, after
  * `ExternalChangeService` settled it; a deletion straight from the `pix3:fs` frame) go through

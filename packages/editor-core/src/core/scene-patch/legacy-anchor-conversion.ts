@@ -11,7 +11,7 @@ import {
 } from '@/core/scene-patch/scene-diff';
 
 /**
- * The one-time conversion of a scene written before W21 (`.plans/write-model.md`): its anchored
+ * The one-time conversion of a scene written before W21 (`.plans/done/write-model.md`): its anchored
  * nodes keep their margins implicitly, as a rect against the parent's *authored* size, while the
  * norm (what the editor diffs and what a flush writes) carries them explicitly in `layout:` and
  * writes nothing the margins derive. A key-level patch of such a file cannot be partial:

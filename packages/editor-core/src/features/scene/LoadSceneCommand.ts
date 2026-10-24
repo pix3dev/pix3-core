@@ -86,7 +86,7 @@ export class LoadSceneCommand extends CommandBase<LoadSceneCommandPayload, void>
       const graph = await this.sceneManager.parseScene(sceneText, { filePath });
       if (baselines && diskVersion) {
         // Plan §C.2: the baseline of every later flush, normalised from the graph this text built
-        // before anything touches it (`.plans/write-model.md` W1).
+        // before anything touches it (`.plans/done/write-model.md` W1).
         baselines.set(filePath, {
           sha: diskVersion.hash,
           text: SceneBaselineService.decode(diskVersion.bytes),

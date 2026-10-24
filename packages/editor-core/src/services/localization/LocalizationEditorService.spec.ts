@@ -12,7 +12,7 @@ import { appState, resetAppState } from '@/state';
 import { LocalizationEditorService } from './LocalizationEditorService';
 
 /**
- * Locale tables follow the disk (`.plans/write-model.md` W20): a mounted editor over `FakeHost`,
+ * Locale tables follow the disk (`.plans/done/write-model.md` W20): a mounted editor over `FakeHost`,
  * whose conditional writes behave like the plugin's (`If-Match` mismatch / `createOnly` → 412).
  */
 

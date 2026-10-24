@@ -11,7 +11,7 @@ import { appState, resetAppState } from '@/state';
 import './localization-panel';
 import type { LocalizationPanel } from './localization-panel';
 
-/** The panel's inline key rename against a disk that moves (`.plans/write-model.md` W20 debt). */
+/** The panel's inline key rename against a disk that moves (`.plans/done/write-model.md` W20 debt). */
 
 const EN = 'locales/en.json';
 const file = (strings: Record<string, string>): string =>

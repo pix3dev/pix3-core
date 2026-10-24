@@ -141,7 +141,7 @@ export class NodeAssetLoader extends AssetLoader {
     this.require(resourcePath);
     const texture = new Texture();
     // The header's size, as the browser would decode it: an un-sized `Sprite2D` takes it, so the
-    // scene normalises here exactly as in the editor (`.plans/write-model.md` W2).
+    // scene normalises here exactly as in the editor (`.plans/done/write-model.md` W2).
     const path = this.disk.isProjectResource(resourcePath) ? this.disk.pathOf(resourcePath) : null;
     const size = path ? readHeaderSizeOf(path) : null;
     if (size) texture.image = { width: size.width, height: size.height };

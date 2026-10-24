@@ -4,7 +4,7 @@ Date: 2026-10-10. Derived from `../pix3/.plans/pix3-core.md` §D (D.1–D.6), §
 ownership), §E (user flows), §G.2 (P1 row «Мост v1, 3p, inline-fallback, `pix3 editor` с проверкой
 9333, `agent-setup --repair`, keepalive» and the gate rows about play/sync from the agent), the S4
 spike (its `skeleton-3p-tools.ts` is no longer kept; `../pix3-e2e/mcp-call.mjs`) and
-`.plans/write-model.md` W13. Those stay authoritative; where this file disagrees it says so.
+`.plans/done/write-model.md` W13. Those stay authoritative; where this file disagrees it says so.
 
 **Status (2026-10-24): complete in code** — B-M1–B-M5, P2 proxy, Remote SSH, `pix3 gap`, A26–A29 all landed (last code `fe8c7de`, `8c5f585`; nothing in scope changed since, shipped in `2.0.0-alpha.1` `6bc2382`). Left (§3) is verification only: Remote SSH on a real second machine, a windowed desktop Chrome (macOS/Linux), the Windows `pix3 editor` launch, `click_at` and `pix3 gap` by a real agent (dogfood C1). The owner's dedicated small entry stays optional.
 

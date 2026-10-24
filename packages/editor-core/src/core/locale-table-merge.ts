@@ -2,7 +2,7 @@ import type { LocaleTable } from '@pix3/runtime';
 
 /**
  * Key-level merge of a locale table (`locales/<id>.json`: two flat key → string maps), the
- * write model of plan §C.3 cut to the shape of the file (`.plans/write-model.md` W20). B is the
+ * write model of plan §C.3 cut to the shape of the file (`.plans/done/write-model.md` W20). B is the
  * last disk version the editor confirmed, E the version on disk now, L the editor's table.
  */
 

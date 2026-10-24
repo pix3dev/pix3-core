@@ -27,7 +27,7 @@ export const NODE2D_MARGIN_SIDES: readonly Node2DMarginSide[] = ['left', 'right'
  * Margins of an anchored node: the distance from the parent's edge to the node's same edge, in
  * design pixels, for the sides the alignment uses (`left` → `left`; `right` → `right`; `stretch` →
  * both; `top`/`bottom` likewise; a centred axis has none). They are what the `layout:` block of a
- * scene file stores (`.plans/write-model.md` W21): the node's rect on an anchored axis is derived
+ * scene file stores (`.plans/done/write-model.md` W21): the node's rect on an anchored axis is derived
  * from them and the parent's current size, so a parent resize changes nothing in the child.
  *
  * A file without them (every scene before W21) derives them once from the node's authored rect

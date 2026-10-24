@@ -1,4 +1,4 @@
-// The write-model corpus specs (`.plans/write-model.md`: saver fixed point + `ScenePatchWriter`/
+// The write-model corpus specs (`.plans/done/write-model.md`: saver fixed point + `ScenePatchWriter`/
 // merge on every scene) over another project's scenes as well as the scene corpus (the starters +
 // `packages/runtime/fixtures/scene-corpus/`). Local only, not CI — the default project is the
 // sibling checkout `../DeepCore` (plan §A.4); pass another directory as the first argument or in

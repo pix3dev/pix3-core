@@ -4,7 +4,7 @@ Date: 2026-10-09. Derived from `../pix3/.plans/pix3-core.md` §C (C.1–C.4), §
 report (P0, no longer kept) and `.plans/done/editor-core-port.md` (D4, D5, D6, §9).
 Those stay authoritative; where this file disagrees it says so (AGENTS.md rule 13).
 
-Status (2026-10-24): W-M1…W-M7 and W1–W26 done in code; the locale-panel debts (inline key rename guard, the locale set on a manifest change) closed and W26's IndexedDB path run in a browser on 2026-10-24 (see Progress). Left: the C1 dogfood.
+Status (2026-10-25): complete — W-M1…W-M7 and W1–W26 done in code; the locale-panel debts (inline key rename guard, the locale set on a manifest change) closed and W26's IndexedDB path run in a browser on 2026-10-24 (see Progress); every Debt/open item closed or accepted. Released in `2.0.0-alpha.2`. The C1 dogfood is a gate of the whole plan (`../pix3/.plans/pix3-core.md` §G.2), tracked in `.plans/TODO.md`, not here.
 
 `EC` = `packages/editor-core/src`, `VP` = `packages/vite-plugin/src`, `RT` = `packages/runtime/src`.
 

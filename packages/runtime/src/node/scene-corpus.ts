@@ -13,7 +13,7 @@ import { DiskResourceManager, NodeAssetLoader } from './disk-resources';
  * Spec support: a scene corpus — the starters' scenes (`packages/create-pix3/templates/`) plus the
  * fixture projects in `packages/runtime/fixtures/scene-corpus/` (the 1.x recipe and playable
  * templates, kept as test inputs when `create-pix3` went down to blank starters:
- * `.plans/done/templates.md`) — and a Node harness that loads, saves and normalises them the way the editor does (`.plans/write-model.md`).
+ * `.plans/done/templates.md`) — and a Node harness that loads, saves and normalises them the way the editor does (`.plans/done/write-model.md`).
  * Not exported from `@pix3/runtime/node`'s index; specs import it by path
  * (`@pix3/runtime/node/scene-corpus`). Callers install the canvas shim
  * (`installCanvasOnlyDocument`) and silence the loader's console themselves.

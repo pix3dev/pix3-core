@@ -35,6 +35,8 @@ recommendations (verdicts folded in below).
 
 ## Progress
 
+- 2026-10-25: complete — committed in `6766100`, released in `2.0.0-alpha.2`; the "Not now"
+  items moved to `.plans/TODO.md`.
 - 2026-10-24: plan written; K1–K6 done in the working tree (not committed). K4 found the gap is
   sharper than "no API": the starter's `index.html` is `viewport-fit=cover`, so the canvas runs
   under the notch. K6's new spec fails on a broken link in `pix3-game-dev` (checked by mutation)

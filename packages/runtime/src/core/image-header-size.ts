@@ -5,7 +5,7 @@
  *
  * Hosts that cannot decode (`pix3 validate`, the plugin) size an un-sized `Sprite2D` with it, so a
  * scene normalises to the same document there as in the editor, whose loader decodes the image
- * (plan §C.2; `.plans/write-model.md` W2).
+ * (plan §C.2; `.plans/done/write-model.md` W2).
  */
 export interface ImageHeaderSize {
   readonly width: number;

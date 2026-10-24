@@ -13,7 +13,7 @@ import { Node2D } from '../nodes/Node2D';
 import { readImageHeaderSize } from './image-header-size';
 
 /**
- * The saver fixes plan §C.2 asks for (`.plans/write-model.md` W5): a stable key order, so a full
+ * The saver fixes plan §C.2 asks for (`.plans/done/write-model.md` W5): a stable key order, so a full
  * save is a fixed point after one round, and one-line inspector toggles for `layout`/`flow`.
  */
 
