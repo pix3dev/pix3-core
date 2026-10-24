@@ -197,6 +197,43 @@ describe('kit drift', () => {
     );
   });
 
+  it('every skill fits the Agent Skills limits and every relative link resolves (kit and checkout)', () => {
+    // Agent Skills spec: a description is at most 1024 characters, and a SKILL.md is loaded whole
+    // on activation, so it stays under 500 lines (depth goes into a reference beside it).
+    const engineSkillsDir = join(repoRootOfCheckout(), '.claude', 'skills');
+    const skills: { label: string; dir: string; source: string }[] = [
+      ...kit.manifest.files
+        .filter(file => file.endsWith('/SKILL.md'))
+        .map(file => ({ label: file, dir: join(kit.filesDir, file, '..'), source: text(file) })),
+      ...readdirSync(engineSkillsDir).map(name => ({
+        label: `.claude/skills/${name}/SKILL.md (checkout)`,
+        dir: join(engineSkillsDir, name),
+        source: readFileSync(join(engineSkillsDir, name, 'SKILL.md'), 'utf8').replace(
+          /\r\n/g,
+          '\n'
+        ),
+      })),
+    ];
+    expect(skills.length).toBeGreaterThan(
+      kit.manifest.files.filter(f => f.endsWith('/SKILL.md')).length
+    );
+    const problems: string[] = [];
+    for (const { label, dir, source } of skills) {
+      const front = /^---\nname: ([a-z0-9-]+)\ndescription: (.+)\n---\n/.exec(source);
+      if (!front) problems.push(`${label}: front matter is not name + one-line description`);
+      else if (front[2].length > 1024)
+        problems.push(`${label}: description ${front[2].length} > 1024 chars`);
+      const lines = source.split('\n').length;
+      if (lines > 500) problems.push(`${label}: ${lines} lines > 500`);
+      for (const [, target] of source.matchAll(/\]\(([^)\s]+)\)/g)) {
+        if (/^[a-z]+:|^#/.test(target)) continue;
+        if (!existsSync(join(dir, target.split('#')[0])))
+          problems.push(`${label}: broken link ${target}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   it('names only CLI commands and flags that exist', () => {
     const usageBlock = (command: string): string => {
       const lines = USAGE.split('\n');

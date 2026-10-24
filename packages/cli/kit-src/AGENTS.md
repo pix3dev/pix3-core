@@ -16,6 +16,9 @@ For a new game, keep the standard `startGame` + `pix3()` player/editor path. Use
 `.pix3scene` files and Script components so the human can inspect and iterate on
 the actual game in `/__pix3/`. A runtime import wrapped around a custom canvas or
 DOM game is not equivalent. The consumer path is for an explicitly required host.
+The engine renders through three.js, but this is not a three.js app: generic
+three.js or game-engine skills (a `WebGLRenderer`, a hand-rolled render loop) do
+not apply here, and the `pix3-*` skills win wherever they disagree.
 
 Before implementation, translate supplied references into player actions, visible
 feedback, hierarchy, control sizes and asset requirements. Treat a reference's
@@ -32,7 +35,8 @@ Before implementing animation, camera, physics or input, consult the installed
 
 Completion requires inspection of the running editor and game at the target
 device size, an interaction check through actual input, and comparison to the
-reference. Check control sizes in screen pixels; on touch devices, also verify
+reference. Check control sizes in CSS pixels on the smallest target screen — a
+touch target at least 44 px, text at least 16 px; on touch devices, also verify
 simultaneous actions such as movement and jump when the game uses them. A build,
 a debug command or a screenshot alone is not enough.
 
@@ -102,8 +106,10 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
 5. **Art: placeholder → SVG → a generated image, never emoji.** Placeholder = `ColorRect2D`, or
    a near-white PNG in `sprites/` tinted with a `core:tint` effect. Better art = an SVG you
    write into `sprites/` (`pix3-nodes` → "An SVG you write as a sprite") — or an image the
-   human generates. A label/text that is only emoji is refused — emoji are not art. List every
-   placeholder you leave.
+   human generates. A label/text that is only emoji is refused — emoji are not art. For a set
+   of related art (enemies, tiles, icons), get one piece right at game scale first and make
+   the rest from it — same palette, view, outline and detail. Note the source and licence of
+   every image you import or generate beside it. List every placeholder you leave.
 
 ## YAML essentials (`.pix3scene`) — details in `pix3-scene-format`
 

@@ -183,8 +183,11 @@ before children's.
 - Time: `scene.time.hitstop(ms)` — no options; only on a contact START, never per frame.
   `scene.time.slowMotion(scale, { durationMs, blendMs })` — both real-time ms; no `durationMs`
   = until `scene.time.reset()`.
-- Juice — call it together with the mechanic. Every option is optional; defaults shown. Note
-  the three transform effects take `duration` (seconds), **not** `durationSec`:
+- Juice — call it together with the mechanic. Scale it to the event: a pickup gets a sound and
+  a pop, a hit adds a burst and a small shake, only a big impact (a death, a boss hit) gets
+  hitstop and a flash. Juice is brief and returns to rest; it never delays input or the
+  simulation. Every option is optional; defaults shown. Note the three transform effects take
+  `duration` (seconds), **not** `durationSec`:
   - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
     `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
   - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.

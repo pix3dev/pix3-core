@@ -199,3 +199,5 @@ When asked to implement a game feature:
 3. For engine-level changes, state the plan and get confirmation first.
 4. Engine nodes must not reference game domain concepts (shop, coins, enemies).
 5. After adding an engine feature, update `docs/nodes-and-systems.md`.
+
+Generic three.js or game-engine agent skills (a skill pack's router matches `three` in `package.json`) do not apply to a Pix3 game: it runs through `startGame` + `.pix3scene`, never a hand-rolled `WebGLRenderer` loop. The `pix3-*` skills win wherever they disagree.
