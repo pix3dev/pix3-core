@@ -1,6 +1,6 @@
 {
   "name": "@pix3/runtime",
-  "version": "2.0.0-alpha.1",
+  "version": "2.0.0-alpha.2",
   "description": "The Pix3 engine: scene graph, 2D/3D nodes, scripts, ECS, audio and resources on three.js. Ships TypeScript sources.",
   "type": "module",
   "repository": {
