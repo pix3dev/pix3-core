@@ -567,7 +567,10 @@ describe('sync barrier', () => {
       return { ok: true, rev: Number(request.rev) - 1, executed: {} };
     });
     const short = await sync(p, { tabId: 'tab-a', timeoutMs: 60 });
-    expect(short).toMatchObject({ ok: false, reason: 'stale_modules' });
+    // The deadline counts from the start of the sync (flush, rescan), so on a slow runner the first
+    // answer may itself miss it: `timeout` instead of `stale_modules`. Either way, no more asking.
+    expect(short).toMatchObject({ ok: false });
+    expect(['stale_modules', 'timeout']).toContain(short.reason);
     expect(asked).toBeLessThanOrEqual(2);
 
     asked = 0;

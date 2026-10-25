@@ -1278,7 +1278,8 @@ describe('pix3 kit', () => {
     const owned = readProjectKitManifest(root);
     expect(owned?.files[edited]).not.toBe(sha256(join(root, edited)));
     expect(existsSync(join(root, KIT_PROJECT_MANIFEST))).toBe(true);
-  });
+    // Builds a whole kit from a copied kit-src and installs it twice: over 5 s on a Windows runner.
+  }, 60_000);
 
   it("a bot policy in a starter type-checks under pix3 check with the kit's declarations", async () => {
     const template = listTemplates().find(t => t.id === '2d');
