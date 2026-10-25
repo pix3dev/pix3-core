@@ -4,7 +4,63 @@ Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript 
 
 > **Status: development alpha.** `2.0.0-alpha.2` is on npm under the `next` tag. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3`](https://github.com/pix3dev/pix3).
 
-## Building a new game with an agent
+## Quick start: make a game with an AI agent
+
+You need [Node.js 24](https://nodejs.org/) (24.15 or newer), Google Chrome and a coding agent
+(Claude Code or Codex).
+
+### Create a new game
+
+1. Create the project in a terminal (pick `2d` or `3d`) and install it:
+
+   ```bash
+   npm create pix3@next my-game -- --template 2d
+   cd my-game
+   npm install
+   npx pix3 agent-setup claude    # or: codex — lets the agent use the editor in Chrome
+   ```
+
+2. Open your agent **in the `my-game` folder** (for example, run `claude` there).
+
+3. Describe the game you want. Example prompt:
+
+   ```text
+   Make a 2D portrait game for phones: the player taps falling fruit to slice it
+   before it hits the ground. +1 point per fruit, 3 misses and the game is over, then
+   a "Play again" screen. Bright cartoon style, like the attached screenshots.
+   Build it in the Pix3 editor, play it yourself and fix what looks or feels wrong.
+   ```
+
+   Say what the player does, what they see, how they win or lose, and which devices it is for.
+   Attach reference pictures if you have them. You don't need to explain how Pix3 works: the
+   project already contains instructions for the agent.
+
+4. Ask for changes the same way ("make the fruit bigger", "add a sound when it is sliced").
+
+### Run the game
+
+```bash
+npm run dev
+```
+
+It prints an address, usually:
+
+- `http://localhost:5173/` — play the game;
+- `http://localhost:5173/__pix3/` — the Pix3 editor: see the scenes, move things, press Play.
+
+Edits you make in the editor are saved to the project files, and the agent sees them.
+
+### Publish the game
+
+```bash
+npm run build
+```
+
+This makes **one file, `dist/index.html`**, with the whole game inside. Put it on any website or
+game portal that accepts an HTML game (for itch.io: zip the file and upload it as an HTML game).
+`npm run preview` opens the built version so you can check it first.
+
+### Notes for the agent
 
 `create-pix3` / `pix3 new` installs the agent kit. Before writing game code in this
 engine checkout, read `.claude/skills/pix3-game-dev/SKILL.md` and
@@ -18,6 +74,8 @@ Treat visual references as UX requirements: identify the player's actions,
 recognizable content, feedback and target device sizes. Create a reusable skinned
 UI kit, then verify it through real input and visual inspection in the editor.
 Do not leave layout and polish to the human merely because an editor is available.
+
+## Packages
 
 | Package                                        | npm                 | What it is                                                                                                          |
 | ---------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
