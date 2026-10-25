@@ -1,7 +1,7 @@
 # create-pix3
 
 ```bash
-npm create pix3@latest [dir] -- [--template 2d|3d] [--name <project name>] [--yes]
+npm create pix3@next [dir] -- [--template 2d|3d] [--name <project name>] [--yes]
 ```
 
 Creates an **empty** Pix3 game project: a Vite + TypeScript project with `@pix3/runtime`, the Pix3

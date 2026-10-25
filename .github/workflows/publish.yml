@@ -30,17 +30,21 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Pinned, not -latest: a release runs on the image the previous one did; bump it on purpose.
+    runs-on: ubuntu-24.04
     environment: npm
     permissions:
       contents: read
       id-token: write # OIDC trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # nothing here pushes; keep the token out of .git/config
+      # No dependency cache in a publish job: a cache another workflow wrote must not reach what ships.
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-          cache: npm
+          package-manager-cache: false
           registry-url: 'https://registry.npmjs.org'
 
       - name: npm >= 11.5.1 (trusted publishing)
@@ -97,3 +101,30 @@ jobs:
             npm publish -w "packages/$dir" "${flags[@]}"
             echo "- $name@$VERSION → \`$TAG\`$([[ $DRY == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
           done
+
+      # Trusted Publishing cannot move a dist-tag, so `latest` of a package with no stable release
+      # (editor-core, vite-plugin, create-pix3 — a bare `npm create pix3` takes it) is moved by hand:
+      # README → "Releasing" step 5. This step only says when it lags, with the command.
+      - name: Packages whose latest lags
+        if: steps.plan.outputs.dry == 'false' && steps.plan.outputs.tag == 'next'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          lagging=()
+          for dir in runtime editor-core vite-plugin cli create-pix3; do
+            name=$(node -p "require('./packages/$dir/package.json').name")
+            latest=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
+            # A package with a stable release keeps latest on it until the stable 2.0.0.
+            if [[ -n "$latest" && "$latest" != *-* ]]; then continue; fi
+            if [[ "$latest" != "$VERSION" ]]; then lagging+=("$name"); fi
+          done
+          if (( ${#lagging[@]} )); then
+            msg="latest lags on ${lagging[*]} — npm dist-tag add <pkg>@$VERSION latest (README → Releasing, step 5)"
+            echo "::warning::$msg"
+            {
+              echo "### \`latest\` to move by hand"
+              echo '```bash'
+              echo "for p in ${lagging[*]}; do npm dist-tag add \"\$p@$VERSION\" latest; done"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

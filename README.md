@@ -25,7 +25,7 @@ Do not leave layout and polish to the human merely because an editor is availabl
 | [`packages/cli`](packages/cli)                 | `@pix3/cli`         | `pix3 new`, `validate`, `check`, `smoke`, `tree`, `sfx`, `kit`, `character-compile`, `editor`, `agent-setup`, `gap` |
 | [`packages/vite-plugin`](packages/vite-plugin) | `@pix3/vite-plugin` | Editor at `/__pix3/`, file API, sync barrier, build                                                                 |
 | [`packages/editor-core`](packages/editor-core) | `@pix3/editor-core` | The editor UI (Lit), prebuilt                                                                                       |
-| [`packages/create-pix3`](packages/create-pix3) | `create-pix3`       | `npm create pix3@latest <dir> -- --template 2d\|3d`                                                                 |
+| [`packages/create-pix3`](packages/create-pix3) | `create-pix3`       | `npm create pix3@next <dir> -- --template 2d\|3d`                                                                   |
 
 ## Development
 
@@ -95,6 +95,14 @@ npm view create-pix3 dist-tags
 npm create pix3@next my-game -- --template 2d --yes
 cd my-game && npm install && npm run check && npm run build
 ```
+
+**5. Move `latest` where there is no stable release.** npm always keeps a `latest` tag, and Trusted Publishing cannot move a dist-tag (OIDC covers `npm publish` only). `@pix3/editor-core`, `@pix3/vite-plugin` and `create-pix3` have no 1.x, so their `latest` would stay on an old alpha — and a bare `npm create pix3` takes `latest`. The publish run's summary lists each package whose `latest` lags with the command; from a logged-in account with 2FA:
+
+```bash
+for p in @pix3/editor-core @pix3/vite-plugin create-pix3; do npm dist-tag add "$p@2.0.0-alpha.N" latest; done
+```
+
+`@pix3/runtime` and `@pix3/cli` keep `latest` on 1.6.x until `2.0.0`.
 
 ## License
 
