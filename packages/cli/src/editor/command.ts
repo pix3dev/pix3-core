@@ -3,7 +3,7 @@ import { resolveProjectRoot } from '../manifest.ts';
 import { chooseCdpPort } from './cdp-port.ts';
 import { proveCdpProxy } from './cdp-proof.ts';
 import { ensureCdpToken, newCdpToken } from './cdp-token.ts';
-import { describeChromeNotFound, ensureProfileDir, findChrome } from './chrome.ts';
+import { describeChromeNotFound, ensureProfileDir, findChrome, needsNoSandbox } from './chrome.ts';
 import {
   ensureEditorTab,
   FIRST_TAB_WAIT_MS,
@@ -363,6 +363,7 @@ const openInChrome = async (
         profile,
         url: editorUrl,
         headless: parsed.headless,
+        noSandbox: needsNoSandbox(launch.path, env),
       });
     } catch (error) {
       io.stderr(`pix3 editor: ${error instanceof Error ? error.message : String(error)}\n`);

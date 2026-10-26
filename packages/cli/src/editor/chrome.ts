@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, mkdirSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
 import { chromeProfileDir, chromeProfileFallbackDir } from './paths.ts';
@@ -88,7 +88,66 @@ export const findChrome = (
     const path = onPath(name, env);
     if (path) return { kind: 'binary', path };
   }
+  const cached = playwrightChromium(env);
+  return cached ? { kind: 'binary', path: cached } : null;
+};
+
+/**
+ * The newest Chromium Playwright downloaded (`npx playwright install chromium`), on a Linux box
+ * with no system Chrome — a remote dev host often has one in `~/.cache/ms-playwright` from some
+ * test suite. `PLAYWRIGHT_BROWSERS_PATH` moves the cache. The headless shell is not a candidate:
+ * it has no tabs to give the editor.
+ */
+export const playwrightChromium = (env: NodeJS.ProcessEnv = process.env): string | null => {
+  const cache = env.PLAYWRIGHT_BROWSERS_PATH || join(env.HOME ?? '', '.cache', 'ms-playwright');
+  let builds: string[];
+  try {
+    builds = readdirSync(cache).filter(name => /^chromium-\d+$/.test(name));
+  } catch {
+    return null;
+  }
+  builds.sort((a, b) => Number(b.slice('chromium-'.length)) - Number(a.slice('chromium-'.length)));
+  for (const build of builds) {
+    for (const dir of ['chrome-linux64', 'chrome-linux']) {
+      const candidate = join(cache, build, dir, 'chrome');
+      if (isExecutable(candidate)) return candidate;
+    }
+  }
   return null;
+};
+
+const readProcFlag = (path: string): string | null => {
+  try {
+    return readFileSync(path, 'utf8').trim();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Whether Chrome needs `--no-sandbox` to start here. Its Linux sandbox needs unprivileged user
+ * namespaces, which root, a kernel with them off, and Ubuntu 24's AppArmor restriction all deny —
+ * a distro Chrome or Chromium package ships an AppArmor profile that lifts the restriction, a
+ * downloaded build (Playwright's, a tarball) does not, and dies with "No usable sandbox!".
+ * `PIX3_CHROME_NO_SANDBOX=1` / `=0` decides by hand.
+ */
+export const needsNoSandbox = (
+  chromePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  readFlag: (path: string) => string | null = readProcFlag,
+  uid: number | null = typeof process.getuid === 'function' ? process.getuid() : null
+): boolean => {
+  if (env.PIX3_CHROME_NO_SANDBOX === '1') return true;
+  if (env.PIX3_CHROME_NO_SANDBOX === '0') return false;
+  if (platform !== 'linux') return false;
+  if (uid === 0) return true;
+  if (readFlag('/proc/sys/kernel/unprivileged_userns_clone') === '0') return true;
+  if (readFlag('/proc/sys/kernel/apparmor_restrict_unprivileged_userns') === '1') {
+    const packaged = /^\/(opt\/google|usr\/bin|usr\/lib|snap)\//.test(chromePath);
+    return !packaged;
+  }
+  return false;
 };
 
 /** The profile directory, created; the temp fallback when the home one cannot be made. */
@@ -109,6 +168,8 @@ export interface ChromeArgsOptions {
   readonly profile: string;
   /** No window: `--headless=new` and the URL as a plain tab (headless Chrome ignores `--app`). */
   readonly headless?: boolean;
+  /** `--no-sandbox`: see {@link needsNoSandbox}. */
+  readonly noSandbox?: boolean;
 }
 
 /** The owner's launch: CDP over the pipe (fds 3/4), never a TCP debugging port. */
@@ -116,6 +177,7 @@ export const chromeArgs = (options: ChromeArgsOptions): string[] => [
   `--user-data-dir=${options.profile}`,
   '--remote-debugging-pipe',
   ...CHROME_FLAGS,
+  ...(options.noSandbox ? ['--no-sandbox'] : []),
   ...(options.headless ? ['--headless=new', options.url] : [`--app=${options.url}`]),
 ];
 
@@ -126,5 +188,5 @@ export const describeChromeNotFound = (platform: NodeJS.Platform = process.platf
       ? '(the usual place is /Applications/Google Chrome.app).'
       : platform === 'win32'
         ? '(the usual place is %ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe).'
-        : '(google-chrome, chromium or chromium-browser on the PATH).',
+        : '(google-chrome, chromium or chromium-browser on the PATH; or `npx playwright install chromium`, which pix3 editor finds in ~/.cache/ms-playwright).',
   ].join(' ');

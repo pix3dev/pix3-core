@@ -125,7 +125,10 @@ const QUAD_UVS: readonly (readonly [number, number])[] = [
   [0, 0],
   [1, 0],
 ];
-const QUAD_INDEX: readonly number[] = [0, 1, 2, 2, 1, 3];
+// Counter-clockwise in the Y-up 2D space (TL, BL, TR / TR, BL, BR): the material is single-sided,
+// and the clockwise order this had made every burst quad a back face — culled, so `burst` and
+// `core:BurstOnSignal` drew nothing at all.
+const QUAD_INDEX: readonly number[] = [0, 2, 1, 1, 2, 3];
 
 /** `undefined` = not built yet, `null` = this environment has no 2D canvas (headless). */
 let sharedParticleTexture: Texture | null | undefined;
@@ -295,6 +298,9 @@ export class ParticleBurst2D extends Node2D {
       vertexColors: true,
       blending: options.additive === false ? NormalBlending : AdditiveBlending,
     });
+    // The node's blend mode is what `registerOpacityMaterial` applies to the material: left at
+    // 'normal' it overwrote the additive blending above, so `additive` did nothing.
+    this.blendMode = options.additive === false ? 'normal' : 'additive';
     this.registerOpacityMaterial(material, 1);
 
     const mesh = new Mesh(this.geometry, material);

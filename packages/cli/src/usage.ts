@@ -13,7 +13,8 @@ export const USAGE = `pix3 ${CLI_VERSION}
 Usage:
   pix3 new                         List the starters (2d, 3d)
   pix3 new <2d|3d> [dir]           Create an empty project (dir defaults to pix3-<2d|3d>)
-        [--name <project name>]
+        [--name <project name>]    --portrait: 1080×1920 (default --landscape 1920×1080)
+        [--portrait|--landscape]
   pix3 editor [--project <dir>]    Find (or start, detached) the project's Vite dev server
         [--stop] [--chrome-only]   from .pix3/dev.json and open the editor in Chrome, its
         [--no-chrome] [--port <n>] CDP behind the token proxy ws://127.0.0.1:9333/pix3 (next
@@ -57,13 +58,15 @@ Usage:
 
 /** `pix3 <command> --help`: one entry per command the entry dispatches (spec: `bin-bundle.spec`). */
 export const COMMAND_USAGE = {
-  new: `Usage: pix3 new [2d|3d] [dir] [--name <project name>]
+  new: `Usage: pix3 new [2d|3d] [dir] [--name <project name>] [--portrait|--landscape]
 
   Without a starter: list them. With one: create an empty Vite + @pix3/vite-plugin project in dir
   (default pix3-<2d|3d>) with the agent kit (AGENTS.md, CLAUDE.md, .claude/skills/pix3-*, script
   types). The same as npm create pix3.
 
   --name name    the project name (default: from the folder)
+  --portrait     a 1080×1920 design viewport (phone games: match-3, tappers, runners)
+  --landscape    a 1920×1080 design viewport (the default)
 `,
   editor: `Usage: pix3 editor [--project <dir>] [--stop] [--stop-chrome] [--chrome-only] [--no-chrome]
                    [--headless] [--port <n>] [--cdp-port <n>] [--url <editor url>] [--ssh <host>]
@@ -120,7 +123,8 @@ export const COMMAND_USAGE = {
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `,
-  smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--timeout S] [--json] [--no-sync] [--project <dir>]
+  smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
+                  [--timeout S] [--json] [--no-sync] [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -138,6 +142,10 @@ export const COMMAND_USAGE = {
   --changed      only the scenes changed files reach (needs git; exit 2 when nothing changed)
   --all          every top-level scene, whatever git says
   --frames N     frames to step (default 120 = 2 s of game time)
+  --command c    dispatch the game's scene.commands entry c before frame 1, or c@N before frame N,
+                 with args as a JSON object after a space: --command 'swap@30 {"x":2,"y":3}'
+                 (repeatable: --command start@1 --command restart@300); an unknown one is
+                 W_SMOKE_COMMAND. Drives the game's intents headless — no input, no tap.
   --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
   --json         machine-readable report
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
@@ -222,7 +230,8 @@ Reference it from a scene or script as res://<path inside the project>.
        pix3 gap --list [--json] [--project <dir>]
 
   Record, in .pix3/gaps.jsonl, something Pix3 lacked that you worked around — not your own
-  mistakes or the game's features. One line per record.
+  mistakes or the game's features. One line per record: the summary is at most 200 characters —
+  put the rest in --detail.
 
   --kind k       capability, tool, node, doc or other (default other)
   --detail text  what you did instead

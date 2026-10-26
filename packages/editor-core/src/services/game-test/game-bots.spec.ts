@@ -58,6 +58,8 @@ function makeWorld(
     },
     setAxisValue: (name, value) => gate(`axis:${name}=${value}`),
     pointAt: point => gate(`pointAt:${point.x},${point.y}`),
+    pointerAt: (phase, point) => gate(`pointer:${phase}:${point.x},${point.y}`),
+    dispatchCommand: name => gate(`command:${name}`),
     releaseAll: () => {
       calls.push('releaseAll');
     },
@@ -297,6 +299,40 @@ describe('BotSession isolation', () => {
 });
 
 describe('BotSession actuators', () => {
+  it('swipe: down at from, a move per tick along the line, up at to', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.swipe({ x: 0, y: 0 }, { x: 40, y: 0 }, 4);
+        if (bot.frame === 2) bot.swipe({ x: 0, y: 0 }, { x: 1, y: 1 }); // still moving: refused
+      }),
+      world
+    );
+    run(session, 7);
+    expect(world.calls).toEqual([
+      'pointer:down:0,0',
+      'pointer:move:10,0',
+      'pointer:move:20,0',
+      'pointer:move:30,0',
+      'pointer:move:40,0',
+      'pointer:up:40,0',
+    ]);
+    expect(session.report().sent).toBe(1);
+    expect(session.report().refused).toBe(1);
+  });
+
+  it('command dispatches a game command', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => bot.frame === 1 && bot.command('restart')),
+      world
+    );
+    run(session, 2);
+    expect(world.calls).toEqual(['command:restart']);
+  });
+
   it('holds a press until release, and releases everything on dispose', () => {
     const world = makeWorld();
     const session = new BotSession(

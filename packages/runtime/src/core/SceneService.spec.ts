@@ -448,4 +448,25 @@ describe('SceneService.getPointer2DWorldPosition', () => {
 
     input.detach();
   });
+
+  it('screenToWorld2D converts a frame event even when its pointer is already up', () => {
+    const input = new InputService();
+    const element = attachInput(input, 200);
+    const service = makeService(input);
+
+    element.dispatchEvent(
+      new PointerEvent('pointerdown', { pointerId: 3, clientX: 150, clientY: 50 })
+    );
+    element.dispatchEvent(
+      new PointerEvent('pointerup', { pointerId: 3, clientX: 150, clientY: 50 })
+    );
+    input.beginFrame();
+
+    const down = input.pointerEvents.find(event => event.type === 'down');
+    expect(down).toBeDefined();
+    expect(service.getPointer2DWorldPosition(3)).toBeNull();
+    expect(service.screenToWorld2D(down!)).toMatchObject({ x: 50, y: 50 });
+
+    input.detach();
+  });
 });

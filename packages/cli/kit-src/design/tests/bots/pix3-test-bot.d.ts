@@ -68,6 +68,13 @@ declare interface Pix3TestBot {
   axis(name: string, value: number): void;
   /** Point the pointer at a world position (aim, hover, click-to-move). */
   moveTo(point: BotPoint): void;
+  /**
+   * Drag a finger from one world point to another over `frames` ticks (default 8): down, a move
+   * per tick, up — a swipe, a drag-and-drop, a slingshot pull. physical-input only.
+   */
+  swipe(from: BotPoint, to: BotPoint, frames?: number): void;
+  /** Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button. */
+  command(name: string, args?: Record<string, unknown>): void;
 
   // -- protocol --------------------------------------------------------------
 

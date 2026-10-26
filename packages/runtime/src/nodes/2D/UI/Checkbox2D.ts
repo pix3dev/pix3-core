@@ -403,7 +403,7 @@ export class Checkbox2D extends UIControl2D {
         {
           name: 'size',
           type: 'number',
-          ui: { label: 'Size', group: 'Checkbox', min: 10, max: 100, step: 1 },
+          ui: { label: 'Size', group: 'Checkbox', min: 10, max: 512, step: 1 },
           getValue: n => (n as Checkbox2D).size,
           setValue: (n, v) => {
             const cb = n as Checkbox2D;

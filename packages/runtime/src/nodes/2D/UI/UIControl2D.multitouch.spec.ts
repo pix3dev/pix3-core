@@ -103,6 +103,28 @@ describe('UIControl2D pointer ownership (multi-touch)', () => {
     return { button, signals: recordSignals(button) };
   }
 
+  it('a tap whose down and up land in one frame still presses and clicks', () => {
+    const { button, signals } = createButton();
+    down(1, 100, 100);
+    up(1, 100, 100);
+    frame(button);
+    expect(signals).toEqual(['pointerdown', 'pressed', 'pointerup', 'released', 'click']);
+    frame(button);
+    expect(signals).toHaveLength(5);
+  });
+
+  it('a one-frame down + cancel is not a tap; a one-frame tap outside the bounds clicks nothing', () => {
+    const { button, signals } = createButton();
+    down(1, 100, 100);
+    cancel(1, 100, 100);
+    frame(button);
+    down(2, 10, 10);
+    up(2, 10, 10);
+    frame(button);
+    expect(signals).not.toContain('click');
+    expect(signals).not.toContain('pressed');
+  });
+
   it('does not pass an opening press to a newly revealed overlapping close button', () => {
     const { button: opener } = createButton();
     const closer = new Button2D({ id: 'close', name: 'Close' });

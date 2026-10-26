@@ -33,6 +33,11 @@ follows the disk, and `pix3_sync` is the barrier between the two.
    runs on the human's machine. Give the human the lines it printed for their machine — they run
    them, including the one ssh line that copies the token here — then `npx pix3 agent-setup
    --remote` and a new thread. `npm run editor` says `CDP forward: live` once it works.
+   **No human to run those lines** (an unattended agent on a remote box): `npx pix3 editor
+   --headless` starts a headless Chrome on this host instead — a system Chrome, else Playwright's
+   Chromium from `~/.cache/ms-playwright` (`npx playwright install chromium` if there is none),
+   with `--no-sandbox` where the box has no user namespaces — then `npx pix3 agent-setup` (not
+   `--remote`) and a new thread. Screenshots and `click_at` work the same; there is no window.
 2. `list_pages` → the page whose URL starts with that address → `select_page` with its id.
    **No such page** (the human closed it, or Chrome was started without it) → `npm run editor`
    again: it checks the tab through the proxy and opens it when missing; or open it yourself with
@@ -53,7 +58,7 @@ Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"
 | --- | --- | --- |
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
-| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
+| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
 | `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails; read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
@@ -120,11 +125,15 @@ Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", na
 `{kind:"command", name}`, `{kind:"signal", name}`; `op` is `eq`, `ne`, `gt`, `gte`, `lt`,
 `lte` or `contains`.
 
-`bot: {name}` lets a policy play while the predicates judge: `design/tests/bots/<name>.ts`
+`bot: {name, channel?}` lets a policy play while the predicates judge (`channel`:
+`physical-input`, the default — real pointer and key events, the only proof a control works — or
+`direct-action`, which calls interactions and sets axes directly): `design/tests/bots/<name>.ts`
 exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit's
 `design/tests/bots/pix3-test-bot.d.ts` (global, no import); a starter's `pix3 check`
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
-one. A policy written or changed during play needs only `pix3_sync`, not a restart.
+one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
+between two world points (a match-3 swap, a drag-and-drop; `physical-input` only) and
+`bot.command(name, args?)` dispatches one of the game's `scene.commands`. A policy written or changed during play needs only `pix3_sync`, not a restart.
 
 The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means the run never started:
 
@@ -143,7 +152,9 @@ The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means th
 `outcome.kind` is `until`, `fail`, `timeout`, `error`, `precondition-already-met`,
 `monkey-empty` or, in a bot run, `bot-pass`, `bot-fail`, `bot-error`, `bot-idle`. `game` is there
 only when the game registers a snapshot (below): `game.snapshot` at the outcome frame,
-`game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved.
+`game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved. The run leaves the
+game **paused on the outcome frame** (so a screenshot shows what was judged); `pix3_play
+{action:"pause"}` toggles it back to running, or pass `pauseOnOutcome: false`.
 
 **Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
 works; a run with a stated success condition does:

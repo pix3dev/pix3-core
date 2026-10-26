@@ -422,6 +422,15 @@ export class TweenApi {
     return tween;
   }
 
+  /**
+   * A timer on game time: `finished` resolves `'completed'` after `seconds` of SCALED time (a
+   * hitstop or slow-mo stretches it, like every tween), or `'cancelled'` on `cancel()` / scene
+   * stop. `await this.scene.wait(0.3)` is the short spelling.
+   */
+  delay(seconds: number): TweenHandle {
+    return this.to({}, {}, { delaySec: isFiniteNumber(seconds) ? Math.max(0, seconds) : 0 });
+  }
+
   /** Fade a node in from fully transparent, making it visible first. */
   fadeIn(target: TweenTarget, durationSec = DEFAULT_DURATION_SEC): TweenHandle {
     const node = this.resolveTarget(target);

@@ -100,9 +100,19 @@ const unusedAssets = (
         return { file, text: '' };
       }
     });
+  // `res://sprites/gem-${kind}.svg` in a script: the build ships the whole static directory
+  // (`sprites/`, the vite-plugin's `staticDirectoryPrefix`), so its files are used, not unused.
+  const interpolatedDirs = new Set<string>();
+  for (const { text } of texts) {
+    for (const match of text.matchAll(/res:\/\/([^'"`\s]*?)\$\{/g)) {
+      const lastSlash = match[1].lastIndexOf('/');
+      if (lastSlash > 0) interpolatedDirs.add(match[1].slice(0, lastSlash + 1));
+    }
+  }
   const out: Diagnostic[] = [];
   for (const asset of project.files) {
     if (!ASSET_DIRECTORIES.some(dir => asset.startsWith(dir))) continue;
+    if ([...interpolatedDirs].some(dir => asset.startsWith(dir))) continue;
     const base = asset.slice(asset.lastIndexOf('/') + 1);
     if (base.startsWith('.') || REFERENCING_EXTENSIONS.some(ext => asset.endsWith(ext))) continue;
     if (sceneReferences.has(asset)) continue;

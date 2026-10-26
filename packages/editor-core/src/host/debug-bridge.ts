@@ -9,6 +9,7 @@ import {
   safeSerialize,
   type Json,
   type CapturedError,
+  type ComponentDTO,
   type NodeDTO,
   type NodeSummary,
 } from '@/core/agent-introspection';
@@ -16,9 +17,10 @@ import { ServiceContainer } from '@/fw/di';
 import { StartSceneGameCommand } from '@/features/scripts/StartSceneGameCommand';
 import { openGameSurface } from '@/features/scripts/play-workspace';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
+import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { EditorTabService } from '@/services/editor/EditorTabService';
-import { GameTestService, type GameRunSpec } from '@/services/game-test/GameTestService';
+import { GameTestService } from '@/services/game-test/GameTestService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
@@ -193,6 +195,7 @@ const nodeRead = (
   node: NodeDTO;
   saved: SceneNodeDefinition | null;
   screen: { x: number; y: number } | null;
+  live?: { components: ComponentDTO[] };
 }> => {
   const { graph, descriptor } = found;
   const node = graph.nodeMap.get(nodeId);
@@ -201,11 +204,48 @@ const nodeRead = (
   const dto = nodeToDTO(node, 0, savedPropertiesOf(savedNodes));
   dto.components = node.components.map((c, i) => componentToDTO(c, i));
   const saved = savedNodes.get(nodeId)?.def ?? null;
-  const screen =
-    descriptor.id === appState.scenes.activeSceneId
+  const active = descriptor.id === appState.scenes.activeSceneId;
+  const live = active ? livePlayNode(nodeId) : null;
+  // During play the editor viewport is hidden behind the Game tab: `screen` is where the RUNNING
+  // node is on the game canvas, and `live` its components' play-time state (`node` stays what the
+  // editor holds — the scene as authored).
+  const screen = live
+    ? live.screen
+    : active
       ? service(ViewportRendererService).projectNodeToClient(node)
       : null;
-  return { ok: true, node: dto, saved, screen };
+  return {
+    ok: true,
+    node: dto,
+    saved,
+    screen,
+    ...(live ? { live: { components: live.components } } : {}),
+  };
+};
+
+/** The play clone of `nodeId` in the running game, its page position and component state. */
+const livePlayNode = (
+  nodeId: string
+): { screen: { x: number; y: number } | null; components: ComponentDTO[] } | null => {
+  const runtime = service(GamePlaySessionService).getActiveRuntime();
+  if (!runtime) return null;
+  const node = runtime.runner.getLiveNodeById(nodeId);
+  if (!node) return null;
+  const components = node.components.map((c, i) => componentToDTO(c, i));
+  const backing = runtime.runner.projectNodeToCanvas(node);
+  const canvas = runtime.canvas;
+  const rect = canvas.getBoundingClientRect();
+  // A popped-out game window is another page: its coordinates would not click this one.
+  if (!backing || runtime.windowRef !== window || rect.width <= 0 || canvas.width <= 0) {
+    return { screen: null, components };
+  }
+  return {
+    screen: {
+      x: rect.left + (backing.x / canvas.width) * rect.width,
+      y: rect.top + (backing.y / canvas.height) * rect.height,
+    },
+    components,
+  };
 };
 
 const findNodes = (
@@ -415,7 +455,12 @@ const EXECUTES: Record<string, Execute> = {
     if (!appState.ui.isPlaying) {
       return refuse('not_playing', 'Start play first: pix3_play {action:"start"}.');
     }
-    const result = await service(GameTestService).run(params as unknown as GameRunSpec);
+    // The tool payload is raw model JSON: parse it (defaults included — a `bot` without
+    // `channel` is `physical-input`, a monkey/control spec is normalised) before running. Passing it
+    // straight to `run` left `bot.channel` undefined, and every bot action read as direct-action.
+    const parsed = GameTestService.parseSpec(params);
+    if ('error' in parsed) return refuse('invalid_spec', parsed.error);
+    const result = await service(GameTestService).run(parsed.spec);
     return result.ok
       ? (result as unknown as Record<string, unknown>)
       : refuse('refused', result.error ?? 'game run did not start');

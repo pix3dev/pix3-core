@@ -1,16 +1,7 @@
-import {
-  Mesh,
-  MeshBasicMaterial,
-  Plane,
-  PlaneGeometry,
-  type Material,
-  type Object3D,
-  type Texture,
-  Vector2,
-  Vector3,
-} from 'three';
+import { Mesh, MeshBasicMaterial, PlaneGeometry, type Texture, Vector2, Vector3 } from 'three';
 
 import { Group2D, type Group2DProps } from '../Group2D';
+import { ChildClip2D } from '../../../core/child-clip-2d';
 import { Node2D } from '../../Node2D';
 import type { InputService } from '../../../core/InputService';
 import { OVERLAY_2D_FLAG } from '../../../core/render-order-2d';
@@ -101,13 +92,7 @@ export class ScrollContainer2D extends Group2D implements Interactive {
    * {@link SEMANTIC_POINTER_ID} while a scripted gesture is running.
    */
   private ownedPointerId: number | null = null;
-  private readonly clippingPlanes = [
-    new Plane(new Vector3(1, 0, 0), 0),
-    new Plane(new Vector3(-1, 0, 0), 0),
-    new Plane(new Vector3(0, 1, 0), 0),
-    new Plane(new Vector3(0, -1, 0), 0),
-  ];
-  private readonly appliedClippingMaterials = new Set<Material>();
+  private readonly viewportClip = new ChildClip2D();
   private readonly childBasePositions = new Map<string, Vector3>();
   private dragMode: PointerDragMode = null;
   private pointerStartedInside = false;
@@ -907,61 +892,11 @@ export class ScrollContainer2D extends Group2D implements Interactive {
       this.clearClippingPlanes();
       return;
     }
-
-    this.getWorldPosition(this.tmpWorldPos);
-    this.getWorldScale(this.tmpWorldScale);
-
-    const halfWidth = (this.width * Math.abs(this.tmpWorldScale.x)) / 2;
-    const halfHeight = (this.height * Math.abs(this.tmpWorldScale.y)) / 2;
-    const left = this.tmpWorldPos.x - halfWidth;
-    const right = this.tmpWorldPos.x + halfWidth;
-    const bottom = this.tmpWorldPos.y - halfHeight;
-    const top = this.tmpWorldPos.y + halfHeight;
-
-    this.clippingPlanes[0].constant = -left;
-    this.clippingPlanes[1].constant = right;
-    this.clippingPlanes[2].constant = -bottom;
-    this.clippingPlanes[3].constant = top;
-
-    const nextMaterials = new Set<Material>();
-    for (const scrollableChild of scrollableChildren) {
-      scrollableChild.traverse((child: Object3D) => {
-        const meshLike = child as Object3D & { material?: Material | Material[] };
-        if (!meshLike.material) {
-          return;
-        }
-
-        const materials = Array.isArray(meshLike.material)
-          ? meshLike.material
-          : [meshLike.material];
-        for (const material of materials) {
-          material.clippingPlanes = this.clippingPlanes;
-          material.clipIntersection = false;
-          material.needsUpdate = true;
-          nextMaterials.add(material);
-        }
-      });
-    }
-
-    for (const material of this.appliedClippingMaterials) {
-      if (!nextMaterials.has(material)) {
-        material.clippingPlanes = null;
-        material.needsUpdate = true;
-      }
-    }
-
-    this.appliedClippingMaterials.clear();
-    for (const material of nextMaterials) {
-      this.appliedClippingMaterials.add(material);
-    }
+    this.viewportClip.apply(this, this.width, this.height, scrollableChildren);
   }
 
   private clearClippingPlanes(): void {
-    for (const material of this.appliedClippingMaterials) {
-      material.clippingPlanes = null;
-      material.needsUpdate = true;
-    }
-    this.appliedClippingMaterials.clear();
+    this.viewportClip.clear();
   }
 
   private syncScrollbarVisuals(): void {

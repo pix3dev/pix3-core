@@ -458,7 +458,7 @@ export class Button2D
         {
           name: 'width',
           type: 'number',
-          ui: { label: 'Width', group: 'Button', min: 10, max: 500, step: 1 },
+          ui: { label: 'Width', group: 'Button', min: 10, max: 4096, step: 1 },
           getValue: n => (n as Button2D).width,
           setValue: (n, v) => {
             const btn = n as Button2D;
@@ -469,7 +469,7 @@ export class Button2D
         {
           name: 'height',
           type: 'number',
-          ui: { label: 'Height', group: 'Button', min: 10, max: 500, step: 1 },
+          ui: { label: 'Height', group: 'Button', min: 10, max: 4096, step: 1 },
           getValue: n => (n as Button2D).height,
           setValue: (n, v) => {
             const btn = n as Button2D;

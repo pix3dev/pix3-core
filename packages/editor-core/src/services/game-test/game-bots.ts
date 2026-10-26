@@ -326,6 +326,17 @@ export interface Pix3TestBot {
   axis(name: string, value: number): void;
   /** Point the pointer at a world position (aim, hover, click-to-move targeting). */
   moveTo(point: BotPoint): void;
+  /**
+   * Drag a finger between two world points over `frames` ticks (default 8): down at `from`, a move
+   * every tick, up at `to` — a swipe on a match-3 board, a slingshot pull, a drag-and-drop.
+   * Physical input only: on `direct-action` it is refused (there is no interaction to call).
+   */
+  swipe(from: BotPoint, to: BotPoint, frames?: number): void;
+  /**
+   * Dispatch one of the game's `scene.commands` (`restart`, `next-level`, …) with optional
+   * args — an intent, not a gesture: it proves the handler, never the button that sends it.
+   */
+  command(name: string, args?: Record<string, unknown>): void;
 
   // -- protocol --------------------------------------------------------------
 
@@ -416,6 +427,10 @@ export interface BotWorld {
   tapUp(target: string): void;
   setAxisValue(name: string, value: number): string | null;
   pointAt(point: BotPoint): string | null;
+  /** A pointer phase at a world point, on the bot's own finger (`swipe`). */
+  pointerAt(phase: 'down' | 'move' | 'up', point: BotPoint): string | null;
+  /** `scene.commands.dispatch(name, args)` on the running game. */
+  dispatchCommand(name: string, args?: Record<string, unknown>): string | null;
   /** Drop everything still held. Called once, from the session's teardown. */
   releaseAll(): void;
 }
@@ -471,6 +486,8 @@ const MAX_SENSED_NODES = 64;
  * notice, which reads exactly like a dead button.
  */
 export const DEFAULT_TAP_HOLD_FRAMES = 3;
+/** Ticks a `swipe()` takes when the policy does not say — a quick flick at 60 fps. */
+const DEFAULT_SWIPE_FRAMES = 8;
 
 // ---------------------------------------------------------------------------
 // The session
@@ -510,6 +527,8 @@ export class BotSession {
   private readonly heldActions = new Map<string, number | null>();
   /** Taps in flight: target → the frame its pointer-up is due on. */
   private readonly openTaps = new Map<string, number>();
+  /** The swipe in progress (one finger, so one at a time). */
+  private swipe: { from: BotPoint; to: BotPoint; startFrame: number; frames: number } | null = null;
 
   constructor(
     private readonly name: string,
@@ -579,6 +598,7 @@ export class BotSession {
     }
     this.heldActions.clear();
     this.openTaps.clear();
+    this.swipe = null;
     this.world.releaseAll();
   }
 
@@ -621,6 +641,8 @@ export class BotSession {
       tap: target => this.doTap(target),
       axis: (name, value) => this.doAxis(name, value),
       moveTo: point => this.doMoveTo(point),
+      swipe: (from, to, frames) => this.doSwipe(from, to, frames),
+      command: (name, args) => this.doCommand(name, args),
       log: event => this.record('policy', String(event)),
       done: (pass, reason) => this.doDone(pass, reason),
     };
@@ -702,6 +724,52 @@ export class BotSession {
     this.sent += 1;
   }
 
+  private doSwipe(from: BotPoint, to: BotPoint, frames?: number): void {
+    const isPoint = (p: BotPoint) =>
+      !!p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x + p.y);
+    if (!isPoint(from) || !isPoint(to)) {
+      return this.refuse('swipe() needs two world points {x, y}: swipe(from, to, frames?).');
+    }
+    if (this.swipe) {
+      return this.refuse(
+        'swipe() was called while the previous swipe is still moving — wait for it to end (its `frames`).'
+      );
+    }
+    const refusal = this.world.pointerAt('down', from);
+    if (refusal) return this.refuse(refusal);
+    const span =
+      typeof frames === 'number' && Number.isFinite(frames) && frames >= 1
+        ? Math.round(frames)
+        : DEFAULT_SWIPE_FRAMES;
+    this.swipe = { from, to, startFrame: this.currentFrame, frames: span };
+    this.sent += 1;
+  }
+
+  private doCommand(name: string, args?: Record<string, unknown>): void {
+    const command = String(name ?? '').trim();
+    if (!command) return this.refuse('command() needs a command name, e.g. command("restart").');
+    const refusal = this.world.dispatchCommand(command, args);
+    if (refusal) return this.refuse(refusal);
+    this.sent += 1;
+  }
+
+  /** One tick of the swipe in progress: a move along the line, the release at its end. */
+  private advanceSwipe(): void {
+    const swipe = this.swipe;
+    if (!swipe) return;
+    const t = Math.min(1, (this.currentFrame - swipe.startFrame) / swipe.frames);
+    const at = {
+      x: swipe.from.x + (swipe.to.x - swipe.from.x) * t,
+      y: swipe.from.y + (swipe.to.y - swipe.from.y) * t,
+      z: 0,
+    };
+    this.world.pointerAt('move', at);
+    if (t >= 1) {
+      this.swipe = null;
+      this.world.pointerAt('up', swipe.to);
+    }
+  }
+
   private doDone(pass: boolean, reason: string): void {
     const said = String(reason ?? '').trim();
     // A verdict from the `end` hook arrives after the run has already ended, so it
@@ -733,6 +801,7 @@ export class BotSession {
   // -- scheduling ------------------------------------------------------------
 
   private releaseDue(): void {
+    this.advanceSwipe();
     for (const [action, dueAt] of [...this.heldActions]) {
       if (dueAt !== null && dueAt <= this.currentFrame) {
         this.heldActions.delete(action);

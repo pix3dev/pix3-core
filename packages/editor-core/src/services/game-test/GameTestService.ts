@@ -922,6 +922,8 @@ export class GameTestService {
     const heldKeys = new Set<string>();
     const heldButtons = new Set<string>();
     const openTaps = new Map<string, { nx: number; ny: number }>();
+    /** Where the bot's swipe finger went down, so teardown can lift it. */
+    let swipeDown: { nx: number; ny: number } | null = null;
 
     /**
      * Credit the reachability journal for a tap this policy drove, at the same moment a
@@ -1045,7 +1047,33 @@ export class GameTestService {
         return null;
       },
 
+      pointerAt: (phase, point) => {
+        if (channel !== 'physical-input') {
+          return 'swipe() is a physical gesture; on `direct-action` there is nothing to call. Run the policy on `physical-input`, or drive the intent with command().';
+        }
+        const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
+        if (!at) {
+          return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
+        }
+        if (phase === 'down') swipeDown = at;
+        if (phase === 'up') swipeDown = null;
+        sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
+        return null;
+      },
+
+      dispatchCommand: (name, args) => {
+        const commands = findCommandRegistry(runner);
+        if (!commands) return 'the running scene has no command registry (is it still running?).';
+        if (!commands.list().some(entry => entry.name === name)) {
+          const known = commands.list().map(entry => entry.name);
+          return `no command "${name}" is registered${known.length ? ` (registered: ${known.join(', ')})` : ' — the game registers none (scene.commands.register)'}.`;
+        }
+        return commands.dispatch(name, args) ? null : `command "${name}" refused or threw.`;
+      },
+
       releaseAll: () => {
+        if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
+        swipeDown = null;
         for (const code of heldKeys) sink.key('up', code);
         heldKeys.clear();
         const input = resolveLiveInput(runner);

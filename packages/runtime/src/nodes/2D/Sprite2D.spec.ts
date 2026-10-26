@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import type { Mesh, MeshBasicMaterial } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { Texture, type Mesh, type MeshBasicMaterial } from 'three';
 
 import { Sprite2D } from './Sprite2D';
 import { reactiveSchemaPropertyNames } from '../../fw/reactive-schema-properties';
+import { NodeBase } from '../NodeBase';
+import type { SceneService } from '../../core/SceneService';
 
 /** The rendered surface: size lives on mesh.scale, the pivot on mesh.position. */
 const meshOf = (sprite: Sprite2D): Mesh => (sprite as unknown as { mesh: Mesh }).mesh;
@@ -52,5 +54,70 @@ describe('Sprite2D schema-property reactivity (direct script assignment)', () =>
     const sprite = new Sprite2D({ id: 's', name: 'S', width: 10, height: 10, color: '#ff0000' });
     sprite.width = 20;
     expect(materialOf(sprite).color.getHex()).toBe(0xff0000);
+  });
+});
+
+describe('Sprite2D built by a script loads its own texture', () => {
+  const sceneWith = (loadTexture: (path: string) => Promise<Texture>) =>
+    ({ getAssetLoader: () => ({ loadTexture }) }) as unknown as SceneService;
+
+  it('adoptChild into a running scene loads texturePath (was a white quad)', async () => {
+    const texture = new Texture();
+    const loadTexture = vi.fn(async () => texture);
+    const parent = new NodeBase({ id: 'p' });
+    parent.scene = sceneWith(loadTexture);
+
+    const sprite = new Sprite2D({ id: 's', texturePath: 'res://gem.png', width: 10, height: 10 });
+    parent.adoptChild(sprite);
+    await vi.waitFor(() => expect(materialOf(sprite).map).toBe(texture));
+    expect(loadTexture).toHaveBeenCalledTimes(1);
+    expect(loadTexture).toHaveBeenCalledWith('res://gem.png');
+  });
+
+  it('a texture swap in a running scene loads the new path; re-attach does not reload', async () => {
+    const loadTexture = vi.fn(async () => new Texture());
+    const parent = new NodeBase({ id: 'p' });
+    parent.scene = sceneWith(loadTexture);
+    const sprite = new Sprite2D({ id: 's', texturePath: 'res://a.png' });
+    parent.adoptChild(sprite);
+    await vi.waitFor(() => expect(loadTexture).toHaveBeenCalledTimes(1));
+
+    parent.scene = sceneWith(loadTexture);
+    expect(loadTexture).toHaveBeenCalledTimes(1);
+
+    sprite.texturePath = 'res://b.png';
+    await vi.waitFor(() => expect(loadTexture).toHaveBeenLastCalledWith('res://b.png'));
+  });
+
+  it('without a scene nothing loads (the editor and the SceneLoader load it themselves)', () => {
+    const sprite = new Sprite2D({ id: 's', texturePath: 'res://a.png' });
+    sprite.texturePath = 'res://b.png';
+    expect(materialOf(sprite).map).toBeNull();
+  });
+});
+
+describe('Sprite2D draws nothing while its first texture loads', () => {
+  it('hidden until the texture arrives; a failed load shows the flat quad', async () => {
+    let resolveLoad!: (texture: Texture) => void;
+    const pending = new Promise<Texture>(resolve => {
+      resolveLoad = resolve;
+    });
+    const parent = new NodeBase({ id: 'p' });
+    parent.scene = {
+      getAssetLoader: () => ({ loadTexture: () => pending }),
+    } as unknown as SceneService;
+    const sprite = new Sprite2D({ id: 's', texturePath: 'res://gem.png', width: 10, height: 10 });
+    parent.adoptChild(sprite);
+    expect(meshOf(sprite).visible).toBe(false);
+    resolveLoad(new Texture());
+    await vi.waitFor(() => expect(meshOf(sprite).visible).toBe(true));
+
+    const failing = new Sprite2D({ id: 'f', texturePath: 'res://missing.png' });
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await failing.loadTexture({
+      loadTexture: () => Promise.reject(new Error('404')),
+    } as unknown as import('../../core/AssetLoader').AssetLoader);
+    quiet.mockRestore();
+    expect(meshOf(failing).visible).toBe(true);
   });
 });

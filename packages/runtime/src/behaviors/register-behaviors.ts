@@ -308,6 +308,4 @@ export function registerBuiltInScripts(registry: ScriptRegistry): void {
       'online',
     ],
   });
-
-  console.log('[ScriptRegistry] Registered built-in script components');
 }

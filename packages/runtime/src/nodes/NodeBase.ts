@@ -198,7 +198,19 @@ export class NodeBase extends Object3D {
     for (const component of this.components) {
       component.scene = service;
     }
+
+    if (service) {
+      this.onSceneAttached(service);
+    }
   }
+
+  /**
+   * Called when this node joins a running scene — the runner starting the graph, or a script's
+   * `parent.adoptChild(node)` on a node it built with `new`. A node that needs the scene's
+   * services to finish building itself (a `Sprite2D` constructed with a `texturePath`, whose
+   * texture only the `SceneLoader` used to load) does it here.
+   */
+  protected onSceneAttached(_scene: SceneService): void {}
 
   get parentNode(): NodeBase | null {
     return this.parent instanceof NodeBase ? this.parent : null;
@@ -330,7 +342,9 @@ export class NodeBase extends Object3D {
     const sceneRunning = this.components.some(c => c._started);
     const onStart = component.onStart;
     if (sceneRunning && component.enabled && onStart) {
-      this.runComponentHook(component, 'start', () => onStart.call(component));
+      if (this.runComponentHook(component, 'start', () => onStart.call(component))) {
+        NodeBase.queueReady(component);
+      }
       component._started = true;
     }
   }
@@ -465,6 +479,7 @@ export class NodeBase extends Object3D {
       if (!component._started && onStart) {
         const started = this.runComponentHook(component, 'start', () => onStart.call(component));
         component._started = true;
+        if (started) NodeBase.queueReady(component);
         // A failed onStart disabled the component; skip onUpdate this frame.
         if (!started) {
           continue;
@@ -616,6 +631,36 @@ export class NodeBase extends Object3D {
 
   isInGroup(group: string): boolean {
     return this.groups.has(group.trim());
+  }
+
+  /** Components whose `onStart` ran this frame and that have an `onReady`; see {@link flushReadyQueue}. */
+  private static readonly readyQueue: ScriptComponent[] = [];
+
+  private static queueReady(component: ScriptComponent): void {
+    if (component.onReady) {
+      NodeBase.readyQueue.push(component);
+    }
+  }
+
+  /**
+   * Run `onReady` on every component that started this frame, in start order — after every
+   * component of the frame has run `onStart`. That is the hook for wiring that needs the whole
+   * scene started: a root `GameRules` whose `onStart` would otherwise run before its children's
+   * (parents start first). Called by the SceneRunner after the frame's node ticks.
+   */
+  static flushReadyQueue(): void {
+    // A ready hook may add components (which queue in turn): drain until empty.
+    while (NodeBase.readyQueue.length > 0) {
+      const queued = NodeBase.readyQueue.splice(0, NodeBase.readyQueue.length);
+      for (const component of queued) {
+        const node = component.node;
+        const onReady = component.onReady;
+        if (!node || node.isDisposed || !component.enabled || !onReady) {
+          continue;
+        }
+        node.runComponentHook(component, 'ready', () => onReady.call(component));
+      }
+    }
   }
 
   /** Nodes queued by {@link queueFree}, drained by the runtime each frame. */

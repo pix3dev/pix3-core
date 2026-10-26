@@ -21,7 +21,7 @@ writing a script for the same effect.
 ## Shape (copy this)
 
 ```ts
-import { Script, type NodeBase, type PropertySchema } from '@pix3/runtime';
+import { Script, configNumber, configString, type NodeBase, type PropertySchema } from '@pix3/runtime';
 
 export class Combo extends Script {
   private count = 0;
@@ -44,25 +44,9 @@ export class Combo extends Script {
     return {
       nodeType: 'Combo',
       properties: [
-        {
-          name: 'sourceNode',
-          type: 'string',
-          ui: { label: 'Source Node', group: 'Combo' },
-          getValue: (s: unknown) => (s as Combo).config.sourceNode,
-          setValue: (s: unknown, v: unknown) => {
-            (s as Combo).config.sourceNode = typeof v === 'string' ? v : '';
-          },
-        },
-        {
-          name: 'windowSec',
-          type: 'number',
-          ui: { label: 'Window (s)', group: 'Combo', min: 0.1, max: 10, step: 0.1 },
-          getValue: (s: unknown) => (s as Combo).config.windowSec,
-          setValue: (s: unknown, v: unknown) => {
-            const n = Number(v);
-            (s as Combo).config.windowSec = Math.min(10, Math.max(0.1, Number.isFinite(n) ? n : 1.2));
-          },
-        },
+        // One line per config key: (key, label, fallback, inspector hints).
+        configString('sourceNode', 'Source Node', 'game-root', { group: 'Combo' }),
+        configNumber('windowSec', 'Window (s)', 1.2, { group: 'Combo', min: 0.1, max: 10, step: 0.1 }),
       ],
       groups: { Combo: { label: 'Combo', expanded: true } },
     };
@@ -99,11 +83,13 @@ export class Combo extends Script {
 
 - Attach in a scene as `type: user:<ExportedClassName>` (here `user:Combo`). The id is the
   exported class name, not the file name — keep them equal.
-- Every `config` key you want editable in the inspector gets one schema entry: `name`
-  (= the config key), `type` (`string` `number` `boolean` `color` `enum` `select` `vector2`
-  `vector3` `object` `node`), `ui` (`label`, `group`, `min`, `max`, `step`, `slider`,
-  `options`, `description`), `getValue`, `setValue`. `setValue` is what the loader calls
-  with the scene's value — clamp and coerce there.
+- Every `config` key you want editable in the inspector gets one schema entry. The helpers
+  write it in one line and coerce the scene's value: `configNumber(key, label, fallback,
+  { group, min, max, step, slider })` (clamped), `configString(key, label, fallback, hints,
+  'node'?)`, `configBoolean`, `configColor`, `configSelect(key, label, options, fallback)`.
+  Anything else is a full entry: `name` (= the config key), `type` (`vector2` `vector3`
+  `object` …), `ui` (`label`, `group`, …), `getValue`, `setValue` — `setValue` is what the
+  loader calls with the scene's value; clamp and coerce there.
 - One mechanic = one script, 70–140 lines. Tunable numbers go into `config`, not into
   constants: the human tunes them in the inspector.
 - Name methods after intent (`startGame()`, `restart()`, `addCombo()`), not after widgets.
@@ -112,13 +98,16 @@ export class Combo extends Script {
 
 `onAttach(node)` → `onStart()` (first frame, scene loaded) → `onUpdate(dt)` every frame
 (`dt` = scaled seconds; frozen during hitstop) → `onDetach()`. Parent components start
-before children's.
+before children's: a rules script on the root that drives a child's script (`board.newBoard()`)
+does it in **`onReady()`** — called once at the end of the first frame, after every component
+that started that frame ran `onStart` (its own first `onUpdate` has already run).
 
 ## Members of a Script
 
 - `this.node` — the owner node. `this.config` — the merged config.
 - `this.scene` — `SceneService`; may be `undefined` in editor previews, guard it.
-- `this.input` — `InputService`.
+- `this.input` — `InputService`; typed optional (unset in editor previews), so guard it like
+  `this.scene`: `const input = this.input; if (!input) return;`.
 - `this.findNode(query)` — id, name or slash path → node or `null`.
   `this.getNode(query)` — same, throws when missing.
 - Another script on a node: `import { Other } from './Other'; node.getComponent(Other)` —
@@ -149,7 +138,10 @@ before children's.
   `label = text` plus clearing a bound `labelKey` (localization) and restarting the typewriter.
 - Create at runtime with the YAML property names, then parent it:
   `const r = new ColorRect2D({ id: 'flash', width: 100, height: 100, color: '#ffffff' }); parent.adoptChild(r);`
-  (also `Sprite2D`, `Label2D({ id, label, labelFontSize, labelColor })`, `Group2D`).
+  (also `Sprite2D({ id, texturePath: 'res://sprites/gem.svg', width, height })` — the texture
+  loads on `adoptChild`; `Label2D({ id, label, labelFontSize, labelColor })`, `Group2D`).
+- A board whose pieces must not draw outside it (new gems falling in from above): put them
+  under a `Group2D` with `clipChildren: true` sized to the board.
 
 ## Signals
 
@@ -173,13 +165,17 @@ before children's.
 
 - Lookup: `findNode(q)`, `findNodeById`, `findNodeByName`, `findNodeByPath`,
   `getRootNodes()`, `getViewportInfo()`, `isPortrait()`.
-- Pointer in 2D world space: `scene.getPointer2DWorldPosition()` → `Vector2 | null`
-  (primary finger), or `(pointerId)`.
+- Pointer in 2D world space: `scene.screenToWorld2D(event)` for a `pointerEvents` entry (works
+  for a tap that went down and up in one frame; `null` only when no scene is running);
+  `scene.getPointer2DWorldPosition()` → `Vector2 | null` for the primary finger now.
 - Spawn: `const n = await scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent, instanceId })`
   (`parent` = node | query; prefab = a scene file with one root). Despawn: `n.queueFree()`.
 - Scene change: `await scene.changeScene('res://scenes/menu.pix3scene', { transition: 'fade' | 'none', durationSec: 0.3, onLoaded })`
   (`durationSec` is each of fade-out and fade-in). State that must survive it is an autoload:
   `scene.getAutoload(GameState)` (recipe: `pix3-scene-format/project-files.md` → "An autoload").
+- Wait in game time: `await this.scene.wait(0.25)` (scaled — hitstop stretches it; resolves
+  `'cancelled'` if the scene stops, so check before touching nodes). No `setTimeout`: it runs on
+  through pause and hitstop and outlives the scene.
 - Time: `scene.time.hitstop(ms)` — no options; only on a contact START, never per frame.
   `scene.time.slowMotion(scale, { durationMs, blendMs })` — both real-time ms; no `durationMs`
   = until `scene.time.reset()`.
@@ -200,7 +196,8 @@ before children's.
   `target` = node | query | `'camera'` | `'camera2d'`; `anchor` = node | query | `{ x, y }`.
 - Tweens: `scene.tween.to(node, { x, y, position: { x, y }, scale, rotation, opacity, width, height }, { durationSec: 0.3, ease: 'cubicOut', delaySec: 0, yoyo: false, repeat: 0, onUpdate, onComplete })`
   → `{ cancel(), finished, isRunning }` (`rotation` in radians, `repeat: -1` = forever, `ease` =
-  any easing name: `linear`, `quadOut`, `cubicInOut`, `backOut`, `elasticOut`, …);
+  any easing name: `linear`, `quadOut`, `cubicInOut`, `backOut`, `elasticOut`, … — a variable
+  holding one is typed `KeyframeEasing`, imported from `@pix3/runtime`);
   `fadeIn(node, sec)` and `crossFade(a, b, sec)` — no options; `fadeOut(node, sec, { hide: true })`;
   `killAll(target?)`. Default `sec` = 0.3. Prefer these over hand-lerping.
 - Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick', { volume: 1, pitch: 1 })`;
@@ -225,7 +222,8 @@ before children's.
 ## `this.input`
 
 - Per frame: `input.pointerEvents` → `{ type: 'down' | 'move' | 'up' | 'cancel', pointerId, x, y }[]`
-  (`cancel` is not a tap); `input.keyEvents`.
+  (`cancel` is not a tap; `x, y` in canvas units — `scene.screenToWorld2D(event)` for world);
+  `input.keyEvents`.
 - Polled: `input.isPointerDown`, `input.pointerPosition` (canvas space — use
   `scene.getPointer2DWorldPosition()` for world), `input.isPointerOverUI(pointerId)`,
   `input.getButton(name)`, `input.getAxis(name)`.
@@ -289,6 +287,8 @@ before children's.
   handler is attached and `enabled`.
 - Ending a run belongs to the one script that owns the rules: call it; do not show the result
   overlay from a second place.
+- A root script's `onStart` calling a child script's method finds the child not started yet
+  (its lookups still `null`) — parents start first. Use `onReady()`.
 
 ## Known gaps
 

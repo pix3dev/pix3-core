@@ -231,6 +231,17 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
 
     async configureServer(devServer) {
       server = devServer;
+      // The dev scene list (`?scene=`, `changeScene` checks) is a virtual module Vite caches: a
+      // scene an agent writes after the server started was "not one of the project's scenes"
+      // until a restart. A scene file appearing or going drops the cached list.
+      const dropSceneList = (path: string): void => {
+        if (!path.endsWith('.pix3scene')) return;
+        const graph = devServer.moduleGraph;
+        const manifest = graph.getModuleById(resolvedId(SCENE_MANIFEST_ID));
+        if (manifest) graph.invalidateModule(manifest);
+      };
+      devServer.watcher.on('add', dropSceneList);
+      devServer.watcher.on('unlink', dropSceneList);
       if (!settings.editor || !config || !scripts) return;
       const projectRoot = config.root;
       editor = await startEditorServer(devServer, {

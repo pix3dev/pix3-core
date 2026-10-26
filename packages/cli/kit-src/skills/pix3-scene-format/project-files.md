@@ -200,7 +200,7 @@ so), keep every key you do not know, and copy the style of the file.
 | --- | --- |
 | `version` | `1.0.0`; leave it |
 | `defaultExportScenePath` | the scene the game boots into (no `res://`) |
-| `viewportBaseSize` | `{ width, height }` — the design resolution 2D layout is authored against |
+| `viewportBaseSize` | `{ width, height }` — the design resolution 2D layout is authored against. `pix3 new --portrait` starts at `1080×1920`, the default is `1920×1080`; turning an existing project (a phone genre in a landscape starter) is this key plus the entry scene root's `width`/`height` — swap both, nothing else |
 | `projectType` | `2d` or `3d` |
 | `targetPlatform` | `mobile`, `desktop` or `universal` |
 | `textureFiltering` | `linear` (smooth) or `nearest` (pixel art) for 2D textures |

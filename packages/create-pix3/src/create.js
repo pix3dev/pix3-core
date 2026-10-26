@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * `npm create pix3@latest [dir] -- [--template 2d|3d] [--name <project name>] [--yes]`
+ * `npm create pix3@latest [dir] -- [--template 2d|3d] [--name <project name>] [--portrait] [--yes]`
  *
  * Asks what it was not told (in a terminal; `--yes` or no TTY takes the defaults: `2d`,
  * `pix3-game`), then runs `pix3 new <2d|3d> <dir>` of the `@pix3/cli` it depends on — the one
@@ -19,20 +19,22 @@ export const STARTERS = /** @type {const} */ (['2d', '3d']);
 const DEFAULT_TEMPLATE = '2d';
 const DEFAULT_DIR = 'pix3-game';
 
-const USAGE = `Usage: npm create pix3@latest [dir] -- [--template 2d|3d] [--name <project name>] [--yes]
+const USAGE = `Usage: npm create pix3@latest [dir] -- [--template 2d|3d] [--name <project name>]
+                                          [--portrait|--landscape] [--yes]
 
   dir                 an empty or new folder (default: ${DEFAULT_DIR})
   --template, -t      2d (default) or 3d — an empty project either way
   --name              project name (default: the folder name)
+  --portrait          a 1080×1920 design viewport (phone games); --landscape: 1920×1080 (default)
   --yes, -y           take the defaults for anything not given, ask nothing
 `;
 
 /**
  * @param {readonly string[]} argv
- * @returns {{ dir?: string, template?: string, name?: string, yes: boolean, help: boolean }}
+ * @returns {{ dir?: string, template?: string, name?: string, orientation?: 'portrait' | 'landscape', yes: boolean, help: boolean }}
  */
 export const parseArgs = argv => {
-  /** @type {{ dir?: string, template?: string, name?: string, yes: boolean, help: boolean }} */
+  /** @type {{ dir?: string, template?: string, name?: string, orientation?: 'portrait' | 'landscape', yes: boolean, help: boolean }} */
   const out = { yes: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -40,7 +42,12 @@ export const parseArgs = argv => {
     const value = () => inline ?? argv[++i];
     if (flag === '--template' || flag === '-t') out.template = value();
     else if (flag === '--name') out.name = value();
-    else if (flag === '--yes' || flag === '-y') out.yes = true;
+    else if (flag === '--portrait' || flag === '--landscape') {
+      const orientation = flag === '--portrait' ? 'portrait' : 'landscape';
+      if (out.orientation && out.orientation !== orientation)
+        throw new Error('--portrait and --landscape exclude each other');
+      out.orientation = orientation;
+    } else if (flag === '--yes' || flag === '-y') out.yes = true;
     else if (flag === '--help' || flag === '-h') out.help = true;
     else if (flag === '--2d' || flag === '--3d') out.template = flag.slice(2);
     else if (!arg.startsWith('-') && out.dir === undefined) out.dir = arg;
@@ -111,7 +118,14 @@ export const run = async argv => {
     prompt?.close();
     const result = spawnSync(
       process.execPath,
-      [pix3Entry(), 'new', template, dir, ...(args.name ? ['--name', args.name] : [])],
+      [
+        pix3Entry(),
+        'new',
+        template,
+        dir,
+        ...(args.name ? ['--name', args.name] : []),
+        ...(args.orientation ? [`--${args.orientation}`] : []),
+      ],
       { stdio: 'inherit' }
     );
     if (result.error) throw result.error;

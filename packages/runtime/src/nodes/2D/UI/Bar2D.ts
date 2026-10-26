@@ -315,7 +315,7 @@ export class Bar2D extends UIControl2D {
         {
           name: 'width',
           type: 'number',
-          ui: { label: 'Width', group: 'Bar', min: 20, max: 500, step: 1 },
+          ui: { label: 'Width', group: 'Bar', min: 20, max: 4096, step: 1 },
           getValue: n => (n as Bar2D).width,
           setValue: (n, v) => {
             const bar = n as Bar2D;
@@ -326,7 +326,7 @@ export class Bar2D extends UIControl2D {
         {
           name: 'height',
           type: 'number',
-          ui: { label: 'Height', group: 'Bar', min: 5, max: 200, step: 1 },
+          ui: { label: 'Height', group: 'Bar', min: 5, max: 1024, step: 1 },
           getValue: n => (n as Bar2D).height,
           setValue: (n, v) => {
             const bar = n as Bar2D;

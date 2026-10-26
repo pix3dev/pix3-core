@@ -46,7 +46,11 @@ export type SmokeWarningCode =
   | 'W_SMOKE_LOADER'
   | 'W_SMOKE_CONSOLE_WARN'
   | 'W_SMOKE_STUBBED_IMPORT'
-  | 'W_SMOKE_STOPPED';
+  | 'W_SMOKE_STOPPED'
+  /** A `--command` named no registered game command, or its handler refused it. */
+  | 'W_SMOKE_COMMAND'
+  /** A visible `Sprite2D` names a texture that was never loaded: it draws as a white quad. */
+  | 'W_SMOKE_UNTEXTURED';
 
 export interface SmokeWarning {
   readonly code: SmokeWarningCode;
@@ -157,6 +161,8 @@ export const SMOKE_CODES: Readonly<
   W_SMOKE_CONSOLE_WARN: 'warning',
   W_SMOKE_STUBBED_IMPORT: 'warning',
   W_SMOKE_STOPPED: 'warning',
+  W_SMOKE_COMMAND: 'warning',
+  W_SMOKE_UNTEXTURED: 'warning',
   E_SMOKE_USAGE: 'failure',
   E_SMOKE_NO_PROJECT: 'failure',
   E_SMOKE_NO_SCENE: 'failure',
@@ -183,4 +189,14 @@ export interface SmokeJob {
   readonly esbuildSpecifier?: string;
   /** A folder whose `node_modules` has `three` (for `three/*` addons a project does not install). */
   readonly fallbackResolveDir?: string;
+  /** `--command`: game commands to dispatch, each before its frame. */
+  readonly commands?: readonly SmokeCommand[];
+}
+
+/** One `--command name@frame`: `scene.commands.dispatch(name)` right before that frame steps. */
+export interface SmokeCommand {
+  readonly name: string;
+  readonly frame: number;
+  /** The handler's args object (`scene.commands.dispatch(name, args)`). */
+  readonly args?: Record<string, unknown>;
 }

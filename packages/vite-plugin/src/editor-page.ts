@@ -42,6 +42,7 @@ export const editorPageHtml = (
         : ''
     }
     <title>Pix3</title>
+    <link rel="icon" href="data:," />
     <style>html,body,#pix3-editor{margin:0;height:100%}</style>
     <script>${VITE_CLIENT_PROBE}</script>${
       options.css ? `\n    <link rel="stylesheet" href="${base}__pix3/editor.css" />` : ''

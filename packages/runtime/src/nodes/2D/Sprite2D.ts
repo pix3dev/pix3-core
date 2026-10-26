@@ -22,6 +22,8 @@ import { atlasSizeOf, baseRegionOf } from '../../core/atlas-frame-map';
 import { getNaturalTextureSize } from '../../core/texture-natural-size';
 import { BATCHABLE_2D_KEY } from '../../core/batch-2d';
 import { getActiveLocalization } from '../../core/localization/active-localization';
+import type { AssetLoader } from '../../core/AssetLoader';
+import type { SceneService } from '../../core/SceneService';
 
 export interface SpriteAnchor2D {
   x: number;
@@ -93,6 +95,9 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
    * per-instance crop pattern in {@link AnimatedSprite2D}.
    */
   private ownedTexture: Texture | null = null;
+
+  /** The path {@link loadTexture} last asked for — so a node re-attached to a scene loads once. */
+  private requestedTexturePath: string | null = null;
 
   /**
    * Registry-backed shader effects on this sprite's material. While any effect
@@ -303,11 +308,63 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
   }
 
   set texturePath(value: string | null) {
-    this.texture = coerceTextureResource(value);
+    this.setTextureResource(value);
   }
 
   setTextureResource(value: unknown): void {
     this.texture = coerceTextureResource(value);
+    // In a running scene a new path loads at once (a script swapping a sprite's image); the
+    // editor and the loader have no scene here and load it themselves.
+    const path = this.getEffectiveTexturePath();
+    if (this.scene && path && path !== this.requestedTexturePath) {
+      void this.loadTexture();
+    }
+  }
+
+  /**
+   * Load {@link getEffectiveTexturePath} through `loader` (default: the running scene's) and show
+   * it. The `SceneLoader` calls this for authored sprites; a sprite a script builds with
+   * `new Sprite2D({ texturePath })` calls it itself when `adoptChild` puts it into the running
+   * scene, so scripts never need to. Await it when the next line needs the natural size. A failed
+   * load warns and leaves the sprite untextured (a white quad).
+   */
+  async loadTexture(loader?: AssetLoader | null): Promise<void> {
+    const path = this.getEffectiveTexturePath();
+    const assets = loader ?? this.scene?.getAssetLoader() ?? null;
+    if (!path || !assets) {
+      return;
+    }
+    this.requestedTexturePath = path;
+    // Nothing to show yet: a first load draws nothing rather than a white quad for the frames the
+    // image takes (64 white squares when a script fills a board). A swap keeps the old image up.
+    const firstLoad = this.baseTexture === null;
+    if (firstLoad) this.mesh.visible = false;
+    try {
+      const texture = await assets.loadTexture(path);
+      // A newer request (the path changed while this one was in flight) wins.
+      if (this.requestedTexturePath === path) {
+        this.setTexture(texture);
+      }
+    } catch (error) {
+      // A failed load shows the flat quad again — a visible placeholder beats a silent hole.
+      this.mesh.visible = true;
+      console.warn(
+        `[Sprite2D] Error loading texture for Sprite2D "${this.nodeId}" from "${path}":`,
+        error
+      );
+    }
+  }
+
+  /** Whether a texture has been set — false means the sprite draws as a flat `color` quad. */
+  get hasTexture(): boolean {
+    return this.baseTexture !== null;
+  }
+
+  protected override onSceneAttached(scene: SceneService): void {
+    const path = this.getEffectiveTexturePath();
+    if (path && path !== this.requestedTexturePath && !this.baseTexture) {
+      void this.loadTexture(scene.getAssetLoader());
+    }
   }
 
   /**
@@ -325,6 +382,7 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
       this.ownedTexture = null;
     }
     this.baseTexture = texture;
+    this.mesh.visible = true;
     this.material.color.set('#ffffff'); // Reset to white once texture is loaded
 
     // Point the material at the shared texture, or re-derive a cropped clone: a

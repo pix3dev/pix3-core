@@ -81,6 +81,24 @@ const expectedFiles = (template: TemplateInfo): string[] =>
     .map(file => (file === 'gitignore' ? '.gitignore' : file));
 
 describe('pix3 new', () => {
+  it('--portrait turns the viewport and the 2D root rect to 1080×1920', () => {
+    const template = listTemplates().find(t => t.id === '2d') as TemplateInfo;
+    const dir = join(root, 'portrait');
+    const project = createProject({ template, dir, orientation: 'portrait' });
+    expect(project.template.viewport).toEqual({ width: 1080, height: 1920 });
+    const manifest = parse(readFileSync(join(dir, 'pix3project.yaml'), 'utf8')) as {
+      viewportBaseSize: { width: number; height: number };
+    };
+    expect(manifest.viewportBaseSize).toEqual({ width: 1080, height: 1920 });
+    const scene = readFileSync(join(dir, 'scenes/main.pix3scene'), 'utf8');
+    expect(scene).toMatch(/^ {6}width: 1080$/m);
+    expect(scene).toMatch(/^ {6}height: 1920$/m);
+    // --landscape on a landscape template changes nothing.
+    expect(
+      createProject({ template, dir: join(root, 'landscape'), orientation: 'landscape' }).template
+    ).toBe(template);
+  });
+
   for (const [id, projectType, nodeTypes] of [
     ['2d', '2d', ['Group2D', 'ColorRect2D']],
     ['3d', '3d', ['Node3D', 'Camera3D', 'DirectionalLightNode', 'AmbientLightNode']],

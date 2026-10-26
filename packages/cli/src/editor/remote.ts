@@ -132,6 +132,10 @@ export const describeRemoteSession = (options: {
     '    It prints one ssh line that copies its CDP token here; run that line on your machine.',
     '  Here, once: npx pix3 agent-setup --remote, then start a new agent thread.',
     '',
+    '  No human at hand? `npx pix3 editor --headless` runs a headless Chrome HERE instead (system Chrome,',
+    "  or Playwright's Chromium from ~/.cache/ms-playwright; --no-sandbox where the box needs it): the",
+    '  agent gets screenshots and input through pix3-browser after `npx pix3 agent-setup` (not --remote).',
+    '',
   ];
   if (!options.token) {
     lines.push(

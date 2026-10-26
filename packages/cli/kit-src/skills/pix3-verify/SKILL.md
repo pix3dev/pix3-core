@@ -85,7 +85,12 @@ passed: fix the compile error, run `check` again, and only then read the rest.
 `pix3 smoke <scene>` (after a green `check`) runs that scene in Node: your scripts compiled, the
 scene loaded by the real loader, `--frames N` steps of 1/60 s (default 120). **Name the scene you
 changed** — the game is `pix3 smoke scenes/main.pix3scene`. Input is empty, so a menu never
-presses PLAY: smoking the menu (the build's entry scene) proves nothing about the game. With no
+presses PLAY: smoking the menu (the build's entry scene) proves nothing about the game. The
+game's own intents can be driven: `--command start-game@1 --command restart@300` dispatches
+those `scene.commands` before frames 1 and 300, args as JSON after a space
+(`--command 'swap@30 {"x":2,"y":3}'`; an unknown name is `W_SMOKE_COMMAND`) — the handler runs,
+not the button. `W_SMOKE_UNTEXTURED` is a visible sprite whose texture never
+loaded (a white quad on screen). With no
 scene, smoke runs several, one line each and exit 1 if any fails: the top-level scenes your
 uncommitted changes reach (git: the scene, a prefab or overlay it instances, a `user:` script it
 attaches), else — no git, nothing changed, or a change it cannot trace — every top-level scene,

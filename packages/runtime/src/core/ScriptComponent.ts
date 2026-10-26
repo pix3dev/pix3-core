@@ -84,6 +84,14 @@ export interface ScriptComponent {
   onStart?(): void;
 
   /**
+   * Called once, at the end of the frame in which {@link onStart} ran — after EVERY component that
+   * started that frame has run its `onStart`. Parents start before their children, so a script on
+   * the scene root that drives its children (`board.newBoard()`) belongs here, not in `onStart`.
+   * The component's own first `onUpdate` has already run by then.
+   */
+  onReady?(): void;
+
+  /**
    * Called every frame with the delta time in seconds.
    * Use this to update state and animate properties.
    */
@@ -209,6 +217,7 @@ export abstract class Script implements ScriptComponent {
 
   onAttach?(node: NodeBase): void;
   onStart?(): void;
+  onReady?(): void;
   onUpdate?(dt: number): void;
   tickEditorPreview?(dt: number, context: EditorPreviewContext): void;
   /**

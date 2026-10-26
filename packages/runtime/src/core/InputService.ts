@@ -542,7 +542,6 @@ export class InputService {
     const dimensions = this.getInputDimensions();
     this.width = dimensions.width;
     this.height = dimensions.height;
-    console.log(`[InputService] Attached to element. Dimensions: ${this.width}x${this.height}`);
 
     element.addEventListener('pointerdown', this.onPointerDown);
     element.addEventListener('pointermove', this.onPointerMove);

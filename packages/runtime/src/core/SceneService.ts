@@ -10,7 +10,7 @@ import { NetworkNodeBinder } from './NetworkNodeBinder';
 import { GameTime } from './GameTime';
 import { GameCommandRegistry } from './GameCommands';
 import { JuiceApi } from './JuiceApi';
-import { TweenApi } from './TweenApi';
+import { TweenApi, type TweenEndReason } from './TweenApi';
 import { AudioApi } from './AudioApi';
 import { CutsceneApi } from './CutsceneApi';
 import type { InputService } from './InputService';
@@ -275,6 +275,15 @@ export class SceneService {
       this.tweenApi = new TweenApi(this);
     }
     return this.tweenApi;
+  }
+
+  /**
+   * Wait `seconds` of game time — scaled, so a hitstop or slow-mo stretches the wait:
+   * `await this.scene.wait(0.25)`. Resolves `'cancelled'` instead when the scene stops, so check
+   * it before touching nodes after a long wait. A cancellable handle: `this.scene.tween.delay(s)`.
+   */
+  wait(seconds: number): Promise<TweenEndReason> {
+    return this.tween.delay(seconds).finished;
   }
 
   /**
@@ -553,6 +562,31 @@ export class SceneService {
     if (!source) {
       return null;
     }
+    return this.screenToWorld2D(source, target);
+  }
+
+  /**
+   * Convert a point in input units — an `input.pointerEvents` entry, `input.pointerPosition`, a
+   * `getActivePointers()` snapshot — to 2D world/design coordinates (origin centre, Y up), through
+   * the live 2D camera. Unlike the addressed {@link getPointer2DWorldPosition} it never returns
+   * `null` for a tap that went down and up inside one frame: the event carries its own position.
+   *
+   * ```ts
+   * for (const e of this.input.pointerEvents) {
+   *   if (e.type === 'down') this.press(this.scene.screenToWorld2D(e));
+   * }
+   * ```
+   * Returns `null` only when no scene is running.
+   */
+  screenToWorld2D(
+    point: { x: number; y: number },
+    target: Vector2 = new Vector2()
+  ): Vector2 | null {
+    const input = this.delegate?.getInputService();
+    if (!input) {
+      return null;
+    }
+    const source = point;
     const inputWidth = Math.max(1, input.width);
     const inputHeight = Math.max(1, input.height);
 

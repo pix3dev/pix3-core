@@ -13,7 +13,16 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
   `'pointerup'`; `Checkbox2D` / `InventorySlot2D` also `'toggled'`. Read a control's value from
   its properties (`Slider2D.value`, `Checkbox2D.checked`) inside the handler.
 - Constructed at runtime with the scene YAML's property names, a `Sprite2D` too:
-  `new Sprite2D({ id, texturePath: 'res://sprites/ph-circle.png', width, height })`.
+  `new Sprite2D({ id, texturePath: 'res://sprites/ph-circle.png', width, height })` — its
+  texture loads when `parent.adoptChild(sprite)` puts it into the running scene (and again on
+  `sprite.texturePath = 'res://…'`); `await sprite.loadTexture()` when the next line needs the
+  natural size, `sprite.hasTexture` to check. It draws nothing until the image arrives; to show
+  a whole board at once, build it under a hidden parent, `await Promise.all(gems.map(g =>
+  g.loadTexture()))`, then show the parent.
+- `Group2D.clipChildren: true` (YAML `clipChildren: true`) clips everything under the group to
+  its `width`×`height` rect in play — a match-3 board whose new pieces fall in from above, an
+  inventory strip. Axis-aligned, applied each frame (spawned children too); the editor viewport
+  draws them unclipped.
 - 2D node types: `ColorRect2D`, `Sprite2D`, `TiledSprite2D`, `AnimatedSprite2D`, `Group2D`,
   `Label2D`, `Button2D`, `Slider2D`, `Checkbox2D`, `Bar2D`, `Joystick2D`, `InventorySlot2D`,
   `ScrollContainer2D`, `Camera2D`, `CanvasLayer2D` (HUD layer, drawn after post-fx, never
@@ -26,7 +35,8 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
 ## `this.scene` (`SceneService`)
 
 - Cameras: `getActiveCamera()`, `getActiveCamera2D()`. `getPointer2DWorldPosition(pointerId)`
-  is null once that finger is up (Godot's `get_global_mouse_position()` for the primary one).
+  is null once that finger is up (Godot's `get_global_mouse_position()` for the primary one);
+  `screenToWorld2D(event)` converts a `pointerEvents` entry's own `x, y` (null only with no scene running).
 - Autoloads by name too: `scene.getAutoload<GameState>('GameState')`.
 - Groups (a node's `groups: [enemies]` in the scene, `node.addToGroup('enemies')` at run time):
   `scene.getNodesInGroup('enemies')` lists the running scene's members in tree order;
@@ -36,6 +46,9 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
   `scene.fadeFromBlack(sec, onDone?)`, `scene.switchCameraWithFade(cameraId, outSec, inSec,
   onDone?)`, `scene.flash({ color, intensity, durationSec })`.
 - Time: `scene.time.setScale`, `reset`, `scale`, `isFrozen` beside `hitstop` / `slowMotion`.
+  Waiting in game time (stretched by hitstop / slow-mo): `await scene.wait(0.3)`, or the
+  cancellable `scene.tween.delay(0.3)` → a tween handle; both resolve `'cancelled'` when the
+  scene stops — check before touching nodes after the wait.
 - Juice presets as components: `core:BurstOnSignal`, `core:SfxOnSignal`, `core:Shake`,
   `core:PunchScale`, `core:PopIn`, `core:Fade`.
 - Tweens: `finished` is a `Promise<'completed' | 'cancelled'>`; `props` may also be `scale` as a
@@ -75,6 +88,6 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
   gestures on `input.isPointerOverUI(pointerId)`, not on `isHoveringUI`.
 - Actions: `getButton('Action_Primary')`, the arrows / WASD axes of `getAxis(name)`;
   `lock()` / `unlock()`.
-- A tap-to-place mechanic: on a `'down'` event, `scene.getPointer2DWorldPosition(ev.pointerId)`,
+- A tap-to-place mechanic: on a `'down'` event, `scene.screenToWorld2D(ev)`,
   convert to the board's local space (`board.worldToLocal` or subtract the board's world
   position), place the node, `scene.juice.burst({ x, y })`, `scene.audio.sfx('tap')`.

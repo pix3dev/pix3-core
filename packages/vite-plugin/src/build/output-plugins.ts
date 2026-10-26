@@ -76,22 +76,28 @@ export const singleFilePlugins = (options: {
     name: 'pix3:classic-script',
     apply: 'build',
     enforce: 'post',
-    generateBundle(_options, bundle) {
-      for (const output of Object.values(bundle)) {
-        if (output.type !== 'asset' || !output.fileName.endsWith('.html')) continue;
-        const html =
-          typeof output.source === 'string'
-            ? output.source
-            : Buffer.from(output.source).toString('utf8');
-        const classic = toClassicScriptHtml(html);
-        const build = options.compress ? options.getBuild() : null;
-        if (!build) {
-          output.source = classic;
-          continue;
+    // `order: 'post'` like vite-plugin-singlefile's own hook, and listed after it: a plain hook
+    // ran BEFORE singlefile inlined the chunk, so the `import.meta` rewrite never saw the code
+    // (a classic script that cannot parse: a black page) and `compress` found no inline bundle.
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const output of Object.values(bundle)) {
+          if (output.type !== 'asset' || !output.fileName.endsWith('.html')) continue;
+          const html =
+            typeof output.source === 'string'
+              ? output.source
+              : Buffer.from(output.source).toString('utf8');
+          const classic = toClassicScriptHtml(html);
+          const build = options.compress ? options.getBuild() : null;
+          if (!build) {
+            output.source = classic;
+            continue;
+          }
+          build.compressed = toCompressedHtml(classic);
+          output.source = build.compressed.html;
         }
-        build.compressed = toCompressedHtml(classic);
-        output.source = build.compressed.html;
-      }
+      },
     },
   };
   return [singleFile, classicScript];

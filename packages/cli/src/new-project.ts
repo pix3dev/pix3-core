@@ -74,7 +74,29 @@ export interface CreateProjectOptions {
   readonly projectName?: string;
   readonly projectId?: string;
   readonly postCreateSteps?: readonly PostCreateStep[];
+  /**
+   * The design viewport's orientation: the template's size with the long side across
+   * (`landscape`) or down (`portrait`, the phone genres — match-3, tappers, runners). Default:
+   * the template's own.
+   */
+  readonly orientation?: ProjectOrientation;
 }
+
+export type ProjectOrientation = 'portrait' | 'landscape';
+
+/** The template with its viewport turned to `orientation` (unchanged when it already is). */
+export const orientTemplate = (
+  template: TemplateInfo,
+  orientation: ProjectOrientation | undefined
+): TemplateInfo => {
+  const { width, height } = template.viewport;
+  const long = Math.max(width, height);
+  const short = Math.min(width, height);
+  if (!orientation) return template;
+  const viewport =
+    orientation === 'portrait' ? { width: short, height: long } : { width: long, height: short };
+  return viewport.width === width ? template : { ...template, viewport };
+};
 
 const walkFiles = (root: string, dir: string = root): string[] => {
   const out: string[] = [];
@@ -91,7 +113,22 @@ export const createProject = (options: CreateProjectOptions): CreatedProject => 
   if (existsSync(dir) && readdirSync(dir).length > 0) {
     throw new Error(`${dir} is not empty. Choose an empty or new folder for a new project.`);
   }
-  const template = options.template;
+  const template = orientTemplate(options.template, options.orientation);
+  // A turned viewport turns the scenes' root rects too: their `width:`/`height:` lines carrying
+  // the template's size (the stretched 2D root) take the new one.
+  const turned = template !== options.template;
+  const turnScene = (text: string): string =>
+    turned
+      ? text
+          .replace(
+            new RegExp(`^(\\s*)width: ${options.template.viewport.width}$`, 'gm'),
+            `$1width: ${template.viewport.width}`
+          )
+          .replace(
+            new RegExp(`^(\\s*)height: ${options.template.viewport.height}$`, 'gm'),
+            `$1height: ${template.viewport.height}`
+          )
+      : text;
   const projectName = (options.projectName ?? basename(dir)).trim() || 'Pix3 Project';
   const projectId = options.projectId ?? createProjectId();
   const written: string[] = [];
@@ -130,7 +167,10 @@ export const createProject = (options: CreateProjectOptions): CreatedProject => 
     }
   }
   for (const [relativePath, source] of [...sources].sort(([a], [b]) => a.localeCompare(b))) {
-    if (TEXT_EXTENSIONS.has(extname(source).toLowerCase())) {
+    const extension = extname(source).toLowerCase();
+    if (extension === '.pix3scene') {
+      writeFile(relativePath, turnScene(substitute(readFileSync(source, 'utf8'))));
+    } else if (TEXT_EXTENSIONS.has(extension)) {
       writeFile(relativePath, substitute(readFileSync(source, 'utf8')));
     } else {
       writeFile(relativePath, readFileSync(source));

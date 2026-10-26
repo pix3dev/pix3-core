@@ -476,7 +476,7 @@ export class Slider2D extends UIControl2D {
         {
           name: 'width',
           type: 'number',
-          ui: { label: 'Width', group: 'Slider', min: 50, max: 500, step: 1 },
+          ui: { label: 'Width', group: 'Slider', min: 50, max: 4096, step: 1 },
           getValue: n => (n as Slider2D).width,
           setValue: (n, v) => {
             const slider = n as Slider2D;
@@ -487,7 +487,7 @@ export class Slider2D extends UIControl2D {
         {
           name: 'height',
           type: 'number',
-          ui: { label: 'Height', group: 'Slider', min: 5, max: 100, step: 1 },
+          ui: { label: 'Height', group: 'Slider', min: 5, max: 512, step: 1 },
           getValue: n => (n as Slider2D).height,
           setValue: (n, v) => {
             const slider = n as Slider2D;
@@ -501,7 +501,7 @@ export class Slider2D extends UIControl2D {
         {
           name: 'handleSize',
           type: 'number',
-          ui: { label: 'Handle Size', group: 'Slider', min: 5, max: 100, step: 1 },
+          ui: { label: 'Handle Size', group: 'Slider', min: 5, max: 512, step: 1 },
           getValue: n => (n as Slider2D).handleSize,
           setValue: (n, v) => {
             const slider = n as Slider2D;

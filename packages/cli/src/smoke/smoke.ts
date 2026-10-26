@@ -12,6 +12,7 @@ import {
   SceneValidationError,
   ScriptRegistry,
   setPostprocessingModuleLoader,
+  Sprite2D,
   type RuntimeRenderer,
   type ScriptErrorInfo,
 } from '@pix3/runtime';
@@ -121,6 +122,27 @@ const countNodes = (roots: readonly NodeBase[]): number => {
   return count;
 };
 
+/**
+ * Visible sprites that name a texture nobody loaded — the white quads a render would show and a
+ * headless run otherwise cannot. A missing file is already `W_SMOKE_MISSING_RESOURCE`.
+ */
+const untexturedSprites = (
+  roots: readonly NodeBase[],
+  missing: ReadonlySet<string>
+): Sprite2D[] => {
+  const found: Sprite2D[] = [];
+  const visit = (node: NodeBase): void => {
+    if (!node.visible) return;
+    if (node instanceof Sprite2D && !node.hasTexture) {
+      const path = node.getEffectiveTexturePath();
+      if (path && !missing.has(path)) found.push(node);
+    }
+    for (const child of node.children) if (child instanceof NodeBase) visit(child);
+  };
+  roots.forEach(visit);
+  return found;
+};
+
 const formatArg = (arg: unknown): string => {
   if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
   if (typeof arg === 'string') return arg;
@@ -175,6 +197,34 @@ export const runSmokeJob = async (
       return;
     }
     warningsByKey.set(key, { warning: { code, frame, message }, count: 1 });
+  };
+  /** `--command`: the running scene's registry, reached through any live root (`node.scene`). */
+  const dispatchSmokeCommand = (
+    live: SceneRunner,
+    name: string,
+    args?: Record<string, unknown>
+  ): void => {
+    const commands = live
+      .getLiveRootNodes()
+      .map(root => root.scene?.commands)
+      .find(registry => registry !== undefined);
+    if (!commands) {
+      addWarning('W_SMOKE_COMMAND', `--command ${name}: the scene has no command registry.`);
+      return;
+    }
+    if (!commands.list().some(entry => entry.name === name)) {
+      const known = commands.list().map(entry => entry.name);
+      addWarning(
+        'W_SMOKE_COMMAND',
+        `--command ${name}: no such command (registered: ${known.length ? known.join(', ') : 'none'}).`
+      );
+      return;
+    }
+    if (!commands.dispatch(name, args as Parameters<typeof commands.dispatch>[1])) {
+      addWarning('W_SMOKE_COMMAND', `--command ${name}: the handler refused it or threw.`);
+    } else {
+      keepLog(`--command ${name} dispatched`);
+    }
   };
 
   let modelsNotDecoded = 0;
@@ -471,6 +521,9 @@ export const runSmokeJob = async (
       frame = next;
       // Only reads made during this frame are attached to this frame's errors.
       dom.takeRecentMissing();
+      for (const command of job.commands ?? []) {
+        if (command.frame === next) dispatchSmokeCommand(runner, command.name, command.args);
+      }
       const stepStart = performance.now();
       const ran = runner.stepFrames(1);
       const elapsed = performance.now() - stepStart;
@@ -487,6 +540,15 @@ export const runSmokeJob = async (
       await flushPending();
     }
     nodesEnd = countNodes(runner.getLiveRootNodes());
+    for (const sprite of untexturedSprites(
+      runner.getLiveRootNodes(),
+      new Set(assetLoader.missing)
+    )) {
+      addWarning(
+        'W_SMOKE_UNTEXTURED',
+        `Sprite2D "${sprite.nodeId}" names ${sprite.getEffectiveTexturePath()} but no texture was loaded — it draws as a white quad.`
+      );
+    }
     notes.push(
       'Audio is silent (no Web Audio in Node); input receives no events; nothing is rendered.'
     );

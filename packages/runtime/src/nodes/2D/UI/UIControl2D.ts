@@ -42,6 +42,12 @@ interface CandidatePointer {
   x: number;
   y: number;
   down: boolean;
+  /**
+   * Went down AND up inside this frame (a quick touch tap, a click with no hover before it): no
+   * longer in the active map, so without this it never existed for any control. Claimed like a
+   * held finger, at its down position, and released in the same tick.
+   */
+  flash?: boolean;
 }
 
 /** A {@link CandidatePointer} with its position unprojected into 2D world units. */
@@ -476,7 +482,16 @@ export abstract class UIControl2D extends Node2D implements Interactive {
     }
 
     const claimant = this.findClaimingPointer(candidates);
-    if (claimant) return this.driveWithPointer(claimant);
+    if (claimant) {
+      const driven = this.driveWithPointer(claimant);
+      const flash = candidates.some(c => c.pointerId === claimant.pointerId && c.flash === true);
+      // A flash tap's release is already in this frame's events: finish the press now, or the
+      // control would wait a frame for a finger whose `'up'` will be gone by then.
+      if (flash && this.ownedPointerId === claimant.pointerId) {
+        return this.finishOwnedPointer(claimant.pointerId);
+      }
+      return driven;
+    }
 
     return this.observeWithoutOwnership(candidates);
   }
@@ -493,15 +508,20 @@ export abstract class UIControl2D extends Node2D implements Interactive {
    */
   private collectCandidatePointers(input: InputService): CandidatePointer[] {
     const active = input.getActivePointers();
+    const flashes = UIControl2D.collectFlashTaps(input, active);
     if (active.length > 0) {
-      return active.map(pointer => ({
-        pointerId: pointer.pointerId,
-        x: pointer.x,
-        y: pointer.y,
-        down: true,
-      }));
+      return [
+        ...active.map(pointer => ({
+          pointerId: pointer.pointerId,
+          x: pointer.x,
+          y: pointer.y,
+          down: true,
+        })),
+        ...flashes,
+      ];
     }
     return [
+      ...flashes,
       {
         pointerId: LEGACY_POINTER_ID,
         x: input.pointerPosition.x,
@@ -509,6 +529,34 @@ export abstract class UIControl2D extends Node2D implements Interactive {
         down: input.isPointerDown,
       },
     ];
+  }
+
+  /**
+   * Pointers whose `'down'` and a later `'up'` both arrived this frame (and that are no longer
+   * down): taps faster than a frame. A `'cancel'` is not a tap and makes no candidate.
+   */
+  private static collectFlashTaps(
+    input: InputService,
+    active: readonly { pointerId: number }[]
+  ): CandidatePointer[] {
+    const events = input.pointerEvents;
+    if (events.length < 2) return [];
+    const flashes: CandidatePointer[] = [];
+    for (let index = 0; index < events.length; index += 1) {
+      const down = events[index];
+      if (down.type !== 'down') continue;
+      if (active.some(pointer => pointer.pointerId === down.pointerId)) continue;
+      if (flashes.some(flash => flash.pointerId === down.pointerId)) continue;
+      const end = events.find(
+        (event, later) =>
+          later > index &&
+          event.pointerId === down.pointerId &&
+          (event.type === 'up' || event.type === 'cancel')
+      );
+      if (end?.type !== 'up') continue;
+      flashes.push({ pointerId: down.pointerId, x: down.x, y: down.y, down: true, flash: true });
+    }
+    return flashes;
   }
 
   /** Unproject a candidate's screen coordinates into world units. */

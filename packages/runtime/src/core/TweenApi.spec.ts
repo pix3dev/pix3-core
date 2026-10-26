@@ -374,3 +374,25 @@ describe('scene.tween / fade helpers', () => {
     await expect(handle.finished).resolves.toBe('completed');
   });
 });
+
+describe('scene.wait / scene.tween.delay', () => {
+  it('resolves after the given game time, stretched by hitstop', async () => {
+    const h = makeHarness();
+    let done = false;
+    void h.service.wait(0.5).then(reason => {
+      done = reason === 'completed';
+    });
+    h.advance(0.4);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    h.advance(0.2);
+    await vi.waitFor(() => expect(done).toBe(true));
+  });
+
+  it('a stopped scene cancels a pending wait', async () => {
+    const h = makeHarness();
+    const handle = h.service.tween.delay(1);
+    h.service.tween.cancelAll();
+    await expect(handle.finished).resolves.toBe('cancelled');
+  });
+});

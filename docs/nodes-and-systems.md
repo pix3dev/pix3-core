@@ -532,7 +532,9 @@ ask `isPointerOverUI(myPointerId)` instead. `Action_Primary` stays one shared
 button raised on the first finger down and dropped by the last one up.
 `scene.getPointer2DWorldPosition(pointerId)` is the addressed form of the world
 conversion (null when that pointer is not down — a tap that went down and up in
-one frame is already gone, so fall back to the no-argument call).
+one frame is already gone). A frame event carries its own position:
+`scene.screenToWorld2D(event)` converts any `{ x, y }` in input units (a
+`pointerEvents` entry, a `getActivePointers()` snapshot) and never loses a tap.
 
 **A hidden control takes no input.** `UIControl2D` gates both channels — a real
 finger and a semantic `invokeInteraction` — on `visible` being true on the control
@@ -697,13 +699,15 @@ Inside any `Script` subclass:
 - `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`); `getNode<T>(query)` types the result.
 
 **Lifecycle:** `onAttach(node)` → `onStart()` (first frame) → `onUpdate(dt)` (every
-frame, `dt` is scaled game time) → `onDetach()`. Define `static getPropertySchema()`
+frame, `dt` is scaled game time) → `onDetach()`; `onReady()` runs once at the end of the
+frame `onStart` ran in, after every component that started that frame has. Define `static getPropertySchema()`
 to expose inspector-editable params (see §6). `this.config` holds params.
 
 > **Ordering gotcha:** a node's components tick _before_ its children. Don't arm
 > cross-node state in `onStart` that a child component's `onStart` will reset the
-> same frame (e.g. a child camera's `CameraBrain`). Trigger such calls from a
-> gameplay event or after a frame.
+> same frame (e.g. a child camera's `CameraBrain`), and don't call into a child's
+> script from a parent's `onStart` (a root `GameRules` calling `board.newBoard()`
+> before `Board.onStart` found its layers). Put such calls in `onReady()`.
 
 > **Real vs scaled time:** `onUpdate(dt)` and keyframe clips run on _scaled_
 > `dt` (frozen by hitstop). Anything that must ignore hitstop/slow-mo (screen

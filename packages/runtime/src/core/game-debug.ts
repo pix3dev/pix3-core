@@ -275,6 +275,7 @@ export function isDirectionAxesEnabled(): boolean {
 export type ScriptErrorPhase =
   | 'attach'
   | 'start'
+  | 'ready'
   | 'update'
   | 'detach'
   | 'scene-start'

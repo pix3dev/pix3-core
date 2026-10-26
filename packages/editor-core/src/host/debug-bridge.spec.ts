@@ -343,6 +343,14 @@ describe('agent bridge', () => {
       ok: true,
       playing: 'agent',
     });
+    // The payload goes through GameTestService.parseSpec (bot.channel defaults, validation)
+    // instead of reaching run() raw.
+    expect(
+      await callBridgeTool('pix3_game_run', {
+        until: [{ kind: 'newErrors' }],
+        bot: { name: 'dodge', channel: 'telepathy' },
+      })
+    ).toMatchObject({ ok: false, reason: 'invalid_spec' });
     await callBridgeTool('pix3_play', { action: 'stop' });
   });
 

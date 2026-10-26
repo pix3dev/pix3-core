@@ -36,7 +36,10 @@ Before implementing animation, camera, physics or input, consult the installed
 Completion requires inspection of the running editor and game at the target
 device size, an interaction check through actual input, and comparison to the
 reference. Check control sizes in CSS pixels on the smallest target screen — a
-touch target at least 44 px, text at least 16 px; on touch devices, also verify
+touch target at least 44 px, text at least 16 px. The game scales its design viewport
+(`viewportBaseSize`) to fit the screen, so CSS px = design px × min(screen width / design
+width, screen height / design height): a 1080×1920 design on a 390×844 phone is ×0.36, so a
+16 px text needs `labelFontSize` ≥ 45 and a 44 px button ≥ 122 design px. On touch devices, also verify
 simultaneous actions such as movement and jump when the game uses them. A build,
 a debug command or a screenshot alone is not enough.
 

@@ -111,9 +111,31 @@ const trimBlock = (lines: string[]): string[] => {
   return lines.slice(start, end);
 };
 
-/** Relative Markdown links → their text (the targets are repo files a project does not have). */
+/**
+ * Relative Markdown links → their text (the targets are repo files a project does not have), then
+ * {@link kitLocalReferences}.
+ */
 export const unlinkRelative = (text: string): string =>
-  text.replace(/(?<!!)\[([^\]\n]+)\]\((?!https?:|mailto:)[^)\s]+\)/g, '$1');
+  kitLocalReferences(text.replace(/(?<!!)\[([^\]\n]+)\]\((?!https?:|mailto:)[^)\s]+\)/g, '$1'));
+
+/** Engine docs the kit carries, as the project sees them. */
+const KIT_DOC_PATHS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/(?:docs\/)?node-types-reference\.md/g, '.claude/skills/pix3-nodes/reference.md'],
+  [/(?:docs\/)?nodes-and-systems\.md/g, '.claude/skills/pix3-scripts/reference.md'],
+  [/(?:docs\/)?pix3-specification\.md/g, '.claude/skills/pix3-scene-format/reference.md'],
+];
+
+/**
+ * Included doc text speaks of the engine repo: `node-types-reference.md`, "§4", "§6.19". In a
+ * project those name nothing — an agent looked for them and reported the kit stale. The docs
+ * become the kit file that carries them; a bare section number goes (the heading text beside it,
+ * which is what an agent greps, stays).
+ */
+export const kitLocalReferences = (text: string): string => {
+  let out = text;
+  for (const [pattern, local] of KIT_DOC_PATHS) out = out.replace(pattern, local);
+  return out.replace(/ ?\(§\d+(?:\.\d+)*[a-z]?\)/g, '').replace(/§\d+(?:\.\d+)*[a-z]?\s*/g, '');
+};
 
 const extractSection = (text: string, query: string, options: string[], where: string): string => {
   const lines = text.split(/\r?\n/);

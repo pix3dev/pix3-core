@@ -257,7 +257,7 @@ export class InventorySlot2D extends UIControl2D {
         {
           name: 'width',
           type: 'number',
-          ui: { label: 'Width', group: 'Slot', min: 20, max: 200, step: 1 },
+          ui: { label: 'Width', group: 'Slot', min: 20, max: 1024, step: 1 },
           getValue: n => (n as InventorySlot2D).width,
           setValue: (n, v) => {
             const slot = n as InventorySlot2D;
@@ -275,7 +275,7 @@ export class InventorySlot2D extends UIControl2D {
         {
           name: 'height',
           type: 'number',
-          ui: { label: 'Height', group: 'Slot', min: 20, max: 200, step: 1 },
+          ui: { label: 'Height', group: 'Slot', min: 20, max: 1024, step: 1 },
           getValue: n => (n as InventorySlot2D).height,
           setValue: (n, v) => {
             const slot = n as InventorySlot2D;

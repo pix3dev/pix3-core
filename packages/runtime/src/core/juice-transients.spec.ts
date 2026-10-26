@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Material, Mesh, Object3D } from 'three';
+import { AdditiveBlending, NormalBlending, type Material, type Mesh, type Object3D } from 'three';
 
 import { SceneService, type SceneServiceDelegate } from './SceneService';
 import { GameTime } from './GameTime';
@@ -272,5 +272,34 @@ describe('scene.juice.floatText', () => {
     const { service } = makeHarness();
     expect(service.juice.floatText('')).toBeNull();
     expect(service.juice.floatText('+1', { at: 'nope' })).toBeNull();
+  });
+});
+
+describe('ParticleBurst2D is drawn (front faces, its own blending)', () => {
+  const meshOf = (burst: ParticleBurst2D): Mesh =>
+    (burst.children as Object3D[]).find(child => (child as Mesh).isMesh === true) as Mesh;
+
+  it('every triangle faces the 2D camera (+Z): a single-sided material culls the others', () => {
+    const burst = new ParticleBurst2D({ id: 'b' }, { count: 3 });
+    const mesh = meshOf(burst);
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    expect(index).not.toBeNull();
+    for (let i = 0; i < index!.count; i += 3) {
+      const [a, b, c] = [index!.getX(i), index!.getX(i + 1), index!.getX(i + 2)];
+      const abx = position.getX(b) - position.getX(a);
+      const aby = position.getY(b) - position.getY(a);
+      const acx = position.getX(c) - position.getX(a);
+      const acy = position.getY(c) - position.getY(a);
+      expect(abx * acy - aby * acx, `triangle ${i / 3}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('additive (default) blends additively; additive: false blends normally', () => {
+    const additive = meshOf(new ParticleBurst2D({ id: 'a' })).material as Material;
+    const normal = meshOf(new ParticleBurst2D({ id: 'n' }, { additive: false }))
+      .material as Material;
+    expect(additive.blending).toBe(AdditiveBlending);
+    expect(normal.blending).toBe(NormalBlending);
   });
 });

@@ -295,6 +295,7 @@ a **scene root** and as any panel that lays out its children.
 | -------- | ------ | ------- | --------------------------------- |
 | `width`  | number | 100     | Container width in design pixels  |
 | `height` | number | 100     | Container height in design pixels |
+| `clipChildren` | boolean | false | Clip the children's drawing to the `width`×`height` rect in play |
 
 **Usage Notes:**
 
@@ -302,6 +303,10 @@ a **scene root** and as any panel that lays out its children.
 - With `flowEnabled` it becomes a row/column stack (`flowDirection`, `flowGap`, `flowPaddingX/Y`,
   `flowAlign`, `flowAutoSize`) — the engine's layout container, no script required.
 - Node order inside it is paint order, as everywhere in 2D.
+- `clipChildren: true` masks the subtree to the group's rect (axis-aligned, centred on the group)
+  — a match-3 board whose new pieces fall in from above, an inventory strip, a ticker. Applied
+  every frame in play, spawned children included; the editor viewport draws them unclipped. A
+  nested clipping group or `ScrollContainer2D` wins on its own subtree (no intersection).
 
 ---
 

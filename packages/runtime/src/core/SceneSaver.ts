@@ -340,6 +340,11 @@ export class SceneSaver {
       // Serialize Group2D with size properties
       props.width = node.width;
       props.height = node.height;
+      if (node.clipChildren) {
+        props.clipChildren = true;
+      } else {
+        delete props.clipChildren;
+      }
 
       // Add 2D transform
       const transform: Record<string, unknown> = {

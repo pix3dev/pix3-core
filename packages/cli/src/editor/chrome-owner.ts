@@ -37,6 +37,7 @@ export interface ChromeOwnerOptions {
   readonly profile: string;
   readonly url: string;
   readonly headless?: boolean;
+  readonly noSandbox?: boolean;
 }
 
 /** The hidden command the owner runs as: `pix3 __chrome-owner '<json options>'`. */

@@ -1,6 +1,5 @@
 import {
   Camera,
-  Clock,
   Scene,
   OrthographicCamera,
   Color,
@@ -150,6 +149,30 @@ function normalizeScenePath(path: string): string {
     .replace(/^\/+/, '');
 }
 
+/**
+ * Wall-clock deltas for realtime ticks — `THREE.Clock`'s `start`/`stop`/`getDelta`, without its
+ * "This module has been deprecated" line on every play in the console an agent reads. A stopped
+ * clock restarts on the next `getDelta` and reports 0, as `Clock` with `autoStart` did.
+ */
+class WallClock {
+  private last: number | null = null;
+
+  start(): void {
+    this.last = performance.now();
+  }
+
+  stop(): void {
+    this.last = null;
+  }
+
+  getDelta(): number {
+    const now = performance.now();
+    const delta = this.last === null ? 0 : (now - this.last) / 1000;
+    this.last = now;
+    return delta;
+  }
+}
+
 export class SceneRunner {
   private readonly sceneManager: SceneManager;
   private readonly renderer: RuntimeRenderer;
@@ -161,7 +184,7 @@ export class SceneRunner {
   private readonly autoloads = new AutoloadHost();
   private readonly audioService: AudioService;
   private readonly resourceManager: ResourceManager;
-  private readonly clock: Clock;
+  private readonly clock: WallClock;
   /** Global time-scale controller (hitstop / slow-mo); scales gameplay dt. */
   private readonly gameTime = new GameTime();
   /** True while the mixer is in the slow-mo `'muffled'` snapshot (edge-triggered). */
@@ -289,7 +312,7 @@ export class SceneRunner {
     this.ecsService = new ECSService();
     this.audioService = audioService;
     this.resourceManager = assetLoader.getResourceManager();
-    this.clock = new Clock();
+    this.clock = new WallClock();
     this.scene = new Scene();
     this.rootLayoutAuthoredSize = {
       width: Math.max(1, rootLayoutAuthoredSize.width),
@@ -1357,6 +1380,7 @@ export class SceneRunner {
         node.tick(dt);
       }
     }
+    NodeBase.flushReadyQueue();
     // Safe deferred removal (Godot queue_free): dispose nodes queued during the
     // tick pass now that tree iteration is over, before this frame renders.
     NodeBase.flushFreeQueue();

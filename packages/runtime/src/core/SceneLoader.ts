@@ -297,12 +297,6 @@ export class SceneLoader {
   async parseScene(sceneText: string, options: ParseSceneOptions = {}): Promise<SceneGraph> {
     let document: SceneDocument;
 
-    console.debug('[SceneLoader.parseScene] Starting parse', {
-      contentLength: sceneText.length,
-      contentPreview: sceneText.substring(0, 100),
-      filePath: options.filePath,
-    });
-
     try {
       document = parse(sceneText) as SceneDocument;
     } catch (error) {
@@ -573,7 +567,7 @@ export class SceneLoader {
           ? (rootInstancePath ?? sourceNode.instancePath ?? undefined)
           : (sourceNode.instancePath ?? undefined),
       groups: Array.from(sourceNode.groups),
-      properties: this.captureNodeComparableProperties(sourceNode),
+      properties: this.captureCloneProperties(sourceNode, runtimeId === instanceRootId),
       metadata: {
         ...sourceNode.metadata,
       },
@@ -754,6 +748,31 @@ export class SceneLoader {
       basePropertiesByLocalId,
     };
     (root.metadata as Record<string, unknown>).__pix3Prefab = nextMarker;
+  }
+
+  /**
+   * What a prefab clone is rebuilt from: the schema values, plus the 2D `layout:` and `flow:`
+   * blocks. The schema spells those as flat inspector keys (`layoutEnabled`, `horizontalAlign`,
+   * `marginLeft`, …) that `createNodeFromDefinition` does not read, so without the blocks every
+   * node of an instance lost its anchors — a stretched dimmer in an overlay stayed 100×100.
+   */
+  private captureCloneProperties(node: NodeBase, isInstanceRoot: boolean): Record<string, unknown> {
+    const properties = this.captureNodeComparableProperties(node);
+    if (node instanceof Node2D) {
+      const layout: Node2DLayoutConfig = { ...node.getLayoutConfig() };
+      // A legacy prefab root without margins was anchored against the viewport of its own file,
+      // which is not the instance's parent: deriving them from the rect against that parent (what
+      // a plain child gets) would offset the overlay by the size difference. Flush (0) is what the
+      // root showed in its own file.
+      if (isInstanceRoot && layout.enabled) {
+        for (const side of NODE2D_MARGIN_SIDES) {
+          layout[side] ??= 0;
+        }
+      }
+      properties.layout = layout;
+      properties.flow = { ...node.flow };
+    }
+    return properties;
   }
 
   private captureNodeComparableProperties(node: NodeBase): Record<string, unknown> {
@@ -1061,18 +1080,7 @@ export class SceneLoader {
         });
 
         // Localized key (active locale's sprites table) wins over the authored ref.
-        const texturePath = sprite.getEffectiveTexturePath();
-        if (texturePath) {
-          try {
-            const texture = await this.assetLoader.loadTexture(texturePath);
-            sprite.setTexture(texture);
-          } catch (error) {
-            console.warn(
-              `[SceneLoader] Error loading texture for Sprite2D "${sprite.nodeId}":`,
-              error
-            );
-          }
-        }
+        await sprite.loadTexture(this.assetLoader);
 
         return sprite;
       }
@@ -1188,6 +1196,7 @@ export class SceneLoader {
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
+          clipChildren: props.clipChildren === true,
         });
       }
       case 'CanvasLayer2D': {
@@ -1199,6 +1208,7 @@ export class SceneLoader {
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
+          clipChildren: props.clipChildren === true,
         });
       }
       case 'Camera2D': {
@@ -1240,6 +1250,7 @@ export class SceneLoader {
           opacity: this.asNumber(props.opacity, undefined),
           width: this.asNumber(props.width, 100),
           height: this.asNumber(props.height, 100),
+          clipChildren: props.clipChildren === true,
           scrollY: this.asNumber(props.scrollY, 0),
           dragScrollEnabled:
             typeof props.dragScrollEnabled === 'boolean' ? props.dragScrollEnabled : undefined,

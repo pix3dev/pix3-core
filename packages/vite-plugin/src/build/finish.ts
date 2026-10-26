@@ -152,4 +152,13 @@ export const finishBuild = (
         : '') +
       `); report ${relative(root, reportPath)}`
   );
+  if (build.format === 'html' && !compressed && digest.bytes > COMPRESS_HINT_BYTES) {
+    log(
+      `the code is embedded as plain text: pix3({ compress: true }) in vite.config.ts embeds it ` +
+        `gzipped (about two thirds off the file; no gain where the file is served gzipped anyway)`
+    );
+  }
 };
+
+/** An uncompressed html build above this gets the `compress` hint. */
+const COMPRESS_HINT_BYTES = 512 * 1024;

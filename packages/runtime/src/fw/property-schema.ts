@@ -163,6 +163,106 @@ export function defineProperty(
   };
 }
 
+/** Inspector hints for the `config*` helpers: everything in `ui` except the label. */
+export type ConfigPropertyHints = Omit<PropertyUIHints, 'label'>;
+
+type ConfigHolder = { config: Record<string, unknown> };
+
+const configEntry = (
+  name: string,
+  type: PropertyType,
+  label: string,
+  hints: ConfigPropertyHints | undefined,
+  coerce: (value: unknown) => unknown
+): PropertyDefinition => ({
+  name,
+  type,
+  ui: { label, ...hints },
+  getValue: (script: unknown) => (script as ConfigHolder).config[name],
+  setValue: (script: unknown, value: unknown) => {
+    (script as ConfigHolder).config[name] = coerce(value);
+  },
+});
+
+/**
+ * A script's `config` number as one schema line, clamped to `hints.min`/`max`; a non-number
+ * falls back to `fallback`:
+ *
+ * ```ts
+ * properties: [
+ *   configNumber('windowSec', 'Window (s)', 1.2, { group: 'Combo', min: 0.1, max: 10, step: 0.1 }),
+ *   configString('sourceNode', 'Source Node', 'game-root', { group: 'Combo' }),
+ *   configBoolean('autoStart', 'Auto Start', true, { group: 'Combo' }),
+ * ],
+ * ```
+ */
+export function configNumber(
+  name: string,
+  label: string,
+  fallback: number,
+  hints?: ConfigPropertyHints
+): PropertyDefinition {
+  return configEntry(name, 'number', label, hints, value => {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n) || (typeof value === 'string' && value.trim() === '')) return fallback;
+    const min = hints?.min ?? -Infinity;
+    const max = hints?.max ?? Infinity;
+    return Math.min(max, Math.max(min, n));
+  });
+}
+
+/** A script's `config` string; pass `type: 'node'` for a node-picker field. */
+export function configString(
+  name: string,
+  label: string,
+  fallback = '',
+  hints?: ConfigPropertyHints,
+  type: 'string' | 'node' = 'string'
+): PropertyDefinition {
+  return configEntry(name, type, label, hints, value =>
+    typeof value === 'string' ? value : value == null ? fallback : String(value)
+  );
+}
+
+/** A script's `config` colour (`'#rrggbb'`). */
+export function configColor(
+  name: string,
+  label: string,
+  fallback = '#ffffff',
+  hints?: ConfigPropertyHints
+): PropertyDefinition {
+  return configEntry(name, 'color', label, hints, value =>
+    typeof value === 'string' && value.trim() !== '' ? value : fallback
+  );
+}
+
+/** A script's `config` boolean; `"true"`/`"false"` strings are accepted. */
+export function configBoolean(
+  name: string,
+  label: string,
+  fallback = false,
+  hints?: ConfigPropertyHints
+): PropertyDefinition {
+  return configEntry(name, 'boolean', label, hints, value => {
+    if (typeof value === 'boolean') return value;
+    const coerced = coerceToPropertyType('boolean', value);
+    return typeof coerced === 'boolean' ? coerced : fallback;
+  });
+}
+
+/** A script's `config` choice among `options`; anything else falls back to `fallback`. */
+export function configSelect(
+  name: string,
+  label: string,
+  options: readonly string[],
+  fallback: string,
+  hints?: ConfigPropertyHints
+): PropertyDefinition {
+  return configEntry(name, 'select', label, { ...hints, options: [...options] }, value =>
+    typeof value === 'string' && options.includes(value) ? value : fallback
+  );
+}
+
 /**
  * Bring a loosely-typed incoming value to the type the schema declares.
  *

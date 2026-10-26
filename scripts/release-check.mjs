@@ -346,7 +346,18 @@ try {
     run('npm', ['run', 'build'], { cwd: project });
     const html = join(project, 'dist', 'index.html');
     if (!existsSync(html)) fail('starter', 'npm run build left no dist/index.html');
-    else console.log(`\ndist/index.html: ${formatBytes(statSync(html).size)}`);
+    else {
+      console.log(`\ndist/index.html: ${formatBytes(statSync(html).size)}`);
+      // The page runs its bundle as a classic script: one `import.meta` left in it is a syntax
+      // error and a black page (2.0.0-alpha.2 shipped that under vite-plugin-singlefile 2.3.4).
+      // This project installed today's dependency versions, so this is where such a drift shows.
+      const page = readFileSync(html, 'utf8');
+      if (/<script\b[^>]*type=["']module["']/i.test(page) || /\bimport\.meta\b/.test(page))
+        fail(
+          'starter',
+          'dist/index.html carries ES-module code in its classic script (black page)'
+        );
+    }
     if (failures.length > 0) throw new Error('the starter project failed');
     console.log('\nScratch project: install, check, smoke, build — passed.');
   }

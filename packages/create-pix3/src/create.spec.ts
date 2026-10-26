@@ -35,6 +35,8 @@ describe('create-pix3 arguments', () => {
       name: 'My Game',
     });
     expect(parseArgs(['--3d'])).toMatchObject({ template: '3d' });
+    expect(parseArgs(['--portrait'])).toMatchObject({ orientation: 'portrait' });
+    expect(() => parseArgs(['--portrait', '--landscape'])).toThrow(/exclude each other/);
     expect(() => parseArgs(['a', 'b'])).toThrow(/unknown argument "b"/);
   });
 
@@ -50,7 +52,9 @@ describe('npm create pix3', () => {
       expect(result.stderr).not.toMatch(/error/i);
       expect(result.status).toBe(0);
       const dir = join(scratch, `game-${template}`);
-      expect(result.stdout).toContain(`Created Game (Empty ${template.toUpperCase()}) in ${dir}`);
+      expect(result.stdout).toContain(
+        `Created Game (Empty ${template.toUpperCase()}, 1920×1080) in ${dir}`
+      );
       expect(result.stdout).toContain('npm run dev');
       for (const file of [
         'package.json',

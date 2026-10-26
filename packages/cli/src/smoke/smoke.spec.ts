@@ -243,6 +243,72 @@ export class Greeter extends Script {
     expect(report.firstFrameOk).toBe(true);
   });
 
+  it('a Sprite2D a script builds with new + adoptChild gets its texture (no W_SMOKE_UNTEXTURED)', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Spawner')),
+      'sprites/gem.svg':
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#f00"/></svg>',
+      'scripts/Spawner.ts': `import { Script, Sprite2D, type PropertySchema } from '@pix3/runtime';
+
+export class Spawner extends Script {
+  private gem: Sprite2D | null = null;
+  private frames = 0;
+
+  static getPropertySchema(): PropertySchema {
+    return { nodeType: 'Spawner', properties: [] };
+  }
+
+  onStart(): void {
+    this.gem = new Sprite2D({ id: 'gem', texturePath: 'res://sprites/gem.svg', width: 64, height: 64 });
+    this.node?.adoptChild(this.gem);
+  }
+
+  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 5 && !this.gem?.hasTexture) throw new Error('gem has no texture');
+  }
+}
+`,
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 10 }));
+    expect(report.errors).toEqual([]);
+    expect(report.warnings.filter(w => w.code === 'W_SMOKE_UNTEXTURED')).toEqual([]);
+  });
+
+  it('--command dispatches a game command before its frame; an unknown one warns', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Rules')),
+      'scripts/Rules.ts': script(
+        'Rules',
+        `  onStart(): void {
+    this.scene?.commands.register('restart', args => {
+      console.log('restarted at ' + this.frames + ' by ' + String(args?.by));
+      return true;
+    });
+  }
+  onUpdate(): void {
+    this.frames += 1;
+  }`
+      ),
+    });
+    const report = asReport(
+      await runSmoke({
+        projectRoot: root,
+        scene: MAIN,
+        frames: 10,
+        commands: [
+          { name: 'restart', frame: 5, args: { by: 'smoke' } },
+          { name: 'nope', frame: 6 },
+        ],
+      })
+    );
+    expect(report.errors).toEqual([]);
+    expect(report.logs.lines).toContainEqual(
+      expect.stringMatching(/^\[frame 5\] restarted at \d+ by smoke$/)
+    );
+    expect(report.warnings.map(w => w.code)).toContain('W_SMOKE_COMMAND');
+  });
+
   it('reports a missing res:// file as a warning, not an error', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(

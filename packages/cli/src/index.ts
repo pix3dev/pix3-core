@@ -78,6 +78,15 @@ const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number
     io.stderr(`pix3: ${resolved.error}\n`);
     return 1;
   }
+  if (args.flags.has('portrait') && args.flags.has('landscape')) {
+    io.stderr('pix3: --portrait and --landscape exclude each other.\n');
+    return 1;
+  }
+  const orientation = args.flags.has('portrait')
+    ? 'portrait'
+    : args.flags.has('landscape')
+      ? 'landscape'
+      : undefined;
   const dir = resolve(process.cwd(), dirArg ?? `pix3-${resolved.template.id}`);
   // The kit and the script types are prebuilt in a published package (plain file copies); a repo
   // checkout regenerates them first when their sources changed (printed).
@@ -91,11 +100,14 @@ const runNew = async (args: ParsedArgs, argv: readonly string[]): Promise<number
     template: resolved.template,
     dir,
     projectName: stringFlag(args, 'name'),
+    orientation,
     postCreateSteps: [agentKitStep(kit, runtimeTypes)],
   });
-  const where = relative(process.cwd(), project.dir) || '.';
+  // A `cd ../../../..` back out of a deep cwd reads worse than the folder itself.
+  const relativeDir = relative(process.cwd(), project.dir) || '.';
+  const where = relativeDir.startsWith('..') ? project.dir : relativeDir;
   io.stdout(
-    `Created ${project.projectName} (${project.template.title}) in ${project.dir}\n` +
+    `Created ${project.projectName} (${project.template.title}, ${project.template.viewport.width}×${project.template.viewport.height}) in ${project.dir}\n` +
       `  ${project.files.length} files, project id ${project.projectId}, agent kit ${kit.manifest.version}\n\n` +
       'Next:\n' +
       (where === '.' ? '' : `  cd ${where}\n`) +

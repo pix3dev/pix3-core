@@ -603,6 +603,17 @@ describe('level 1: references and prefabs', () => {
     const subset = await run(files, { files: ['scenes/a.pix3scene'] });
     expect(codesOf(subset)).not.toContain('W_UNUSED_ASSET');
   });
+
+  it('W_UNUSED_ASSET: an interpolated res:// path uses its whole static directory (as the build ships it)', async () => {
+    const report = await run({
+      'sprites/gems/gem-red.png': PNG,
+      'sprites/gems/gem-blue.png': PNG,
+      'sprites/other.png': PNG,
+      'scripts/Board.ts':
+        'export const gem = (kind: string) => `res://sprites/gems/gem-${kind}.png`;\n',
+    });
+    expect(find(report, 'W_UNUSED_ASSET').map(d => d.file)).toEqual(['sprites/other.png']);
+  });
 });
 
 describe('level 2: hydration with compiled user scripts', () => {

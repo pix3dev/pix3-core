@@ -151,6 +151,26 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
   { modulePath: 'nodes/3D/HemisphereLightNode', keepWhenMentioned: ['HemisphereLightNode'] },
   { modulePath: 'nodes/3D/PointLightNode', keepWhenMentioned: ['PointLightNode'] },
   { modulePath: 'nodes/3D/SpotLightNode', keepWhenMentioned: ['SpotLightNode'] },
+  {
+    modulePath: 'nodes/2D/UI/ScrollContainer2D',
+    keepWhenMentioned: ['ScrollContainer2D'],
+    // `UIControl2D`'s pointer routing only tests `instanceof ScrollContainer2D` on a control's
+    // ancestors — false against the stub, right when no scene places one.
+    lazyValueImporters: ['nodes/2D/UI/UIControl2D'],
+  },
+  {
+    modulePath: 'nodes/3D/Particles3D',
+    keepWhenMentioned: ['Particles3D'],
+    // `SceneRunner.updateBillboardSprites` only tests `instanceof Particles3D` — false for every
+    // node against the stub, which is right when no scene places one (the ColorRect2D precedent).
+    lazyValueImporters: ['core/SceneRunner'],
+  },
+  {
+    modulePath: 'nodes/PostProcess',
+    keepWhenMentioned: ['PostProcess'],
+    // `SceneRunner` only tests `instanceof PostProcess` to find the scene's post-fx node.
+    lazyValueImporters: ['core/SceneRunner'],
+  },
 
   // --- 2D collision and physics ---
   {

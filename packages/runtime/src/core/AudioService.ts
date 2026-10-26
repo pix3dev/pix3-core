@@ -100,6 +100,7 @@ export class AudioService {
   private pausedByHost = false;
   /** Whether the browser has ever permitted this context to run (autoplay unlock has happened). */
   private unlockedByGesture = false;
+  private warnedSuspendedPlay = false;
   private readonly unlockFromPointerDown = (): void => {
     this.unlock();
   };
@@ -401,9 +402,12 @@ export class AudioService {
     // Only worth warning about when we are not the ones holding the context down: a page the user
     // has tabbed away from is *supposed* to be silent, and a game that keeps firing SFX there would
     // otherwise flood the console.
-    if (this.context.state === 'suspended' && this.wantsAudible) {
+    // Once per service: before the first gesture every SFX would repeat it (26 lines in one
+    // test round), drowning the lines an agent reads the console for.
+    if (this.context.state === 'suspended' && this.wantsAudible && !this.warnedSuspendedPlay) {
+      this.warnedSuspendedPlay = true;
       console.warn(
-        '[AudioService] Attempting to play audio while context is suspended. It might not be audible until user interaction.'
+        '[AudioService] Attempting to play audio while context is suspended. It might not be audible until user interaction. (Shown once.)'
       );
     }
 

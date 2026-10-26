@@ -316,6 +316,8 @@ empty, PLAY is never pressed, and a game whose `onStart` throws used to smoke gr
 | `E_SMOKE_SCRIPT_COMPILE` / `E_SMOKE_SCRIPT_IMPORT` | Scripts do not compile / throw at module top level |
 | `W_SMOKE_MISSING_RESOURCE` | A `res://` file does not exist (the node loads without it) |
 | `W_SMOKE_PENDING_COMPONENT` | A component type is not registered — it never runs |
+| `W_SMOKE_COMMAND` | A `--command` named no registered game command, or its handler refused it |
+| `W_SMOKE_UNTEXTURED` | A visible `Sprite2D` names a texture nothing loaded — a render would show a white quad |
 | `W_SMOKE_CONSOLE_WARN`, `W_SMOKE_LOADER`, `W_SMOKE_STUBBED_IMPORT`, `W_SMOKE_STOPPED` | `console.warn`, loader warnings, an import replaced by `{}`, the game stopped itself |
 
 Exit 0 = no errors (warnings allowed), 1 = errors, 2 = could not run (with several scenes, the
@@ -513,7 +515,11 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    and `pix3 editor` fails rather than print success without one. A second project gets its tab
    the same way: the profile is never launched a second time (a headless one would start a
    second Chrome that nobody owns and `--stop-chrome` would not end). `--headless` opens the URL
-   as a plain tab with `--headless=new` (headless Chrome ignores `--app`). `--no-chrome` stops after the server;
+   as a plain tab with `--headless=new` (headless Chrome ignores `--app`). On Linux, with no Chrome on
+   the PATH, the newest Playwright Chromium in `~/.cache/ms-playwright` (`PLAYWRIGHT_BROWSERS_PATH`)
+   is used; `--no-sandbox` is added where Chrome's sandbox cannot start (root, user namespaces
+   off, Ubuntu's AppArmor userns restriction on a build without a distro profile;
+   `PIX3_CHROME_NO_SANDBOX=1|0` decides by hand). `--no-chrome` stops after the server;
    under `SSH_CONNECTION` Chrome is not launched — see [Remote SSH](#remote-ssh--vs-code-on-a-remote-host-chrome-on-your-machine).
 3. **The token proxy (9333).** The owner serves `ws://127.0.0.1:9333/pix3` (the browser target;
    `…/pix3/page/<targetId>` for one page) and `GET /json/version`, `/json/list` (`/json`) on

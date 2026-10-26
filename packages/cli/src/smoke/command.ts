@@ -19,6 +19,7 @@ import {
   type SmokeOutcome,
   type SmokeReport,
   type SmokeRunSet,
+  type SmokeCommand,
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
 import { COMMAND_USAGE } from '../usage.ts';
@@ -46,10 +47,30 @@ interface SmokeArgs {
   readonly sync: boolean;
   readonly project?: string;
   readonly help: boolean;
+  readonly commands: readonly SmokeCommand[];
 }
 
 const DEFAULT_FRAMES = 120;
 const DEFAULT_TIMEOUT_SEC = 20;
+
+/**
+ * `name`, `name@frame` (frame ≥ 1; default 1) and either followed by a JSON object of args after a
+ * space — `swap@30 {"from":[2,3],"to":[2,4]}`: a game command dispatched before that frame.
+ */
+const parseSmokeCommand = (value: string): SmokeCommand | null => {
+  const match = /^([^@\s]+)(?:@(\d+))?(?:\s+([\s\S]+))?$/.exec(value.trim());
+  if (!match) return null;
+  const frame = match[2] === undefined ? 1 : Number(match[2]);
+  if (frame < 1) return null;
+  if (match[3] === undefined) return { name: match[1], frame };
+  try {
+    const args = JSON.parse(match[3]) as unknown;
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) return null;
+    return { name: match[1], frame, args: args as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+};
 
 const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } => {
   let scene: string | undefined;
@@ -61,6 +82,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let all = false;
   let project: string | undefined;
   let help = false;
+  const commands: SmokeCommand[] = [];
   const valueOf = (arg: string, index: number): { value?: string; next: number } => {
     const eq = arg.indexOf('=');
     if (eq > 0) return { value: arg.slice(eq + 1), next: index };
@@ -74,7 +96,17 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     else if (arg === '--changed') changed = true;
     else if (arg === '--all') all = true;
     else if (arg === '--help' || arg === '-h') help = true;
-    else if (name === '--frames' || name === '--timeout' || name === '--project') {
+    else if (name === '--command') {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      const parsed = value === undefined ? null : parseSmokeCommand(value);
+      if (!parsed)
+        return {
+          error:
+            '--command needs name[@frame] [json args], e.g. --command restart@60 or --command \'swap@30 {"x":2}\'',
+        };
+      commands.push(parsed);
+    } else if (name === '--frames' || name === '--timeout' || name === '--project') {
       const { value, next } = valueOf(arg, i);
       i = next;
       if (value === undefined || value.startsWith('--')) return { error: `${name} needs a value` };
@@ -95,7 +127,11 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     return {
       error: `${changed ? '--changed' : '--all'} picks the scenes; drop ${scene} or the flag`,
     };
-  return { scene, changed, all, frames, timeoutSec, json, sync, project, help };
+  for (const command of commands) {
+    if (command.frame > frames)
+      return { error: `--command ${command.name}@${command.frame} is past --frames ${frames}` };
+  }
+  return { scene, changed, all, frames, timeoutSec, json, sync, project, help, commands };
 };
 
 const failure = (code: SmokeFailureCode, reason: string, scene?: string): SmokeFailure => ({
@@ -163,6 +199,8 @@ export interface RunSmokeOptions {
   readonly frames?: number;
   readonly timeoutSec?: number;
   readonly cwd?: string;
+  /** `--command`: game commands dispatched before the given frames. */
+  readonly commands?: readonly SmokeCommand[];
 }
 
 export interface RunOneSmokeOptions extends RunSmokeOptions {
@@ -249,6 +287,7 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   projectRoot: prepared.root,
   scene,
   frames: options.frames ?? DEFAULT_FRAMES,
+  ...(options.commands?.length ? { commands: options.commands } : {}),
   viewport: prepared.manifest.viewport,
   autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
@@ -487,7 +526,12 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
   }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const shownRoot = root ?? io.cwd;
-  const common = { frames: args.frames, timeoutSec: args.timeoutSec, cwd: io.cwd };
+  const common = {
+    frames: args.frames,
+    timeoutSec: args.timeoutSec,
+    cwd: io.cwd,
+    commands: args.commands,
+  };
   // Files are the truth only once the editor has written them (plan §B.6): a dev server with an
   // editor tab (`.pix3/dev.json`) flushes before the scene is read.
   const synced = root
