@@ -101,7 +101,12 @@ describe('scanProject (plan §B.6 item 1)', () => {
       'prefabs/coin.pix3scene':
         'root:\n  - id: c\n    type: AnimatedSprite2D\n    properties:\n      animation: res://anims/spin.pix3anim\n',
       'anims/spin.pix3anim': '{"frames":["res://frames/a.png","res://frames/b.png"]}',
-      'scripts/Fx.ts': 'const BASE = `res://sfx/boom/ex${i}.png`;\nconst dir = "res://levels";\n',
+      'scripts/Fx.ts':
+        'const BASE = `res://sfx/boom/ex${i}.png`;\nconst dir = "res://levels";\n' +
+        // A list in one string: the scan splits it at `,` (it read one path and shipped neither).
+        "const pair = 'res://pair/a.png,res://pair/b.png';\n",
+      'pair/a.png': 'a',
+      'pair/b.png': 'b',
       'sprites/hero.png': 'png',
       'frames/a.png': 'a',
       'frames/b.png': 'b',
@@ -122,6 +127,8 @@ describe('scanProject (plan §B.6 item 1)', () => {
       'frames/b.png',
       'levels/1.pix3scene',
       'levels/2.pix3scene',
+      'pair/a.png',
+      'pair/b.png',
       'prefabs/coin.pix3scene',
       'scenes/main.pix3scene',
       'sfx/boom/ex1.png',

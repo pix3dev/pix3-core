@@ -993,7 +993,11 @@ function evaluateNodeAppeared(
   const byType =
     countNow === undefined || countBefore === undefined
       ? ` and no live count was collected for the type "${query}", so a pooled or duplicate spawn would be invisible here`
-      : ` and the live count of "${query}" nodes is still ${countNow} (was ${countBefore})`;
+      : countNow === 0 && countBefore === 0
+        ? // Read as a type the query matches nothing — it is a name. Saying "the count is still 0"
+          // next to "it was already in the scene" read as a contradiction.
+          ` (no node has the type "${query}", so the by-type reading cannot fire either)`
+        : ` and the live count of "${query}" nodes is still ${countNow} (was ${countBefore})`;
   return { met: false, detail: `${byName}${byType}` };
 }
 

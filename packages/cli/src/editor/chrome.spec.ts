@@ -86,8 +86,8 @@ describe('Linux: Playwright Chromium and the sandbox', () => {
       false
     );
     expect(needsNoSandbox(pw, {}, 'darwin', restricted, 1000)).toBe(false);
-    expect(chromeArgs({ url: 'u', profile: 'p', headless: true, noSandbox: true })).toContain(
-      '--no-sandbox'
-    );
+    const headless = chromeArgs({ url: 'u', profile: 'p', headless: true, noSandbox: true });
+    expect(headless).toContain('--no-sandbox');
+    expect(headless).toContain('--window-size=1600,1200');
   });
 });

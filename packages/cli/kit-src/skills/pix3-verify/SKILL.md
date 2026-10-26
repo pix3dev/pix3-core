@@ -53,6 +53,7 @@ Codes and what they usually mean:
 | `E_UNKNOWN_PROPERTY` | Key not read for that node / component — check `pix3-nodes`; a flat `horizontalAlign` belongs in `layout:` |
 | `E_PROPERTY_TYPE` | `"10"` for a number, a colour without quotes, an enum value not in the list |
 | `E_MISSING_RESOURCE` | `res://` path typo, or the asset was never written (an `AnimatedSprite3D` `frames` entry too, `res://` or not) |
+| `W_SCRIPT_MISSING_RESOURCE` | A `res://` path in a script names no file — the build ships only files a script names by a literal `res://` path, so it leaves this one out (white quads in `dist`). Fix the path; write each path as its own string (a list in one string `'res://a.svg,res://b.svg'` is read as two paths, but keep them apart) |
 | `E_MISSING_PREFAB`, `E_PREFAB_*`, `E_DUPLICATE_ID` | Fix the `instance:` path; a prefab file needs exactly one root; ids are unique |
 | `E_EMOJI_AS_ART` | A `label`/`text` that is only emoji — use a sprite or `ColorRect2D` |
 | `E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY` | An `.svg` sprite without `xmlns` or without `width`/`height` in px — see the SVG template in `pix3-nodes` |

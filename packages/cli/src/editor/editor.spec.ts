@@ -277,7 +277,7 @@ describe('Chrome', () => {
     ]);
     expect(args.some(a => a.startsWith('--remote-debugging-port'))).toBe(false);
     const headless = chromeArgs({ url: 'http://x/', profile: '/p', headless: true });
-    expect(headless.slice(-2)).toEqual(['--headless=new', 'http://x/']);
+    expect(headless.slice(-3)).toEqual(['--headless=new', '--window-size=1600,1200', 'http://x/']);
     expect(headless.some(a => a.startsWith('--app='))).toBe(false);
   });
 

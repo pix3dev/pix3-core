@@ -273,6 +273,13 @@ export const resolveSfx = (input: string): SfxResolution | null => {
   return { preset, params, modifiers };
 };
 
+/** The words a description is matched by, per preset, and the modifier words — for a refusal. */
+export const describeSfxVocabulary = (): string =>
+  [
+    ...SFX_PRESET_NAMES.map(name => `  ${name}: ${[name, ...KEYWORDS[name]].join(', ')}`),
+    `  modifiers: ${MODIFIERS.map(m => m.words.join('/')).join(', ')}`,
+  ].join('\n');
+
 /** mulberry32 — tiny, seedable, good enough for noise and jitter. */
 export const seededRandom = (seed: number): (() => number) => {
   let state = seed >>> 0;

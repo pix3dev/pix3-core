@@ -152,6 +152,15 @@ export const finishBuild = (
         : '') +
       `); report ${relative(root, reportPath)}`
   );
+  // Repeated last, where the size line is read: a referenced file the build could not find is a
+  // hole in the game (white quads, silence), and mid-log it scrolled past every agent.
+  const missing = scan.warnings.filter(line => line.startsWith('Referenced resource not found'));
+  if (missing.length > 0) {
+    warn(
+      `${missing.length} referenced resource(s) are NOT in the build — the game will miss them:\n` +
+        missing.map(line => `  ${line.replace('Referenced resource not found: ', '')}`).join('\n')
+    );
+  }
   if (build.format === 'html' && !compressed && digest.bytes > COMPRESS_HINT_BYTES) {
     log(
       `the code is embedded as plain text: pix3({ compress: true }) in vite.config.ts embeds it ` +

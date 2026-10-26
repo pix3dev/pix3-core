@@ -75,6 +75,12 @@ export interface FloatTextStyleOptions {
   fontSizePx?: number;
   /** Font family (default `Arial`). */
   fontFamily?: string;
+  /** CSS font weight — `700`, `900`, `'bold'` (default normal). */
+  fontWeight?: number | string;
+  /** Contrast outline colour (default `#000000` once {@link outlineWidth} is set). */
+  outlineColor?: string;
+  /** Contrast outline half-width in px, 0 = none (default 0): readable over busy art. */
+  outlineWidth?: number;
   /** Vertical travel in px over the popup's life; negative drifts down (default 60). */
   driftPx?: number;
   /** Total life in seconds (default 0.8). */
@@ -417,6 +423,15 @@ export class FloatText2D extends Label2D {
           ? options.fontFamily
           : 'Arial',
       labelFontSize: clampNumber(options.fontSizePx, FLOAT_TEXT_DEFAULTS.fontSizePx, 1, 512),
+      labelFontWeight:
+        typeof options.fontWeight === 'number' || typeof options.fontWeight === 'string'
+          ? options.fontWeight
+          : undefined,
+      outlineWidth: clampNumber(options.outlineWidth, 0, 0, 64),
+      outlineColor:
+        typeof options.outlineColor === 'string' && options.outlineColor.trim()
+          ? options.outlineColor
+          : undefined,
       glowColor: glowColor || undefined,
       glowStrength: glowColor
         ? clampNumber(options.glowStrength, FLOAT_TEXT_DEFAULTS.glowStrength, 0, 4)

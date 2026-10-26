@@ -11,6 +11,7 @@ import {
   resolveSfx,
   SAMPLE_RATE,
   SFX_PRESET_NAMES,
+  describeSfxVocabulary,
   type SfxParams,
 } from './synth.ts';
 
@@ -101,7 +102,9 @@ const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: str
   const resolved = resolveSfx(args.text);
   if (!resolved) {
     return {
-      error: `"${args.text}" names no preset. Use one of ${SFX_PRESET_NAMES.join(', ')}, or words like "coin pickup", "big explosion", "button click".`,
+      error:
+        `"${args.text}" names no preset. Use one of ${SFX_PRESET_NAMES.join(', ')}, or words like "coin pickup", "big explosion", "button click". The words each preset answers to:\n` +
+        describeSfxVocabulary(),
     };
   }
   const { seed } = args;

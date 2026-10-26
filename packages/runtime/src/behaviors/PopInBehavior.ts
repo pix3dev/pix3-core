@@ -10,6 +10,8 @@ export interface PopInOptions {
   duration?: number;
   /** Easing curve; `backOut` / `elasticOut` give the springy pop. */
   easing?: KeyframeEasing;
+  /** Same as {@link easing}: the name `scene.tween.to` uses for it. */
+  ease?: KeyframeEasing;
 }
 
 const DEFAULT_EASING: KeyframeEasing = 'backOut';
@@ -133,8 +135,9 @@ export class PopInBehavior extends Script {
     if (options.from != null) this.config.from = PopInBehavior.num(options.from, 0, 0);
     if (options.duration != null)
       this.config.duration = PopInBehavior.num(options.duration, 0.4, 0);
-    if (options.easing != null && isKeyframeEasing(options.easing)) {
-      this.config.easing = options.easing;
+    const easing = options.easing ?? options.ease;
+    if (easing != null && isKeyframeEasing(easing)) {
+      this.config.easing = easing;
     }
     this.trigger();
   }

@@ -121,7 +121,12 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        until: { type: 'array', items: { type: 'object' } },
+        until: {
+          type: 'array',
+          items: { type: 'object' },
+          description:
+            'Assertions whose arrival ends the run. Required, except with `bot`: then the policy ends it with done(), within maxFrames.',
+        },
         fail: { type: 'array', items: { type: 'object' } },
         watch: { type: 'array', items: { type: 'string' } },
         maxFrames: {
@@ -146,7 +151,7 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
             '"physical-input" (default) or "direct-action".',
         },
       },
-      required: ['until'],
+
       additionalProperties: true,
     },
   },

@@ -109,7 +109,7 @@ const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
 const NOT_A_SOURCE = /\.(?:spec|test)\.[cm]?[jt]sx?$|\.d\.[cm]?ts$|^package-lock\.json$/;
 const SCENE_LIKE = /\.(pix3scene|prefab)$/i;
 const SCANNABLE_RESOURCE = /\.(pix3scene|prefab|pix3anim)$/i;
-const RESOURCE_PATH_PATTERN = /res:\/\/([^\s"'`\])]+)/g;
+const RESOURCE_PATH_PATTERN = /res:\/\/([^\s"'`\]),;]+)/g;
 const MENTIONED_NAME_PATTERN = /[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z_][A-Za-z0-9_]*)*/g;
 const IMPORT_SPECIFIER_PATTERN =
   /\b(?:from|import)\s*\(?\s*['"`]([^'"`\s]+)['"`]|\brequire\s*\(\s*['"`]([^'"`\s]+)['"`]/g;

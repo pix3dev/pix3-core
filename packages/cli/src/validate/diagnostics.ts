@@ -209,6 +209,12 @@ export const DIAGNOSTIC_CODES = {
     level: 1,
     summary: 'scene `version:` is missing or not the current format version',
   },
+  W_SCRIPT_MISSING_RESOURCE: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'a res:// path written in a script names no file (the build cannot ship it: white quads, silence)',
+  },
   W_UNUSED_ASSET: {
     severity: 'warning',
     level: 1,

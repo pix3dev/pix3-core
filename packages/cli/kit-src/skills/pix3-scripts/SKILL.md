@@ -189,13 +189,20 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
     `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
   - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.
-  - `popIn(target, { from: 0, duration: 0.4, easing: 'backOut' })` — `from` = start scale factor.
+  - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start scale factor (`easing` is accepted too).
   - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target.
   - `burst(anchor, { count: 14, speed: 260, spread: 2π, direction: π/2, lifeSec: 0.5, color | colors, sizePx: 10, gravityY: -600, fadeOut: true, additive: true, zIndex })` (angles in radians).
-  - `floatText('+25', { at, color: '#ffffff', fontSizePx: 28, fontFamily: 'Arial', driftPx: 60, durationSec: 0.8, glow, glowStrength: 1.5, zIndex })`.
+  - `floatText('+25', { at, color: '#ffffff', fontSizePx: 28, fontFamily: 'Arial', fontWeight, outlineWidth: 0, outlineColor: '#000000', driftPx: 60, durationSec: 0.8, glow, glowStrength: 1.5, zIndex })`
+    — over busy art give it `fontWeight: 900, outlineWidth: 4`.
+
+  Bursts, float text and trails draw **above everything in their layer, a modal overlay
+  included** — they are meant to pop over the board. When a result screen opens, stop spawning
+  them (the round is over), or give them a `zIndex` below the overlay's.
   - `trail(node, { lifeSec: 0.35, widthPx: 14, color | colors, additive: true, zIndex, maxPoints: 48 })` → `trail.stop()`.
 
-  `target` = node | query | `'camera'` | `'camera2d'`; `anchor` = node | query | `{ x, y }`.
+  `target` = node | query | `'camera'` | `'camera2d'`; `anchor` = node | query | `{ x, y }` — pass
+  the node itself to burst at it; a world point of a node is `node.getWorldPosition(new Vector3())`
+  (`Vector3` from `three`).
 - Tweens: `scene.tween.to(node, { x, y, position: { x, y }, scale, rotation, opacity, width, height }, { durationSec: 0.3, ease: 'cubicOut', delaySec: 0, yoyo: false, repeat: 0, onUpdate, onComplete })`
   → `{ cancel(), finished, isRunning }` (`rotation` in radians, `repeat: -1` = forever, `ease` =
   any easing name: `linear`, `quadOut`, `cubicInOut`, `backOut`, `elasticOut`, … — a variable

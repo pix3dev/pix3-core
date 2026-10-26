@@ -222,6 +222,18 @@ describe('scene.juice.floatText', () => {
     HTMLCanvasElement.prototype.getContext = originalGetContext;
   });
 
+  it('floatText passes weight and a contrast outline through to the label', () => {
+    const text = new FloatText2D({ id: 't' }, '+30', {
+      fontWeight: 900,
+      outlineWidth: 4,
+      outlineColor: '#102030',
+    });
+    expect(text.labelFontWeight).toBe(900);
+    expect(text.outlineWidth).toBe(4);
+    expect(text.outlineColor).toBe('#102030');
+    expect(new FloatText2D({ id: 'u' }, 'x').outlineWidth).toBe(0);
+  });
+
   it('rises, fades and frees itself with the default options', () => {
     const { service, root, target } = makeHarness();
 

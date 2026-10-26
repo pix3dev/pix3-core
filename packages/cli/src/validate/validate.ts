@@ -13,7 +13,7 @@ import {
   loadUserScripts,
   type ScriptImportMap,
 } from './level2.ts';
-import { ProjectFiles, readManifestInfo, sha256OfFile } from './project.ts';
+import { ProjectFiles, readManifestInfo, sha256OfFile, toProjectPath } from './project.ts';
 import {
   ANIMATION_EXTENSION,
   checkAnimationFile,
@@ -86,6 +86,50 @@ const REFERENCING_EXTENSIONS = [
 ];
 
 const ASSET_DIRECTORIES = ['sprites/', 'audio/'];
+
+/** A `res://` path as the build reads one (`vite-plugin` scan): up to a quote, space, `,` or `;`. */
+const SCRIPT_RESOURCE_PATTERN = /res:\/\/([^\s"'`\]),;]+)/g;
+
+/**
+ * `res://` literals in project scripts that name no file. The build ships what a script names by
+ * a literal path and nothing else, so a typo — or a list written as one string the scan cannot
+ * split — leaves the asset out of `dist` while check and smoke stay green (a board of white
+ * squares in the built game). An interpolated path (`res://sprites/${name}.svg`) is not checked:
+ * the build ships its directory.
+ */
+const scriptMissingResources = (project: ProjectFiles): Diagnostic[] => {
+  const out: Diagnostic[] = [];
+  for (const file of project.files) {
+    if (!/^(scripts|src)\/.*\.[cm]?[jt]s$/.test(file) || /\.(spec|test)\.|\.d\.ts$/.test(file))
+      continue;
+    let text: string;
+    try {
+      text = project.readText(file);
+    } catch {
+      continue;
+    }
+    for (const match of text.matchAll(SCRIPT_RESOURCE_PATTERN)) {
+      const raw = match[1];
+      if (raw.includes('${') || !/\.[A-Za-z0-9]+$/.test(raw)) continue;
+      const target = toProjectPath(`res://${raw}`);
+      if (!target || project.has(target)) continue;
+      const line = text.slice(0, match.index).split('\n').length;
+      const caseMatch = project.files.find(f => f.toLowerCase() === target.toLowerCase());
+      out.push(
+        diagnostic({
+          code: 'W_SCRIPT_MISSING_RESOURCE',
+          file,
+          line,
+          message: `res://${raw} does not exist — the build will not ship it.`,
+          fix: caseMatch
+            ? `the file is res://${caseMatch} (case differs)`
+            : 'fix the path; write each path as its own string literal (the build finds assets by literal res:// paths)',
+        })
+      );
+    }
+  }
+  return out;
+};
 
 const unusedAssets = (
   project: ProjectFiles,
@@ -186,6 +230,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     const references = new Set<string>();
     for (const result of results.values()) for (const ref of result.references) references.add(ref);
     diagnostics.push(...unusedAssets(project, references));
+    diagnostics.push(...scriptMissingResources(project));
   }
 
   // What the scenes reach through other files: the frames of a `.pix3anim` (every one in the

@@ -43,14 +43,17 @@ follows the disk, and `pix3_sync` is the barrier between the two.
    again: it checks the tab through the proxy and opens it when missing; or open it yourself with
    chrome-devtools-mcp's `new_page` on that URL. Then `list_pages` again. Open one tab only: a
    second editor tab on the same project competes for the writer.
-3. `list_3p_developer_tools` → the `pix3` group with the seven `pix3_*` tools below. **Call it
+3. `list_3p_developer_tools {pageId}` → the `pix3` group with the seven `pix3_*` tools below. **Call it
    again after every `select_page` and after any page reload** — the registration lives in the
    page, and `execute_3p_developer_tool` answers `Tool … not found` until it is listed again in
    the same MCP process.
 
-Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"timeoutMs\": 15000}"}`
+Call a tool with `execute_3p_developer_tool {pageId: <id>, toolName: "pix3_sync", params: "{\"timeoutMs\": 15000}"}`
 — `params` is a **JSON string** (escape the quotes). The answer is JSON text; every refusal is
-`{ok:false, reason, detail}` and says what to do.
+`{ok:false, reason, detail}` and says what to do. **`pageId`** (the editor tab's id from
+`list_pages`) is required by the pinned chrome-devtools-mcp on `list_3p_developer_tools`,
+`execute_3p_developer_tool`, `take_screenshot` and `evaluate_script` alike — "Input validation
+error: pageId: expected number" means it was left out.
 
 ## 2. The tools
 
@@ -60,7 +63,7 @@ Call a tool with `execute_3p_developer_tool {toolName: "pix3_sync", params: "{\"
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
 | `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
-| `pix3_game_run` | `until`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails; read `verdict` first |
+| `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
 

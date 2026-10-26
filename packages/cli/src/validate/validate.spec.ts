@@ -604,6 +604,23 @@ describe('level 1: references and prefabs', () => {
     expect(codesOf(subset)).not.toContain('W_UNUSED_ASSET');
   });
 
+  it('W_SCRIPT_MISSING_RESOURCE: a res:// literal in a script that names no file', async () => {
+    const report = await run({
+      'sprites/gem-red.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>',
+      'sprites/gem-blue.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>',
+      'scripts/Board.ts': [
+        "export const ok = 'res://sprites/gem-red.svg';",
+        "export const list = 'res://sprites/gem-red.svg,res://sprites/gem-blue.svg';",
+        "export const typo = 'res://sprites/gem-gren.svg';",
+        'export const dyn = (k: string) => `res://sprites/gem-${k}.svg`;',
+        '',
+      ].join('\n'),
+    });
+    expect(find(report, 'W_SCRIPT_MISSING_RESOURCE').map(d => [d.file, d.line])).toEqual([
+      ['scripts/Board.ts', 3],
+    ]);
+  });
+
   it('W_UNUSED_ASSET: an interpolated res:// path uses its whole static directory (as the build ships it)', async () => {
     const report = await run({
       'sprites/gems/gem-red.png': PNG,

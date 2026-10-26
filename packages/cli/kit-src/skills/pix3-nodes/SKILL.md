@@ -56,6 +56,10 @@ Sized container; draws nothing. Use it as the scene root (sized to `viewportBase
 | --- | --- | --- |
 | `width` | number | 100 |
 | `height` | number | 100 |
+| `clipChildren` | bool | false |
+
+`clipChildren: true` clips everything under it to its rect in play (a board whose pieces fall in
+from above, a strip).
 
 ## ColorRect2D
 
@@ -76,6 +80,7 @@ The only untextured 2D fill. Build the game from these first, swap to sprites la
 | `height` | number | texture height | |
 | `anchor` | vector2 | [0.5, 0.5] | Pivot the image is positioned around |
 | `aspectRatioLocked` | bool | false | Keep the texture's aspect while resizing |
+| `fit` | enum | stretch | `stretch` (distort to the box), `contain` (whole image, centred), `cover` (fill, crop the overflow) — a full-screen background on a stretched sprite is `cover` |
 | `effects` | list | — | `[{ type: core:tint, params: { color: "#hex", amount: 1 } }]` — how a near-white placeholder gets its colour |
 
 There is no tint property: colour a sprite with a `core:tint` effect. Placeholders are
