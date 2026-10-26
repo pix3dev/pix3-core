@@ -115,6 +115,9 @@ const unusedAssets = (
     if ([...interpolatedDirs].some(dir => asset.startsWith(dir))) continue;
     const base = asset.slice(asset.lastIndexOf('/') + 1);
     if (base.startsWith('.') || REFERENCING_EXTENSIONS.some(ext => asset.endsWith(ext))) continue;
+    // Source and licence notes beside the art (AGENTS.md: "note the source and licence beside
+    // it") are documentation, not unused assets; the build does not ship them either.
+    if (/\.(md|txt)$/i.test(base) || /^(LICEN[CS]E|NOTICE|COPYING)/i.test(base)) continue;
     if (sceneReferences.has(asset)) continue;
     const dir = asset.slice(0, asset.lastIndexOf('/') + 1);
     const referenced = texts.some(

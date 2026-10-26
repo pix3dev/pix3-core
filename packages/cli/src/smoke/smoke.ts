@@ -254,7 +254,12 @@ export const runSmokeJob = async (
     if (/^Lit is in dev mode/.test(message)) return;
     // SceneRunner's own clock; not the game's business.
     if (/^THREE\.THREE\.Clock: This module has been deprecated/.test(message)) return;
-    if (/^\[AudioService\] Web Audio API is not supported/.test(message)) return;
+    if (
+      /^\[AudioService\] (Web Audio API is not supported|Cannot play audio: AudioContext)/.test(
+        message
+      )
+    )
+      return;
     const pending = PENDING_COMPONENT_WARNING.exec(message);
     if (pending) {
       addWarning(

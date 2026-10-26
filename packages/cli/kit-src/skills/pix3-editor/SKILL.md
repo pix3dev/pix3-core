@@ -154,7 +154,10 @@ The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means th
 only when the game registers a snapshot (below): `game.snapshot` at the outcome frame,
 `game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved. The run leaves the
 game **paused on the outcome frame** (so a screenshot shows what was judged); `pix3_play
-{action:"pause"}` toggles it back to running, or pass `pauseOnOutcome: false`.
+{action:"pause"}` toggles it back to running, or pass `pauseOnOutcome: false`. One run is at most
+3600 frames (`maxFrames`, default 600) and 60 s of wall clock (`maxWallMs`, default 20000); a
+larger budget is clamped and the result's `notes` say so — a longer session (a whole bot round)
+is several runs in a row, the game keeps its state between them.
 
 **Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
 works; a run with a stated success condition does:
@@ -170,11 +173,17 @@ works; a run with a stated success condition does:
   registers with `registerGameDebug({ name, snapshot })` (from `@pix3/runtime`); without one the
   verdict says there is no provider. Keep it to the fields that decide a run (score, lives, phase,
   wave) and add the field of every mechanic you add — state nothing reports is state nothing can
-  verify, and then only screenshots are left. `pix3 smoke` prints the same snapshot.
+  verify, and then only screenshots are left. `pix3 smoke` prints the same snapshot; in any page
+  that runs the game (the dev server, a built `dist/index.html`) a test script of your own reads it
+  as `window.__PIX3_GAME_DEBUG__.snapshot()` and calls `.action(name, args)` the same way.
+- **Slow motion for a photo of a short effect**: `this.scene.time.slowMotion(0.1)` from a debug
+  action (`time.reset()` to end it) — it is the game's own clock, so effects play exactly as fast.
 - **Transient effects** (a hover scale, a flash, a punch, a fade) are back at rest by the time a
   separate `take_screenshot` runs — judge them by state: a `nodeProperty` predicate on `scale.x`
   or `opacity` inside the run, not a picture after it. Screenshots are for layout, colour and
-  placement.
+  placement. The game page on the dev server carries a small "Pix3 editor" link over the game;
+  open it as `/?clean` (with `?scene=` if you need one: `/?clean&scene=…`) for screenshots and
+  your own browser tests.
 - **A black 3D screen** is usually a scene with no light or no camera, and the run's `notes` say
   so (`SCENE NOT RENDERABLE — …`); when they do not, suspect a camera that looks away from the
   content. The editor viewport lights the scene with fallback lights the running game does not

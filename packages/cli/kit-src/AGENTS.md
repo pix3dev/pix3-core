@@ -39,7 +39,10 @@ reference. Check control sizes in CSS pixels on the smallest target screen — a
 touch target at least 44 px, text at least 16 px. The game scales its design viewport
 (`viewportBaseSize`) to fit the screen, so CSS px = design px × min(screen width / design
 width, screen height / design height): a 1080×1920 design on a 390×844 phone is ×0.36, so a
-16 px text needs `labelFontSize` ≥ 45 and a 44 px button ≥ 122 design px. On touch devices, also verify
+16 px text needs `labelFontSize` ≥ 45 and a 44 px button ≥ 122 design px. A board of cells (an
+8×8 match-3 on a 360 px phone is ~42 px a cell) cannot always reach 44 px: give the board the full
+width, take the whole cell (no dead gaps) as the hit area, and say in the report that a cell is
+below the guideline and why. On touch devices, also verify
 simultaneous actions such as movement and jump when the game uses them. A build,
 a debug command or a screenshot alone is not enough.
 

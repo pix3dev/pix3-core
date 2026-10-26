@@ -156,10 +156,10 @@ import { Vector3 } from 'three';
 /** Frames a run executes when the spec does not say. ~10 s of game at 1/60. */
 const DEFAULT_MAX_FRAMES = 600;
 /** Hard ceiling on the frame budget — one minute of game time at 1/60. */
-const MAX_MAX_FRAMES = 3600;
+export const MAX_MAX_FRAMES = 3600;
 /** Wall-clock ceiling. A manual loop is CPU-bound, so this is the real runaway guard. */
 const DEFAULT_MAX_WALL_MS = 20_000;
-const MAX_MAX_WALL_MS = 60_000;
+export const MAX_MAX_WALL_MS = 60_000;
 /** Cap of `settleMs` — a real-time wait before the loop, so it is bounded like the wall budget. */
 const MAX_SETTLE_MS = 30_000;
 /**
@@ -712,7 +712,24 @@ export class GameTestService {
       // controls, and each press happens inside the frame loop the run is judged by.
       if (bot) await this.gameInput.flushReachJournal();
     }
-    return this.judgeWithNegativeControl(main, normalized, mainBaseline);
+    const result = await this.judgeWithNegativeControl(main, normalized, mainBaseline);
+    // A budget over the cap is clamped, not refused: say so, or a long run reads as a game that
+    // stopped early (a 20-move bot round needed four runs and no one said why).
+    const clamped = [
+      typeof spec.maxFrames === 'number' && spec.maxFrames > normalized.maxFrames
+        ? `maxFrames ${spec.maxFrames} → ${normalized.maxFrames}`
+        : null,
+      typeof spec.maxWallMs === 'number' && spec.maxWallMs > normalized.maxWallMs
+        ? `maxWallMs ${spec.maxWallMs} → ${normalized.maxWallMs}`
+        : null,
+    ].filter((entry): entry is string => entry !== null);
+    if (clamped.length > 0) {
+      result.notes = [
+        ...(result.notes ?? []),
+        `Budget clamped to the per-run cap (${clamped.join(', ')}): a longer session is several runs in a row — the game keeps its state between them.`,
+      ];
+    }
+    return result;
   }
 
   /**

@@ -107,6 +107,9 @@ describe('scanProject (plan §B.6 item 1)', () => {
       'frames/b.png': 'b',
       'sfx/boom/ex1.png': '1',
       'sfx/boom/ex2.png': '2',
+      // A source/licence note beside the art (AGENTS.md asks for one) is not shipped.
+      'sfx/boom/SOURCES.md': 'hand-made',
+      'sfx/boom/LICENSE': 'CC0',
       'levels/1.pix3scene': 'root: []\n',
       'levels/2.pix3scene': 'root: []\n',
       'sprites/unused.png': 'x',

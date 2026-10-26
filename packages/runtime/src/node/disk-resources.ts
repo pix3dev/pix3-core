@@ -148,6 +148,24 @@ export class NodeAssetLoader extends AssetLoader {
     return texture;
   }
 
+  /**
+   * An existing sound is a silent, empty buffer: there is no Web Audio to decode it with, and the
+   * base loader's "AudioService is required" rejection surfaced as an unhandled error in every
+   * game that plays a file (`scene.audio.play('res://audio/coin.wav')`, the kit's own route).
+   */
+  override async loadAudio(resourcePath: string): Promise<AudioBuffer> {
+    this.require(resourcePath);
+    return {
+      duration: 0,
+      length: 0,
+      numberOfChannels: 1,
+      sampleRate: 44100,
+      getChannelData: () => new Float32Array(0),
+      copyFromChannel: () => undefined,
+      copyToChannel: () => undefined,
+    } as AudioBuffer;
+  }
+
   override async loadAsset(resourcePath: string): Promise<AssetLoaderResult> {
     this.require(resourcePath);
     throw new ResourceNotDecodedError(resourcePath);

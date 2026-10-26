@@ -195,6 +195,7 @@ A 2D image display node. Renders a textured quad that always faces the camera.
 | `width`             | number  | texture width  | Display width in pixels; when unset it takes the texture's natural width on load (64 placeholder until then)           |
 | `height`            | number  | texture height | Display height in pixels; when unset it takes the texture's natural height on load (64 placeholder until then)         |
 | `aspectRatioLocked` | boolean | false          | Keep width/height at the texture's aspect ratio while resizing                                                         |
+| `fit` | string | stretch | How the image fills the box: `stretch` (distort), `contain` (whole image at its aspect, centred), `cover` (fill the box, crop the overflow — a full-screen background) |
 | `color`             | color   | #ffffff        | Constructor-only placeholder colour shown before the texture loads; reset to white on load, not in the schema or saved |
 
 **Usage Notes:**
@@ -477,8 +478,8 @@ A multiline text label for 2D UI. Wraps text to a fixed box, aligns it in both a
 | `labelFontSize`                             | number           | 16      | Font size in pixels                                                                                                                               |
 | `labelFontWeight`                           | number \| string | normal  | CSS weight (400/700/900…) — a display face and its Cyrillic supplier usually differ                                                               |
 | `labelColor`                                | color            | #ffffff | Text color                                                                                                                                        |
-| `labelOutlineWidth`                         | number           | 0       | Alias of `outlineWidth` below (the shared `UIControl2D` caption outline); one outline, two spellings                                              |
-| `labelOutlineColor`                         | color            | #000000 | Alias of `outlineColor` below                                                                                                                     |
+| `labelOutlineWidth`                         | number           | 0       | Alias of `outlineWidth` below. The caption outline every `UIControl2D` shares: on `Button2D`, `Bar2D`, `Checkbox2D`, … **only this spelling** is read — `outlineWidth` is `Label2D`'s own |
+| `labelOutlineColor`                         | color            | #000000 | Alias of `outlineColor` below; the only spelling on other controls                                                                                 |
 | `labelShadowColor`                          | color \| null    | null    | Drop-shadow colour; empty = no shadow                                                                                                             |
 | `labelShadowOffsetX` / `labelShadowOffsetY` | number           | 0       | Drop-shadow offset in px                                                                                                                          |
 | `labelLetterSpacing`                        | number           | 0       | Extra px between glyphs                                                                                                                           |
@@ -1408,7 +1409,7 @@ filter).
 | NodeBase             | id, name, type, visible, locked                                                                    |
 | Node2D               | position (Vector2), rotation, scale (Vector2), opacity, blendMode, zIndex                          |
 | Node3D               | position (Vector3), rotation (Euler), scale (Vector3)                                              |
-| Sprite2D             | texture, width, height, anchor, aspectRatioLocked                                                  |
+| Sprite2D             | texture, width, height, anchor, aspectRatioLocked, fit                                             |
 | ColorRect2D          | width, height, color (the only untextured 2D fill)                                                 |
 | TiledSprite2D        | texture, width, height, patchMode, sliceBorderLeft/Right/Top/Bottom, drawCenter (nine-slice)       |
 | AnimatedSprite2D     | animationResourcePath, currentClip, isPlaying, freeOnFinish, width, height, sizeMode               |

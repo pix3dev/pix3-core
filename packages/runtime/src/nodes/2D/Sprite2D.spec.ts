@@ -121,3 +121,46 @@ describe('Sprite2D draws nothing while its first texture loads', () => {
     expect(meshOf(failing).visible).toBe(true);
   });
 });
+
+describe('Sprite2D.fit', () => {
+  /** A 200×100 (2:1) image. */
+  const wideTexture = (): Texture => {
+    const texture = new Texture();
+    texture.image = { width: 200, height: 100 };
+    return texture;
+  };
+
+  it('stretch (default) distorts to the box; contain draws the image whole inside it', () => {
+    const stretched = new Sprite2D({ id: 's', width: 100, height: 100 });
+    stretched.setTexture(wideTexture());
+    expect([meshOf(stretched).scale.x, meshOf(stretched).scale.y]).toEqual([100, 100]);
+
+    const contained = new Sprite2D({ id: 'c', width: 100, height: 100, fit: 'contain' });
+    contained.setTexture(wideTexture());
+    expect([meshOf(contained).scale.x, meshOf(contained).scale.y]).toEqual([100, 50]);
+    // The box stays what layout and scripts set; only the drawn quad shrinks.
+    expect([contained.width, contained.height]).toEqual([100, 100]);
+  });
+
+  it('cover fills the box and crops the overflow symmetrically (via the texture region)', () => {
+    const covered = new Sprite2D({ id: 'v', width: 100, height: 100, fit: 'cover' });
+    covered.setTexture(wideTexture());
+    expect([meshOf(covered).scale.x, meshOf(covered).scale.y]).toEqual([100, 100]);
+    const map = materialOf(covered).map as Texture;
+    expect(map.repeat.x).toBeCloseTo(0.5);
+    expect(map.offset.x).toBeCloseTo(0.25);
+    expect(map.repeat.y).toBeCloseTo(1);
+
+    covered.setFit('stretch');
+    expect((materialOf(covered).map as Texture).repeat.x).toBeCloseTo(1);
+  });
+
+  it('round-trips through the scene file and the inspector schema', () => {
+    const sprite = new Sprite2D({ id: 'x', width: 10, height: 10 });
+    const def = Sprite2D.getPropertySchema().properties.find(p => p.name === 'fit');
+    def?.setValue(sprite, 'cover');
+    expect(sprite.fit).toBe('cover');
+    def?.setValue(sprite, 'bogus');
+    expect(sprite.fit).toBe('stretch');
+  });
+});

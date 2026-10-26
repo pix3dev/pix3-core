@@ -309,6 +309,23 @@ export class Spawner extends Script {
     expect(report.warnings.map(w => w.code)).toContain('W_SMOKE_COMMAND');
   });
 
+  it('scene.audio.play of an existing file runs silent headless (no error, no warning)', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Sound')),
+      'audio/coin.wav': 'RIFF....WAVEfmt ',
+      'scripts/Sound.ts': script(
+        'Sound',
+        `  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 2) void this.scene?.audio.play('res://audio/coin.wav');
+  }`
+      ),
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 6 }));
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toEqual([]);
+  });
+
   it('reports a missing res:// file as a warning, not an error', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(

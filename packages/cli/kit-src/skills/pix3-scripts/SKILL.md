@@ -108,7 +108,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - `this.scene` — `SceneService`; may be `undefined` in editor previews, guard it.
 - `this.input` — `InputService`; typed optional (unset in editor previews), so guard it like
   `this.scene`: `const input = this.input; if (!input) return;`.
-- `this.findNode(query)` — id, name or slash path → node or `null`.
+- `this.findNode(query)` — id, name or slash path → `NodeBase | null`. `NodeBase` has no 2D
+  fields (`opacity`, `width`, `zIndex`): narrow first — `if (n instanceof Node2D) n.opacity = 0.5`,
+  or `instanceof Sprite2D` / `Label2D` for theirs (`getNode<T>(q)` casts without checking).
   `this.getNode(query)` — same, throws when missing.
 - Another script on a node: `import { Other } from './Other'; node.getComponent(Other)` —
   pass the **class**, never the `'user:Other'` string.

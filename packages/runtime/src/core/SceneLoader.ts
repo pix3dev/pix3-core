@@ -1075,6 +1075,10 @@ export class SceneLoader {
           height: this.asNumber(props.height, undefined),
           aspectRatioLocked:
             typeof props.aspectRatioLocked === 'boolean' ? props.aspectRatioLocked : undefined,
+          fit:
+            props.fit === 'contain' || props.fit === 'cover' || props.fit === 'stretch'
+              ? props.fit
+              : undefined,
           anchor: this.readVector2(props.anchor, new Vector2(0.5, 0.5)),
           color: typeof props.color === 'string' ? props.color : undefined,
         });

@@ -450,6 +450,11 @@ export class SceneSaver {
       if (node.aspectRatioLocked) {
         props.aspectRatioLocked = true;
       }
+      if (node.fit !== 'stretch') {
+        props.fit = node.fit;
+      } else {
+        delete props.fit;
+      }
       if (node.anchor.x !== 0.5 || node.anchor.y !== 0.5) {
         props.anchor = [
           Math.round(node.anchor.x * 1000) / 1000,

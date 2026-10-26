@@ -41,9 +41,16 @@ export interface Sprite2DProps extends Omit<Node2DProps, 'type'> {
   /** Cached width/height ratio of the source image; recomputed on load when absent. */
   textureAspectRatio?: number | null;
   aspectRatioLocked?: boolean;
+  /** How the image fills the `width`×`height` box (see {@link Sprite2D.fit}). */
+  fit?: SpriteFit2D;
   /** Registry-backed shader effects attached to this sprite's material. */
   effects?: ShaderEffectEntry[];
 }
+
+export type SpriteFit2D = 'stretch' | 'contain' | 'cover';
+
+const normalizeFit = (value: unknown): SpriteFit2D =>
+  value === 'contain' || value === 'cover' ? value : 'stretch';
 
 export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, ShaderEffectHost {
   texture: TextureResourceRef | null;
@@ -62,6 +69,13 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
   textureAspectRatio: number | null;
   /** If true, height changes proportionally when width is modified and vice versa. */
   aspectRatioLocked: boolean;
+  /**
+   * How the image fills the `width`×`height` box: `stretch` (default) distorts it to the box;
+   * `contain` draws it whole at its own aspect, centred inside; `cover` fills the box and crops
+   * the overflow symmetrically — a full-screen background on a stretched sprite that must not
+   * squash on another screen shape.
+   */
+  fit: SpriteFit2D = 'stretch';
   /** Original width (from texture). Used to reset to natural size. */
   originalWidth: number | null;
   /** Original height (from texture). Used to reset to natural size. */
@@ -115,6 +129,7 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
     this.height = props.height;
     this.textureAspectRatio = props.textureAspectRatio ?? null;
     this.aspectRatioLocked = props.aspectRatioLocked ?? false;
+    this.fit = normalizeFit(props.fit);
     this.originalWidth = null;
     this.originalHeight = null;
     this.anchor = Sprite2D.normalizeAnchor(props.anchor);
@@ -257,7 +272,8 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
    * sprites reuse.
    */
   private applyTexturePresentation(): void {
-    const region = this.textureRegion;
+    // The script's crop, with `cover`'s own crop inside it.
+    const region = composeTextureRegion(this.textureRegion, this.coverRegion());
 
     if (region && this.baseTexture) {
       if (!this.ownedTexture) {
@@ -410,6 +426,9 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
         // axis to the texture size with it).
         if (this.width === undefined || this.height === undefined) {
           this.updateSize(this.width ?? w, this.height ?? h);
+        } else if (this.fit !== 'stretch') {
+          // The image's aspect is what contain/cover fit to: known only now.
+          this.updateSize(this.width, this.height);
         }
       }
     }
@@ -419,9 +438,41 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
     this.width = w;
     this.height = h;
     // Size is mesh.scale over the shared unit quad — no geometry churn on resize.
-    this.mesh.scale.set(w, h, 1);
+    const drawn = this.fittedSize(w, h);
+    this.mesh.scale.set(drawn.width, drawn.height, 1);
+    if (this.fit === 'cover') this.applyTexturePresentation();
     this.applyAnchorOffset();
     this.refreshOpacity();
+  }
+
+  /** The quad's size for {@link fit}: the box, or (`contain`) the image's aspect inside it. */
+  private fittedSize(w: number, h: number): { width: number; height: number } {
+    const aspect = this.textureAspectRatio;
+    if (this.fit !== 'contain' || !aspect || !(w > 0) || !(h > 0)) return { width: w, height: h };
+    return w / h > aspect ? { width: h * aspect, height: h } : { width: w, height: w / aspect };
+  }
+
+  /** `cover`'s crop: the centred part of the image with the box's aspect, or null. */
+  private coverRegion(): TextureRegion | null {
+    const aspect = this.textureAspectRatio;
+    const w = this.width;
+    const h = this.height;
+    if (this.fit !== 'cover' || !aspect || !w || !h || !(w > 0) || !(h > 0)) return null;
+    const box = w / h;
+    if (Math.abs(box - aspect) < 1e-6) return null;
+    if (box > aspect) {
+      const visible = aspect / box;
+      return { x: 0, y: (1 - visible) / 2, width: 1, height: visible };
+    }
+    const visible = box / aspect;
+    return { x: (1 - visible) / 2, y: 0, width: visible, height: 1 };
+  }
+
+  /** Change {@link fit} and redraw at the current size. */
+  setFit(value: SpriteFit2D): void {
+    this.fit = normalizeFit(value);
+    this.updateSize(this.width ?? 64, this.height ?? 64);
+    this.applyTexturePresentation();
   }
 
   /**
@@ -553,6 +604,21 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
           setValue: (node: unknown, value: unknown) => {
             const sprite = node as Sprite2D;
             sprite.updateSize(sprite.width ?? 64, Number(value));
+          },
+        },
+        {
+          name: 'fit',
+          type: 'select',
+          ui: {
+            label: 'Fit',
+            description:
+              'How the image fills the box: stretch (distort), contain (whole image, letterboxed), cover (fill, crop the overflow)',
+            group: 'Size',
+            options: ['stretch', 'contain', 'cover'],
+          },
+          getValue: (node: unknown) => (node as Sprite2D).fit,
+          setValue: (node: unknown, value: unknown) => {
+            (node as Sprite2D).setFit(normalizeFit(value));
           },
         },
         {

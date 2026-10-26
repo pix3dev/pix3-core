@@ -220,6 +220,13 @@ const isTextSource = (wirePath: string): boolean => {
   return TEXT_SOURCE_EXTENSIONS.has(extensionOf(name)) && !NOT_A_SOURCE.test(name);
 };
 
+/**
+ * A note kept beside the art (`sprites/SOURCES.md`, a licence) — AGENTS.md asks for one. A
+ * directory a script reaches by an interpolated path ships its images, not its paperwork.
+ */
+const isArtNote = (resPath: string): boolean =>
+  /\.(md|txt)$/i.test(resPath) || /(^|\/)(LICEN[CS]E|NOTICE|COPYING)[^/]*$/i.test(resPath);
+
 /** The static directory prefix of an interpolated `res://` path, or null (port of 1.x). */
 const staticDirectoryPrefix = (resourcePath: string): string | null => {
   const staticPrefix = resourcePath.split('${')[0] ?? '';
@@ -323,7 +330,7 @@ export const scanProject = async (options: ScanOptions): Promise<ProjectScan> =>
       if (directory === undefined) continue;
       const prefix = `${directory}/`;
       for (const resPath of resFiles) {
-        if (resPath.startsWith(prefix)) addResource(resPath);
+        if (resPath.startsWith(prefix) && !isArtNote(resPath)) addResource(resPath);
       }
     }
   };

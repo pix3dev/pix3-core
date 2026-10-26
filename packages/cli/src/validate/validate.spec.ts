@@ -609,6 +609,8 @@ describe('level 1: references and prefabs', () => {
       'sprites/gems/gem-red.png': PNG,
       'sprites/gems/gem-blue.png': PNG,
       'sprites/other.png': PNG,
+      'sprites/SOURCES.md': '# Sources\nhand-made\n',
+      'sprites/gems/LICENSE.txt': 'CC0\n',
       'scripts/Board.ts':
         'export const gem = (kind: string) => `res://sprites/gems/gem-${kind}.png`;\n',
     });
