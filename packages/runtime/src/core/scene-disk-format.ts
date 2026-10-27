@@ -146,6 +146,7 @@ const LAYOUT_2D: SceneDiskKeyRule = {
     right: { schemaName: 'layoutRight' },
     top: { schemaName: 'layoutTop' },
     bottom: { schemaName: 'layoutBottom' },
+    safeArea: { schemaName: 'layoutSafeArea' },
   },
 };
 

@@ -103,6 +103,28 @@ const requestedScene = (): string | null => {
   return null;
 };
 
+/** Feed the runner `env(safe-area-inset-*)` through a hidden probe, now and on every resize. */
+const trackSafeArea = (runner: SceneRunner): void => {
+  const probe = document.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+    'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
+    'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+  document.body.append(probe);
+  const read = (): void => {
+    const style = getComputedStyle(probe);
+    runner.setSafeAreaInsets({
+      top: Number.parseFloat(style.paddingTop) || 0,
+      right: Number.parseFloat(style.paddingRight) || 0,
+      bottom: Number.parseFloat(style.paddingBottom) || 0,
+      left: Number.parseFloat(style.paddingLeft) || 0,
+    });
+  };
+  read();
+  window.addEventListener('resize', read);
+};
+
 /** Boot the game into `target` (a selector or an element; `#app` by default). */
 export async function startGame(
   target: string | HTMLElement = '#app',
@@ -167,6 +189,10 @@ export async function startGame(
     runner.setBatching2DEnabled(true);
     // A test run's seed and component config (`?run=`, dev only; always null in a build).
     runner.setRunOverrides(devRunOverrides());
+    // The screen's safe area (notch, home indicator): nodes with `layout.safeArea` lay out inside
+    // it. Measured from `env(safe-area-inset-*)` (the page has `viewport-fit=cover`), again on
+    // every resize — a phone turned sideways moves the notch.
+    trackSafeArea(runner);
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {
       runner.setLocalizationConfig({

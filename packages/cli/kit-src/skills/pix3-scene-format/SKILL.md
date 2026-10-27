@@ -116,6 +116,18 @@ its margin, not its `position`.
 HUD widgets anchor to screen edges; full-screen backgrounds and roots use `stretch` on both
 axes (a root's reference is `viewportBaseSize`, so a root keeps its full rect, no margins).
 
+**Tall phones and the notch.** The game scales the design to fit the screen (the smaller of the two
+ratios), so on a phone taller than the design the screen has spare height. A HUD anchored to the
+screen's top then drifts away from a board in the middle. The 2D starter's scene already has the
+fix: put the HUD and the game in **`design-area`** — an unanchored `Group2D` of the design size —
+and anchor the HUD to `design-area`'s edges, not the screen's; only the background (and anything
+that must reach the real screen edge) stays on `game-root`. `design-area` has
+`layout: { enabled: false, safeArea: true }`: it is centred in the screen's **safe area** (minus the
+notch and the home indicator). `safeArea: true` works on a child of a full-screen root (a node
+anchored to the top with it measures `top` from below the notch); deeper it does nothing. A project
+without `design-area`: add one as the last child of the 2D root and move the HUD and the game into
+it. Check it with `npx pix3 play --size 390x844 --safe-area 47,0,34,0`.
+
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
 label placed "top-right" once landed under the game's Shop button). With the editor open,

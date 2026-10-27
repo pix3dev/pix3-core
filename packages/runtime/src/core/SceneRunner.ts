@@ -22,7 +22,7 @@ import { applyComponentConfig } from './component-hydration';
 import { ResourceManager } from './ResourceManager';
 import { Camera3D } from '../nodes/3D/Camera3D';
 import { NodeBase } from '../nodes/NodeBase';
-import { Node2D } from '../nodes/Node2D';
+import { Node2D, type Node2DSafeInsets } from '../nodes/Node2D';
 import { Camera2D, findActiveCamera2D } from '../nodes/2D/Camera2D';
 import { Sprite3D } from '../nodes/3D/Sprite3D';
 import { AnimatedSprite3D } from '../nodes/3D/AnimatedSprite3D';
@@ -1449,6 +1449,45 @@ export class SceneRunner {
    * observer-maintained cache; falls back to a (layout-forcing) clientWidth read only until the
    * observer has delivered its first size, or in environments without ResizeObserver.
    */
+  /**
+   * The screen's safe-area insets in CSS px (the notch, the rounded corners, the home indicator —
+   * `env(safe-area-inset-*)`, measured by the host). Nodes with `layout.safeArea` lay out inside
+   * them; everything else, the background included, keeps the whole screen. Zero by default.
+   */
+  setSafeAreaInsets(insets: Partial<Node2DSafeInsets> | null): void {
+    const read = (value: number | undefined): number =>
+      typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+    this.safeAreaCss = insets
+      ? {
+          top: read(insets.top),
+          right: read(insets.right),
+          bottom: read(insets.bottom),
+          left: read(insets.left),
+        }
+      : null;
+  }
+
+  private safeAreaCss: Node2DSafeInsets | null = null;
+
+  /** {@link setSafeAreaInsets} converted from CSS px into the roots' design units. */
+  private safeInsetsInDesignUnits(root: {
+    width: number;
+    height: number;
+  }): Node2DSafeInsets | undefined {
+    const css = this.safeAreaCss;
+    if (!css) return undefined;
+    const canvas = this.measureCanvas();
+    if (canvas.width <= 0 || canvas.height <= 0) return undefined;
+    const sx = root.width / canvas.width;
+    const sy = root.height / canvas.height;
+    return {
+      top: css.top * sy,
+      right: css.right * sx,
+      bottom: css.bottom * sy,
+      left: css.left * sx,
+    };
+  }
+
   private measureCanvas(): { width: number; height: number } {
     const canvas = this.renderer.domElement;
     this.observeCanvasSize(canvas);
@@ -2376,9 +2415,10 @@ export class SceneRunner {
       height: Math.max(1, this.logicalCameraSize.height),
     };
 
+    const safeInsets = this.safeInsetsInDesignUnits(currentRootSize);
     for (const node of this.runtimeGraph.rootNodes) {
       if (node instanceof Node2D) {
-        node.applyAnchoredLayoutRecursive(currentRootSize, this.rootLayoutAuthoredSize);
+        node.applyAnchoredLayoutRecursive(currentRootSize, this.rootLayoutAuthoredSize, safeInsets);
       }
     }
 

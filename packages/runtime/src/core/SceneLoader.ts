@@ -2390,6 +2390,7 @@ export class SceneLoader {
       enabled: typeof layout.enabled === 'boolean' ? layout.enabled : undefined,
       horizontalAlign,
       verticalAlign,
+      ...(layout.safeArea === true ? { safeArea: true } : {}),
       // Margins of the anchored axes (W21); a file without them derives them from the rect.
       left: margin(layout.left),
       right: margin(layout.right),

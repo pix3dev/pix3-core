@@ -58,8 +58,14 @@ describe('pix3 play', () => {
     const distSeed = await run(['dist', '--seed', '7']);
     expect(distSeed.code).toBe(2);
     expect(distSeed.err).toContain('--seed / --config need the dev server');
+    // `dev` is the dev server, not a build: with none running the answer says so.
+    const devSeed = await run(['dev', '--seed', '7']);
+    expect(devSeed.err).toContain('no dev server is running');
     expect((await run(['--seed', 'x'])).err).toContain('--seed takes a whole number');
     expect((await run(['--config', '[1]'])).err).toContain('--config takes one JSON object');
+    expect((await run(['--safe-area', '47,0,34'])).err).toContain(
+      '--safe-area takes top,right,bottom,left'
+    );
 
     mkdirSync(join(root, 'dist'));
     writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');

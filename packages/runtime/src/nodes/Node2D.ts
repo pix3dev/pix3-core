@@ -44,6 +44,22 @@ export interface Node2DLayoutConfig extends Node2DLayoutMargins {
   enabled?: boolean;
   horizontalAlign?: Node2DHorizontalAlign;
   verticalAlign?: Node2DVerticalAlign;
+  /**
+   * Lay this node out in the screen's safe area — the screen minus the notch, the rounded corners
+   * and the home indicator (`env(safe-area-inset-*)`) — instead of the whole screen. Effective on a
+   * child of a 2D root that covers the screen (a root itself, or a child of a root stretched over
+   * it): anchors measure from the safe edges, an unanchored node is centred in the safe area.
+   * No insets (the editor, a desktop) = no change.
+   */
+  safeArea?: boolean;
+}
+
+/** Safe-area insets in the 2D design units of the reference they shrink (top/bottom: screen). */
+export interface Node2DSafeInsets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
 }
 
 type LayoutAxis = 'x' | 'y';
@@ -132,6 +148,7 @@ export class Node2D extends NodeBase {
   private _flow: ResolvedFlow;
   private _horizontalAlign: Node2DHorizontalAlign;
   private _verticalAlign: Node2DVerticalAlign;
+  private _layoutSafeArea = false;
   /** Stored margins (from the file, the inspector, or derived once from a legacy rect). */
   private readonly layoutMargins: Node2DLayoutMargins = {};
   private readonly authoredLayoutPosition = new Vector2();
@@ -169,6 +186,7 @@ export class Node2D extends NodeBase {
     this._layoutEnabled = layout.enabled;
     this._horizontalAlign = layout.horizontalAlign;
     this._verticalAlign = layout.verticalAlign;
+    this._layoutSafeArea = layout.safeArea;
     Object.assign(this.layoutMargins, Node2D.readMargins(props.layout));
     this.authoredLayoutPosition.set(position.x, position.y);
 
@@ -373,8 +391,19 @@ export class Node2D extends NodeBase {
       enabled: this._layoutEnabled,
       horizontalAlign: this._horizontalAlign,
       verticalAlign: this._verticalAlign,
+      ...(this._layoutSafeArea ? { safeArea: true } : {}),
       ...this.layoutMargins,
     };
+  }
+
+  /** `layout.safeArea` ({@link Node2DLayoutConfig.safeArea}). */
+  get layoutSafeArea(): boolean {
+    return this._layoutSafeArea;
+  }
+
+  set layoutSafeArea(value: boolean) {
+    this._layoutSafeArea = Boolean(value);
+    this.syncLayoutProperties();
   }
 
   setLayoutConfig(layout: Node2DLayoutConfig | null | undefined): void {
@@ -383,6 +412,7 @@ export class Node2D extends NodeBase {
     this._layoutEnabled = normalized.enabled;
     this._horizontalAlign = normalized.horizontalAlign;
     this._verticalAlign = normalized.verticalAlign;
+    this._layoutSafeArea = normalized.safeArea;
     for (const side of NODE2D_MARGIN_SIDES) delete this.layoutMargins[side];
     Object.assign(this.layoutMargins, Node2D.readMargins(layout));
     this.pruneLayoutMargins();
@@ -814,9 +844,32 @@ export class Node2D extends NodeBase {
 
   applyAnchoredLayoutRecursive(
     referenceCurrentSize: Node2DLayoutSize,
-    referenceAuthoredSize?: Node2DLayoutSize
+    referenceAuthoredSize?: Node2DLayoutSize,
+    /** The screen's safe-area insets, when the reference is the whole screen (a root's, or the
+     *  children's of a root stretched over it); otherwise undefined. */
+    safeInsets?: Node2DSafeInsets
   ): void {
-    if (this._layoutEnabled) {
+    const insets = this._layoutSafeArea && safeInsets && hasInsets(safeInsets) ? safeInsets : null;
+    if (insets) {
+      // The reference shrinks to the safe rect, whose centre moves by half the difference of the
+      // opposite insets (Y up: a deeper top inset moves it down).
+      const safeReference = {
+        width: Math.max(1, referenceCurrentSize.width - insets.left - insets.right),
+        height: Math.max(1, referenceCurrentSize.height - insets.top - insets.bottom),
+      };
+      const dx = (insets.left - insets.right) / 2;
+      const dy = (insets.bottom - insets.top) / 2;
+      if (this._layoutEnabled) {
+        this.applyAnchoredLayout(safeReference, referenceAuthoredSize);
+        this.position.set(this.position.x + dx, this.position.y + dy, this.position.z);
+      } else {
+        this.position.set(
+          this.authoredLayoutPosition.x + dx,
+          this.authoredLayoutPosition.y + dy,
+          this.position.z
+        );
+      }
+    } else if (this._layoutEnabled) {
       this.applyAnchoredLayout(referenceCurrentSize, referenceAuthoredSize);
     }
     // The container's own size is settled by now, so the column can be laid out — and it must
@@ -827,11 +880,22 @@ export class Node2D extends NodeBase {
     // alone (`flowOwnsAxis`), so the authored size can be handed down as it is.
     const nextCurrentSize = this.getCurrentLayoutSize();
     const nextAuthoredSize = this.getAuthoredLayoutSize();
+    // The insets reach the children only through a node that is the whole screen: one not itself
+    // moved into the safe area, stretched over its reference with zero margins.
+    const childInsets = !insets && safeInsets && this.coversReference() ? safeInsets : undefined;
     for (const child of this.children) {
       if (child instanceof Node2D) {
-        child.applyAnchoredLayoutRecursive(nextCurrentSize, nextAuthoredSize);
+        child.applyAnchoredLayoutRecursive(nextCurrentSize, nextAuthoredSize, childInsets);
       }
     }
+  }
+
+  /** Stretched over its reference on both axes with every margin 0: its rect is the reference's. */
+  private coversReference(): boolean {
+    if (!this._layoutEnabled) return false;
+    if (this._horizontalAlign !== 'stretch' || this._verticalAlign !== 'stretch') return false;
+    const margins = this.resolveLayoutMargins();
+    return NODE2D_MARGIN_SIDES.every(side => (margins[side] ?? 0) === 0);
   }
 
   reflowAnchoredChildren(): void {
@@ -865,6 +929,7 @@ export class Node2D extends NodeBase {
     const tuned: Record<string, unknown> = {};
     if (this._horizontalAlign !== 'center') tuned.horizontalAlign = this._horizontalAlign;
     if (this._verticalAlign !== 'center') tuned.verticalAlign = this._verticalAlign;
+    if (this._layoutSafeArea) tuned.safeArea = true;
     if (this._layoutEnabled) {
       const margins = this.resolveLayoutMargins();
       for (const side of NODE2D_MARGIN_SIDES) {
@@ -1034,9 +1099,11 @@ export class Node2D extends NodeBase {
     enabled: boolean;
     horizontalAlign: Node2DHorizontalAlign;
     verticalAlign: Node2DVerticalAlign;
+    safeArea: boolean;
   } {
     return {
       enabled: Boolean(layout?.enabled),
+      safeArea: layout?.safeArea === true,
       horizontalAlign: Node2D.normalizeHorizontalAlign(layout?.horizontalAlign),
       verticalAlign: Node2D.normalizeVerticalAlign(layout?.verticalAlign),
     };
@@ -1300,7 +1367,8 @@ export class Node2D extends NodeBase {
 
   private syncLayoutProperties(): void {
     if (!this._layoutEnabled) {
-      delete this.properties.layout;
+      if (this._layoutSafeArea) this.properties.layout = { enabled: false, safeArea: true };
+      else delete this.properties.layout;
       return;
     }
 
@@ -1308,6 +1376,7 @@ export class Node2D extends NodeBase {
       enabled: true,
       horizontalAlign: this._horizontalAlign,
       verticalAlign: this._verticalAlign,
+      ...(this._layoutSafeArea ? { safeArea: true } : {}),
       ...this.layoutMargins,
     };
   }
@@ -1634,6 +1703,20 @@ export class Node2D extends NodeBase {
           },
         },
         ...NODE2D_MARGIN_SIDES.map(side => Node2D.marginPropertyDefinition(side)),
+        {
+          name: 'layoutSafeArea',
+          type: 'boolean',
+          ui: {
+            label: 'Safe Area',
+            description:
+              'Lay out inside the screen safe area (notch, home indicator) — on a child of a full-screen root',
+            group: 'Anchors',
+          },
+          getValue: (node: unknown) => (node as Node2D).layoutSafeArea,
+          setValue: (node: unknown, value: unknown) => {
+            (node as Node2D).layoutSafeArea = Boolean(value);
+          },
+        },
       ],
       groups: {
         ...baseSchema.groups,
@@ -1666,3 +1749,6 @@ export class Node2D extends NodeBase {
     };
   }
 }
+
+const hasInsets = (insets: Node2DSafeInsets): boolean =>
+  insets.top > 0 || insets.right > 0 || insets.bottom > 0 || insets.left > 0;

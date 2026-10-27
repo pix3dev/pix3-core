@@ -1306,6 +1306,22 @@ migration command: a project moves over file by file as the editor saves them. O
 `layoutBottom` beside `layoutEnabled` / `horizontalAlign` / `verticalAlign` and `position: {x, y}`
 (the instance's placement, §6.20 "Default overrides"), whatever the file's key order.
 
+**Safe area** (`layout.safeArea: true`, inspector "Safe Area", schema `layoutSafeArea`). The
+player measures the screen's `env(safe-area-inset-*)` (the starter's `index.html` has
+`viewport-fit=cover`) through a hidden probe, again on every resize, and hands it to
+`SceneRunner.setSafeAreaInsets` in CSS px; `reflowRoot2DNodes` converts it into the roots' design
+units. A node with the flag whose reference is the whole screen — a root, or a child of a root
+stretched over the screen with zero margins — lays out in the screen minus the insets: an anchored
+axis measures its margins from the safe edges, an unanchored node keeps its authored position
+shifted to the safe rect's centre (a script that moves such a node is overridden while insets are
+non-zero). Deeper nodes ignore the flag; nodes without it — the background — keep the whole screen.
+No insets (the editor, a desktop, `pix3 smoke`) is exactly the layout without the flag, and a file
+without the key loads as before (core-tests/game10). `pix3 play --safe-area 47,0,34,0` emulates a
+notch through `Emulation.setSafeAreaInsetsOverride`. The 2D starter carries the shape every game
+needs: `game-root` stretched over the screen with the background, and **`design-area`** — an
+unanchored `Group2D` of the design size, `safeArea: true` — which holds the HUD and the game, so
+on a tall phone they stay together in the middle instead of the HUD drifting to the top edge.
+
 ### 7.3 Validation Rules
 
 - The root section must contain at least one node entry.

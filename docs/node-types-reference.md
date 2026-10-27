@@ -796,6 +796,7 @@ A Godot-style `CanvasLayer` — a clean UI overlay band. Its subtree renders on 
 - Multiple CanvasLayer2D nodes stack by scene-tree order (like ordinary 2D draw order).
 - Unlike Godot, inheritance is **not** broken: an ancestor's transform, opacity, and visibility still flow into the overlay subtree — only the render camera differs. Author at the scene root for a fully independent layer.
 - Runtime overlay behavior is play-mode only; in the editor it renders as a normal Group2D container.
+- `layout.safeArea` applies to it like any `Node2D` (a full-screen root's child): a card's buttons can keep clear of the notch.
 - **The root of a `scenes/ui/` overlay** (result card, pause menu, modal): instanced as the last child of the game's 2D root, it is drawn after the game, so `scene.juice` effects of the game stay under it. A juice effect anchored to a node **inside** a CanvasLayer2D is hosted by that layer (`JuiceApi.resolve2DHost` stops climbing at it) — drawn in the overlay's band, not the main one under it (core-tests/game10).
 
 ---

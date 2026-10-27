@@ -42,7 +42,7 @@ keys — read their section in `reference.md` first. `Layout2D` is removed and f
 | `zIndex` | int | 0 | -4096..4096; higher draws on top; ties = tree order |
 | `zAsRelative` | bool | true | Add to the parent's z instead of absolute |
 | `blendMode` | enum | normal | `normal`, `additive` (glow/VFX), `multiply`, `subtract`; not inherited |
-| `layout` | block | — | `{ enabled, horizontalAlign: left/center/right/stretch, verticalAlign: top/center/bottom/stretch, left, right, top, bottom }` — the margins (px from the parent's edge) place an anchored axis; its `position` component is then `0`, and `stretch` derives the size (`pix3-scene-format`) |
+| `layout` | block | — | `{ enabled, horizontalAlign: left/center/right/stretch, verticalAlign: top/center/bottom/stretch, left, right, top, bottom, safeArea }` — `safeArea: true` lays a full-screen root's child out in the screen minus the notch / home indicator (`pix3-scene-format` → "Tall phones and the notch"); the margins (px from the parent's edge) place an anchored axis; its `position` component is then `0`, and `stretch` derives the size (`pix3-scene-format`) |
 | `flow` | block | — | `{ enabled, direction: vertical/horizontal, gap, paddingX, paddingY, align: start/center/end, autoSize }` |
 
 Paint order = tree order (later sibling / deeper node on top) unless `zIndex` says otherwise.

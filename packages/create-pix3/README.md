@@ -28,7 +28,8 @@ npm run build   # dist/index.html, one self-contained file
     `index.html`, `src/main.ts` (`startGame('#app')`), `tsconfig.json`, `gitignore` (copied as
     `.gitignore`: npm drops dotfile-gitignores from tarballs), `README.md`;
   - `2d/`, `3d/` — `template.yaml` (`extends: base`, `projectType`, viewport, `entryScene`) and
-    one empty `files/scenes/main.pix3scene` (2D: a stretched `Group2D` root and a background;
+    one empty `files/scenes/main.pix3scene` (2D: a stretched `Group2D` root, a background and `design-area` — the design size, centred in
+    the screen's safe area, where the HUD and the game go;
     3D: camera, key light, ambient).
 
   Placeholders: `{{PROJECT_NAME}}`, `{{PACKAGE_NAME}}` (npm-safe slug), `{{PIX3_VERSION}}` (the

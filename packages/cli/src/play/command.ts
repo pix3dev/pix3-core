@@ -23,6 +23,8 @@ interface PlayArgs {
   readonly scale: number;
   readonly scene?: string;
   readonly bot?: string;
+  /** Emulated `env(safe-area-inset-*)` in CSS px (a notch and a home indicator). */
+  readonly safeArea: { top: number; right: number; bottom: number; left: number } | null;
   /** A test run's `{seed?, config?}` for the game (`?run=`, dev server only). */
   readonly run: { seed?: number; config?: Record<string, unknown> } | null;
   /** `bot.args` for the policy, as one JSON object. */
@@ -52,6 +54,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let bot: string | undefined;
   let botArgs: Record<string, unknown> = {};
   let seed: number | undefined;
+  let safeArea: PlayArgs['safeArea'] = null;
   let config: Record<string, unknown> | undefined;
   let seconds: number | undefined;
   let frames: number | undefined;
@@ -73,7 +76,15 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     } else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
-    else if (flag === '--seed') {
+    else if (flag === '--safe-area') {
+      const parts = (value() ?? '').split(',').map(Number);
+      if (parts.length !== 4 || !parts.every(n => Number.isFinite(n) && n >= 0)) {
+        return {
+          error: '--safe-area takes top,right,bottom,left in CSS px, e.g. --safe-area 47,0,34,0',
+        };
+      }
+      safeArea = { top: parts[0], right: parts[1], bottom: parts[2], left: parts[3] };
+    } else if (flag === '--seed') {
       seed = Number(value());
       if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
     } else if (flag === '--config') {
@@ -127,6 +138,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     scene,
     bot,
     botArgs,
+    safeArea,
     run:
       seed !== undefined || config !== undefined
         ? { ...(seed !== undefined ? { seed } : {}), ...(config ? { config } : {}) }
@@ -157,7 +169,10 @@ const resolveTarget = (
       args.run ? JSON.stringify(args.run) : undefined
     );
   // --seed / --config ride on the dev server's `?run=` (a build boots as it ships).
-  if (args.run && (args.target === 'dist' || (args.target && !/^https?:/.test(args.target)))) {
+  const isBuildTarget =
+    args.target === 'dist' ||
+    (args.target !== undefined && args.target !== 'dev' && !/^https?:/.test(args.target));
+  if (args.run && isBuildTarget) {
     return {
       error:
         '--seed / --config need the dev server (`npm run dev`): a build boots as it ships, with no test settings',
@@ -282,6 +297,16 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       { width: args.width, height: args.height, deviceScaleFactor: args.scale, mobile: true },
       session
     );
+    if (args.safeArea) {
+      // The page's real `env(safe-area-inset-*)`, so the player measures it as on a phone.
+      await chrome
+        .send('Emulation.setSafeAreaInsetsOverride', { insets: args.safeArea }, session)
+        .catch((error: Error) => {
+          throw new Error(
+            `--safe-area needs a Chrome whose DevTools protocol has Emulation.setSafeAreaInsetsOverride (${error.message})`
+          );
+        });
+    }
     await chrome.send(
       'Emulation.setTouchEmulationEnabled',
       { enabled: true, maxTouchPoints: 5 },

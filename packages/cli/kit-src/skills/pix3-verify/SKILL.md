@@ -131,7 +131,9 @@ pictures come from the policy: `bot.screenshot('result-card')` freezes the game 
 saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
 result card, all in one run. On the dev server `--seed N` and `--config '<json>'` (as for smoke)
 set up the run — the same board, three moves to reach the lose screen — without test code in the
-game; `dist` refuses them (a build boots as it ships). No editor, no MCP: it works from a subagent and in CI.
+game; `dist` refuses them (a build boots as it ships). `--safe-area 47,0,34,0` emulates an iPhone's
+notch and home indicator (top,right,bottom,left CSS px) on dev and `dist` alike: check that nothing
+the player needs sits under them. No editor, no MCP: it works from a subagent and in CI.
 
 ### Logic tests in Node
 

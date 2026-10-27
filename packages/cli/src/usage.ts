@@ -56,7 +56,7 @@ Usage:
         [--size 390x844]           size, optionally played by a bot policy; screenshot, errors;
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
-        [--seed N] [--config '<json>']
+        [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
                                    tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
@@ -258,7 +258,8 @@ Reference it from a scene or script as res://<path inside the project>.
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
-                 [--seconds S] [--screenshot <file.png>] [--shots <dir>] [--json]
+                 [--seconds S] [--safe-area T,R,B,L] [--screenshot <file.png>]
+                 [--shots <dir>] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -269,6 +270,8 @@ Reference it from a scene or script as res://<path inside the project>.
   dev | dist     the running dev server (?clean, no editor link) or dist/index.html (file://);
                  a URL or a folder holding index.html works too
   --size WxH     the viewport in CSS px (default 390x844, a phone); --scale the device pixel ratio
+  --safe-area    emulate a notch and a home indicator: top,right,bottom,left CSS px (an iPhone 14:
+                 47,0,34,0) — the page's env(safe-area-inset-*), what layout.safeArea nodes avoid
   --scene path   boot another scene (dev server only)
   --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —

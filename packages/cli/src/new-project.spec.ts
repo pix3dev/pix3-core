@@ -93,6 +93,10 @@ describe('pix3 new', () => {
     const scene = readFileSync(join(dir, 'scenes/main.pix3scene'), 'utf8');
     expect(scene).toMatch(/^ {6}width: 1080$/m);
     expect(scene).toMatch(/^ {6}height: 1920$/m);
+    // design-area (the design size, centred in the safe area) turns with it.
+    expect(scene).toMatch(/^ {10}width: 1080$/m);
+    expect(scene).toMatch(/^ {10}height: 1920$/m);
+    expect(scene).not.toMatch(/width: 1920/);
     // --landscape on a landscape template changes nothing.
     expect(
       createProject({ template, dir: join(root, 'landscape'), orientation: 'landscape' }).template
@@ -100,7 +104,7 @@ describe('pix3 new', () => {
   });
 
   for (const [id, projectType, nodeTypes] of [
-    ['2d', '2d', ['Group2D', 'ColorRect2D']],
+    ['2d', '2d', ['Group2D', 'ColorRect2D', 'Group2D']],
     ['3d', '3d', ['Node3D', 'Camera3D', 'DirectionalLightNode', 'AmbientLightNode']],
   ] as const) {
     it(`${id}: base + layer, a Vite project with one empty entry scene`, () => {
