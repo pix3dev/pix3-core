@@ -205,7 +205,7 @@ Free text picks a preset named in it, else the one whose keyword appears first (
 `button`, `hurt`, `swap`, `bell`, `victory`, `game over`, …), and applies modifier words
 (`high`/`low` pitch ×1.4/×0.7, `short`/`long` time ×0.65/×1.6 — never below 60 ms, `soft`). `--seed <n>` renders a
 deterministic variation (pitch ±15 %, times ±20 %, duty/vibrato/cutoff nudged); without it the
-preset as tuned. Output is 44.1 kHz 16-bit mono PCM WAV — `AssetLoader.loadAudio` decodes it with
+preset as tuned. Output is 16-bit mono PCM WAV at 22.05 kHz (`--rate 44100` for the top octave; half the bytes a single-file build embeds as base64) — `AssetLoader.loadAudio` decodes it with
 `decodeAudioData` like any `.ogg`/`.mp3`, and the export embeds it as `audio/wav`. `res` in the
 JSON is the `res://` path when the file lands inside a project. Exit 2 on a bad argument or a
 description that names no preset.
@@ -595,6 +595,50 @@ token, so another local user, a web page or a process that cannot read `~/.pix3/
 cannot drive the editor's Chrome (checked: `../pix3-e2e/editor-e2e/gate-p2.mjs`). Same-user
 processes can read the token file — the boundary is the user account, as for any file in the
 home directory. Chrome on macOS / Windows is untested (`.plans/done/agent-bridge.md` debt).
+
+## `pix3 play` — the game's page, or the build, in a headless Chrome
+
+```bash
+npx pix3 play                                  # the running dev server (?clean), else dist/
+npx pix3 play dist --bot swiper --size 390x844 --screenshot shot.png
+npx pix3 play https://example.com/game/ --seconds 5 --json
+```
+
+A private headless Chrome (its own temp profile, CDP over `--remote-debugging-pipe`, the Chrome
+`pix3 editor` would use; `--no-sandbox` where it needs one) opens the page at a phone's CSS size
+(`Emulation.setDeviceMetricsOverride`, `--scale` the device pixel ratio, touch emulation on), waits
+for `__PIX3_PLAYER__.status` to say `running`, and reports page exceptions, `console.error`, the
+player's errors, the game's `registerGameDebug` snapshot and, with `--screenshot`, a PNG. `--bot`
+compiles `design/tests/bots/<name>.ts` with the project's esbuild and runs it in the page with the
+editor's own `BotSession` and a page world (`packages/editor-core/src/services/game-test/
+page-bot-host.ts`, bundled into `dist/play/prebuilt/` at `prepack`, from source in a checkout):
+taps, swipes and keys are DOM events on the canvas, the policy is ticked by
+`SceneRunner.subscribeFrameStats`, `physical-input` only. Neither script carries `@pix3/runtime`
+(the page has one; a shim recognises its nodes by shape). Exit 0 = booted, nothing threw, the bot
+passed; 1 = otherwise; 2 = could not run. Code: `src/play/`.
+
+## `pix3 bridge` — the editor tab without MCP
+
+```bash
+npx pix3 bridge sync '{"timeoutMs":15000}'            # any pix3_* tool; the pix3_ prefix is optional
+npx pix3 bridge play '{"action":"start"}'
+npx pix3 bridge scene '{"nodeId":"play-button"}'
+npx pix3 bridge screenshot --target game --out shot.png
+npx pix3 bridge tap --node play-button --touch       # or: tap <x> <y> (page CSS px)
+npx pix3 bridge swipe --from gem-2-3 --to gem-2-4    # or: swipe <x1> <y1> <x2> <y2> [--ms 180]
+```
+
+The same tab and the same CDP token proxy the `pix3-browser` MCP server uses, from the shell: for
+an agent that cannot load an MCP server (a subagent, CI) or cannot start the new thread
+`pix3 agent-setup` asks for. It reads `~/.pix3/chrome.json` and the token (the local proxy
+`pix3 editor` started; else the Remote SSH forward and its token), lists the proxy's pages, takes
+the one on the project's `editorUrl` (`.pix3/dev.json`), and evaluates
+`window.__PIX3_DEBUG__.call(tool, params)` there — the tools answer exactly as through MCP; exit 1
+on `{ok:false}`, 2 when there is no editor to reach. `screenshot` brings the surface to the front
+(`pix3_screenshot`) and saves `Page.captureScreenshot`; `tap` / `swipe` dispatch real mouse or
+`--touch` events (`Input.dispatchMouseEvent` / `dispatchTouchEvent`) at page CSS px or at a node's
+`pix3_scene` `screen` (during play, the running node on the Game tab). The token is never printed.
+Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
 

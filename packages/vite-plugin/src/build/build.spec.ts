@@ -74,14 +74,22 @@ const html = (dist: string): string => readFileSync(join(dist, 'index.html'), 'u
 const report = (root: string): BuildReport =>
   JSON.parse(readFileSync(readBuildRecord(root)?.report as string, 'utf8')) as BuildReport;
 
-/** The embedded bytes of one asset, decoded from the page. */
+/**
+ * The embedded bytes of one asset, decoded from the page: a binary asset is `base64`, a text one
+ * (a scene as JSON, an SVG) its `text` — a string literal the minifier may have re-quoted.
+ */
 const embeddedAsset = (page: string, resPath: string): Buffer => {
   const key = resPath.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  const match = new RegExp(
+  const binary = new RegExp(
     `${key}[\`"']?\\s*:\\s*\\{\\s*base64\\s*:\\s*[\`"']([A-Za-z0-9+/=]+)`
   ).exec(page);
-  if (!match) throw new Error(`${resPath} is not embedded`);
-  return Buffer.from(match[1], 'base64');
+  if (binary) return Buffer.from(binary[1], 'base64');
+  const text = new RegExp(
+    `${key}[\`"']?\\s*:\\s*\\{\\s*text\\s*:\\s*("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|\`(?:[^\`\\\\]|\\\\.)*\`)`
+  ).exec(page);
+  if (!text) throw new Error(`${resPath} is not embedded`);
+  // A JS string literal from the bundle under test (its own output, not foreign input).
+  return Buffer.from(new Function(`return ${text[1]};`)() as string, 'utf8');
 };
 
 const withLib = (

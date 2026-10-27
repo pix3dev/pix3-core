@@ -110,7 +110,19 @@ export interface EmbeddedAssetsResult {
 export const largestFirst = (a: EmbeddedAssetEntry, b: EmbeddedAssetEntry): number =>
   b.rawBytes - a.rawBytes || (a.path < b.path ? -1 : 1);
 
-/** `{ [resPath]: { base64, mimeType } }` of every shipped asset (single-file build). */
+/** Assets that are text and ship as text (`embeddedAssetsSource`). */
+const TEXT_ASSET = /\.(svg|pix3scene|prefab|pix3anim|json|atlas|txt|xml|csv)$/i;
+
+/** The bytes as a string when they are valid UTF-8, else null (then they ship as base64). */
+const utf8OrNull = (bytes: Buffer): string | null => {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+};
+
+/** `{ [resPath]: { base64 | text, mimeType } }` of every shipped asset (single-file build). */
 export const embeddedAssetsSource = async (
   options: EmbeddedAssetsSourceOptions
 ): Promise<EmbeddedAssetsResult> => {
@@ -121,12 +133,16 @@ export const embeddedAssetsSource = async (
   for (const resPath of options.assetPaths) {
     const file = await readFile(resToAbsolute(options.root, options.resRoot, resPath));
     const bytes = options.shippedBytes ? options.shippedBytes(resPath, file) : file;
-    const base64 = bytes.toString('base64');
+    const mimeType = JSON.stringify(contentTypeFor(resPath).split(';')[0]);
+    // A text file ships as its text (an SVG sprite, a scene as JSON, an atlas): a quarter smaller
+    // than base64, and the page's gzip packs text far better than base64.
+    const text = TEXT_ASSET.test(resPath) ? utf8OrNull(bytes) : null;
+    const literal = text === null ? JSON.stringify(bytes.toString('base64')) : JSON.stringify(text);
     rawBytes += bytes.byteLength;
-    base64Bytes += base64.length;
-    entries.push({ path: resPath, rawBytes: bytes.byteLength, base64Bytes: base64.length });
+    base64Bytes += literal.length;
+    entries.push({ path: resPath, rawBytes: bytes.byteLength, base64Bytes: literal.length });
     lines.push(
-      `${JSON.stringify(resPath)}: { base64: ${JSON.stringify(base64)}, mimeType: ${JSON.stringify(contentTypeFor(resPath).split(';')[0])} }`
+      `${JSON.stringify(resPath)}: { ${text === null ? 'base64' : 'text'}: ${literal}, mimeType: ${mimeType} }`
     );
   }
   entries.sort(largestFirst);

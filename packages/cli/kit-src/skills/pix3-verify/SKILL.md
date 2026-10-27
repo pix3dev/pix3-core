@@ -111,6 +111,18 @@ see (section 4). With the editor open, `pix3_game_run` (section 3) is the strong
 `pix3 smoke <the scene you changed>` (green), then ask the human to press Play in that scene,
 naming what to press and what they should see.
 
+### `pix3 play` — the real page, the build included, at a phone's size
+
+`npx pix3 play [dev|dist] --size 390x844 [--bot <name>] [--screenshot shot.png]` opens the game's
+own page in a private headless Chrome — the running dev server (`?clean`), or `dist/index.html`
+exactly as it ships — at that CSS size, waits for it to boot, and reports page errors, the game
+snapshot (`registerGameDebug`) and, with `--bot`, the verdict of `design/tests/bots/<name>.ts`
+played there with real DOM pointer and key events (the same bot API as `pix3_game_run`,
+`physical-input` only). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
+the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
+nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot or a page that never
+booted. No editor, no MCP: it works from a subagent and in CI.
+
 ### Logic tests in Node
 
 Engine-free rules (matching, scoring, a level generator — a plain module beside the scripts, no

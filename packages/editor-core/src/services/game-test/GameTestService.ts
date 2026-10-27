@@ -92,6 +92,8 @@ import {
   projectToCanvasFraction,
   raycastBotNodes,
   type BotSceneHandle,
+  keyCodeOf,
+  toCanvasFraction,
 } from '@/services/game-test/game-bot-world';
 import { Vector3 } from 'three';
 
@@ -1403,36 +1405,6 @@ function resolveLiveInput(
     }
   }
   return null;
-}
-
-/**
- * `Key_ArrowLeft` → `ArrowLeft`. A single character is expanded to its
- * `KeyboardEvent.code` (`Key_A` → `KeyA`, `Key_1` → `Digit1`) because the runtime
- * raises BOTH `Key_${code}` and `Key_${key.toUpperCase()}`, so a game may well have
- * been observed polling the short form — and dispatching `code: 'A'` would be a
- * code no keyboard produces.
- */
-function keyCodeOf(action: string): string | null {
-  if (!action.startsWith('Key_')) return null;
-  const rest = action.slice(4);
-  if (rest.length === 0) return null;
-  if (rest.length === 1) {
-    if (/[A-Za-z]/.test(rest)) return `Key${rest.toUpperCase()}`;
-    if (/[0-9]/.test(rest)) return `Digit${rest}`;
-  }
-  return rest;
-}
-
-/** Backing-store pixels to canvas-box fractions, or null when the canvas has no size. */
-function toCanvasFraction(
-  canvas: HTMLCanvasElement,
-  backing: { x: number; y: number }
-): { nx: number; ny: number } | null {
-  const rect = canvas.getBoundingClientRect();
-  const width = canvas.width > 0 ? canvas.width : rect.width;
-  const height = canvas.height > 0 ? canvas.height : rect.height;
-  if (!(width > 0) || !(height > 0)) return null;
-  return { nx: backing.x / width, ny: backing.y / height };
 }
 
 /** A release that throws must not take the rest of the holds (or the run) with it. */

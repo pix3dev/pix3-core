@@ -165,6 +165,45 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     // node against the stub, which is right when no scene places one (the ColorRect2D precedent).
     lazyValueImporters: ['core/SceneRunner'],
   },
+  // 3D nodes `SceneRunner` only tests with `instanceof` (render passes, billboards, AO): false
+  // against a stub, right in a 2D game that never places one.
+  {
+    modulePath: 'nodes/3D/GeometryMesh',
+    keepWhenMentioned: ['GeometryMesh'],
+    lazyValueImporters: ['core/SceneRunner'],
+  },
+  {
+    modulePath: 'nodes/3D/InstancedMesh3D',
+    keepWhenMentioned: ['InstancedMesh3D'],
+    lazyValueImporters: ['core/SceneRunner'],
+  },
+  {
+    modulePath: 'nodes/3D/Sprite3D',
+    keepWhenMentioned: ['Sprite3D'],
+    lazyValueImporters: ['core/SceneRunner'],
+  },
+  {
+    modulePath: 'nodes/3D/AnimatedSprite3D',
+    keepWhenMentioned: ['AnimatedSprite3D'],
+    lazyValueImporters: ['core/SceneRunner'],
+  },
+  // The cutscene chain: `scene.cutscene` constructs the API lazily, which reaches the camera
+  // brain (`getComponent(CameraBrainBehavior)`), which reaches the virtual cameras.
+  {
+    modulePath: 'core/CutsceneApi',
+    keepWhenMentioned: ['cutscene', 'CutsceneApi'],
+    lazyValueImporters: ['core/SceneService'],
+  },
+  {
+    modulePath: 'behaviors/CameraBrainBehavior',
+    keepWhenMentioned: ['CameraBrainBehavior', 'core:CameraBrain'],
+    importers: ['core/CutsceneApi'],
+  },
+  {
+    modulePath: 'nodes/3D/VirtualCamera3D',
+    keepWhenMentioned: ['VirtualCamera3D'],
+    importers: ['behaviors/CameraBrainBehavior'],
+  },
   {
     modulePath: 'nodes/PostProcess',
     keepWhenMentioned: ['PostProcess'],

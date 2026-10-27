@@ -49,6 +49,10 @@ Usage:
         [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose;
                                    or "big explosion")
         [--seed <n>] [--json]
+  pix3 play [dev|dist] [--bot <n>] The game's page (or the build) in a headless Chrome at a phone
+        [--size 390x844]           size, optionally played by a bot policy; screenshot, errors
+  pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
+                                   tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
         [--kind capability|tool|node|doc|other] .pix3/gaps.jsonl;
         [--detail <text>] [--context <text>] --list prints them
@@ -215,16 +219,60 @@ export const COMMAND_USAGE = {
   Exit: 0 = written (or nothing to do), 1 = refused (bad spec, missing frame, existing files),
   2 = usage or no project.
 `,
-  sfx: `Usage: pix3 sfx <preset|"description"> [--out <file.wav>] [--seed <n>] [--json]
+  sfx: `Usage: pix3 sfx <preset|"description"> [--out <file.wav>] [--seed <n>] [--rate <hz>] [--json]
 
-Synthesizes a short sound effect offline into a 44.1 kHz 16-bit mono WAV.
+Synthesizes a short sound effect offline into a 16-bit mono WAV (22.05 kHz: half the bytes of 44.1,
+which a single-file build embeds as base64 — --rate 44100 when a sound needs the top octave).
   presets     ${SFX_PRESET_NAMES.join(', ')}
   description words that name a preset ("coin pickup", "big explosion"), plus modifiers:
               high/low, short/long, soft
   --out       output file (default: audio/<preset>.wav in the project root)
   --seed      a variation of the preset (same seed, same sound); default: the preset as tuned
+  --rate      sample rate in Hz, 8000..48000 (default 22050)
   --json      print { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
 Reference it from a scene or script as res://<path inside the project>.
+`,
+  play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
+                 [--bot <name>] [--seconds S] [--screenshot <file.png>] [--json] [--project <dir>]
+
+  The game's own page in a private headless Chrome at a phone's size — the dev server (default,
+  when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
+  optionally played by a bot policy. No editor, no MCP: an agent's way to check the real page,
+  the build included, with real input at a device size.
+
+  dev | dist     the running dev server (?clean, no editor link) or dist/index.html (file://);
+                 a URL or a folder holding index.html works too
+  --size WxH     the viewport in CSS px (default 390x844, a phone); --scale the device pixel ratio
+  --scene path   boot another scene (dev server only)
+  --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
+                 press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
+                 physical-input only. Ends at done() or after --seconds (default 60 with a bot, 3
+                 without)
+  --screenshot   save a PNG of the page at the end
+  --json         machine-readable report
+
+  Exit 0 = the page ran, nothing threw, the bot passed; 1 = errors, a failed or crashed bot, or a
+  page that never booted; 2 = could not run (no Chrome, nothing to play, no such policy).
+`,
+  bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
+       pix3 bridge screenshot [--target game|viewport] [--out <file.png>]
+       pix3 bridge tap <x> <y> | --node <id> [--touch]
+       pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
+
+  The open editor tab's pix3_* tools, its screenshot and real pointer input, from the command line —
+  the same tab and CDP token proxy the pix3-browser MCP server uses ('pix3 editor' started them),
+  for an agent that cannot load that server: a subagent, CI, a session not restarted after
+  agent-setup. The CLI reads the token itself and never prints it.
+
+  <pix3_tool>    pix3_status, pix3_sync, pix3_scene, pix3_play, pix3_game_run, pix3_errors, … (the
+                 pix3_ prefix may be dropped); params as one JSON object. Prints the tool's JSON
+                 answer; exit 1 when it is {ok:false}.
+  screenshot     bring the game (default) or the viewport to the front and save a PNG of the tab
+                 (default .pix3/screenshots/<target>-<time>.png); prints the path
+  tap            a press and release at page CSS px, or at a node's origin (pix3_scene's screen —
+                 during play, where the running node is on the Game tab)
+  swipe          a drag between two page points or two nodes, over --ms milliseconds
+  --touch        touch events (a phone finger) instead of the mouse
 `,
   gap: `Usage: pix3 gap "<what was missing>" [--kind capability|tool|node|doc|other] [--detail <text>]
                 [--context <text>] [--agent <name>] [--json] [--project <dir>]

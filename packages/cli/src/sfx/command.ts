@@ -51,6 +51,8 @@ interface SfxArgs {
   readonly out?: string;
   readonly seed: number | null;
   readonly json: boolean;
+  /** Sample rate of the WAV (default {@link SAMPLE_RATE}). */
+  readonly rate: number;
 }
 
 type Parsed = SfxArgs | { readonly help: true } | { readonly error: string; readonly usage?: true };
@@ -60,18 +62,22 @@ const parseSfxArgs = (argv: readonly string[]): Parsed => {
   let text: string | undefined;
   let out: string | undefined;
   let seedText: string | undefined;
+  let rateText: string | undefined;
   let json = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') return { help: true };
     if (arg === '--json') {
       json = true;
-    } else if (arg === '--out' || arg === '--seed') {
+    } else if (arg === '--out' || arg === '--seed' || arg === '--rate') {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) return { error: `${arg} needs a value.` };
       if (arg === '--out') out = value;
+      else if (arg === '--rate') rateText = value;
       else seedText = value;
       i++;
+    } else if (arg.startsWith('--rate=')) {
+      rateText = arg.slice(7);
     } else if (arg.startsWith('--out=')) {
       out = arg.slice(6);
     } else if (arg.startsWith('--seed=')) {
@@ -91,10 +97,14 @@ const parseSfxArgs = (argv: readonly string[]): Parsed => {
     }
     seed = parsed;
   }
+  const rate = rateText === undefined ? SAMPLE_RATE : Number(rateText);
+  if (!Number.isInteger(rate) || rate < 8000 || rate > 48000) {
+    return { error: `--rate takes a sample rate 8000..48000 (Hz), not "${rateText}".` };
+  }
   if (out !== undefined && !/\.wav$/i.test(out)) {
     return { error: `--out must end in .wav (the only format this writes), got "${out}".` };
   }
-  return { text, out, seed, json };
+  return { text, out, seed, json, rate };
 };
 
 /** Render the sound and write the WAV: `--out`, else `audio/<preset>.wav` of the project (or cwd). */
@@ -109,8 +119,8 @@ const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: str
   }
   const { seed } = args;
   const params = seed === null ? resolved.params : mutateSfx(resolved.params, seed);
-  const samples = renderSfx(params, seed ?? 1);
-  const wav = encodeWav16(samples);
+  const samples = renderSfx(params, seed ?? 1, args.rate);
+  const wav = encodeWav16(samples, args.rate);
   const target =
     args.out !== undefined
       ? resolve(cwd, args.out)
@@ -126,7 +136,7 @@ const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: str
     path: relative(cwd, target).split(sep).join('/'),
     res:
       inProject && !inProject.startsWith('..') ? `res://${inProject.split(sep).join('/')}` : null,
-    durationMs: Math.round((samples.length / SAMPLE_RATE) * 1000),
+    durationMs: Math.round((samples.length / args.rate) * 1000),
     preset: resolved.preset,
     seed,
     modifiers: resolved.modifiers,

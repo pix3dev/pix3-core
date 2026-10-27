@@ -70,7 +70,8 @@ describe('synth', () => {
     expect(view.getUint32(4, true)).toBe(wav.length - 8);
     expect(view.getUint16(20, true)).toBe(1); // PCM
     expect(view.getUint16(22, true)).toBe(1); // mono
-    expect(view.getUint32(24, true)).toBe(44100);
+    expect(view.getUint32(24, true)).toBe(22050); // the default rate: short game effects
+    expect(new DataView(encodeWav16(samples, 44100).buffer).getUint32(24, true)).toBe(44100);
     expect(view.getUint16(34, true)).toBe(16);
     expect(view.getUint32(40, true)).toBe(8);
     expect([1, 2, 3].map(i => view.getInt16(44 + i * 2, true))).toEqual([32767, -32768, 16384]);

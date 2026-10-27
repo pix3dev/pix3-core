@@ -151,6 +151,10 @@ const dispatch = async (
       return (await import('./validate/entry.ts')).runValidateCli(argv, io);
     case 'character-compile': // plain Node (PNG headers, yaml)
       return (await import('./character/command.ts')).runCharacterCompileCli(argv, io);
+    case 'play': // a private headless Chrome on the game's page (dev or dist)
+      return (await import('./play/command.ts')).runPlayCli(argv, io);
+    case 'bridge': // CDP to the editor tab through the token proxy
+      return (await import('./bridge/command.ts')).runBridgeCli(argv, io);
     case 'gap': // appends to .pix3/gaps.jsonl
       return (await import('./gap/command.ts')).runGapCli(argv, io);
     case 'sfx': // offline synth, no dependencies

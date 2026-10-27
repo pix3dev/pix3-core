@@ -76,7 +76,10 @@
     "packages/editor-core": {
       // `src/index.ts`: the library entry `vite.config.ts` builds into `dist/index.js` (the
       // published `exports` name only the built file; no consumer compiles against the sources).
-      "entry": ["src/index.ts!", "scripts/*.mjs!"],
+      // `page-bot-host.ts`: bundled by the CLI's `pix3 play` (`packages/cli/src/play/bundle.ts`,
+      // by path through esbuild's stdin) into the page script that runs a bot policy on a game's
+      // own page; nothing in the editor imports it.
+      "entry": ["src/index.ts!", "scripts/*.mjs!", "src/services/game-test/page-bot-host.ts!"],
       "project": [
         "src/**/*.ts!",
         "scripts/*.mjs!",

@@ -42,7 +42,8 @@ declare module 'virtual:pix3/scene-manifest' {
 declare module 'virtual:pix3/embedded-assets' {
   export const embeddedAssets: Record<
     string,
-    { readonly base64: string; readonly mimeType?: string }
+    | { readonly base64: string; readonly mimeType?: string }
+    | { readonly text: string; readonly mimeType?: string }
   >;
 }
 

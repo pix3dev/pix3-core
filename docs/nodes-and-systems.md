@@ -535,6 +535,10 @@ conversion (null when that pointer is not down — a tap that went down and up i
 one frame is already gone). A frame event carries its own position:
 `scene.screenToWorld2D(event)` converts any `{ x, y }` in input units (a
 `pointerEvents` entry, a `getActivePointers()` snapshot) and never loses a tap.
+`GestureTracker` (`core/gestures.ts`) turns `pointerEvents` into taps and
+swipes per finger — a swipe reported once as it crosses `swipeMinPx` (input
+px), with its dominant direction and world points; a cancel or a drag is never
+a tap.
 
 **A hidden control takes no input.** `UIControl2D` gates both channels — a real
 finger and a semantic `invokeInteraction` — on `visible` being true on the control

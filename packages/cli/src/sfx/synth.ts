@@ -411,7 +411,13 @@ export const mutateSfx = (params: SfxParams, seed: number): SfxParams => {
   };
 };
 
-export const SAMPLE_RATE = 44100;
+/**
+ * The default rate a sound is rendered and written at. 22.05 kHz, not 44.1: these are short
+ * synthesized effects whose energy sits well under 10 kHz, and a single-file build embeds every
+ * WAV as base64 — nine 44.1 kHz effects were a quarter of a match-3 playable. `--rate 44100`
+ * when a sound needs the top octave.
+ */
+export const SAMPLE_RATE = 22050;
 
 export const durationOf = (p: SfxParams): number => p.attack + p.decay + p.sustain + p.release;
 
@@ -431,11 +437,11 @@ const envelopeAt = (p: SfxParams, t: number): number => {
 };
 
 /** Render to mono float samples in -1..1. `seed` drives the noise. */
-export const renderSfx = (input: SfxParams, seed = 1): Float32Array => {
+export const renderSfx = (input: SfxParams, seed = 1, sampleRate = SAMPLE_RATE): Float32Array => {
   const p: SfxParams = {
     ...input,
-    freq: clamp(input.freq, 10, 20000),
-    freqEnd: clamp(input.freqEnd, 10, 20000),
+    freq: clamp(input.freq, 10, Math.min(20000, sampleRate * 0.45)),
+    freqEnd: clamp(input.freqEnd, 10, Math.min(20000, sampleRate * 0.45)),
     attack: clamp(input.attack, 0.0005, 5),
     decay: clamp(input.decay, 0, 5),
     sustain: clamp(input.sustain, 0, 5),
@@ -446,21 +452,21 @@ export const renderSfx = (input: SfxParams, seed = 1): Float32Array => {
     lowpassQ: clamp(input.lowpassQ, 0.5, 8),
   };
   const duration = durationOf(p);
-  const length = Math.max(1, Math.round(duration * SAMPLE_RATE));
+  const length = Math.max(1, Math.round(duration * sampleRate));
   const out = new Float32Array(length);
   const random = seededRandom(seed);
   const slide = p.slide > 0 ? p.slide : duration;
   const ratio = p.freqEnd / p.freq;
 
   // RBJ biquad low-pass; coefficients recomputed only when the cutoff is set (it is static).
-  const lowpass = p.lowpassHz > 0 && p.lowpassHz < SAMPLE_RATE / 2;
+  const lowpass = p.lowpassHz > 0 && p.lowpassHz < sampleRate / 2;
   let b0 = 1;
   let b1 = 0;
   let b2 = 0;
   let a1 = 0;
   let a2 = 0;
   if (lowpass) {
-    const w0 = (2 * Math.PI * p.lowpassHz) / SAMPLE_RATE;
+    const w0 = (2 * Math.PI * p.lowpassHz) / sampleRate;
     const alpha = Math.sin(w0) / (2 * p.lowpassQ);
     const cos = Math.cos(w0);
     const a0 = 1 + alpha;
@@ -482,11 +488,11 @@ export const renderSfx = (input: SfxParams, seed = 1): Float32Array => {
   let noiseValue = random() * 2 - 1;
   let noiseStep = 0;
   for (let i = 0; i < length; i++) {
-    const t = i / SAMPLE_RATE;
+    const t = i / sampleRate;
     let freq = p.freq * ratio ** Math.min(1, t / slide);
     if (p.arpAt > 0 && t >= p.arpAt) freq *= p.arpMul;
     if (p.vibratoDepth > 0) freq *= 1 + p.vibratoDepth * Math.sin(2 * Math.PI * p.vibratoHz * t);
-    phase += freq / SAMPLE_RATE;
+    phase += freq / sampleRate;
     let sample: number;
     switch (p.wave) {
       case 'square':
@@ -526,7 +532,7 @@ export const renderSfx = (input: SfxParams, seed = 1): Float32Array => {
   }
 
   // Short fade-out so the last sample is 0 (no click), then normalise to `volume`.
-  const fade = Math.min(length, Math.round(0.003 * SAMPLE_RATE));
+  const fade = Math.min(length, Math.round(0.003 * sampleRate));
   for (let i = 0; i < fade; i++) out[length - 1 - i] *= i / fade;
   let peak = 0;
   for (const value of out) peak = Math.max(peak, Math.abs(value));

@@ -9,10 +9,14 @@
  * - blob: / data:
  */
 
-export interface EmbeddedResourceEntry {
-  readonly base64: string;
-  readonly mimeType?: string;
-}
+/**
+ * A resource baked into a single-file build: bytes as base64, or — for a text file (an SVG, a
+ * scene as JSON, an atlas) — the text itself, a quarter smaller than its base64 and far better
+ * for the page's own gzip.
+ */
+export type EmbeddedResourceEntry =
+  | { readonly base64: string; readonly mimeType?: string }
+  | { readonly text: string; readonly mimeType?: string };
 
 export type EmbeddedResourceMap = Record<string, EmbeddedResourceEntry>;
 
@@ -61,6 +65,7 @@ export class ResourceManager {
   async readText(resource: string): Promise<string> {
     const embeddedEntry = this.getEmbeddedEntry(resource);
     if (embeddedEntry) {
+      if ('text' in embeddedEntry) return embeddedEntry.text;
       const bytes = this.decodeBase64ToBytes(embeddedEntry.base64);
       return new TextDecoder().decode(bytes);
     }
@@ -72,6 +77,11 @@ export class ResourceManager {
   async readBlob(resource: string): Promise<Blob> {
     const embeddedEntry = this.getEmbeddedEntry(resource);
     if (embeddedEntry) {
+      if ('text' in embeddedEntry) {
+        return new Blob([embeddedEntry.text], {
+          type: embeddedEntry.mimeType ?? 'text/plain',
+        });
+      }
       const bytes = this.decodeBase64ToBytes(embeddedEntry.base64);
       const blobBytes = new Uint8Array(bytes.byteLength);
       blobBytes.set(bytes);

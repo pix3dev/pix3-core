@@ -13,6 +13,15 @@ the `pix3-browser` MCP server (chrome-devtools-mcp), which `pix3 agent-setup` co
 proxy and its token. The tab registers its own tools on the page; you edit files, the editor
 follows the disk, and `pix3_sync` is the barrier between the two.
 
+**No `pix3-browser` server in this session** (you are a subagent, in CI, or `agent-setup` asked
+for a new thread you cannot start): the same tools run from the shell through the same proxy —
+`npx pix3 bridge <tool> '<json>'` (`npx pix3 bridge sync '{"timeoutMs":15000}'`,
+`npx pix3 bridge play '{"action":"start"}'`, `npx pix3 bridge scene '{"nodeId":"hud"}'`), plus
+`npx pix3 bridge screenshot [--target game] [--out f.png]` (then look at the PNG),
+`npx pix3 bridge tap --node <id> [--touch]` and
+`npx pix3 bridge swipe --from <id> --to <id> [--touch]` (or page CSS px). Everything below
+applies unchanged; only the transport differs. Do not write your own CDP or MCP client.
+
 ## 1. Find the tab (once per thread, and again after any reload)
 
 1. `.pix3/dev.json` in the project → `publicEditorUrl` when it is there (the address the
@@ -136,7 +145,9 @@ exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
 one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
 between two world points (a match-3 swap, a drag-and-drop; `physical-input` only) and
-`bot.command(name, args?)` dispatches one of the game's `scene.commands`. A policy written or changed during play needs only `pix3_sync`, not a restart.
+`bot.command(name, args?)` dispatches one of the game's `scene.commands`. The same policy plays
+the game's own page — the build too — with `npx pix3 play [dev|dist] --bot <name>` (no editor;
+`pix3-verify` → "`pix3 play`"). A policy written or changed during play needs only `pix3_sync`, not a restart.
 
 The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means the run never started:
 
@@ -212,7 +223,7 @@ async () => await window.__PIX3_DEBUG__.call('pix3_sync', { timeoutMs: 15000 })
 
 Short forms exist for the common calls: `status()`, `sync({expect, timeoutMs})`, `scene(depth)`,
 `node(id)`, `find(text)`, `screen(id)`, `play.start()` / `play.stop()` / `play.restart()` /
-`play.status()`, `errors()`. One tool per `evaluate_script` call: a refusal of one must not take
+`play.pause()` / `play.resume()` / `play.status()`, `errors()`. One tool per `evaluate_script` call: a refusal of one must not take
 the others with it. The answers are the same objects the 3p path returns.
 
 ## 8. Keepalive

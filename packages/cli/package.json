@@ -28,7 +28,7 @@
   },
   "scripts": {
     "start": "node src/index.ts",
-    "build": "tsc -p tsconfig.build.json && node scripts/build-bin.mjs && node scripts/build-validate.mjs && node scripts/build-smoke.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-bin.mjs && node scripts/build-validate.mjs && node scripts/build-smoke.mjs && node scripts/build-play.mjs",
     "copy-templates": "node scripts/copy-templates.mjs",
     "prepack": "npm run copy-templates && npm run build && npm run build-runtime-types && npm run build-kit",
     "postpack": "node scripts/copy-templates.mjs --clean",

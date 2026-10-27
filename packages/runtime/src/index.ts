@@ -33,6 +33,7 @@ export * from './core/JuiceApi';
 export * from './core/juice-transients';
 export * from './core/trail-2d';
 export * from './core/TweenApi';
+export * from './core/gestures';
 export * from './core/AudioApi';
 export * from './core/SfxSynth';
 export * from './core/CutsceneApi';

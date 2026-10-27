@@ -240,6 +240,12 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Per frame: `input.pointerEvents` → `{ type: 'down' | 'move' | 'up' | 'cancel', pointerId, x, y }[]`
   (`cancel` is not a tap; `x, y` in canvas units — `scene.screenToWorld2D(event)` for world);
   `input.keyEvents`.
+- Taps and swipes without the bookkeeping: `private readonly gestures = new GestureTracker()`
+  (from `@pix3/runtime`; `{ swipeMinPx: 24, tapSlopPx: 12, maxTapMs: 500 }`), then in `onUpdate`
+  `for (const g of this.gestures.update(this.input?.pointerEvents ?? [], this.scene))` →
+  `{ type: 'tap', at }` or `{ type: 'swipe', direction: 'left'|'right'|'up'|'down', from, to }`
+  (world units; a swipe fires once, as the finger crosses the threshold — a match-3 swap — and a
+  drag is never also a tap).
 - Polled: `input.isPointerDown`, `input.pointerPosition` (canvas space — use
   `scene.getPointer2DWorldPosition()` for world), `input.isPointerOverUI(pointerId)`,
   `input.getButton(name)`, `input.getAxis(name)`.
