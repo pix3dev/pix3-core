@@ -10,7 +10,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    "erasableSyntaxOnly": true
   },
   "include": ["vite.config.ts", "design/tests/**/*.node.ts"]
 }

@@ -133,7 +133,7 @@ Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", na
 `{kind:"command", name}`, `{kind:"signal", name}`; `op` is `eq`, `ne`, `gt`, `gte`, `lt`,
 `lte` or `contains`.
 
-`bot: {name, channel?}` lets a policy play while the predicates judge (`channel`:
+`bot: {name, channel?, args?}` lets a policy play while the predicates judge (`channel`:
 `physical-input`, the default — real pointer and key events, the only proof a control works — or
 `direct-action`, which calls interactions and sets axes directly): `design/tests/bots/<name>.ts`
 exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit's
@@ -143,7 +143,9 @@ one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, fra
 between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
 (a board cell; both `physical-input` only, one finger — not while the other is still down) and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
-saves a picture of that frame under `pix3 play --bot` and is only a log marker here. **Every `pix3_game_run`
+saves a picture of that frame under `pix3 play --bot` and is only a log marker here. `args` (one
+JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
+specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Every `pix3_game_run`
 loads the policy afresh**: its module-level state (a step counter, a plan) starts over on each
 run, while the game keeps its state from the run before. A policy that spans runs reads where the
 game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays

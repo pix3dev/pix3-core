@@ -70,4 +70,19 @@ describe('GestureTracker', () => {
     strict.update([ev('down', 5, 5)], null, 0);
     expect(strict.update([ev('up', 5, 5)], null, 510)).toEqual([]);
   });
+
+  it('thresholds are CSS px at any device pixel ratio (core-tests/game9)', () => {
+    // A DPR-3 phone: 30 input units of travel are 10 CSS px — a wobble, not a swipe.
+    const at3 = (type: InputPointerFrameEvent['type'], x: number) => ({
+      ...ev(type, x, 0),
+      unitsPerCssPx: 3,
+    });
+    const g = new GestureTracker();
+    g.update([at3('down', 0)], null, 0);
+    expect(g.update([at3('move', 30)], null, 16)).toEqual([]);
+    expect(g.update([at3('up', 30)], null, 32)).toMatchObject([{ type: 'tap' }]);
+    // 75 units = 25 CSS px: a swipe.
+    g.update([at3('down', 0)], null, 100);
+    expect(g.update([at3('move', 75)], null, 116)).toMatchObject([{ type: 'swipe' }]);
+  });
 });

@@ -23,7 +23,11 @@ interface PlayArgs {
   readonly scale: number;
   readonly scene?: string;
   readonly bot?: string;
+  /** `bot.args` for the policy, as one JSON object. */
+  readonly botArgs: Record<string, unknown>;
   readonly seconds: number;
+  /** With a bot: the budget in game frames (1/60 s each), whatever the page's frame rate. */
+  readonly frames: number;
   readonly screenshot?: string;
   /** Where `bot.screenshot(name)` pictures go (default beside --screenshot, else .pix3/screenshots). */
   readonly shots?: string;
@@ -32,6 +36,10 @@ interface PlayArgs {
 }
 
 const DEFAULT_SIZE = { width: 390, height: 844 };
+/** A bot's game-frame budget: two minutes of game time. */
+const DEFAULT_BOT_FRAMES = 7200;
+/** A bot run's wall-clock safety net. */
+const DEFAULT_BOT_WALL_SECONDS = 900;
 
 const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
   let target: string | undefined;
@@ -40,7 +48,9 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let scale = 3;
   let scene: string | undefined;
   let bot: string | undefined;
+  let botArgs: Record<string, unknown> = {};
   let seconds: number | undefined;
+  let frames: number | undefined;
   let screenshot: string | undefined;
   let shots: string | undefined;
   let json = false;
@@ -59,7 +69,19 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     } else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
-    else if (flag === '--seconds') seconds = Number(value());
+    else if (flag === '--bot-args') {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value() ?? '');
+      } catch {
+        parsed = undefined;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return { error: `--bot-args takes one JSON object, e.g. --bot-args '{"target":"lose"}'` };
+      }
+      botArgs = parsed as Record<string, unknown>;
+    } else if (flag === '--seconds') seconds = Number(value());
+    else if (flag === '--frames') frames = Number(value());
     else if (flag === '--screenshot') screenshot = value();
     else if (flag === '--shots') shots = value();
     else if (flag === '--project') project = value();
@@ -68,9 +90,15 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     else return { error: `one target at a time (got ${target} and ${arg})` };
   }
   if (!Number.isFinite(scale) || scale <= 0) return { error: '--scale takes a positive number' };
-  const budget = seconds ?? (bot ? 60 : 3);
+  // With a bot the budget is game frames: a headless page at --scale 3 paints ~8 fps, and 60 wall
+  // seconds were ~8 s of a fixed-tick game — a round never finished (core-tests/game9). Seconds
+  // stay as the wall-clock safety net.
+  const budget = seconds ?? (bot ? DEFAULT_BOT_WALL_SECONDS : 3);
   if (!Number.isFinite(budget) || budget <= 0)
     return { error: '--seconds takes a positive number' };
+  const frameBudget = frames ?? DEFAULT_BOT_FRAMES;
+  if (!Number.isInteger(frameBudget) || frameBudget <= 0)
+    return { error: '--frames takes a positive whole number of game frames (60 = 1 s)' };
   return {
     target,
     width,
@@ -78,7 +106,9 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     scale,
     scene,
     bot,
+    botArgs,
     seconds: budget,
+    frames: frameBudget,
     screenshot,
     shots,
     json,
@@ -243,7 +273,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       await chrome.evaluate(session, policyScript);
       await chrome.evaluate(
         session,
-        `window.__PIX3_PAGE_BOT_HOST__.startPageBot(${JSON.stringify(args.bot)}, window.__PIX3_BOT_POLICY__), true`
+        `window.__PIX3_PAGE_BOT_HOST__.startPageBot(${JSON.stringify(args.bot)}, window.__PIX3_BOT_POLICY__, ${JSON.stringify(args.botArgs)}), true`
       );
       // One evaluate per poll: whether the policy is done, and the next picture it asked for
       // (`bot.screenshot`) — the page holds the game paused on that frame until `resume()`.
@@ -261,8 +291,12 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         await sleep(POLL_MS);
         const poll = (await chrome.evaluate(
           session,
-          '(() => { const b = window.__PIX3_PAGE_BOT__; return { finished: b.finished, shot: b.takeShot() }; })()'
-        )) as { finished?: boolean; shot?: { name: string; frame: number } | null } | null;
+          '(() => { const b = window.__PIX3_PAGE_BOT__; return { finished: b.finished, frame: b.frame, shot: b.takeShot() }; })()'
+        )) as {
+          finished?: boolean;
+          frame?: number;
+          shot?: { name: string; frame: number } | null;
+        } | null;
         if (poll?.shot) {
           const shot = (await chrome.send(
             'Page.captureScreenshot',
@@ -278,7 +312,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
           await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.resume()');
           continue;
         }
-        if (poll?.finished) break;
+        if (poll?.finished || (poll?.frame ?? 0) >= args.frames) break;
       }
       botReport = (await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.stop()')) as Record<
         string,

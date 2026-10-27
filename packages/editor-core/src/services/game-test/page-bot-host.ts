@@ -50,6 +50,8 @@ export interface PageBotShot {
 
 export interface PageBotHandle {
   readonly finished: boolean;
+  /** Ticks the policy has played (`bot.frame`): 1/60 s of game time each. */
+  readonly frame: number;
   /**
    * The next picture to take, or null. The game stays paused on its frame until {@link resume};
    * the CLI captures the page in between.
@@ -192,7 +194,11 @@ const buildPageWorld = (
  * Start `policyModule` (the compiled policy file's exports) on the running game of this page.
  * Throws a sentence when the page has no running game or the module is not a policy.
  */
-export const startPageBot = (name: string, policyModule: unknown): PageBotHandle => {
+export const startPageBot = (
+  name: string,
+  policyModule: unknown,
+  args: Record<string, unknown> = {}
+): PageBotHandle => {
   const page = window as PageWindow;
   const runner = page.__PIX3_PLAYER__?.runner;
   if (!runner) throw new Error('the page has no running game (window.__PIX3_PLAYER__.runner)');
@@ -206,7 +212,8 @@ export const startPageBot = (name: string, policyModule: unknown): PageBotHandle
     name,
     resolved.policy,
     buildPageWorld(runner, canvas, page, shots),
-    error => errors.push(error.message)
+    error => errors.push(error.message),
+    args
   );
   // Fixed 1/60 s ticks while the bot plays: a headless page paints at 10–30 fps, and in realtime a
   // tick's game time followed it, so `bot.frame` was not game time and a 300 ms effect lived a
@@ -221,6 +228,9 @@ export const startPageBot = (name: string, policyModule: unknown): PageBotHandle
   const handle: PageBotHandle = {
     get finished() {
       return session.finished;
+    },
+    get frame() {
+      return session.frame;
     },
     takeShot: () => shots.shift() ?? null,
     resume: () => {

@@ -12,9 +12,10 @@ describe('InputService pointer ownership', () => {
     element.dispatchEvent(new PointerEvent(type, { pointerId, clientX, clientY }));
   };
   /** Frame events queued since the last frame. */
+  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents;
+    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
   };
 
   beforeEach(() => {
@@ -185,9 +186,10 @@ describe('InputService pointer cancellation', () => {
   const dispatch = (type: string, pointerId: number, clientX = 40, clientY = 60): void => {
     element.dispatchEvent(new PointerEvent(type, { pointerId, clientX, clientY }));
   };
+  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents;
+    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
   };
 
   beforeEach(() => {

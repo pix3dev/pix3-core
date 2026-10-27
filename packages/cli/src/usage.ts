@@ -54,7 +54,7 @@ Usage:
   pix3 play [dev|dist] [--bot <n>] The game's page (or the build) in a headless Chrome at a phone
         [--size 390x844]           size, optionally played by a bot policy; screenshot, errors;
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
-        [--shots <dir>]
+        [--shots <dir>] [--frames N] [--bot-args '<json>']
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
                                    tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
@@ -252,7 +252,8 @@ Reference it from a scene or script as res://<path inside the project>.
   --json      machine-readable (the catalog; or {family, weight, copied, registered})
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
-                 [--bot <name>] [--seconds S] [--screenshot <file.png>] [--shots <dir>] [--json]
+                 [--bot <name>] [--bot-args '<json>'] [--frames N] [--seconds S] [--screenshot <file.png>] [--shots <dir>]
+                 [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -266,10 +267,13 @@ Reference it from a scene or script as res://<path inside the project>.
   --scene path   boot another scene (dev server only)
   --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
-                 physical-input only. Ends at done() or after --seconds (default 60 with a bot, 3
-                 without). The game ticks a fixed 1/60 s per frame while a bot plays, so a frame
-                 number means the same game time on any machine, and it stays paused on the frame
-                 of done()
+                 physical-input only. Ends at done() or after --frames game frames (default 7200,
+                 two minutes of game time, however slowly the page paints); --seconds is the
+                 wall-clock limit (default 900 with a bot; without one, how long the page runs: 3).
+                 The game ticks a fixed 1/60 s per frame while a bot plays, so a frame number means
+                 the same game time on any machine, and it stays paused on the frame of done()
+  --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,
+                 several variants
   --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)
   --shots dir    where bot.screenshot(name) saves <name>.png — the game is frozen on the frame the
                  policy asked on, photographed, then runs on (default: beside --screenshot, else

@@ -192,6 +192,8 @@ export interface BotPoint {
 export interface NormalizedBotSpec {
   name: string;
   channel: BotActuatorChannel;
+  /** What the policy reads as `bot.args` (a JSON object); absent = `{}`. */
+  args?: Record<string, unknown>;
 }
 
 /**
@@ -213,15 +215,19 @@ export function parseBotSpec(raw: unknown): { spec: NormalizedBotSpec } | { erro
         : null;
   if (!record) {
     return {
-      error: `game_run \`bot\` takes {name, channel?} (or just the policy's name as a string), e.g. {bot: {name: 'dodge'}} for ${BOT_DIRECTORY}/dodge.ts.`,
+      error: `game_run \`bot\` takes {name, channel?, args?} (or just the policy's name as a string), e.g. {bot: {name: 'dodge'}} for ${BOT_DIRECTORY}/dodge.ts.`,
     };
   }
-  const unknown = Object.keys(record).filter(key => key !== 'name' && key !== 'channel');
+  const unknown = Object.keys(record).filter(
+    key => key !== 'name' && key !== 'channel' && key !== 'args'
+  );
   if (unknown.length > 0) {
     return {
-      error: `game_run \`bot\` carries only {name, channel}; unknown field(s) ${unknown.map(key => `"${key}"`).join(', ')}. A policy takes no arguments — it is code, so put the variation in the file.`,
+      error: `game_run \`bot\` carries only {name, channel, args}; unknown field(s) ${unknown.map(key => `"${key}"`).join(', ')}. A policy's parameters go in \`args\` (it reads them as bot.args).`,
     };
   }
+  const args = parseBotArgs(record.args);
+  if ('error' in args) return args;
   const name = typeof record.name === 'string' ? record.name.trim() : '';
   if (!name) {
     return {
@@ -239,8 +245,28 @@ export function parseBotSpec(raw: unknown): { spec: NormalizedBotSpec } | { erro
     spec: {
       name,
       channel: (record.channel as BotActuatorChannel | undefined) ?? DEFAULT_BOT_CHANNEL,
+      ...(record.args !== undefined && record.args !== null ? { args: args.args } : {}),
     },
   };
+}
+
+/**
+ * A policy's `args`: one JSON object (a copy — a policy cannot reach back into the caller's), so
+ * one file plays several variants (`{target: 'win'}`, `{moves: 5}`) instead of one file per
+ * variant (core-tests/game9).
+ */
+export function parseBotArgs(raw: unknown): { args: Record<string, unknown> } | { error: string } {
+  if (raw === undefined || raw === null) return { args: {} };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      error: `bot args must be one JSON object, e.g. {"target": "win"} (got ${JSON.stringify(raw)}).`,
+    };
+  }
+  try {
+    return { args: JSON.parse(JSON.stringify(raw)) as Record<string, unknown> };
+  } catch {
+    return { error: 'bot args must be plain JSON (no functions, no cycles).' };
+  }
 }
 
 /**
@@ -278,6 +304,11 @@ export interface BotHit {
 export interface Pix3TestBot {
   /** Ticks the policy has been ticked for. 1 on the first tick. */
   readonly frame: number;
+  /**
+   * The run's parameters: `pix3_game_run {bot: {name, args}}` or `pix3 play --bot-args '<json>'`
+   * — `{}` when none were given. One policy, several variants (`bot.args.target === 'lose'`).
+   */
+  readonly args: Readonly<Record<string, unknown>>;
 
   // -- sensors ---------------------------------------------------------------
 
@@ -563,7 +594,9 @@ export class BotSession {
     private readonly policy: BotPolicy,
     private readonly world: BotWorld,
     /** Where a policy's throw is reported, on its own channel. */
-    private readonly onError?: (error: { message: string; stack?: string }) => void
+    private readonly onError?: (error: { message: string; stack?: string }) => void,
+    /** `bot.args` (frozen). */
+    private readonly args: Readonly<Record<string, unknown>> = {}
   ) {
     this.bot = this.buildBot();
     if (world.channel === 'direct-action') {
@@ -588,7 +621,13 @@ export class BotSession {
     return this.failure;
   }
 
+  /** Ticks the policy has been ticked for (`bot.frame`). */
+  get frame(): number {
+    return this.currentFrame;
+  }
+
   /** Actuator calls the world accepted. Zero means nothing was driven — see rule 2. */
+
   get actionsSent(): number {
     return this.sent;
   }
@@ -660,6 +699,7 @@ export class BotSession {
       get frame() {
         return frame();
       },
+      args: Object.freeze({ ...this.args }),
       nodes: query => this.sense(() => this.world.findNodes(query, MAX_SENSED_NODES), []),
       nearest: (type, from) =>
         this.sense(() => this.world.nearestOfType(type, from ?? { x: 0, y: 0, z: 0 }), null),

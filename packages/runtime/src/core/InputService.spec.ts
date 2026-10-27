@@ -282,6 +282,36 @@ describe('InputService pointer capture (synthetic events)', () => {
   });
 });
 
+describe('InputService pointer units (core-tests/game9)', () => {
+  it('events stay in canvas backing units and carry how many make a CSS px', () => {
+    const input = new InputService();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1170; // a DPR-3 phone: 390 CSS px wide
+    canvas.height = 2532;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 390, height: 844, right: 390, bottom: 844 }) as DOMRect;
+    canvas.setPointerCapture = () => {};
+    canvas.releasePointerCapture = () => {};
+    document.body.appendChild(canvas);
+    input.attach(canvas);
+    const down = new Event('pointerdown');
+    Object.defineProperties(down, {
+      pointerId: { value: 1 },
+      clientX: { value: 100 },
+      clientY: { value: 10 },
+    });
+    canvas.dispatchEvent(down);
+    input.beginFrame();
+    // Coordinates unchanged (3D picking, UI hit tests and screenToWorld2D read them).
+    expect(input.pointerEvents).toEqual([
+      { type: 'down', pointerId: 1, x: 300, y: 30, unitsPerCssPx: 3 },
+    ]);
+    expect(input.unitsPerCssPx).toBe(3);
+    input.detach();
+    canvas.remove();
+  });
+});
+
 describe('InputService observed polls (harness diagnostic)', () => {
   let input: InputService;
 

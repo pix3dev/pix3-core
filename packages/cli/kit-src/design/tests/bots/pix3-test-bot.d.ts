@@ -44,6 +44,11 @@ declare interface BotHit {
 declare interface Pix3TestBot {
   /** Ticks this policy has been ticked for. 1 on the first tick. */
   readonly frame: number;
+  /**
+   * The run's parameters (frozen; `{}` when none): pix3_game_run {bot: {name, args: {…}}} or
+   * pix3 play --bot <name> --bot-args '{…}'. One policy, several variants.
+   */
+  readonly args: Readonly<Record<string, unknown>>;
 
   // -- sensors ---------------------------------------------------------------
 

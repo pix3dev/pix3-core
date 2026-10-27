@@ -1359,6 +1359,50 @@ describe('pix3 kit', () => {
     expect(typo[0].message).toContain("'fly'");
   }, 120_000);
 
+  it("a starter's Node tests reject syntax Node cannot strip, as node itself does (core-tests/game9)", async () => {
+    // `node design/tests/x.node.ts` runs by type stripping: a parameter property or an enum in the
+    // rules module it imports throws there, while pix3 check passed it.
+    const template = listTemplates().find(t => t.id === '2d');
+    if (!template) throw new Error('2d missing');
+    const root = join(scratch, `starter-node-${++counter}`);
+    createProject({
+      template,
+      dir: root,
+      postCreateSteps: [agentKitStep(kit, ensureRuntimeTypes())],
+    });
+    const nodeConfigPath = join(root, 'tsconfig.node.json');
+    const nodeConfig = JSON.parse(readFileSync(nodeConfigPath, 'utf8')) as {
+      compilerOptions: Record<string, unknown>;
+    };
+    expect(nodeConfig.compilerOptions.erasableSyntaxOnly).toBe(true);
+    // As above: check only the files under test (vite.config.ts needs the plugin's dist/).
+    writeFileSync(
+      nodeConfigPath,
+      JSON.stringify({ ...nodeConfig, include: ['design/tests/**/*.node.ts'] })
+    );
+    const appConfigPath = join(root, 'tsconfig.json');
+    const appConfig = JSON.parse(readFileSync(appConfigPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(appConfigPath, JSON.stringify({ ...appConfig, include: ['scripts'] }));
+    symlinkSync(join(repoRootOfCheckout(), 'node_modules'), join(root, 'node_modules'), 'dir');
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(
+      join(root, 'scripts/rules.ts'),
+      'export class Board {\n  constructor(readonly size: number) {}\n}\n'
+    );
+    writeFileSync(
+      join(root, 'design/tests/rules.node.ts'),
+      "import { Board } from '../../scripts/rules.ts';\nconsole.log(new Board(8).size);\n"
+    );
+    const report = await checkProject(root, {
+      hydrate: false,
+      offline: true,
+      validate: options => validateProject(options),
+    });
+    const errors = report.diagnostics.filter(d => d.code === 'E_TYPE');
+    expect(errors).toEqual([expect.objectContaining({ file: 'scripts/rules.ts', line: 2 })]);
+    expect(errors[0].message).toContain('erasableSyntaxOnly');
+  }, 120_000);
+
   it('the TypeScript examples in the kit type-check against the shipped runtime types', async () => {
     const root = freshRecipe(true);
     const blocks: { file: string; code: string }[] = [];

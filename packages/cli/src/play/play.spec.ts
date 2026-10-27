@@ -46,6 +46,13 @@ describe('pix3 play', () => {
     expect(nothing.err).toContain('nothing to play');
 
     expect((await run(['--size', 'phone'])).code).toBe(2);
+    // A bot's budget is game frames (core-tests/game9): a whole positive number.
+    const frames = await run(['--bot', 'x', '--frames', '0']);
+    expect(frames.code).toBe(2);
+    expect(frames.err).toContain('--frames takes a positive whole number');
+    const badArgs = await run(['--bot', 'x', '--bot-args', '[1]']);
+    expect(badArgs.code).toBe(2);
+    expect(badArgs.err).toContain('--bot-args takes one JSON object');
 
     mkdirSync(join(root, 'dist'));
     writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');

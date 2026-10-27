@@ -680,7 +680,8 @@ export class GameTestService {
             componentId: loaded.name,
             message: `bot "${loaded.name}": ${error.message}`,
             ...(error.stack ? { stack: error.stack } : {}),
-          })
+          }),
+        normalized.bot.args
       );
     }
 

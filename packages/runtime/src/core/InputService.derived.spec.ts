@@ -23,9 +23,10 @@ describe('InputService derived pointer state', () => {
   /** The mocked rect is 1:1 and offset by (10, 20), so input x = clientX - 10. */
   const dispatch = (type: string, pointerId: number, clientX = 40, clientY = 60): void =>
     void element.dispatchEvent(new PointerEvent(type, { pointerId, clientX, clientY }));
+  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents;
+    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
   };
 
   beforeEach(() => {

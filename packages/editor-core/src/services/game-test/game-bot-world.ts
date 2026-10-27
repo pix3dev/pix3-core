@@ -54,7 +54,6 @@ const round3 = (value: number): number => Math.round(value * 1000) / 1000;
 /** The view a policy gets of one live node — the subset documented in `game-bots.ts`. */
 export function botNodeView(node: NodeBase): BotNodeView {
   const world = node.getWorldPosition(new Vector3());
-  const text = (node as unknown as { text?: unknown }).text;
   return {
     nodeId: node.nodeId,
     name: node.name,
@@ -62,8 +61,22 @@ export function botNodeView(node: NodeBase): BotNodeView {
     visible: node.visible,
     position: { x: node.position.x, y: node.position.y, z: node.position.z },
     worldPosition: { x: round3(world.x), y: round3(world.y), z: round3(world.z) },
-    ...(typeof text === 'string' ? { text } : {}),
+    ...textOf(node),
   };
+}
+
+/**
+ * What the node shows as text: a UI control's caption (`Label2D`, `Button2D` — localized, as
+ * drawn), else a `text` field. Read by shape: the caption lives in `label` / `getDisplayText()`,
+ * not `text`, which is why every `Label2D` came back without one (core-tests/game9).
+ */
+function textOf(node: NodeBase): { text?: string } {
+  const shaped = node as unknown as { getDisplayText?: unknown; text?: unknown };
+  if (typeof shaped.getDisplayText === 'function') {
+    const shown = (shaped.getDisplayText as () => unknown).call(node);
+    if (typeof shown === 'string') return { text: shown };
+  }
+  return typeof shaped.text === 'string' ? { text: shaped.text } : {};
 }
 
 /** Walk the live graph in tree order, stopping at `limit` visits. */

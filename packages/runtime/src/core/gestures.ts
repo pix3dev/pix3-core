@@ -20,9 +20,11 @@ import type { InputPointerFrameEvent } from './InputService';
  * Per finger (`pointerId`): a press that ends within {@link GestureOptions.tapSlopPx} and
  * {@link GestureOptions.maxTapMs} is a **tap**; one that travels farther is a **swipe** — reported
  * the moment it crosses {@link GestureOptions.swipeMinPx} (so a swap happens under the finger, not
- * on release), once per press. A `'cancel'` drops the press: it is never a tap. Distances are in
- * input units (CSS px of the canvas), so a threshold means the same on every screen; positions
- * come back in 2D world units through `scene.screenToWorld2D` (raw input units without a scene).
+ * on release), once per press. A `'cancel'` drops the press: it is never a tap. Thresholds are in
+ * CSS px — what a finger travels — and are converted with each event's `unitsPerCssPx` (pointer
+ * events are in canvas backing pixels: three per CSS px on a DPR-3 phone, where unconverted
+ * thresholds shrank to a third — core-tests/game9); positions come back in 2D world units through
+ * `scene.screenToWorld2D` (raw input units without a scene).
  */
 
 export type SwipeDirection = 'left' | 'right' | 'up' | 'down';
@@ -47,9 +49,9 @@ export interface SwipeGesture {
 export type Gesture = TapGesture | SwipeGesture;
 
 export interface GestureOptions {
-  /** Travel (input px) at which a press becomes a swipe. Default 24. */
+  /** Travel (CSS px) at which a press becomes a swipe. Default 24. */
   readonly swipeMinPx?: number;
-  /** Travel (input px) a tap may wobble. Default 12. */
+  /** Travel (CSS px) a tap may wobble. Default 12. */
   readonly tapSlopPx?: number;
   /** Longest press that still counts as a tap, ms. Default 500. */
   readonly maxTapMs?: number;
@@ -71,6 +73,8 @@ interface Press {
   readonly x: number;
   readonly y: number;
   readonly at: number;
+  /** Input units per CSS px when the finger went down. */
+  readonly scale: number;
   /** The `update` call the press arrived in. */
   readonly frame: number;
   swiped: boolean;
@@ -108,6 +112,7 @@ export class GestureTracker {
           x: event.x,
           y: event.y,
           at: now,
+          scale: event.unitsPerCssPx && event.unitsPerCssPx > 0 ? event.unitsPerCssPx : 1,
           frame: this.frame,
           swiped: false,
         });
@@ -121,7 +126,8 @@ export class GestureTracker {
       }
       const dx = event.x - press.x;
       const dy = event.y - press.y;
-      const travel = Math.hypot(dx, dy);
+      // In CSS px, so a threshold means the same at any device pixel ratio.
+      const travel = Math.hypot(dx, dy) / press.scale;
       if (!press.swiped && travel >= this.swipeMinPx) {
         press.swiped = true;
         out.push({

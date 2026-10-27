@@ -122,7 +122,8 @@ played there with real DOM pointer and key events (the same bot API as `pix3_gam
 the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
 nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot or a page that never
 booted. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
-machine) and stops on the frame of `done()`, so `--screenshot` shows what was judged; mid-run
+machine) and stops on the frame of `done()`; the budget is `--frames` game frames (default 7200,
+two minutes of game time, however slowly the headless page paints — a whole round fits), so `--screenshot` shows what was judged; mid-run
 pictures come from the policy: `bot.screenshot('result-card')` freezes the game on that frame,
 saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
 result card, all in one run. No editor, no MCP: it works from a subagent and in CI.
@@ -134,7 +135,10 @@ Engine-free rules (matching, scoring, a level generator — a plain module besid
 run as `node design/tests/<name>.node.ts` (Node 22.18+ / 23.6+ runs `.ts` directly). Name them
 `*.node.ts`: `tsconfig.node.json` gives exactly those (and `vite.config.ts`) the Node types and
 `pix3 check` type-checks them with it, while the game's `tsconfig.json` keeps `process` and
-`node:*` out of the scripts that ship to the browser.
+`node:*` out of the scripts that ship to the browser. Node runs `.ts` by stripping the types, so
+a test and every module it imports must be erasable TypeScript — no parameter properties
+(`constructor(readonly size: number)`), `enum` or `namespace`; `tsconfig.node.json` has
+`erasableSyntaxOnly`, so `pix3 check` names such a line instead of `node` failing on it.
 
 ## 2. What the editor does with a file you wrote
 

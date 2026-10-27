@@ -152,9 +152,28 @@ describe('parseBotSpec', () => {
     expect('error' in parsed && parsed.error).toContain('direct-action');
   });
 
-  it('refuses unknown fields — a policy takes no arguments', () => {
+  it('takes args for the policy, and refuses other fields (core-tests/game9)', () => {
     const parsed = parseBotSpec({ name: 'dodge', args: { speed: 2 } });
-    expect('error' in parsed && parsed.error).toContain('"args"');
+    expect('spec' in parsed && parsed.spec.args).toEqual({ speed: 2 });
+    const stray = parseBotSpec({ name: 'dodge', speed: 2 });
+    expect('error' in stray && stray.error).toContain('"speed"');
+    const notObject = parseBotSpec({ name: 'dodge', args: [1] });
+    expect('error' in notObject && notObject.error).toContain('one JSON object');
+  });
+
+  it('hands the args to the policy as bot.args, frozen', () => {
+    const seen: unknown[] = [];
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        seen.push(bot.args.target, Object.isFrozen(bot.args));
+      }),
+      makeWorld(),
+      undefined,
+      { target: 'lose' }
+    );
+    session.tick();
+    expect(seen).toEqual(['lose', true]);
   });
 
   it('needs a name', () => {

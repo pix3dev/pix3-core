@@ -135,6 +135,20 @@ describe('collectBotNodeViews', () => {
     expect(collectBotNodeViews(makeScene([root]), 'Enemy', 4)).toHaveLength(4);
   });
 
+  it('reads a caption as text: a Label2D / Button2D shows `getDisplayText()` (core-tests/game9)', () => {
+    const root = makeNode('root', { name: 'Root' });
+    // UI controls keep their caption in `label` and draw `getDisplayText()` (localized); no `text`.
+    const score = Object.assign(makeNode('score', { name: 'Score', type: 'Label2D' }), {
+      label: 'SCORE {n}',
+      getDisplayText: () => 'SCORE 120',
+    });
+    root.adoptChild(score);
+    root.adoptChild(makeNode('plain', { name: 'Plain' }));
+    const scene = makeScene([root]);
+    expect(collectBotNodeViews(scene, 'Score', 1)[0].text).toBe('SCORE 120');
+    expect('text' in collectBotNodeViews(scene, 'Plain', 1)[0]).toBe(false);
+  });
+
   it('reports world position, not just local, so a parented node reads correctly', () => {
     const root = makeNode('root', { name: 'Root', at: [10, 5, 0] });
     const hero = makeNode('hero', { name: 'Hero', at: [3, 0, 0] });

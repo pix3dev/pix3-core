@@ -12,6 +12,13 @@ export interface InputPointerFrameEvent {
   pointerId: number;
   x: number;
   y: number;
+  /**
+   * Input units per CSS px of the canvas at this event (the canvas backing scale: the device
+   * pixel ratio, capped by the quality setting). `x` / `y` stay in input units — the space the
+   * 2D and 3D picking, UI hit tests and `screenToWorld2D` share; divide a distance by this to get
+   * CSS px (what a finger travels). Absent on an event a test builds by hand: read it as 1.
+   */
+  unitsPerCssPx?: number;
 }
 
 /**
@@ -187,6 +194,8 @@ export class InputService {
   public readonly wheelModifiers: WheelModifierFlags = this.currentWheelModifiers;
 
   public pointerEvents: readonly InputPointerFrameEvent[] = [];
+  /** Input units per CSS px, as of the last pointer event (see {@link InputPointerFrameEvent}). */
+  public unitsPerCssPx = 1;
   public keyEvents: readonly InputKeyFrameEvent[] = [];
 
   public width = 0;
@@ -389,6 +398,7 @@ export class InputService {
           pointerId: pointer.pointerId,
           x: pointer.x,
           y: pointer.y,
+          unitsPerCssPx: this.unitsPerCssPx,
         });
       }
     }
@@ -631,6 +641,7 @@ export class InputService {
       pointerId: event.pointerId,
       x: position.x,
       y: position.y,
+      unitsPerCssPx: this.unitsPerCssPx,
     });
     this.capturePointer(event.pointerId);
 
@@ -669,6 +680,7 @@ export class InputService {
       pointerId: event.pointerId,
       x: position.x,
       y: position.y,
+      unitsPerCssPx: this.unitsPerCssPx,
     });
   };
 
@@ -720,6 +732,7 @@ export class InputService {
       pointerId: event.pointerId,
       x: position.x,
       y: position.y,
+      unitsPerCssPx: this.unitsPerCssPx,
     });
     this.releasePointer(event.pointerId);
 
@@ -864,6 +877,7 @@ export class InputService {
     const safeRectHeight = rect.height > 0 ? rect.height : 1;
     const scaleX = this.width / safeRectWidth;
     const scaleY = this.height / safeRectHeight;
+    this.unitsPerCssPx = scaleX > 0 ? scaleX : 1;
 
     const x = (event.clientX - rect.left) * scaleX;
     const y = (event.clientY - rect.top) * scaleY;
