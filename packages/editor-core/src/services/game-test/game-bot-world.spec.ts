@@ -3,6 +3,7 @@ import { Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
 import { NodeBase } from '@pix3/runtime';
 import {
   BOT_STICK_POINTER_BASE,
+  botPointInNode,
   collectBotNodeViews,
   nearestBotNode,
   PhysicalAxisDriver,
@@ -159,6 +160,19 @@ describe('collectBotNodeViews', () => {
     expect(view.position.x).toBe(3);
     expect(view.worldPosition.x).toBe(13);
     expect(view.worldPosition.y).toBe(5);
+  });
+});
+
+describe('botPointInNode', () => {
+  it("maps a point in a node's own space to the world, by id or name (core-tests/game10)", () => {
+    const root = makeNode('root', { name: 'Root', at: [100, -50, 0] });
+    const board = makeNode('board-1', { name: 'Board', at: [10, 20, 0] });
+    root.adoptChild(board);
+    root.updateWorldMatrix(true, true);
+    const scene = makeScene([root]);
+    expect(botPointInNode(scene, 'board-1', 5, 5)).toEqual({ x: 115, y: -25, z: 0 });
+    expect(botPointInNode(scene, 'Board', 0, 0)).toEqual({ x: 110, y: -30, z: 0 });
+    expect(botPointInNode(scene, 'Nowhere', 0, 0)).toBeNull();
   });
 });
 

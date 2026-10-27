@@ -58,6 +58,11 @@ declare interface Pix3TestBot {
   nearest(type: string, from?: BotPoint): BotHit | null;
   /** First live node struck by a ray. `dir` need not be normalised. */
   raycast(from: BotPoint, dir: BotPoint): BotHit | null;
+  /**
+   * The world point at (x, y) in a node's own space (name or id) — what tapAt / swipe take:
+   * bot.tapAt(bot.pointIn('board', cellX, cellY)) taps a board cell. null when no such node.
+   */
+  pointIn(node: string, x: number, y: number): BotPoint | null;
   /** The game's own registerGameDebug() snapshot, or null when it registered none. */
   gameState(): unknown;
 

@@ -49,6 +49,7 @@ function makeWorld(
     findNodes: query => nodes.filter(node => node.name === query || node.type === query),
     nearestOfType: () => null,
     raycast: () => null,
+    pointIn: () => null,
     gameState: () => null,
     pressAction: action => gate(`press:${action}`),
     releaseAction: action => gate(`release:${action}`),

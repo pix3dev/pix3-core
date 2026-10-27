@@ -95,7 +95,8 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     name: 'pix3_play',
     description:
       'Play mode. `start` runs the active scene (or `scenePath`) and records you as the owner; ' +
-      '`stop`, `restart` (stop → apply deferred file changes → start) and `pause` work on any ' +
+      '`stop`, `restart` (stop → apply deferred file changes → start; a plain start when nothing ' +
+      'plays) and `pause` work on any ' +
       'session an agent started; a session the designer started from the UI is refused with ' +
       'reason not_owner, even with `force`. `status` returns playOwner and startedAt. `aspect` ' +
       'sets the Game tab’s frame with any action ("9:16" for a phone, "free" fills the panel; ' +

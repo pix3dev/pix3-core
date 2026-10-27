@@ -259,6 +259,14 @@ describe('scene.juice.floatText', () => {
     expect(service.juice.floatText('+1', { fontSizePx: 30 })!.labelFontSize).toBe(30);
   });
 
+  it('pops from half size, not from a speck (core-tests/game10)', () => {
+    const { service } = makeHarness();
+    const popup = service.juice.floatText('NICE!', { durationSec: 1 })!;
+    popup.tick(1 / 60);
+    expect(popup.scale.x).toBeGreaterThan(0.5);
+    expect(popup.scale.x).toBeLessThan(1);
+  });
+
   it('never participates in picking', () => {
     const { service, target } = makeHarness();
     const popup = service.juice.floatText('MISS', { at: target })!;

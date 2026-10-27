@@ -411,14 +411,16 @@ const play = {
     return ran(await resolveCommandDispatcher().executeById('game.stop'), 'game.stop');
   },
   /**
-   * Plan §B.3: stop → apply the file changes held for play → start. The editor's own
+   * Plan §B.3: stop → apply the file changes held for play → start (just start when stopped). The editor's own
    * `game.restart` restarts the runtime in place and keeps the hold, so the version an agent
    * wrote during play would still be waiting after it; this one goes through a real stop.
    */
   async restart(): Promise<BridgeResult> {
     const refused = refuseDesignerSession();
     if (refused) return refused;
-    if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing; use start.');
+    // Nothing playing: a restart is a start. The kit's loop is sync → restart → game_run, and a
+    // not_playing refusal after a stop broke it on the first iteration (core-tests/game10).
+    if (!appState.ui.isPlaying) return play.start();
     const dispatcher = resolveCommandDispatcher();
     const stopped = await dispatcher.executeById('game.stop');
     if (!stopped) return ran(false, 'game.stop');

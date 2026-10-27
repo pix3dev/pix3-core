@@ -7,6 +7,7 @@ import {
   keyCodeOf,
   nearestBotNode,
   projectToCanvasFraction,
+  botPointInNode,
   raycastBotNodes,
   toCanvasFraction,
   type BotCanvasHandle,
@@ -92,6 +93,7 @@ const buildPageWorld = (
     findNodes: (query, max) => collectBotNodeViews(scene, query, max),
     nearestOfType: (type, from) => nearestBotNode(scene, type, from),
     raycast: (from, dir) => raycastBotNodes(scene, from, dir),
+    pointIn: (query, x, y) => botPointInNode(scene, query, x, y),
     gameState: () => {
       const snapshot = (page as PageWindow).__PIX3_GAME_DEBUG__?.snapshot?.();
       return snapshot === undefined ? null : (JSON.parse(JSON.stringify(snapshot)) as Json);

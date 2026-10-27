@@ -115,6 +115,11 @@ export const FLOAT_TEXT_DEFAULTS = {
 
 /** Portion of the popup's life spent on the scale pop-in. */
 const FLOAT_TEXT_POP_PORTION = 0.22;
+/**
+ * Scale the pop starts from. From 0, the first frames of a popup were a speck — a screenshot or a
+ * glance at frame 2 saw nothing (core-tests/game10); half size still reads as a pop.
+ */
+const FLOAT_TEXT_POP_FROM = 0.5;
 /** Portion of the popup's life shown at full opacity before the fade starts. */
 const FLOAT_TEXT_FADE_START = 0.45;
 
@@ -474,7 +479,10 @@ export class FloatText2D extends Label2D {
 
     this.position.y = this.baseY + this.driftPx * easeOutCubic(progress);
     const pop =
-      progress < FLOAT_TEXT_POP_PORTION ? easeOutBack(progress / FLOAT_TEXT_POP_PORTION) : 1;
+      progress < FLOAT_TEXT_POP_PORTION
+        ? FLOAT_TEXT_POP_FROM +
+          (1 - FLOAT_TEXT_POP_FROM) * easeOutBack(progress / FLOAT_TEXT_POP_PORTION)
+        : 1;
     this.scale.set(this.baseScaleX * pop, this.baseScaleY * pop, 1);
     this.opacity =
       progress < FLOAT_TEXT_FADE_START

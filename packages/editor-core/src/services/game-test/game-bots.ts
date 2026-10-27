@@ -326,6 +326,12 @@ export interface Pix3TestBot {
   nearest(type: string, from?: BotPoint): BotHit | null;
   /** First live node struck by a ray, or `null`. `dir` need not be normalised. */
   raycast(from: BotPoint, dir: BotPoint): BotHit | null;
+  /**
+   * The world point at `(x, y)` in a node's own space (name or id), for {@link tapAt} /
+   * {@link swipe}: `bot.tapAt(bot.pointIn('board', col * 120 - 420, 420 - row * 120))` taps a
+   * cell. `null` when no such live node exists.
+   */
+  pointIn(node: string, x: number, y: number): BotPoint | null;
   /** The game's own `GameDebugProvider` snapshot, or `null` when it registered none. */
   gameState(): Json | null;
 
@@ -461,6 +467,7 @@ export interface BotWorld {
   findNodes(query: string, max: number): BotNodeView[];
   nearestOfType(type: string, from: BotPoint): BotHit | null;
   raycast(from: BotPoint, dir: BotPoint): BotHit | null;
+  pointIn(query: string, x: number, y: number): BotPoint | null;
   gameState(): Json | null;
 
   pressAction(action: string): string | null;
@@ -704,6 +711,7 @@ export class BotSession {
       nearest: (type, from) =>
         this.sense(() => this.world.nearestOfType(type, from ?? { x: 0, y: 0, z: 0 }), null),
       raycast: (from, dir) => this.sense(() => this.world.raycast(from, dir), null),
+      pointIn: (node, x, y) => this.sense(() => this.world.pointIn(String(node), x, y), null),
       gameState: () => this.sense(() => this.world.gameState(), null),
       press: (action, frames) => this.doPress(action, frames),
       release: action => this.doRelease(action),

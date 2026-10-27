@@ -67,7 +67,7 @@ error: pageId: expected number" means it was left out.
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
 | `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). **During play** both also reach nodes only the running game has — spawned by a script, or in the scene `changeScene` went to: they carry `runtimeOnly: true` and no `saved`, and `nodeId` may then be the node's name. Read-only |
-| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?`, `aspect?` | play mode; `start` records you as the owner; `pause` / `resume` set that state (no-op when already in it); `aspect` `free\|16:9\|9:16\|4:3` frames the Game tab with any action (it stays; the answer says the current one) — `9:16` for a phone-shaped run and screenshot; exact phone sizes: `npx pix3 play --size` |
+| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?`, `aspect?` | play mode; `start` records you as the owner; `restart` = stop → apply held file changes → start (just a start when nothing plays); `pause` / `resume` set that state (no-op when already in it); `aspect` `free\|16:9\|9:16\|4:3` frames the Game tab with any action (it stays; the answer says the current one) — `9:16` for a phone-shaped run and screenshot; exact phone sizes: `npx pix3 play --size` |
 | `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
@@ -141,7 +141,11 @@ exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
 one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
 between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
-(a board cell; both `physical-input` only, one finger — not while the other is still down) and
+(both `physical-input` only, one finger — not while the other is still down). **A board cell is a
+point, not a node:** `bot.pointIn('board', x, y)` turns a position in the board node's own space
+(the space its cells are laid out in) into the world point `tapAt` / `swipe` take —
+`bot.swipe(bot.pointIn('board', x, y), bot.pointIn('board', x + cell, y))` — no need for the game
+to publish world coordinates and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
 saves a picture of that frame under `pix3 play --bot` and is only a log marker here. `args` (one
 JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
@@ -248,7 +252,7 @@ quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
 | `pix3_status` | `npx pix3 bridge status` |
 | `pix3_sync {expect, timeoutMs}` | `npx pix3 bridge sync '{"expect":{"scenes/main.pix3scene":"<sha256>"},"timeoutMs":15000}'` |
 | `pix3_scene {nodeId}` / `{find}` | `npx pix3 bridge scene '{"nodeId":"hud"}'`, `npx pix3 bridge scene '{"find":"gem"}'` |
-| `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart`, `stop`, `resume`, `status`) |
+| `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart` — a plain start when nothing plays — `stop`, `resume`, `status`) |
 | `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":3600}'` |
 | `pix3_errors` | `npx pix3 bridge errors` |
 | `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--target game\|viewport] [--aspect 9:16] [--out f.png]` — then open the PNG |

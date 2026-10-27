@@ -432,6 +432,29 @@ describe('agent bridge', () => {
     await callBridgeTool('pix3_play', { action: 'stop' });
   });
 
+  it('play: restart with nothing playing starts the game (core-tests/game10)', async () => {
+    const container = ServiceContainer.getInstance();
+    const started: string[] = [];
+    container
+      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
+      .registerMany({
+        metadata: { id: 'game.start', title: 'start', description: 'start', keywords: [] },
+        async execute(context) {
+          started.push('game.start');
+          await context.container
+            .getService<OperationService>(context.container.getOrCreateToken(OperationService))
+            .invoke(new SetPlayModeOperation({ isPlaying: true, status: 'playing' }));
+          return { didMutate: true, payload: undefined };
+        },
+      });
+    expect(await callBridgeTool('pix3_play', { action: 'restart' })).toMatchObject({
+      ok: true,
+      playing: true,
+      playOwner: 'agent',
+    });
+    expect(started).toEqual(['game.start']);
+  });
+
   it('play: stop and pause without a session say not_playing; game_run needs play', async () => {
     expect(await callBridgeTool('pix3_play', { action: 'stop' })).toMatchObject({
       ok: false,

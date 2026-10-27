@@ -90,6 +90,7 @@ import {
   nearestBotNode,
   PhysicalAxisDriver,
   projectToCanvasFraction,
+  botPointInNode,
   raycastBotNodes,
   type BotSceneHandle,
   keyCodeOf,
@@ -962,6 +963,7 @@ export class GameTestService {
       findNodes: (query, max) => collectBotNodeViews(scene, query, max),
       nearestOfType: (type, from) => nearestBotNode(scene, type, from),
       raycast: (from, dir) => raycastBotNodes(scene, from, dir),
+      pointIn: (query, x, y) => botPointInNode(scene, query, x, y),
       gameState: () => readGameState()?.snapshot ?? null,
 
       pressAction: action => {

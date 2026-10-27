@@ -121,6 +121,29 @@ export function collectBotNodeViews(
   return found;
 }
 
+/**
+ * The world point at `(x, y)` in a live node's own space (its origin is `(0, 0)`, its children's
+ * positions are in this space) — a board cell from the board node and its cell size, without the
+ * game publishing world coordinates (core-tests/game10). The node is a name or an id, first match.
+ */
+export function botPointInNode(
+  scene: BotSceneHandle,
+  query: string,
+  x: number,
+  y: number
+): BotPoint | null {
+  let node = scene.getLiveNodeById(query);
+  if (!node) {
+    walkLiveNodes(scene, MAX_BOT_SENSE_NODES, candidate => {
+      if (!node && candidate.name === query) node = candidate;
+    });
+  }
+  if (!node) return null;
+  (node as NodeBase).updateWorldMatrix(true, false);
+  const world = (node as NodeBase).localToWorld(new Vector3(x, y, 0));
+  return { x: round3(world.x), y: round3(world.y), z: round3(world.z) };
+}
+
 /** Nearest live node of a type to a point, with the distance that made it nearest. */
 export function nearestBotNode(scene: BotSceneHandle, type: string, from: BotPoint): BotHit | null {
   const origin = new Vector3(from.x, from.y, from.z ?? 0);
