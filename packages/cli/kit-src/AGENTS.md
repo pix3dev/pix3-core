@@ -82,7 +82,7 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
 | Path | What |
 | --- | --- |
 | `scenes/*.pix3scene` | Scenes |
-| `scenes/ui/*.pix3scene` | Full-screen overlays (result card, modal), one file each, instanced hidden |
+| `scenes/ui/*.pix3scene` | Full-screen overlays (result card, modal), one file each, a `CanvasLayer2D` root, instanced hidden as the last child |
 | `scenes/prefabs/*.pix3scene` | Prefabs: a scene file with exactly ONE root node (a top-level `prefabs/` works too) |
 | `scripts/*.ts` | Script components |
 | `sprites/`, `audio/`, `fonts/`, `models/` … | Assets, referenced as `res://sprites/x.png` |
@@ -151,7 +151,8 @@ root:
 - **Quote every colour**: `color: "#141a2e"`. Unquoted, `#` starts a YAML comment.
 - Textures: `texture: { type: 'texture', url: 'res://sprites/ph-target.png' }`.
 - `visible: false` on an overlay instance hides it **in the editor only**; play mode reads
-  `initiallyVisible` on the overlay file's root. Set both.
+  `initiallyVisible` on the overlay file's root. Set both. The overlay's root is a `CanvasLayer2D`, so the game's
+  juice effects stay under it (`pix3-scene-format` → "Full-screen UI").
 - The loader is forgiving — unknown types, unknown keys and wrong value types load silently
   as nothing. That is why rule 4 exists.
 

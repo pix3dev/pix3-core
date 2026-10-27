@@ -340,6 +340,10 @@ export class JuiceApi {
       while (current) {
         if (current instanceof Node2D) {
           host = current;
+          // A CanvasLayer2D is its own band, drawn after the main pass: an effect anchored inside
+          // one (a "+100" on a result card's button) stays in it. Climbing past it put the effect
+          // in the main band — under the very overlay it was anchored to.
+          if (current.isCanvasLayer) break;
         }
         current = current.parent;
       }

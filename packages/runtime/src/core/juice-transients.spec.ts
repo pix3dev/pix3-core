@@ -180,6 +180,20 @@ describe('scene.juice.burst', () => {
     expect(burst!.parent).toBe(hud);
   });
 
+  it('keeps a burst anchored inside a nested overlay layer in that layer (core-tests/game10)', () => {
+    // A `scenes/ui/` result card instanced under the game root with a CanvasLayer2D root: an
+    // effect on its button belongs to the card's band, not the game root's main band under it.
+    const { service, root } = makeHarness();
+    const card = new CanvasLayer2D({ id: 'result-card', name: 'Result Card' });
+    const button = new Sprite2D({ id: 'again', name: 'again' });
+    card.adoptChild(button);
+    root.adoptChild(card);
+
+    expect(service.juice.burst(button)!.parent).toBe(card);
+    // The board's effects stay in the main band, under the card.
+    expect(service.juice.burst('bumper')!.parent).toBe(root);
+  });
+
   it('returns null for an unresolvable target', () => {
     const { service } = makeHarness();
     expect(service.juice.burst('does-not-exist')).toBeNull();

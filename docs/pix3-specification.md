@@ -622,6 +622,7 @@ A project is created by `npm create pix3 [dir] -- --template 2d|3d` (asks in a t
 
 - `visible` is applied at load by `NodeBase` — an **editor** hide, so `main.pix3scene` opens on the game. Ticking the eye previews the overlay composited; it must not be saved on.
 - `initiallyVisible` is applied by `SceneRunner.applyInitialVisibility` when **play mode** starts, and is authored on the overlay file's own root node (`true` for a tap gate that must be up at t=0, `false` for a result card a script reveals). Hiding an overlay with `initiallyVisible` alone was the old shape and does nothing in the editor.
+- The overlay file's root is a **`CanvasLayer2D`**, and its instance is the last child of the host's 2D root: the overlay band is drawn after the game, so juice effects spawned by the game (`scene.juice.floatText` on a cascade) stay under a result card, the card ignores `Camera2D` shake and post-processing, and an effect anchored inside the card stays in the card's band (core-tests/game10).
 
 Instance children keep their authored ids when unique, so scripts keep addressing `result-label` / `retry-button` / `cta-button` by id across the split. Overlay scenes ship like any other asset but are excluded from the navigable scene list and never booted (`isPrefabPath` in `packages/vite-plugin/src/build/scan.ts`), on the same grounds as `prefabs/`: they are instantiated, not booted into. The 2.x starters have no overlays; the corpus that still carries them is checked by the loader and saver goldens.
 

@@ -227,6 +227,24 @@ scene with `properties: { visible: false }`. Two different flags, both needed:
 - `initiallyVisible: false|true` on the **overlay file's root node** — what **play mode**
   applies at start. A script reveals the overlay by setting `node.visible = true`.
 
+**The overlay file's root is a `CanvasLayer2D`** (width/height = `viewportBaseSize`), and its
+instance is the **last child** of the host's 2D root. A `CanvasLayer2D` subtree is drawn in its own
+pass after the game, so every `scene.juice` effect of the game (a cascade's "AMAZING!", a burst)
+stays **under** the card, a `shake('camera2d')` does not shake it and post-processing does not blur
+it — no `zIndex` and no delayed reveal needed. An effect anchored to a node **inside** the card
+(`scene.juice.burst('again-button')`) is drawn in the card's layer, on top of it. In the editor a
+`CanvasLayer2D` draws in tree order, so keep the instance last to see the same stacking there.
+
+```yaml
+# scenes/ui/result.pix3scene
+root:
+  - id: result-layer
+    type: CanvasLayer2D
+    name: Result
+    properties: { width: 1080, height: 1920, initiallyVisible: false }
+    children: [ … the dimmer, the card, PLAY AGAIN … ]
+```
+
 Never put a full-screen dimmer/panel inline in `main.pix3scene`.
 
 ## Known gaps
