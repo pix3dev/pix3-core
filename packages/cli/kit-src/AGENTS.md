@@ -29,9 +29,10 @@ Build and review a reusable UI kit using runtime UI nodes and skin textures:
 panels, slots, tabs, buttons, bars, icons, selected/pressed/disabled states.
 Use native InputService actions and control signals, including Joystick2D for
 touch movement. Do not introduce a parallel DOM UI or browser-input layer.
-Before implementing animation, camera, physics or input, consult the installed
-`.claude/skills/pix3-nodes/SKILL.md` and `.claude/skills/pix3-scripts/SKILL.md`
-(and their references); use `.claude/skills/pix3-editor/SKILL.md` for iteration.
+Before implementing animation, camera, physics or input, read the installed
+`.claude/skills/pix3-nodes/SKILL.md` and `.claude/skills/pix3-scripts/SKILL.md`; their
+`reference*.md` files are lookups — each opens with a contents list, grep the one heading you
+need, never read them whole. Use `.claude/skills/pix3-editor/SKILL.md` for iteration.
 
 Completion requires inspection of the running editor and game at the target
 device size, an interaction check through actual input, and comparison to the
@@ -208,6 +209,9 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   script throw, `console.error` or unhandled rejection. Name the game scene.
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
+- `pix3 font add <family>` — copy a bundled display font (Nunito, Rubik — both with Cyrillic —
+  Baloo 2, Fredoka, Lilita One, Luckiest Guy; `pix3 font` lists them) into `fonts/` and register
+  it in `pix3project.yaml`. Text without one renders in each machine's own system face.
 - `pix3 editor` — find (or start) the dev server and open the editor in a Chrome reachable only
   through its token proxy; `pix3 agent-setup [claude|codex] [--repair]` — write the project's
   MCP config for `chrome-devtools-mcp`, once (never commit it).
@@ -226,7 +230,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 ## Skills (read the one you need, when you need it)
 
 - `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays; `.pix3anim` flipbooks and `pix3 character-compile` in `pix3anim.md` beside it; file and project operations the editor does not do in `project-files.md` beside it
-- `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every node in `reference.md` beside it
+- `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every 2D node in `reference.md` beside it, 3D in `reference-3d.md`
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
 - `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback
 - `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `smoke`, the diagnostic codes, how to report what was verified

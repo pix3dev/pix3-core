@@ -17,8 +17,9 @@ follows the disk, and `pix3_sync` is the barrier between the two.
 for a new thread you cannot start): the same tools run from the shell through the same proxy —
 `npx pix3 bridge <tool> '<json>'` (`npx pix3 bridge sync '{"timeoutMs":15000}'`,
 `npx pix3 bridge play '{"action":"start"}'`, `npx pix3 bridge scene '{"nodeId":"hud"}'`), plus
-`npx pix3 bridge screenshot [--target game] [--out f.png]` (then look at the PNG),
-`npx pix3 bridge tap --node <id> [--touch]` and
+`npx pix3 bridge screenshot [--target game] [--aspect 9:16] [--out f.png]` (then look at the PNG;
+`--aspect` frames the Game tab like a phone), `npx pix3 bridge tap --node <id> [--touch]` (during
+play also a node a script spawned, by id or name) and
 `npx pix3 bridge swipe --from <id> --to <id> [--touch]` (or page CSS px). Everything below
 applies unchanged; only the transport differs. Do not write your own CDP or MCP client.
 
@@ -70,8 +71,8 @@ error: pageId: expected number" means it was left out.
 | --- | --- | --- |
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
-| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
-| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner; `pause` / `resume` set that state (no-op when already in it) |
+| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). **During play** both also reach nodes only the running game has — spawned by a script, or in the scene `changeScene` went to: they carry `runtimeOnly: true` and no `saved`, and `nodeId` may then be the node's name. Read-only |
+| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?`, `aspect?` | play mode; `start` records you as the owner; `pause` / `resume` set that state (no-op when already in it); `aspect` `free\|16:9\|9:16\|4:3` frames the Game tab with any action (it stays; the answer says the current one) — `9:16` for a phone-shaped run and screenshot; exact phone sizes: `npx pix3 play --size` |
 | `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
@@ -144,8 +145,12 @@ exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit
 `design/tests/bots/pix3-test-bot.d.ts` (global, no import); a starter's `pix3 check`
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
 one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
-between two world points (a match-3 swap, a drag-and-drop; `physical-input` only) and
-`bot.command(name, args?)` dispatches one of the game's `scene.commands`. The same policy plays
+between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
+(a board cell; both `physical-input` only, one finger — not while the other is still down) and
+`bot.command(name, args?)` dispatches one of the game's `scene.commands`. **Every `pix3_game_run`
+loads the policy afresh**: its module-level state (a step counter, a plan) starts over on each
+run, while the game keeps its state from the run before. A policy that spans runs reads where the
+game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
 the game's own page — the build too — with `npx pix3 play [dev|dist] --bot <name>` (no editor;
 `pix3-verify` → "`pix3 play`"). A policy written or changed during play needs only `pix3_sync`, not a restart.
 

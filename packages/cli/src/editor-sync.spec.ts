@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { syncEditor } from './editor-sync.ts';
+import { describeEditorSync, syncEditor } from './editor-sync.ts';
 
 /** `pix3 check` / `smoke` tell a gone dev server from a busy one (the plugin's rule, P13). */
 
@@ -49,5 +49,32 @@ describe('syncEditor', () => {
     const port = await listen(server);
     await new Promise<void>(resolve => server.close(() => resolve()));
     expect(await syncEditor(projectPointingAt(port))).toEqual({ status: 'no-server' });
+  });
+});
+
+describe('syncEditor: what the flush wrote', () => {
+  const editorAnswering = async (reply: Record<string, unknown>): Promise<string> => {
+    const port = await listen(
+      createServer((request, response) => {
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify(request.url?.endsWith('/flush') ? reply : { ok: true }));
+      })
+    );
+    return projectPointingAt(port);
+  };
+
+  it('an editor with nothing unsaved is no news (core-tests/game7)', async () => {
+    const result = await syncEditor(await editorAnswering({ ok: true, editor: true, saved: [] }));
+    expect(result).toMatchObject({ status: 'flushed', saved: [] });
+    expect(describeEditorSync(result)).toBeNull();
+  });
+
+  it('an editor that wrote scenes is named with the count and the paths', async () => {
+    const result = await syncEditor(
+      await editorAnswering({ ok: true, editor: true, saved: ['scenes/main.pix3scene'] })
+    );
+    expect(describeEditorSync(result)).toMatch(
+      /wrote 1 unsaved scene\(s\) to disk first: scenes\/main\.pix3scene$/
+    );
   });
 });

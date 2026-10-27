@@ -1,6 +1,6 @@
 ---
 name: pix3-nodes
-description: Compact property reference for the Pix3 2D node types games use most — Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess — plus the Node2D base properties, anchor layout and paint order; the full per-node reference (every 2D and 3D node) is reference.md beside it. Use when adding a node to a .pix3scene, choosing which node type to use, or checking a property name/type before writing it.
+description: Compact property reference for the Pix3 2D node types games use most — Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess — plus the Node2D base properties, anchor layout and paint order; the full per-node reference is reference.md beside it (2D and audio; 3D and post-processing in reference-3d.md). Use when adding a node to a .pix3scene, choosing which node type to use, or checking a property name/type before writing it.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -8,8 +8,9 @@ description: Compact property reference for the Pix3 2D node types games use mos
 
 Property names below are the exact YAML keys under `properties:`. A misspelled key is kept
 silently and does nothing, so copy them from here or from an existing node in the project
-(`pix3 check` flags unknown keys). Every node type, 2D and 3D, is in `reference.md` beside
-this file — grep `### <NodeName>` there instead of reading it whole.
+(`pix3 check` flags unknown keys). Every 2D node type is in `reference.md` beside this file,
+3D ones and `PostProcess` in `reference-3d.md` — grep `### <NodeName>` there instead of reading
+them whole.
 
 ## Which node
 
@@ -119,7 +120,7 @@ xmlns), `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY`, `W_SVG_EXTERNAL_REF`.
 | `labelKey` | string | "" | A key of the locale tables (`locales/<id>.json` `strings`); when set it wins over `label`, and a key no table has shows as the key itself. Any UI control has it (`Button2D` too) — `project-files.md` → "Add or remove a locale" |
 | `labelFontSize` | number | 16 | px |
 | `labelColor` | colour | "#ffffff" | |
-| `labelFontFamily` | string | Arial | A family the project ships in `fonts/`, else a system face |
+| `labelFontFamily` | string | Arial | A family the project ships in `fonts/`, else a system face — which differs per machine, so a game with text ships one: `npx pix3 font add Nunito` (or `pix3 font` for the list) copies it and registers it, then set this and `labelFontWeight` to what it prints |
 | `labelFontWeight` | number | 400 | 400 / 700 / 900 … |
 | `labelAlign` | enum | center | `left`, `center`, `right` |
 | `labelVAlign` | enum | middle | `top`, `middle`, `bottom` |

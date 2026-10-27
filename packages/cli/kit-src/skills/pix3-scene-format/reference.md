@@ -7,6 +7,10 @@ kebab-case, and there are no scene-format migrations today (`version: 1.0.0` is 
 The "Flat Asset Layout" principle is what `pix3 new` creates; an existing project keeps its own
 layout (`res://` is always relative to the project root). Source paths quoted here (`src/…`, `packages/…`) are files of the Pix3 engine repository, not of this project.
 
+## Contents
+
+{{toc}}
+
 ## Key principles
 
 {{include:docs/pix3-specification.md#Key Principles}}

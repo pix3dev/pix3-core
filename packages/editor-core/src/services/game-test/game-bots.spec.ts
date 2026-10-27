@@ -59,6 +59,10 @@ function makeWorld(
     setAxisValue: (name, value) => gate(`axis:${name}=${value}`),
     pointAt: point => gate(`pointAt:${point.x},${point.y}`),
     pointerAt: (phase, point) => gate(`pointer:${phase}:${point.x},${point.y}`),
+    tapAtDown: point => gate(`tapAt:down:${point.x},${point.y}`),
+    tapAtUp: point => {
+      calls.push(`tapAt:up:${point.x},${point.y}`);
+    },
     dispatchCommand: name => gate(`command:${name}`),
     releaseAll: () => {
       calls.push('releaseAll');
@@ -320,6 +324,36 @@ describe('BotSession actuators', () => {
     ]);
     expect(session.report().sent).toBe(1);
     expect(session.report().refused).toBe(1);
+  });
+
+  it('tapAt: down at a world point, up after the tap hold, one finger (core-tests/game7)', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.tapAt({ x: 12, y: -30 });
+        if (bot.frame === 2) bot.tapAt({ x: 0, y: 0 }); // still down: refused
+        if (bot.frame === 2) bot.swipe({ x: 0, y: 0 }, { x: 1, y: 0 }); // same finger: refused
+        if (bot.frame === 1 + DEFAULT_TAP_HOLD_FRAMES) bot.tapAt({ x: 5, y: 5 }); // lifted: ok
+        if (bot.frame === 9) bot.tapAt({ x: Number.NaN, y: 0 });
+      }),
+      world
+    );
+    run(session, 10);
+    expect(world.calls).toEqual([
+      'tapAt:down:12,-30',
+      'tapAt:up:12,-30',
+      'tapAt:down:5,5',
+      'tapAt:up:5,5',
+    ]);
+    expect(session.report().sent).toBe(2);
+    expect(session.report().refused).toBe(3);
+    expect(
+      session
+        .report()
+        .log.map(entry => entry.message)
+        .join(' ')
+    ).toContain('one finger');
   });
 
   it('command dispatches a game command', () => {

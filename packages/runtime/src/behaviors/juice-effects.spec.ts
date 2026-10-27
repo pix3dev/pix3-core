@@ -148,4 +148,28 @@ describe('PopInBehavior', () => {
     pop.onUpdate(1); // long tick → completes to authored scale
     expect(node.scale.x).toBeCloseTo(2, 6);
   });
+
+  it('a node pre-shrunk to 0 pops up to scale 1, not to 0 (core-tests/game7)', () => {
+    const node = makeNode();
+    node.scale.set(0, 0, 1);
+    const pop = new PopInBehavior('pop', 'core:PopIn');
+    pop.node = node;
+    pop.config.playOnStart = false;
+    pop.onStart();
+    pop.play({ from: 0, duration: 0.2, easing: 'linear' });
+    pop.onUpdate(0.1);
+    expect(node.scale.x).toBeCloseTo(0.5, 5);
+    pop.onUpdate(0.1);
+    expect([node.scale.x, node.scale.y, node.scale.z]).toEqual([1, 1, 1]);
+  });
+
+  it('a mirrored node keeps its sign', () => {
+    const node = makeNode();
+    node.scale.set(-2, 2, 1);
+    const pop = new PopInBehavior('pop', 'core:PopIn');
+    pop.node = node;
+    pop.onStart();
+    pop.onUpdate(1);
+    expect([node.scale.x, node.scale.y]).toEqual([-2, 2]);
+  });
 });

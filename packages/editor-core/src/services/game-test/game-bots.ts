@@ -316,6 +316,12 @@ export interface Pix3TestBot {
    */
   tap(target: string): void;
   /**
+   * Tap a world point — a board cell, an empty spot — on the bot's finger: down now, up a few
+   * ticks later, like {@link tap} but aimed at a position instead of a node. Physical input only;
+   * one finger, so not while a {@link swipe} or another `tapAt` is still in progress.
+   */
+  tapAt(point: BotPoint): void;
+  /**
    * Steer an input axis to `value` (clamped to -1..1).
    *
    * On `physical-input` this deflects the live on-screen joystick that writes the
@@ -429,6 +435,10 @@ export interface BotWorld {
   pointAt(point: BotPoint): string | null;
   /** A pointer phase at a world point, on the bot's own finger (`swipe`). */
   pointerAt(phase: 'down' | 'move' | 'up', point: BotPoint): string | null;
+  /** The bot's finger down at a world point (`tapAt`). The session schedules {@link tapAtUp}. */
+  tapAtDown(point: BotPoint): string | null;
+  /** Lift the finger {@link tapAtDown} put down. Never refuses — the press already happened. */
+  tapAtUp(point: BotPoint): void;
   /** `scene.commands.dispatch(name, args)` on the running game. */
   dispatchCommand(name: string, args?: Record<string, unknown>): string | null;
   /** Drop everything still held. Called once, from the session's teardown. */
@@ -486,6 +496,10 @@ const MAX_SENSED_NODES = 64;
  * notice, which reads exactly like a dead button.
  */
 export const DEFAULT_TAP_HOLD_FRAMES = 3;
+/** A finite world point `{x, y}` from a policy (which is untyped JS at run time). */
+const isBotPoint = (p: BotPoint): boolean =>
+  !!p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x + p.y);
+
 /** Ticks a `swipe()` takes when the policy does not say — a quick flick at 60 fps. */
 const DEFAULT_SWIPE_FRAMES = 8;
 
@@ -529,6 +543,8 @@ export class BotSession {
   private readonly openTaps = new Map<string, number>();
   /** The swipe in progress (one finger, so one at a time). */
   private swipe: { from: BotPoint; to: BotPoint; startFrame: number; frames: number } | null = null;
+  /** The `tapAt` in flight on the same finger, and the frame its release is due on. */
+  private pointTap: { at: BotPoint; dueAt: number } | null = null;
 
   constructor(
     private readonly name: string,
@@ -599,6 +615,7 @@ export class BotSession {
     this.heldActions.clear();
     this.openTaps.clear();
     this.swipe = null;
+    this.pointTap = null;
     this.world.releaseAll();
   }
 
@@ -639,6 +656,7 @@ export class BotSession {
       press: (action, frames) => this.doPress(action, frames),
       release: action => this.doRelease(action),
       tap: target => this.doTap(target),
+      tapAt: point => this.doTapAt(point),
       axis: (name, value) => this.doAxis(name, value),
       moveTo: point => this.doMoveTo(point),
       swipe: (from, to, frames) => this.doSwipe(from, to, frames),
@@ -704,6 +722,19 @@ export class BotSession {
     this.sent += 1;
   }
 
+  private doTapAt(point: BotPoint): void {
+    if (!isBotPoint(point)) return this.refuse('tapAt() needs a world point {x, y}.');
+    if (this.swipe || this.pointTap) {
+      return this.refuse(
+        `tapAt() was called while the bot's finger is still ${this.swipe ? 'swiping' : 'down on the previous tapAt'} — one finger: wait for it to lift.`
+      );
+    }
+    const refusal = this.world.tapAtDown(point);
+    if (refusal) return this.refuse(refusal);
+    this.pointTap = { at: point, dueAt: this.currentFrame + DEFAULT_TAP_HOLD_FRAMES };
+    this.sent += 1;
+  }
+
   private doAxis(name: string, value: number): void {
     const axis = String(name ?? '').trim();
     if (!axis) return this.refuse('axis() needs an axis name, e.g. axis("Horizontal", -1).');
@@ -725,14 +756,17 @@ export class BotSession {
   }
 
   private doSwipe(from: BotPoint, to: BotPoint, frames?: number): void {
-    const isPoint = (p: BotPoint) =>
-      !!p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x + p.y);
-    if (!isPoint(from) || !isPoint(to)) {
+    if (!isBotPoint(from) || !isBotPoint(to)) {
       return this.refuse('swipe() needs two world points {x, y}: swipe(from, to, frames?).');
     }
     if (this.swipe) {
       return this.refuse(
         'swipe() was called while the previous swipe is still moving — wait for it to end (its `frames`).'
+      );
+    }
+    if (this.pointTap) {
+      return this.refuse(
+        "swipe() was called while the bot's finger is still down on a tapAt — one finger: wait for it to lift."
       );
     }
     const refusal = this.world.pointerAt('down', from);
@@ -802,6 +836,11 @@ export class BotSession {
 
   private releaseDue(): void {
     this.advanceSwipe();
+    if (this.pointTap && this.pointTap.dueAt <= this.currentFrame) {
+      const { at } = this.pointTap;
+      this.pointTap = null;
+      this.world.tapAtUp(at);
+    }
     for (const [action, dueAt] of [...this.heldActions]) {
       if (dueAt !== null && dueAt <= this.currentFrame) {
         this.heldActions.delete(action);

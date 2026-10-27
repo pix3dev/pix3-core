@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describeUnsynced, syncEditor } from '../editor-sync.ts';
+import { describeEditorSync, describeUnsynced, syncEditor } from '../editor-sync.ts';
 import { findUp, sha256Hex } from '../fs-util.ts';
 import type { CliIo } from '../io.ts';
 import { PROJECT_MANIFEST_FILE, readManifestKitVersion, resolveProjectRoot } from '../manifest.ts';
@@ -300,7 +300,8 @@ export const checkProject = async (
   const validateMs = Date.now() - started;
 
   const notes: string[] = [...validated.notes];
-  if (synced.status === 'flushed') notes.push(`editor at ${synced.url} flushed its unsaved scenes`);
+  const flushNote = describeEditorSync(synced);
+  if (flushNote) notes.push(flushNote);
 
   // --- the type-check layout ------------------------------------------------------------------
   const ownTsconfig = hasOwnTsconfig(projectRoot);

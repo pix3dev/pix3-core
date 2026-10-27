@@ -64,6 +64,11 @@ declare interface Pix3TestBot {
   release(action: string): void;
   /** Tap a control by node name/id: down now, up a few ticks later. */
   tap(target: string): void;
+  /**
+   * Tap a world point (a board cell): down now, up a few ticks later, on the same finger as
+   * swipe() — not while a swipe or another tapAt is still down. physical-input only.
+   */
+  tapAt(point: BotPoint): void;
   /** Steer an input axis to -1..1. On physical-input this deflects the live joystick. */
   axis(name: string, value: number): void;
   /** Point the pointer at a world position (aim, hover, click-to-move). */

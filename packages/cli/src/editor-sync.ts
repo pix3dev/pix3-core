@@ -20,7 +20,8 @@ export type EditorSyncResult =
   | { readonly status: 'skipped' }
   | { readonly status: 'no-server' }
   | { readonly status: 'no-editor'; readonly url: string }
-  | { readonly status: 'flushed'; readonly url: string }
+  /** An editor answered; `saved` = the scenes it wrote just now (empty: nothing was unsaved). */
+  | { readonly status: 'flushed'; readonly url: string; readonly saved: readonly string[] }
   | { readonly status: 'unsynced'; readonly url: string; readonly reason: string };
 
 const devServerUrl = (projectRoot: string): string | null => {
@@ -33,6 +34,19 @@ const devServerUrl = (projectRoot: string): string | null => {
     return null;
   }
 };
+
+const savedPaths = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
+
+/**
+ * The line `pix3 check` prints about the flush, or null. Only a flush that wrote something is
+ * news: "flushed its unsaved scenes" after an editor with nothing unsaved read as if the editor
+ * had overwritten the files (core-tests/game7).
+ */
+export const describeEditorSync = (result: EditorSyncResult): string | null =>
+  result.status === 'flushed' && result.saved.length > 0
+    ? `editor at ${result.url} wrote ${result.saved.length} unsaved scene(s) to disk first: ${result.saved.join(', ')}`
+    : null;
 
 /** Flush the editor that `.pix3/dev.json` points at, if any. Never throws. */
 export const syncEditor = async (
@@ -75,12 +89,15 @@ export const syncEditor = async (
     const reply = (await response.json()) as {
       ok?: boolean;
       editor?: boolean;
+      saved?: unknown;
       reason?: string;
     };
     if (reply.ok === false) {
       return { status: 'unsynced', url, reason: reply.reason ?? `HTTP ${response.status}` };
     }
-    return reply.editor ? { status: 'flushed', url } : { status: 'no-editor', url };
+    return reply.editor
+      ? { status: 'flushed', url, saved: savedPaths(reply.saved) }
+      : { status: 'no-editor', url };
   } catch (error) {
     return {
       status: 'unsynced',

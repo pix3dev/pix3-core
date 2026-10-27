@@ -126,6 +126,19 @@ const buildPageWorld = (runner: SceneRunner, canvas: HTMLCanvasElement, page: Wi
       sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
       return null;
     },
+    tapAtDown: point => {
+      const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y);
+      if (!at)
+        return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
+      swipeDown = at;
+      sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID);
+      return null;
+    },
+    tapAtUp: point => {
+      const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y) ?? swipeDown;
+      swipeDown = null;
+      if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
+    },
     dispatchCommand: (name, args) => {
       const commands = commandsOf(runner);
       if (!commands) return 'the running scene has no command registry.';

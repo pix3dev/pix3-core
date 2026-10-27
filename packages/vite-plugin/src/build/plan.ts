@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileOf, realFileOf, relativeInside } from '../module-paths.ts';
 import type { CompressedHtml } from './compress.ts';
 import { RUNTIME_SPECIFIER, scanDependencyImports } from './dependency-imports.ts';
-import { EditorUnsyncedError, flushEditorBeforeBuild } from './editor-flush.ts';
+import {
+  EditorUnsyncedError,
+  describeEditorFlush,
+  flushEditorBeforeBuild,
+} from './editor-flush.ts';
 import {
   EMBEDDED_ASSETS_ID,
   SCENE_LIKE_ASSET,
@@ -87,12 +91,8 @@ export const flushEditor = async (
   fail: (message: string) => never
 ): Promise<void> => {
   try {
-    const flushed = await flushEditorBeforeBuild(root);
-    if (flushed.status === 'flushed') log(`editor at ${flushed.url} flushed its unsaved scenes`);
-    else if (flushed.status === 'no-editor')
-      log(`dev server at ${flushed.url}: no editor tab open`);
-    else if (flushed.status === 'no-server' && flushed.url)
-      log(`no dev server at ${flushed.url} (${flushed.reason}): .pix3/dev.json is stale`);
+    const line = describeEditorFlush(await flushEditorBeforeBuild(root));
+    if (line) log(line);
   } catch (error) {
     if (error instanceof EditorUnsyncedError) fail(`${error.code}: ${error.message}`);
     throw error;

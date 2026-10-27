@@ -941,7 +941,7 @@ export class GameTestService {
     const heldKeys = new Set<string>();
     const heldButtons = new Set<string>();
     const openTaps = new Map<string, { nx: number; ny: number }>();
-    /** Where the bot's swipe finger went down, so teardown can lift it. */
+    /** Where the bot's finger went down (a swipe or a tapAt), so teardown can lift it. */
     let swipeDown: { nx: number; ny: number } | null = null;
 
     /**
@@ -1078,6 +1078,25 @@ export class GameTestService {
         if (phase === 'up') swipeDown = null;
         sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
         return null;
+      },
+
+      tapAtDown: point => {
+        if (channel !== 'physical-input') {
+          return 'tapAt() is a physical gesture; on `direct-action` there is nothing to call. Tap a control by name with tap(), run on `physical-input`, or drive the intent with command().';
+        }
+        const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
+        if (!at) {
+          return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
+        }
+        swipeDown = at;
+        sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID);
+        return null;
+      },
+
+      tapAtUp: point => {
+        const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y) ?? swipeDown;
+        swipeDown = null;
+        if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
       },
 
       dispatchCommand: (name, args) => {

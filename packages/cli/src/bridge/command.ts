@@ -21,7 +21,7 @@ import {
  * cannot load that server (a subagent, CI, a session not restarted after `pix3 agent-setup`).
  *
  *   pix3 bridge pix3_sync '{"timeoutMs":15000}'      any pix3_* tool, params as JSON
- *   pix3 bridge screenshot [--target game] [--out f.png]
+ *   pix3 bridge screenshot [--target game] [--aspect 9:16] [--out f.png]
  *   pix3 bridge tap <x> <y> | --node <id> [--touch]
  *   pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
  */
@@ -95,6 +95,9 @@ const screenOfNode = async (
   return screen ?? `"${nodeId}" has no screen position (is the scene open, or the game playing?)`;
 };
 
+/** How long a changed Game tab frame takes to re-fit before the screenshot. */
+const ASPECT_SETTLE_MS = 250;
+
 const numbers = (values: readonly string[]): number[] | null => {
   const parsed = values.map(Number);
   return parsed.every(Number.isFinite) ? parsed : null;
@@ -139,6 +142,17 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
     const touch = parsed.flags.has('touch');
     if (command === 'screenshot') {
       const surface = str(parsed, 'target') ?? 'game';
+      const aspect = str(parsed, 'aspect');
+      if (aspect !== undefined) {
+        // The Game tab's frame (pix3_play `aspect`): a phone-shaped shot from the editor.
+        const set = await callTool(page, 'pix3_play', { action: 'status', aspect });
+        if (set.ok === false) {
+          io.stderr(`pix3 bridge screenshot --aspect: ${String(set.detail ?? set.reason)}\n`);
+          return 2;
+        }
+        // The tab re-fits its frame on the next animation frame.
+        await new Promise(resolve => setTimeout(resolve, ASPECT_SETTLE_MS));
+      }
       const front = await callTool(page, 'pix3_screenshot', { target: surface });
       if (front.ok === false) {
         io.stderr(`pix3 bridge screenshot: ${String(front.detail ?? front.reason)}\n`);

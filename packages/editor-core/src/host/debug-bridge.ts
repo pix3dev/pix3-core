@@ -30,6 +30,7 @@ import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 import { appState } from '@/state';
+import type { GameAspectRatio } from '@/state/AppState';
 
 import {
   BRIDGE_GROUP_DESCRIPTION,
@@ -62,11 +63,15 @@ export type BridgeResult<T extends object = object> =
 
 type Params = Record<string, unknown>;
 
+export type PlayAspect = 'free' | '16:9' | '9:16' | '4:3';
+
 export interface PlayStatus {
   playing: boolean;
   status: string;
   playOwner: string | null;
   startedAt: number | null;
+  /** The Game tab's aspect preset (`free` fills the panel). */
+  aspect: PlayAspect;
 }
 
 /** `window.__PIX3_DEBUG__`: the tool table, `call`, and short forms over the same calls. */
@@ -197,15 +202,31 @@ const nodeRead = (
   saved: SceneNodeDefinition | null;
   screen: { x: number; y: number } | null;
   live?: { components: ComponentDTO[] };
+  runtimeOnly?: true;
 }> => {
   const { graph, descriptor } = found;
   const node = graph.nodeMap.get(nodeId);
-  if (!(node instanceof NodeBase)) return refuse('not_found', `No node "${nodeId}" in the scene.`);
+  const active = descriptor.id === appState.scenes.activeSceneId;
+  if (!(node instanceof NodeBase)) {
+    // A node a script made during play (a gem, a bullet) or one of the scene `changeScene` went to
+    // is only in the running game: answer it from there, by id or by name (core-tests/game7, where
+    // every gem was spawned and `--node gem-1` read not_found).
+    const spawned = active ? livePlayNode(nodeId, { byName: true }) : null;
+    if (!spawned)
+      return refuse('not_found', `No node "${nodeId}" in the scene or the running game.`);
+    return {
+      ok: true,
+      node: spawned.dto,
+      saved: null,
+      screen: spawned.screen,
+      live: { components: spawned.components },
+      runtimeOnly: true,
+    };
+  }
   const savedNodes = savedNodesOf(found);
   const dto = nodeToDTO(node, 0, savedPropertiesOf(savedNodes));
   dto.components = node.components.map((c, i) => componentToDTO(c, i));
   const saved = savedNodes.get(nodeId)?.def ?? null;
-  const active = descriptor.id === appState.scenes.activeSceneId;
   const live = active ? livePlayNode(nodeId) : null;
   // During play the editor viewport is hidden behind the Game tab: `screen` is where the RUNNING
   // node is on the game canvas, and `live` its components' play-time state (`node` stays what the
@@ -224,23 +245,36 @@ const nodeRead = (
   };
 };
 
-/** The play clone of `nodeId` in the running game, its page position and component state. */
+/**
+ * The play clone of `nodeId` in the running game (or, with `byName`, the first live node of that
+ * name), its page position and component state.
+ */
 const livePlayNode = (
-  nodeId: string
-): { screen: { x: number; y: number } | null; components: ComponentDTO[] } | null => {
+  nodeId: string,
+  options: { byName?: boolean } = {}
+): {
+  dto: NodeDTO;
+  screen: { x: number; y: number } | null;
+  components: ComponentDTO[];
+} | null => {
   const runtime = service(GamePlaySessionService).getActiveRuntime();
   if (!runtime) return null;
-  const node = runtime.runner.getLiveNodeById(nodeId);
+  const node =
+    runtime.runner.getLiveNodeById(nodeId) ??
+    (options.byName ? runtime.runner.findLiveNodeByName(nodeId) : null);
   if (!node) return null;
   const components = node.components.map((c, i) => componentToDTO(c, i));
+  const dto = nodeToDTO(node, 0);
+  dto.components = components;
   const backing = runtime.runner.projectNodeToCanvas(node);
   const canvas = runtime.canvas;
   const rect = canvas.getBoundingClientRect();
   // A popped-out game window is another page: its coordinates would not click this one.
   if (!backing || runtime.windowRef !== window || rect.width <= 0 || canvas.width <= 0) {
-    return { screen: null, components };
+    return { dto, screen: null, components };
   }
   return {
+    dto,
     screen: {
       x: rect.left + (backing.x / canvas.width) * rect.width,
       y: rect.top + (backing.y / canvas.height) * rect.height,
@@ -249,15 +283,38 @@ const livePlayNode = (
   };
 };
 
+/** At most this many `find` matches from the running game (a board of gems is 64). */
+const MAX_LIVE_MATCHES = 200;
+
+/**
+ * Nodes whose name or type contains `text`: the editor's scene, then — during play — the nodes
+ * only the running game has (`runtimeOnly: true`: spawned by a script, or in a scene the game
+ * changed to).
+ */
 const findNodes = (
   graph: NonNullable<ReturnType<typeof graphOf>>['graph'],
   text: string
-): NodeSummary[] => {
+): Array<NodeSummary & { runtimeOnly?: true }> => {
   const needle = text.toLowerCase();
-  const matches: NodeSummary[] = [];
+  const hit = (node: NodeBase) =>
+    node.name.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle);
+  const matches: Array<NodeSummary & { runtimeOnly?: true }> = [];
   for (const node of graph.nodeMap.values()) {
-    if (node.name.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle)) {
-      matches.push({ nodeId: node.nodeId, type: node.type, name: node.name });
+    if (hit(node)) matches.push({ nodeId: node.nodeId, type: node.type, name: node.name });
+  }
+  const runtime = service(GamePlaySessionService).getActiveRuntime();
+  if (!runtime) return matches;
+  const stack: NodeBase[] = [...runtime.runner.getLiveRootNodes()].reverse();
+  let live = 0;
+  while (stack.length > 0 && live < MAX_LIVE_MATCHES) {
+    const node = stack.pop() as NodeBase;
+    if (hit(node) && !graph.nodeMap.has(node.nodeId)) {
+      matches.push({ nodeId: node.nodeId, type: node.type, name: node.name, runtimeOnly: true });
+      live += 1;
+    }
+    for (let i = node.children.length - 1; i >= 0; i -= 1) {
+      const child = node.children[i];
+      if (child instanceof NodeBase) stack.push(child);
     }
   }
   return matches;
@@ -294,7 +351,20 @@ const playStatus = (): PlayStatus => ({
   status: appState.ui.playModeStatus,
   playOwner: appState.ui.playOwner,
   startedAt: appState.ui.playStartedAt,
+  aspect: ASPECT_NAMES[appState.ui.gameAspectRatio],
 });
+
+/** The Game tab's presets as the bridge names them (the tab's own button labels). */
+const ASPECT_NAMES: Record<GameAspectRatio, PlayAspect> = {
+  free: 'free',
+  '16:9-landscape': '16:9',
+  '16:9-portrait': '9:16',
+  '4:3': '4:3',
+};
+
+const aspectPreset = (aspect: PlayAspect): GameAspectRatio =>
+  (Object.keys(ASPECT_NAMES) as GameAspectRatio[]).find(key => ASPECT_NAMES[key] === aspect) ??
+  'free';
 
 const setPaused = async (paused: boolean): Promise<BridgeResult> => {
   const refused = refuseDesignerSession();
@@ -454,6 +524,12 @@ const EXECUTES: Record<string, Execute> = {
 
   async pix3_play(params) {
     const action = params.action as 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'status';
+    // The Game tab's frame first, so a start already runs at it (any action takes it, `status` too).
+    if (typeof params.aspect === 'string') {
+      await service(GamePlaySessionService).setAspectRatio(
+        aspectPreset(params.aspect as PlayAspect)
+      );
+    }
     if (action === 'status') return { ok: true, ...playStatus() };
     const result =
       action === 'start'

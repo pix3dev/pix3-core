@@ -195,7 +195,7 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
     `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
   - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.
-  - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start scale factor (`easing` is accepted too).
+  - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start fraction of the node's resting scale (its scale when the pop first runs; an axis at 0 there rests at 1, so a node kept at `scale: [0, 0]` until its pop appears at full size). `easing` is accepted too.
   - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target.
   - `burst(anchor, { count: 14, speed: 260, spread: 2π, direction: π/2, lifeSec: 0.5, color | colors, sizePx: 10, gravityY: -600, fadeOut: true, additive: true, zIndex })` (angles in radians).
   - `floatText('+25', { at, color: '#ffffff', fontSizePx: 28, fontFamily: 'Arial', fontWeight, outlineWidth: 0, outlineColor: '#000000', driftPx: 60, durationSec: 0.8, glow, glowStrength: 1.5, zIndex })`

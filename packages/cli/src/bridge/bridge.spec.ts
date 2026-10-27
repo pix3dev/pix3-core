@@ -72,6 +72,10 @@ beforeEach(async () => {
           method: string;
           params: { expression?: string };
         };
+        if (message.method === 'Page.captureScreenshot') {
+          ws.send(JSON.stringify({ id: message.id, result: { data: '' } }));
+          return;
+        }
         if (message.method !== 'Runtime.evaluate') return;
         evaluated.push(message.params.expression ?? '');
         const tool = /call\("([^"]+)"/.exec(message.params.expression ?? '')?.[1];
@@ -120,5 +124,15 @@ describe('pix3 bridge', () => {
     const none = io();
     expect(await runBridgeCli(['status'], none.io)).toBe(2);
     expect(none.err.join('')).toContain('pix3 editor');
+  });
+
+  it('screenshot --aspect sets the Game tab frame first (core-tests/game7)', async () => {
+    const run = io();
+    const out = join(home, 'shot.png');
+    const code = await runBridgeCli(['screenshot', '--aspect', '9:16', '--out', out], run.io);
+    expect(run.err).toEqual([]);
+    expect(code).toBe(0);
+    expect(evaluated[0]).toContain('call("pix3_play", {"action":"status","aspect":"9:16"})');
+    expect(evaluated[1]).toContain('call("pix3_screenshot"');
   });
 });

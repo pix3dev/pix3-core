@@ -76,7 +76,9 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       'inspector edits included), one node with its components and `saved` (the node as the scene ' +
       'file gets it) and `screen` (its origin on the page in CSS px, to click or drag it — during ' +
       'play, on the running game canvas, with `live`: the play-time state of its components) with ' +
-      '`nodeId`, or the nodes whose name/type contains `find`. Read-only: change scenes by ' +
+      '`nodeId`, or the nodes whose name/type contains `find`. During play both also reach the ' +
+      'nodes only the running game has (spawned by a script, or in a scene changeScene went to): ' +
+      '`runtimeOnly: true`, no `saved`; `nodeId` there may be a node name too. Read-only: change scenes by ' +
       'editing the .pix3scene file, then pix3_sync.',
     inputSchema: {
       type: 'object',
@@ -95,13 +97,16 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       'Play mode. `start` runs the active scene (or `scenePath`) and records you as the owner; ' +
       '`stop`, `restart` (stop → apply deferred file changes → start) and `pause` work on any ' +
       'session an agent started; a session the designer started from the UI is refused with ' +
-      'reason not_owner, even with `force`. `status` returns playOwner and startedAt.',
+      'reason not_owner, even with `force`. `status` returns playOwner and startedAt. `aspect` ' +
+      'sets the Game tab’s frame with any action ("9:16" for a phone, "free" fills the panel; ' +
+      'exact phone sizes: `pix3 play --size`).',
     inputSchema: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'resume', 'status'] },
         scenePath: { type: 'string' },
         force: { type: 'boolean' },
+        aspect: { type: 'string', enum: ['free', '16:9', '9:16', '4:3'] },
       },
       required: ['action'],
       additionalProperties: false,

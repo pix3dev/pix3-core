@@ -217,6 +217,26 @@ renderer drives an `OfflineAudioContext` the caller supplies, i.e. a native Web 
 (`node-web-audio-api`) in Node. Each preset renders in well under 10 ms; the whole command runs in
 ~0.12 s; files are 2–67 KiB (click 24 ms … explosion 772 ms).
 
+## `pix3 font` — a font the game ships
+
+```text
+pix3 font                       # the families: Nunito, Rubik (both + Cyrillic), Baloo 2, Fredoka, Lilita One, Luckiest Guy
+pix3 font add Nunito            # fonts/nunito-900-{latin,cyrillic}.woff2 + nunito-OFL.txt, two faces under fonts: in pix3project.yaml
+pix3 font add "lilita one" --json   # { family, weight, copied, registered }
+```
+
+A `Label2D` with no font file renders in the machine's system face (Arial on one, DejaVu on a
+headless Linux — core-tests/game7), so the starters' text looked different everywhere; the
+starters carry no font on purpose (a face is 10–20 KiB of every single-file build). The CLI
+carries pix3-full's UI Kit Forge families at the weight the forge uses each (`fonts/` in this
+package, Google Fonts woff2 subsets with each `unicode-range`; SIL OFL 1.1, Luckiest Guy Apache
+2.0; provenance in `src/font/catalog.ts`). `add` copies one family's subsets and licence into
+the project's `fonts/` and appends its faces to `fonts:` (`parseDocument`: the rest of the
+manifest, comments included, stays as written); `ProjectFontLoader` registers them before the first
+frame in the editor, the player and `pix3 smoke`. Idempotent; a project file of the same name with
+other bytes refuses the whole add (exit 1). Then `labelFontFamily` / `labelFontWeight` on the
+labels and buttons.
+
 ## `pix3 character-compile` — a 2D character from frame PNGs
 
 ```text
@@ -623,7 +643,7 @@ passed; 1 = otherwise; 2 = could not run. Code: `src/play/`.
 npx pix3 bridge sync '{"timeoutMs":15000}'            # any pix3_* tool; the pix3_ prefix is optional
 npx pix3 bridge play '{"action":"start"}'
 npx pix3 bridge scene '{"nodeId":"play-button"}'
-npx pix3 bridge screenshot --target game --out shot.png
+npx pix3 bridge screenshot --target game --aspect 9:16 --out shot.png
 npx pix3 bridge tap --node play-button --touch       # or: tap <x> <y> (page CSS px)
 npx pix3 bridge swipe --from gem-2-3 --to gem-2-4    # or: swipe <x1> <y1> <x2> <y2> [--ms 180]
 ```
@@ -635,9 +655,11 @@ an agent that cannot load an MCP server (a subagent, CI) or cannot start the new
 the one on the project's `editorUrl` (`.pix3/dev.json`), and evaluates
 `window.__PIX3_DEBUG__.call(tool, params)` there — the tools answer exactly as through MCP; exit 1
 on `{ok:false}`, 2 when there is no editor to reach. `screenshot` brings the surface to the front
-(`pix3_screenshot`) and saves `Page.captureScreenshot`; `tap` / `swipe` dispatch real mouse or
+(`pix3_screenshot`) and saves `Page.captureScreenshot` (`--aspect` sets the Game tab's frame
+first, through `pix3_play`'s `aspect`); `tap` / `swipe` dispatch real mouse or
 `--touch` events (`Input.dispatchMouseEvent` / `dispatchTouchEvent`) at page CSS px or at a node's
-`pix3_scene` `screen` (during play, the running node on the Game tab). The token is never printed.
+`pix3_scene` `screen` (during play, the running node on the Game tab — a node a script spawned
+included, by id or name). The token is never printed.
 Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
@@ -726,9 +748,10 @@ chrome-devtools-mcp's `devtoolstooldiscovery` with the `pix3` group
 (`list_3p_developer_tools` / `execute_3p_developer_tool {toolName, params: "<JSON>"}`), and
 `window.__PIX3_DEBUG__.call(name, params)` is the same call from `evaluate_script`
 (`waitForStableDom: false`). Tools: `pix3_status`, `pix3_sync` (`{expect?, timeoutMs?}` →
-flush, rescan, barrier), `pix3_scene` (`{path?, maxDepth?, nodeId?, find?}`), `pix3_play`
-(`{action: start|stop|restart|pause|status, scenePath?, force?}` — the designer's session is
-refused with `not_owner`, `force` included), `pix3_game_run` (`GameTestService.run`),
+flush, rescan, barrier), `pix3_scene` (`{path?, maxDepth?, nodeId?, find?}`; during play `nodeId`
+and `find` also reach the nodes only the running game has — `runtimeOnly: true`), `pix3_play`
+(`{action: start|stop|restart|pause|resume|status, scenePath?, force?, aspect?}` — the designer's
+session is refused with `not_owner`, `force` included; `aspect` is the Game tab's preset), `pix3_game_run` (`GameTestService.run`),
 `pix3_screenshot` (`{target: game|viewport}` prepares the view; the picture is
 `take_screenshot`), `pix3_errors` (`{since?, clear?}`). Params are validated on both paths;
 every refusal is `{ok:false, reason, detail}`. `pix3 check`, `pix3 smoke` and `vite build`

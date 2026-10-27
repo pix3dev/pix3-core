@@ -171,6 +171,7 @@ describe('kit drift', () => {
         '.claude/skills/pix3-scene-format/project-files.md',
         '.claude/skills/pix3-nodes/SKILL.md',
         '.claude/skills/pix3-nodes/reference.md',
+        '.claude/skills/pix3-nodes/reference-3d.md',
         '.claude/skills/pix3-scripts/SKILL.md',
         '.claude/skills/pix3-scripts/reference.md',
         '.claude/skills/pix3-verify/SKILL.md',
@@ -232,6 +233,28 @@ describe('kit drift', () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it('a reference is a lookup: it opens with its contents, and nothing asks for a whole read (core-tests/game7)', () => {
+    // ~3800 lines read up front in game7, most of them 3D, network and Spine nobody needed: every
+    // reference*.md lists its own headings first, and the 2D one carries no 3D node.
+    const references = kit.manifest.files.filter(file => /\/reference[^/]*\.md$/.test(file));
+    expect(references.length).toBeGreaterThanOrEqual(4);
+    for (const file of references.filter(f => !f.includes('pix3-verify'))) {
+      const source = text(file);
+      const contents = /^## Contents\n\n((?:- \*\*.+\n)+)/m.exec(source)?.[1] ?? '';
+      const sections = [...source.matchAll(/^## (.+)$/gm)]
+        .map(m => m[1].replace(/`/g, ''))
+        .filter(title => title !== 'Contents');
+      expect(sections.length, file).toBeGreaterThan(1);
+      for (const title of sections) expect(contents, `${file} contents`).toContain(`**${title}**`);
+    }
+    expect(text('.claude/skills/pix3-nodes/reference.md')).not.toMatch(
+      /^### (?:Camera3D|GeometryMesh)/m
+    );
+    expect(text('.claude/skills/pix3-nodes/reference-3d.md')).toMatch(/^### GeometryMesh/m);
+    expect(text('AGENTS.md')).not.toContain('(and their references)');
+    expect(text('AGENTS.md')).toContain('never read them whole');
   });
 
   it('names only CLI commands and flags that exist', () => {
@@ -682,6 +705,7 @@ describe('kit drift', () => {
   const NODES_FILES = [
     '.claude/skills/pix3-nodes/SKILL.md',
     '.claude/skills/pix3-nodes/reference.md',
+    '.claude/skills/pix3-nodes/reference-3d.md',
   ];
 
   const BOT_DTS = 'design/tests/bots/pix3-test-bot.d.ts';

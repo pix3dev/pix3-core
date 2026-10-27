@@ -157,6 +157,8 @@ const dispatch = async (
       return (await import('./bridge/command.ts')).runBridgeCli(argv, io);
     case 'gap': // appends to .pix3/gaps.jsonl
       return (await import('./gap/command.ts')).runGapCli(argv, io);
+    case 'font': // copies a bundled face into fonts/, edits pix3project.yaml
+      return (await import('./font/command.ts')).runFontCli(argv, io);
     case 'sfx': // offline synth, no dependencies
       return (await import('./sfx/command.ts')).runSfx(argv, io);
   }

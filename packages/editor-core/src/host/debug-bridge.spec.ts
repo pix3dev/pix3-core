@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SceneManager, Script, ScriptRegistry, type PropertySchema } from '@pix3/runtime';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NodeBase, SceneManager, Script, ScriptRegistry, type PropertySchema } from '@pix3/runtime';
 
 import type { Command } from '@/core/command';
 import { UpdateObjectPropertyCommand } from '@/features/properties/UpdateObjectPropertyCommand';
@@ -10,6 +10,7 @@ import { AgentKeepaliveService, RECENT_CALL_MS } from '@/services/core/AgentKeep
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { CommandRegistry } from '@/services/core/CommandRegistry';
 import { OperationService } from '@/services/core/OperationService';
+import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { appState, resetAppState } from '@/state';
 
 import { BRIDGE_TOOLS, BRIDGE_TOOL_NAMES, validateParams } from './bridge-tools';
@@ -195,6 +196,83 @@ describe('agent bridge', () => {
       ok: true,
       path: 'res://scenes/main.pix3scene',
     });
+  });
+
+  it('during play reads and finds the nodes only the running game has (core-tests/game7)', async () => {
+    const container = ServiceContainer.getInstance();
+    const session = container.getService<GamePlaySessionService>(
+      container.getOrCreateToken(GamePlaySessionService)
+    );
+    // The running clone: the authored hero, plus a gem a script spawned (id ≠ name, as spawned
+    // nodes usually are).
+    const hero = new NodeBase({ id: 'hero', type: 'Group2D', name: 'Hero' });
+    const gem = new NodeBase({ id: 'n-7f3a', type: 'Sprite2D', name: 'gem-1' });
+    hero.add(gem);
+    const all = [hero, gem];
+    const canvas = document.createElement('canvas');
+    canvas.width = 200;
+    canvas.height = 100;
+    canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 50 }) as DOMRect;
+    const runner = {
+      getLiveNodeById: (id: string) => all.find(n => n.nodeId === id) ?? null,
+      findLiveNodeByName: (name: string) =>
+        all.find(n => n.name.toLowerCase() === name.toLowerCase()) ?? null,
+      getLiveRootNodes: () => [hero],
+      projectNodeToCanvas: () => ({ x: 100, y: 50 }),
+    };
+    const spy = vi
+      .spyOn(session, 'getActiveRuntime')
+      .mockReturnValue({ runner, canvas, windowRef: window } as unknown as ReturnType<
+        GamePlaySessionService['getActiveRuntime']
+      >);
+    try {
+      for (const query of ['n-7f3a', 'gem-1']) {
+        expect(await callBridgeTool('pix3_scene', { nodeId: query }), query).toMatchObject({
+          ok: true,
+          node: { nodeId: 'n-7f3a', type: 'Sprite2D', name: 'gem-1' },
+          saved: null,
+          screen: { x: 60, y: 45 },
+          live: { components: [] },
+          runtimeOnly: true,
+        });
+      }
+      // An authored node still answers from the editor, with its saved form.
+      expect(await callBridgeTool('pix3_scene', { nodeId: 'hero' })).toMatchObject({
+        ok: true,
+        saved: { id: 'hero' },
+        screen: { x: 60, y: 45 },
+      });
+      const found = await callBridgeTool('pix3_scene', { find: 'gem' });
+      expect(found.matches).toEqual([
+        { nodeId: 'n-7f3a', type: 'Sprite2D', name: 'gem-1', runtimeOnly: true },
+      ]);
+      // The authored hero is not listed twice.
+      const heroes = await callBridgeTool('pix3_scene', { find: 'hero' });
+      expect((heroes.matches as unknown[]).length).toBe(1);
+      expect(await callBridgeTool('pix3_scene', { nodeId: 'gem-99' })).toMatchObject({
+        ok: false,
+        reason: 'not_found',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('play: aspect sets the Game tab preset with any action', async () => {
+    expect(await callBridgeTool('pix3_play', { action: 'status', aspect: '9:16' })).toMatchObject({
+      ok: true,
+      aspect: '9:16',
+    });
+    expect(appState.ui.gameAspectRatio).toBe('16:9-portrait');
+    expect(await callBridgeTool('pix3_play', { action: 'status' })).toMatchObject({
+      aspect: '9:16',
+    });
+    expect(await callBridgeTool('pix3_play', { action: 'status', aspect: '3:2' })).toMatchObject({
+      ok: false,
+      reason: 'invalid_params',
+    });
+    await callBridgeTool('pix3_play', { action: 'status', aspect: 'free' });
+    expect(appState.ui.gameAspectRatio).toBe('free');
   });
 
   it('reads a node as the inspector and the file have it right after an inspector commit', async () => {

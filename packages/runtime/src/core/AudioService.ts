@@ -112,6 +112,16 @@ export class AudioService {
   };
 
   constructor() {
+    // The built-in snapshots exist with or without Web Audio: `resetBuses()` applies 'default' on
+    // every scene change, and registering them only after a context was made printed "Unknown
+    // snapshot" on each `changeScene` wherever there is none (`pix3 smoke`, core-tests/game7).
+    this.snapshots.set('default', { name: 'default' });
+    this.snapshots.set('muffled', {
+      name: 'muffled',
+      lowpassHz: { master: 700 },
+      volumeScale: { master: 0.85 },
+    });
+
     const audioWindow = window as WindowWithWebkitAudioContext;
     const AudioContextCtor: typeof AudioContext | WebkitAudioContextCtor | undefined =
       window.AudioContext ?? audioWindow.webkitAudioContext;
@@ -138,13 +148,6 @@ export class AudioService {
       console.warn('[AudioService] Failed to initialize AudioContext:', error);
       return;
     }
-
-    this.snapshots.set('default', { name: 'default' });
-    this.snapshots.set('muffled', {
-      name: 'muffled',
-      lowpassHz: { master: 700 },
-      volumeScale: { master: 0.85 },
-    });
 
     // iOS Safari / Web Audio requirement: context must be resumed by user interaction.
     // Deliberately NOT `{ once: true }`: `resume()` can reject (the gesture was not one the browser
@@ -216,13 +219,14 @@ export class AudioService {
    */
   applySnapshot(name: string, options?: { timeConstantSec?: number }): void {
     const snap = this.snapshots.get(name);
-    if (!snap || !this.context) {
-      if (!snap) {
-        console.warn(`[AudioService] Unknown snapshot "${name}".`);
-      }
+    if (!snap) {
+      console.warn(`[AudioService] Unknown snapshot "${name}".`);
       return;
     }
     this.activeSnapshotName = name;
+    if (!this.context) {
+      return;
+    }
     const tc = Math.max(0.001, options?.timeConstantSec ?? 0.08);
     for (const busName of AUDIO_BUS_NAMES) {
       this.applyBusGain(busName, tc);

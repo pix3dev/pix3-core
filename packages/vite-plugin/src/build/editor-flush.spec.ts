@@ -6,7 +6,11 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { EditorUnsyncedError, flushEditorBeforeBuild } from './editor-flush.ts';
+import {
+  EditorUnsyncedError,
+  describeEditorFlush,
+  flushEditorBeforeBuild,
+} from './editor-flush.ts';
 
 /** The flush before a build tells a gone server from a busy one (`.pix3/dev.json` exists). */
 
@@ -70,5 +74,36 @@ describe('flushEditorBeforeBuild', () => {
     const root = mkdtempSync(join(tmpdir(), 'pix3-flush-'));
     cleanup.push(() => rmSync(root, { recursive: true, force: true }));
     expect(await flushEditorBeforeBuild(root, { skip: false })).toEqual({ status: 'no-server' });
+  });
+});
+
+describe('flushEditorBeforeBuild: what the flush wrote', () => {
+  const editorAnswering = async (reply: Record<string, unknown>): Promise<string> => {
+    const port = await listen(
+      createServer((request, response) => {
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify(request.url?.endsWith('/flush') ? reply : { ok: true }));
+      })
+    );
+    return projectPointingAt(port);
+  };
+
+  it('an editor with nothing unsaved logs nothing (core-tests/game7)', async () => {
+    const root = await editorAnswering({ ok: true, editor: true, flushed: true, saved: [] });
+    const result = await flushEditorBeforeBuild(root, { skip: false });
+    expect(result).toMatchObject({ status: 'flushed', saved: [] });
+    expect(describeEditorFlush(result)).toBeNull();
+  });
+
+  it('an editor that wrote scenes is logged with the count and the paths', async () => {
+    const root = await editorAnswering({
+      ok: true,
+      editor: true,
+      flushed: true,
+      saved: ['scenes/a.pix3scene', 'scenes/b.pix3scene'],
+    });
+    expect(describeEditorFlush(await flushEditorBeforeBuild(root, { skip: false }))).toMatch(
+      /wrote 2 unsaved scene\(s\) to disk first: scenes\/a\.pix3scene, scenes\/b\.pix3scene$/
+    );
   });
 });

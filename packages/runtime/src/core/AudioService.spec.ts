@@ -165,6 +165,20 @@ describe('AudioService', () => {
     vi.unstubAllGlobals();
   });
 
+  it('without Web Audio, a scene change resets the mixer without a warning (core-tests/game7)', () => {
+    vi.stubGlobal('AudioContext', undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const service = new AudioService();
+    warn.mockClear();
+    service.resetBuses();
+    service.applySnapshot('muffled');
+    expect(warn).not.toHaveBeenCalled();
+    expect(service.getActiveSnapshotName()).toBe('muffled');
+    service.applySnapshot('nope');
+    expect(warn).toHaveBeenCalledWith('[AudioService] Unknown snapshot "nope".');
+    service.dispose();
+  });
+
   it('tracks active playback diagnostics for current audio instances', () => {
     const nowSpy = vi.spyOn(performance, 'now');
     nowSpy.mockReturnValue(1000);

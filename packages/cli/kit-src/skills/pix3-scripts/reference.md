@@ -2,10 +2,14 @@
 # Script API reference
 
 Generated from the engine's own documentation and code; `SKILL.md` beside it is the practical
-part. Grep a heading instead of reading it whole. The runtime's declarations are in
+part. **A lookup file, not a read:** find the heading in the contents below and grep it. The runtime's declarations are in
 `.pix3/types/@pix3/runtime/` (or `node_modules/@pix3/runtime` when the project has its own
 `tsconfig.json`). Source paths quoted here (`src/…`, `packages/…`) are files of the Pix3 engine
 repository, not of this project.
+
+## Contents
+
+{{toc}}
 
 ## The surface a `Script` sees
 

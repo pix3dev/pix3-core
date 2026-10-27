@@ -23,7 +23,33 @@ export type EditorFlushResult =
   /** No `dev.json` (no `url`), or one whose server is gone (`url` and why). */
   | { readonly status: 'no-server'; readonly url?: string; readonly reason?: string }
   | { readonly status: 'no-editor'; readonly url: string }
-  | { readonly status: 'flushed'; readonly url: string };
+  /** An editor answered; `saved` = the scenes it wrote just now (empty: nothing was unsaved). */
+  | { readonly status: 'flushed'; readonly url: string; readonly saved: readonly string[] };
+
+const savedPaths = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : [];
+
+/**
+ * The build's log line about the flush, or null. Only a flush that wrote something is news:
+ * "flushed its unsaved scenes" after an editor with nothing unsaved read as if the editor had
+ * overwritten the files (core-tests/game7).
+ */
+export const describeEditorFlush = (result: EditorFlushResult): string | null => {
+  switch (result.status) {
+    case 'flushed':
+      return result.saved.length > 0
+        ? `editor at ${result.url} wrote ${result.saved.length} unsaved scene(s) to disk first: ${result.saved.join(', ')}`
+        : null;
+    case 'no-editor':
+      return `dev server at ${result.url}: no editor tab open`;
+    case 'no-server':
+      return result.url
+        ? `no dev server at ${result.url} (${result.reason}): .pix3/dev.json is stale`
+        : null;
+    case 'skipped':
+      return null;
+  }
+};
 
 export class EditorUnsyncedError extends Error {
   readonly code = 'E_EDITOR_UNSYNCED';
@@ -88,7 +114,13 @@ export const flushEditorBeforeBuild = async (
     }
     return { status: 'no-server', url: info.url, reason: causeOf(error) };
   }
-  let reply: { ok?: boolean; editor?: boolean; flushed?: boolean; reason?: string };
+  let reply: {
+    ok?: boolean;
+    editor?: boolean;
+    flushed?: boolean;
+    saved?: unknown;
+    reason?: string;
+  };
   try {
     const response = await fetchWithTimeout(
       `${api}flush`,
@@ -114,6 +146,6 @@ export const flushEditorBeforeBuild = async (
     );
   }
   return reply.editor
-    ? { status: 'flushed', url: info.url }
+    ? { status: 'flushed', url: info.url, saved: savedPaths(reply.saved) }
     : { status: 'no-editor', url: info.url };
 };

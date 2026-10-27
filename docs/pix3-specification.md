@@ -450,7 +450,9 @@ game time accumulates separately.
 - `punchScale(target, { amount, duration, vibrato })` — squash-and-stretch scale
   punch that settles back to the resting scale. Preset: `core:PunchScale`.
 - `popIn(target, { from, duration, easing })` — spawn pop from `from`× up to the
-  authored scale with an overshoot easing. Preset: `core:PopIn` (plays on start).
+  authored scale with an overshoot easing. Preset: `core:PopIn` (plays on start). The resting
+  scale is the node's scale when the pop first runs; an axis at 0 there rests at 1, so a node
+  kept at scale 0 until its pop appears.
 - `flash({ color, intensity, durationSec })` — full-screen impact flash overlay,
   independent of the fade-to-black overlay and run on real time (plays during a
   hitstop).

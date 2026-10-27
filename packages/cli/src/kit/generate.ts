@@ -16,6 +16,8 @@ import { dirname, join, relative, sep } from 'node:path';
  * - `{{include:<repo path>@<text>}}` — the one paragraph or list item whose text (after `- ` and
  *   `**`) starts with `<text>`;
  * - `{{generated:<name>}}` — a block computed from code (`core-components`);
+ * - `{{toc}}` — the contents of the expanded file: one line per `##` heading, its `###` headings
+ *   after it, so an agent greps a reference instead of reading it whole (core-tests/game7);
  * - `{{version}}` — the CLI version; `{{# … }}` — a template comment, removed with its line.
  *
  * Relative Markdown links in included text become plain text (their targets are repo files the
@@ -38,6 +40,7 @@ import {
 export type { GenerateKitOptions, KitManifestFile } from './kit-format.ts';
 
 const DIRECTIVE = /\{\{(include|generated):([^}]+)\}\}|\{\{version\}\}/g;
+const TOC = '{{toc}}';
 const COMMENT_LINE = /^[ \t]*\{\{#[^}]*\}\}[ \t]*\r?\n/gm;
 const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
@@ -220,6 +223,21 @@ const renderGenerated = (name: string, options: GenerateKitOptions, where: strin
   }
 };
 
+/** `{{toc}}`: every `##` heading of `text` on its own line, its `###` headings after a colon. */
+const renderToc = (text: string): string => {
+  const out: string[] = [];
+  for (const heading of scanHeadings(text.split('\n'))) {
+    const title = heading.text.replace(/`/g, '');
+    if (heading.level === 2 && title === 'Contents') continue;
+    if (heading.level === 2) out.push(`- **${title}**`);
+    else if (heading.level === 3 && out.length > 0) {
+      const last = out.length - 1;
+      out[last] += out[last].endsWith('**') ? `: ${title}` : ` · ${title}`;
+    }
+  }
+  return out.join('\n');
+};
+
 export interface ExpandedTemplate {
   readonly text: string;
   readonly sources: readonly string[];
@@ -270,9 +288,10 @@ export const expandTemplate = (
       }
       return unlinkRelative(trimBlock(read(target).split(/\r?\n/)).join('\n'));
     });
-  const leftover = /\{\{[^}]*\}\}/.exec(text);
+  const withToc = text.includes(TOC) ? text.replace(TOC, () => renderToc(text)) : text;
+  const leftover = /\{\{[^}]*\}\}/.exec(withToc);
   if (leftover) throw new KitTemplateError(`${where}: unresolved directive ${leftover[0]}`);
-  return { text, sources: [...sources] };
+  return { text: withToc, sources: [...sources] };
 };
 
 const walk = (root: string, dir = root): string[] => {

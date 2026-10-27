@@ -4,7 +4,11 @@ import { applyEasing, isKeyframeEasing, type KeyframeEasing } from '../animation
 import type { PropertySchema } from '../fw/property-schema';
 
 export interface PopInOptions {
-  /** Starting scale factor of the authored scale (0 = from nothing). */
+  /**
+   * Starting fraction of the resting scale (0 = from nothing). The resting scale is the node's
+   * scale when the pop first starts; an axis at 0 there (a node hidden by `scale: [0, 0]` until
+   * its pop) rests at 1.
+   */
   from?: number;
   /** Duration in seconds. */
   duration?: number;
@@ -20,7 +24,8 @@ const DEFAULT_EASING: KeyframeEasing = 'backOut';
  * Spawn "pop-in": scales the node from `from`× up to its authored scale with an
  * overshoot easing. Ticked through `node.tick`, so it respects `Time.scale`.
  * The authored (resting) scale is captured once on start, so re-triggering the
- * pop always targets the correct final scale. Reusable as the `core:PopIn`
+ * pop always targets the correct final scale. An axis captured at 0 rests at 1: a node pre-shrunk
+ * to nothing so it stays invisible until its pop would otherwise "pop" to zero and never appear. Reusable as the `core:PopIn`
  * preset (auto-plays on start by default) or via `scene.juice.popIn(node)`.
  */
 export class PopInBehavior extends Script {
@@ -182,7 +187,12 @@ export class PopInBehavior extends Script {
     if (!this.node || this.captured) {
       return;
     }
-    this.baseScale.copy(this.node.scale);
+    const { x, y, z } = this.node.scale;
+    this.baseScale.set(
+      PopInBehavior.resting(x),
+      PopInBehavior.resting(y),
+      PopInBehavior.resting(z)
+    );
     this.captured = true;
   }
 
@@ -225,6 +235,11 @@ export class PopInBehavior extends Script {
     if (wasBound) {
       this.bindTrigger();
     }
+  }
+
+  /** A captured axis of 0 rests at 1 (see {@link captureBase}); a mirrored -1 stays mirrored. */
+  private static resting(axis: number): number {
+    return Math.abs(axis) < 1e-6 ? 1 : axis;
   }
 
   private static num(value: unknown, fallback: number, min: number): number {

@@ -49,6 +49,8 @@ Usage:
         [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose;
                                    or "big explosion")
         [--seed <n>] [--json]
+  pix3 font [add <family>]         List the fonts this CLI ships (Nunito, Rubik, Baloo 2, …);
+        [--project <dir>] [--json] add copies one into fonts/ and registers it in pix3project.yaml
   pix3 play [dev|dist] [--bot <n>] The game's page (or the build) in a headless Chrome at a phone
         [--size 390x844]           size, optionally played by a bot policy; screenshot, errors
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
@@ -232,6 +234,21 @@ which a single-file build embeds as base64 — --rate 44100 when a sound needs t
   --json      print { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
 Reference it from a scene or script as res://<path inside the project>.
 `,
+  font: `Usage: pix3 font [list] [--json]
+       pix3 font add <family> [--project <dir>] [--json]
+
+  A Label2D without a font file renders in whatever the machine has (Arial here, DejaVu on a
+  headless Linux), so text looks different everywhere. This CLI carries six display families
+  (Latin, two also Cyrillic; SIL OFL 1.1 / Apache 2.0); add copies one family's woff2 files and its
+  licence into fonts/ and adds its faces to fonts: in pix3project.yaml, which the editor, the game
+  and pix3 smoke load before the first frame. Then set labelFontFamily (and labelFontWeight to the
+  weight it prints) on the labels and buttons. Idempotent; refuses to overwrite a different file.
+  A single-file build embeds every registered face (~10–20 KB each).
+
+  list        the families, weight, scripts, licence, look (default)
+  add <name>  family or slug, any case: Nunito, "Lilita One", lilita-one
+  --json      machine-readable (the catalog; or {family, weight, copied, registered})
+`,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--bot <name>] [--seconds S] [--screenshot <file.png>] [--json] [--project <dir>]
 
@@ -255,7 +272,7 @@ Reference it from a scene or script as res://<path inside the project>.
   page that never booted; 2 = could not run (no Chrome, nothing to play, no such policy).
 `,
   bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
-       pix3 bridge screenshot [--target game|viewport] [--out <file.png>]
+       pix3 bridge screenshot [--target game|viewport] [--aspect free|16:9|9:16|4:3] [--out <file.png>]
        pix3 bridge tap <x> <y> | --node <id> [--touch]
        pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
 
@@ -268,7 +285,9 @@ Reference it from a scene or script as res://<path inside the project>.
                  pix3_ prefix may be dropped); params as one JSON object. Prints the tool's JSON
                  answer; exit 1 when it is {ok:false}.
   screenshot     bring the game (default) or the viewport to the front and save a PNG of the tab
-                 (default .pix3/screenshots/<target>-<time>.png); prints the path
+                 (default .pix3/screenshots/<target>-<time>.png); prints the path. --aspect sets
+                 the Game tab's frame first (it stays; also pix3_play's "aspect" param) — exact
+                 phone sizes: pix3 play --size
   tap            a press and release at page CSS px, or at a node's origin (pix3_scene's screen —
                  during play, where the running node is on the Game tab)
   swipe          a drag between two page points or two nodes, over --ms milliseconds
