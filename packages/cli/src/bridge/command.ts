@@ -98,6 +98,20 @@ const screenOfNode = async (
 /** How long a changed Game tab frame takes to re-fit before the screenshot. */
 const ASPECT_SETTLE_MS = 250;
 
+/**
+ * A tap or swipe into a paused game reaches a frozen frame — `pix3_game_run` leaves play paused on
+ * its outcome — and nothing answers it until play resumes (core-tests/game8). Said, not fixed: the
+ * pause may be the point (a screenshot of the judged frame).
+ */
+const warnIfPaused = async (page: CdpPage, io: CliIo, command: string): Promise<void> => {
+  const play = await callTool(page, 'pix3_play', { action: 'status' });
+  if (play.ok !== false && play.status === 'paused') {
+    io.stderr(
+      `pix3 bridge ${command}: the game is paused (pix3_game_run leaves it paused on its outcome frame), so nothing reacts until it resumes: pix3 bridge play '{"action":"resume"}'.\n`
+    );
+  }
+};
+
 const numbers = (values: readonly string[]): number[] | null => {
   const parsed = values.map(Number);
   return parsed.every(Number.isFinite) ? parsed : null;
@@ -181,6 +195,7 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
         return 2;
       }
       const [x, y] = Array.isArray(point) ? point : [point.x, point.y];
+      await warnIfPaused(page, io, 'tap');
       await tapAt(page, x, y, { touch });
       io.stdout(`tapped (${Math.round(x)}, ${Math.round(y)})${touch ? ' with a touch' : ''}\n`);
       return 0;
@@ -210,6 +225,7 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
         from = { x: values[0], y: values[1] };
         to = { x: values[2], y: values[3] };
       }
+      await warnIfPaused(page, io, 'swipe');
       const ms = Number(str(parsed, 'ms') ?? 180);
       await swipeBetween(page, from, to, { touch, durationMs: Number.isFinite(ms) ? ms : 180 });
       io.stdout(

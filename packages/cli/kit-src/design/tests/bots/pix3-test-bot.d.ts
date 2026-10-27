@@ -80,6 +80,12 @@ declare interface Pix3TestBot {
   swipe(from: BotPoint, to: BotPoint, frames?: number): void;
   /** Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button. */
   command(name: string, args?: Record<string, unknown>): void;
+  /**
+   * A named picture of this frame: `pix3 play --bot` freezes the game here, saves <name>.png
+   * (--shots dir) and lets it run on — a selected cell, a result card, a 200 ms effect. In the
+   * editor's pix3_game_run it is only a log marker.
+   */
+  screenshot(name: string): void;
 
   // -- protocol --------------------------------------------------------------
 

@@ -343,6 +343,13 @@ export interface Pix3TestBot {
    * args — an intent, not a gesture: it proves the handler, never the button that sends it.
    */
   command(name: string, args?: Record<string, unknown>): void;
+  /**
+   * A picture of this frame, named: `pix3 play --bot` freezes the game here, saves
+   * `<name>.png` and lets it run on, so a selected cell, a result card or a short effect is
+   * photographed on the frame the policy saw it. In the editor's `pix3_game_run` it is a log
+   * marker only (the editor writes no files — take `pix3_screenshot` after the run).
+   */
+  screenshot(name: string): void;
 
   // -- protocol --------------------------------------------------------------
 
@@ -441,6 +448,11 @@ export interface BotWorld {
   tapAtUp(point: BotPoint): void;
   /** `scene.commands.dispatch(name, args)` on the running game. */
   dispatchCommand(name: string, args?: Record<string, unknown>): string | null;
+  /**
+   * Take a named picture of this frame (`bot.screenshot`): `null` when it will be taken, else a
+   * sentence saying why not here — logged, not counted as a refusal (a picture is not input).
+   */
+  requestScreenshot(name: string, frame: number): string | null;
   /** Drop everything still held. Called once, from the session's teardown. */
   releaseAll(): void;
 }
@@ -661,6 +673,7 @@ export class BotSession {
       moveTo: point => this.doMoveTo(point),
       swipe: (from, to, frames) => this.doSwipe(from, to, frames),
       command: (name, args) => this.doCommand(name, args),
+      screenshot: name => this.doScreenshot(name),
       log: event => this.record('policy', String(event)),
       done: (pass, reason) => this.doDone(pass, reason),
     };
@@ -777,6 +790,17 @@ export class BotSession {
         : DEFAULT_SWIPE_FRAMES;
     this.swipe = { from, to, startFrame: this.currentFrame, frames: span };
     this.sent += 1;
+  }
+
+  private doScreenshot(name: string): void {
+    // A file name: letters, digits, `-` and `_`; anything else becomes `-`.
+    const safe = String(name ?? '')
+      .trim()
+      .replace(/[^A-Za-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!safe) return this.refuse('screenshot() needs a name, e.g. screenshot("result-card").');
+    const note = this.world.requestScreenshot(safe, this.currentFrame);
+    this.record('harness', note ?? `screenshot "${safe}" at frame ${this.currentFrame}`);
   }
 
   private doCommand(name: string, args?: Record<string, unknown>): void {

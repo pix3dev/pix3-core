@@ -23,6 +23,7 @@ let home: string;
 let server: Server;
 let wss: WebSocketServer;
 let evaluated: string[];
+let playStatus: string;
 
 const io = () => {
   const out: string[] = [];
@@ -42,6 +43,7 @@ const io = () => {
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'pix3-bridge-'));
   evaluated = [];
+  playStatus = 'playing';
   server = createServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${TOKEN}`) {
       res.writeHead(401).end();
@@ -76,13 +78,24 @@ beforeEach(async () => {
           ws.send(JSON.stringify({ id: message.id, result: { data: '' } }));
           return;
         }
-        if (message.method !== 'Runtime.evaluate') return;
+        if (message.method !== 'Runtime.evaluate') {
+          ws.send(JSON.stringify({ id: message.id, result: {} })); // Input.dispatch*, …
+          return;
+        }
         evaluated.push(message.params.expression ?? '');
         const tool = /call\("([^"]+)"/.exec(message.params.expression ?? '')?.[1];
         ws.send(
           JSON.stringify({
             id: message.id,
-            result: { result: { value: { ok: tool !== 'pix3_fail', tool } } },
+            result: {
+              result: {
+                value: {
+                  ok: tool !== 'pix3_fail',
+                  tool,
+                  ...(tool === 'pix3_play' ? { status: playStatus } : {}),
+                },
+              },
+            },
           })
         );
       });
@@ -134,5 +147,15 @@ describe('pix3 bridge', () => {
     expect(code).toBe(0);
     expect(evaluated[0]).toContain('call("pix3_play", {"action":"status","aspect":"9:16"})');
     expect(evaluated[1]).toContain('call("pix3_screenshot"');
+  });
+
+  it('tap into a paused game says so: game_run leaves play paused (core-tests/game8)', async () => {
+    const running = io();
+    expect(await runBridgeCli(['tap', '10', '20'], running.io)).toBe(0);
+    expect(running.err).toEqual([]);
+    playStatus = 'paused';
+    const paused = io();
+    expect(await runBridgeCli(['tap', '10', '20'], paused.io)).toBe(0);
+    expect(paused.err.join('')).toContain(`play '{"action":"resume"}'`);
   });
 });

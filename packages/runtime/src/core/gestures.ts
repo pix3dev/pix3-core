@@ -53,6 +53,13 @@ export interface GestureOptions {
   readonly tapSlopPx?: number;
   /** Longest press that still counts as a tap, ms. Default 500. */
   readonly maxTapMs?: number;
+  /**
+   * A press released within this many `update` calls (frames) is a tap whatever the clock says.
+   * Default 3. On a slow frame rate even a quick tap spans whole frames — at 6 fps three of them
+   * are 500 ms — which is how a bot's three-tick tap stopped being a tap on a headless page
+   * (core-tests/game8).
+   */
+  readonly maxTapFrames?: number;
 }
 
 /** What {@link GestureTracker.update} needs from `this.scene` (only the conversion). */
@@ -64,6 +71,8 @@ interface Press {
   readonly x: number;
   readonly y: number;
   readonly at: number;
+  /** The `update` call the press arrived in. */
+  readonly frame: number;
   swiped: boolean;
 }
 
@@ -72,11 +81,15 @@ export class GestureTracker {
   private readonly swipeMinPx: number;
   private readonly tapSlopPx: number;
   private readonly maxTapMs: number;
+  private readonly maxTapFrames: number;
+  /** `update` calls so far: the tracker's frame count. */
+  private frame = 0;
 
   constructor(options: GestureOptions = {}) {
     this.swipeMinPx = Math.max(1, options.swipeMinPx ?? 24);
     this.tapSlopPx = Math.max(0, options.tapSlopPx ?? 12);
     this.maxTapMs = Math.max(1, options.maxTapMs ?? 500);
+    this.maxTapFrames = Math.max(0, options.maxTapFrames ?? 3);
   }
 
   /** Feed this frame's pointer events; returns the gestures they completed, in order. */
@@ -85,12 +98,19 @@ export class GestureTracker {
     scene?: WorldConverter | null,
     now: number = performance.now()
   ): Gesture[] {
+    this.frame += 1;
     const out: Gesture[] = [];
     const world = (x: number, y: number): Vector2 =>
       scene?.screenToWorld2D({ x, y }) ?? new Vector2(x, y);
     for (const event of events) {
       if (event.type === 'down') {
-        this.presses.set(event.pointerId, { x: event.x, y: event.y, at: now, swiped: false });
+        this.presses.set(event.pointerId, {
+          x: event.x,
+          y: event.y,
+          at: now,
+          frame: this.frame,
+          swiped: false,
+        });
         continue;
       }
       const press = this.presses.get(event.pointerId);
@@ -116,7 +136,9 @@ export class GestureTracker {
       }
       if (event.type === 'up') {
         this.presses.delete(event.pointerId);
-        if (!press.swiped && travel <= this.tapSlopPx && now - press.at <= this.maxTapMs) {
+        const quick =
+          now - press.at <= this.maxTapMs || this.frame - press.frame <= this.maxTapFrames;
+        if (!press.swiped && travel <= this.tapSlopPx && quick) {
           out.push({ type: 'tap', pointerId: event.pointerId, at: world(press.x, press.y) });
         }
       }

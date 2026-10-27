@@ -1165,6 +1165,11 @@ export abstract class UIControl2D extends Node2D implements Interactive {
     this.updateLabel();
   }
 
+  /** Re-rasterise the caption as it is (a font face registered after it was drawn). */
+  repaintLabel(): void {
+    this.updateLabel();
+  }
+
   /**
    * Update the label display
    */

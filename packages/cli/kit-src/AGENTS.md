@@ -224,7 +224,8 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   DevTools) reaches it: `list_pages` → `select_page` → `list_3p_developer_tools` → the
   `pix3_*` tools — sync the editor with the disk, play, step the game with predicates, read the
   scene and the errors, prepare a screenshot. There is no scene-editing tool — you still edit
-  files. No `pix3-browser` server → `npx pix3 agent-setup`, then a new thread. The loop, the
+  files. No `pix3-browser` server → `npx pix3 agent-setup`, then a new thread — or, when you
+  cannot start one (a subagent, CI), the same tools from the shell: `npx pix3 bridge <tool>`. The loop, the
   not-ok answers and the inline fallback: `.claude/skills/pix3-editor/SKILL.md`.
 
 ## Skills (read the one you need, when you need it)

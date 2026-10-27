@@ -42,8 +42,21 @@ interface PageWindow extends Window {
   __PIX3_PAGE_BOT__?: PageBotHandle;
 }
 
+/** A picture the policy asked for (`bot.screenshot`); the game is paused on its frame. */
+export interface PageBotShot {
+  readonly name: string;
+  readonly frame: number;
+}
+
 export interface PageBotHandle {
   readonly finished: boolean;
+  /**
+   * The next picture to take, or null. The game stays paused on its frame until {@link resume};
+   * the CLI captures the page in between.
+   */
+  takeShot(): PageBotShot | null;
+  /** Let the game run on after a picture (it stays paused once the policy is finished). */
+  resume(): void;
   /** The session's report; `notes` names what the page run could not do. */
   report(): BotReport;
   /** End the run (budget spent): `end()` runs, everything held is released. */
@@ -58,7 +71,12 @@ const commandsOf = (runner: SceneRunner): PageCommands | null => {
   return null;
 };
 
-const buildPageWorld = (runner: SceneRunner, canvas: HTMLCanvasElement, page: Window): BotWorld => {
+const buildPageWorld = (
+  runner: SceneRunner,
+  canvas: HTMLCanvasElement,
+  page: Window,
+  shots: PageBotShot[]
+): BotWorld => {
   const sink = new DomInputSink(canvas, page);
   const scene = runner as unknown as BotSceneHandle;
   const canvasHandle = canvas as unknown as BotCanvasHandle;
@@ -152,6 +170,12 @@ const buildPageWorld = (runner: SceneRunner, canvas: HTMLCanvasElement, page: Wi
       }
       return commands.dispatch(name, args) ? null : `command "${name}" refused or threw.`;
     },
+    requestScreenshot: (name, frame) => {
+      // The policy ticks after the frame was drawn, so pausing here holds exactly what it saw.
+      runner.pause();
+      shots.push({ name, frame });
+      return null;
+    },
     releaseAll: () => {
       if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
       swipeDown = null;
@@ -177,21 +201,36 @@ export const startPageBot = (name: string, policyModule: unknown): PageBotHandle
   const resolved = resolveBotPolicy(policyModule);
   if ('error' in resolved) throw new Error(resolved.error);
   const errors: string[] = [];
+  const shots: PageBotShot[] = [];
   const session = new BotSession(
     name,
     resolved.policy,
-    buildPageWorld(runner, canvas, page),
+    buildPageWorld(runner, canvas, page, shots),
     error => errors.push(error.message)
   );
-  const detach = runner.subscribeFrameStats(() => session.tick());
+  // Fixed 1/60 s ticks while the bot plays: a headless page paints at 10–30 fps, and in realtime a
+  // tick's game time followed it, so `bot.frame` was not game time and a 300 ms effect lived a
+  // different number of ticks each run — no frame of it could be asked for (core-tests/game8).
+  const previousTime = runner.getTimeMode();
+  runner.setTimeMode({ mode: 'fixed', fixedDeltaSec: 1 / 60, ticksPerFrame: 1 });
+  const detach = runner.subscribeFrameStats(() => {
+    session.tick();
+    // Hold the frame the verdict was reached on: the final screenshot shows what was judged.
+    if (session.finished) runner.pause();
+  });
   const handle: PageBotHandle = {
     get finished() {
       return session.finished;
+    },
+    takeShot: () => shots.shift() ?? null,
+    resume: () => {
+      if (shots.length === 0 && !session.finished) runner.resume();
     },
     report: () => session.report(),
     stop: () => {
       detach();
       session.dispose();
+      runner.setTimeMode(previousTime);
       return session.report();
     },
   };

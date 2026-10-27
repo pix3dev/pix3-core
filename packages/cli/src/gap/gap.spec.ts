@@ -84,7 +84,11 @@ describe('pix3 gap', () => {
     expect(bad(['x', '--kind', 'wish'])).toContain(
       '--kind is one of capability, tool, node, doc, other'
     );
-    expect(bad(['a', 'b'])).toContain('one summary only');
+    // The error names the stray argument and is not buried under the usage (core-tests/game8).
+    const twoSummaries = bad(['a', 'b']);
+    expect(twoSummaries).toContain('one summary only, but "b" came after "a"');
+    expect(twoSummaries).toContain('Nothing was recorded');
+    expect(twoSummaries).not.toContain('Usage:');
     expect(bad(['x'.repeat(201)])).toContain('at most 200');
     expect(bad(['x', '--what'])).toContain('unknown option');
     expect(readGaps(root)).toEqual([]);

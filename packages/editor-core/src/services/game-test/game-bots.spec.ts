@@ -64,6 +64,10 @@ function makeWorld(
       calls.push(`tapAt:up:${point.x},${point.y}`);
     },
     dispatchCommand: name => gate(`command:${name}`),
+    requestScreenshot: (name, frame) => {
+      calls.push(`screenshot:${name}@${frame}`);
+      return null;
+    },
     releaseAll: () => {
       calls.push('releaseAll');
     },
@@ -354,6 +358,25 @@ describe('BotSession actuators', () => {
         .log.map(entry => entry.message)
         .join(' ')
     ).toContain('one finger');
+  });
+
+  it('screenshot asks the world for a named picture of this frame; not input, not a refusal', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 2) bot.screenshot('Result card!');
+        if (bot.frame === 3) bot.screenshot('  ');
+      }),
+      world
+    );
+    run(session, 3);
+    expect(world.calls).toEqual(['screenshot:Result-card@2']);
+    expect(session.report().sent).toBe(0);
+    expect(session.report().refused).toBe(1); // the nameless one
+    expect(session.report().log.map(entry => entry.message)).toContain(
+      'screenshot "Result-card" at frame 2'
+    );
   });
 
   it('command dispatches a game command', () => {

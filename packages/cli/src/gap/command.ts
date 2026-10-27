@@ -81,7 +81,10 @@ export const parseGapArgs = (argv: readonly string[]): GapArgs | { error: string
       out.projectDir = v;
     } else if (arg.startsWith('--')) return { error: `unknown option "${arg}"` };
     else if (out.summary === undefined) out.summary = arg;
-    else return { error: 'one summary only — quote it ("…"); put the rest in --detail' };
+    else
+      return {
+        error: `one summary only, but "${arg}" came after "${out.summary}" — quote the whole summary ("…"); put the rest in --detail`,
+      };
   }
   return out;
 };
@@ -152,7 +155,9 @@ export const runGapCli = (argv: readonly string[], io: GapIo): number => {
   }
   const parsed = parseGapArgs(argv);
   if ('error' in parsed) {
-    io.stderr(`pix3 gap: ${parsed.error}\n\n${COMMAND_USAGE.gap}`);
+    // The error alone: the usage printed after it buried it, and an agent read the screenful as
+    // "pix3 gap just printed its help" (core-tests/game8).
+    io.stderr(`pix3 gap: ${parsed.error}. Nothing was recorded (pix3 gap --help for the usage).\n`);
     return 2;
   }
   const project = resolveProjectRoot(io.cwd, parsed.projectDir);

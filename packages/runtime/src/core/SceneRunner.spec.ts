@@ -15,6 +15,7 @@ import { Script } from './ScriptComponent';
 import type { FrameProfilerActivity } from './SceneService';
 import { Camera3D } from '../nodes/3D/Camera3D';
 import { NodeBase } from '../nodes/NodeBase';
+import { resetProjectFontRegistry } from './ProjectFontLoader';
 
 function createRendererStub(width: number, height: number): RuntimeRenderer {
   const canvas = document.createElement('canvas');
@@ -753,6 +754,53 @@ describe('SceneRunner scene transitions (loadAndStartScene)', () => {
 
     expect(script.runningAtStart).toBe(true);
     runner.stop();
+  });
+
+  it('repaints the captions a project font registered after they drew (core-tests/game8)', async () => {
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(1 as unknown as number);
+    const globals = globalThis as unknown as { FontFace?: unknown };
+    const savedFontFace = globals.FontFace;
+    globals.FontFace = class {
+      load(): Promise<this> {
+        return Promise.resolve(this);
+      }
+    };
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { add: () => {} } });
+    const resources = new ResourceManager('/');
+    vi.spyOn(resources, 'readBlob').mockResolvedValue(new Blob([new Uint8Array([1])]));
+    const runner = new SceneRunner(
+      createSceneManagerStub(),
+      createRendererStub(320, 160),
+      new AudioService(),
+      new AssetLoader(resources, new AudioService())
+    );
+    runner.setProjectFonts([
+      { family: 'Nunito', path: 'fonts/nunito-900-latin.woff2', weight: 900 },
+    ]);
+    // Parsed — and drawn in the fallback face — before the run registers the font. Any node with
+    // `repaintLabel` is a captioned control to the runner (UIControl2D has it).
+    const label = Object.assign(new NodeBase({ id: 'score', name: 'Score' }), {
+      repaintLabel: vi.fn(),
+    });
+    const root = new NodeBase({ id: 'root', name: 'Root' });
+    root.add(label);
+    const repaint = label.repaintLabel;
+    try {
+      await (runner as unknown as { runGraph: (graph: SceneGraph) => Promise<void> }).runGraph({
+        version: '1.0.0',
+        metadata: {},
+        rootNodes: [root],
+        nodeMap: new Map<string, NodeBase>([
+          [root.nodeId, root],
+          [label.nodeId, label],
+        ]),
+      });
+      expect(repaint).toHaveBeenCalledTimes(1);
+      runner.stop();
+    } finally {
+      globals.FontFace = savedFontFace;
+      resetProjectFontRegistry();
+    }
   });
 
   it('reads + parses the target and hands it to runGraph WITHOUT registering it in the SceneManager', async () => {

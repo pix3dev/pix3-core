@@ -214,7 +214,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   any easing name: `linear`, `quadOut`, `cubicInOut`, `backOut`, `elasticOut`, … — a variable
   holding one is typed `KeyframeEasing`, imported from `@pix3/runtime`);
   `fadeIn(node, sec)` and `crossFade(a, b, sec)` — no options; `fadeOut(node, sec, { hide: true })`;
-  `killAll(target?)`. Default `sec` = 0.3. Prefer these over hand-lerping.
+  `killAll(target?)` — **without a target it kills every tween of the scene**, a result card's
+  fade included; pass the board's node to reset only its own. Default `sec` = 0.3. Prefer these over hand-lerping.
 - Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick', { volume: 1, pitch: 1 })`;
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
   Sound without the editor: `pix3 sfx coin` writes `audio/coin.wav` (presets `coin`, `jump`,
@@ -241,7 +242,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   (`cancel` is not a tap; `x, y` in canvas units — `scene.screenToWorld2D(event)` for world);
   `input.keyEvents`.
 - Taps and swipes without the bookkeeping: `private readonly gestures = new GestureTracker()`
-  (from `@pix3/runtime`; `{ swipeMinPx: 24, tapSlopPx: 12, maxTapMs: 500 }`), then in `onUpdate`
+  (from `@pix3/runtime`; `{ swipeMinPx: 24, tapSlopPx: 12, maxTapMs: 500, maxTapFrames: 3 }` — a
+  press released within `maxTapMs` OR `maxTapFrames` frames is a tap, so a slow headless page does
+  not turn a bot's tap into a hold; call `update` every frame), then in `onUpdate`
   `for (const g of this.gestures.update(this.input?.pointerEvents ?? [], this.scene))` →
   `{ type: 'tap', at }` or `{ type: 'swipe', direction: 'left'|'right'|'up'|'down', from, to }`
   (world units; a swipe fires once, as the finger crosses the threshold — a match-3 swap — and a

@@ -121,7 +121,11 @@ played there with real DOM pointer and key events (the same bot API as `pix3_gam
 `physical-input` only). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
 the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
 nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot or a page that never
-booted. No editor, no MCP: it works from a subagent and in CI.
+booted. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
+machine) and stops on the frame of `done()`, so `--screenshot` shows what was judged; mid-run
+pictures come from the policy: `bot.screenshot('result-card')` freezes the game on that frame,
+saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
+result card, all in one run. No editor, no MCP: it works from a subagent and in CI.
 
 ### Logic tests in Node
 

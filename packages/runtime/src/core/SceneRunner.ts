@@ -602,7 +602,11 @@ export class SceneRunner {
     // after the first frame repaints every caption, and a paused or unfocused session freezes on
     // the frame drawn in the substituted face. Failures are reported inside and never thrown.
     if (this.projectFonts) {
-      await loadProjectFonts(this.projectFonts, this.resourceManager);
+      const fonts = await loadProjectFonts(this.projectFonts, this.resourceManager);
+      // The graph was parsed — and every caption rasterised — before this await: a face that
+      // registered just now reached only the labels a later layout pass happened to repaint, so
+      // the player showed the system face on most of the first scene (core-tests/game8).
+      if (fonts.loaded.length > 0) repaintLabels(this.runtimeGraph.rootNodes);
     }
 
     // Localization: create a play-mode instance (isolated from the editor
@@ -2394,4 +2398,18 @@ export class SceneRunner {
       listener(sample);
     }
   }
+}
+
+/**
+ * Re-rasterise every UI control's caption under `roots` (a font registered after they drew). By
+ * shape, not `instanceof UIControl2D`: the player always keeps this module, and a value import
+ * would pin the UI controls into every build that strips them.
+ */
+function repaintLabels(roots: readonly NodeBase[]): void {
+  const visit = (node: NodeBase): void => {
+    const control = node as NodeBase & { repaintLabel?: unknown };
+    if (typeof control.repaintLabel === 'function') control.repaintLabel();
+    for (const child of node.children) if (child instanceof NodeBase) visit(child);
+  };
+  for (const root of roots) visit(root);
 }

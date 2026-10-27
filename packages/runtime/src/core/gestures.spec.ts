@@ -46,8 +46,28 @@ describe('GestureTracker', () => {
     const g = new GestureTracker({ maxTapMs: 300 });
     g.update([ev('down', 0, 0, 1), ev('down', 50, 50, 2)], null, 0);
     expect(g.update([ev('cancel', 0, 0, 1)], null, 10)).toEqual([]);
+    // Held for 24 frames at 60 fps (update runs every frame): long by the clock and by frames.
+    for (let frame = 2; frame < 24; frame += 1) g.update([], null, frame * 16);
     expect(g.update([ev('up', 50, 50, 2)], null, 400)).toEqual([]);
     g.update([ev('down', 5, 5, 3)], null, 500);
     expect(g.update([ev('up', 5, 5, 3)], null, 520)).toMatchObject([{ type: 'tap', pointerId: 3 }]);
+  });
+
+  it('on a slow frame rate a press of a few frames is still a tap (core-tests/game8)', () => {
+    // A headless page at ~6 fps: a bot's tap, down then up three frames later, is 510 ms by the
+    // clock — past maxTapMs — but no finger can tap faster than the frames it lands in.
+    const g = new GestureTracker();
+    g.update([ev('down', 5, 5)], null, 0);
+    g.update([], null, 170);
+    g.update([], null, 340);
+    expect(g.update([ev('up', 5, 5)], null, 510)).toMatchObject([{ type: 'tap' }]);
+    // Four frames and past the clock: a hold.
+    g.update([ev('down', 5, 5)], null, 1000);
+    for (const t of [1170, 1340, 1510]) g.update([], null, t);
+    expect(g.update([ev('up', 5, 5)], null, 1680)).toEqual([]);
+    // maxTapFrames: 0 is the clock alone.
+    const strict = new GestureTracker({ maxTapFrames: 0 });
+    strict.update([ev('down', 5, 5)], null, 0);
+    expect(strict.update([ev('up', 5, 5)], null, 510)).toEqual([]);
   });
 });

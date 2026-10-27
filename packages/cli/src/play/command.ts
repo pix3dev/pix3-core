@@ -25,6 +25,8 @@ interface PlayArgs {
   readonly bot?: string;
   readonly seconds: number;
   readonly screenshot?: string;
+  /** Where `bot.screenshot(name)` pictures go (default beside --screenshot, else .pix3/screenshots). */
+  readonly shots?: string;
   readonly json: boolean;
   readonly project?: string;
 }
@@ -40,6 +42,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let bot: string | undefined;
   let seconds: number | undefined;
   let screenshot: string | undefined;
+  let shots: string | undefined;
   let json = false;
   let project: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
@@ -58,6 +61,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     else if (flag === '--bot') bot = value();
     else if (flag === '--seconds') seconds = Number(value());
     else if (flag === '--screenshot') screenshot = value();
+    else if (flag === '--shots') shots = value();
     else if (flag === '--project') project = value();
     else if (arg.startsWith('-')) return { error: `unknown argument ${arg}` };
     else if (target === undefined) target = arg;
@@ -67,7 +71,19 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   const budget = seconds ?? (bot ? 60 : 3);
   if (!Number.isFinite(budget) || budget <= 0)
     return { error: '--seconds takes a positive number' };
-  return { target, width, height, scale, scene, bot, seconds: budget, screenshot, json, project };
+  return {
+    target,
+    width,
+    height,
+    scale,
+    scene,
+    bot,
+    seconds: budget,
+    screenshot,
+    shots,
+    json,
+    project,
+  };
 };
 
 /** The page to open: an explicit URL or file, `dist`, else the running dev server, else `dist`. */
@@ -117,7 +133,12 @@ interface PlayReport {
   readonly bot?: Record<string, unknown>;
   readonly game: unknown;
   readonly screenshot?: string;
+  /** The pictures the policy took with `bot.screenshot(name)`, in order. */
+  readonly screenshots?: readonly { name: string; frame: number; path: string }[];
 }
+
+/** How often the CLI asks the page whether the policy is done or wants a picture. */
+const POLL_MS = 50;
 
 export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<number> => {
   const parsed = parsePlayArgs(argv);
@@ -210,6 +231,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     }
 
     let botReport: Record<string, unknown> | undefined;
+    const shots: { name: string; frame: number; path: string }[] = [];
     if (status === 'running' && policyScript !== null && args.bot) {
       const host = await withCommandBundle(
         'play',
@@ -223,9 +245,40 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         session,
         `window.__PIX3_PAGE_BOT_HOST__.startPageBot(${JSON.stringify(args.bot)}, window.__PIX3_BOT_POLICY__), true`
       );
+      // One evaluate per poll: whether the policy is done, and the next picture it asked for
+      // (`bot.screenshot`) — the page holds the game paused on that frame until `resume()`.
+      const shotDir = resolve(
+        io.cwd,
+        args.shots ??
+          join(
+            args.screenshot
+              ? dirname(args.screenshot)
+              : join(root ?? io.cwd, '.pix3', 'screenshots'),
+            `play-${Date.now()}`
+          )
+      );
       for (const deadline = Date.now() + args.seconds * 1000; Date.now() < deadline; ) {
-        await sleep(250);
-        if (await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.finished')) break;
+        await sleep(POLL_MS);
+        const poll = (await chrome.evaluate(
+          session,
+          '(() => { const b = window.__PIX3_PAGE_BOT__; return { finished: b.finished, shot: b.takeShot() }; })()'
+        )) as { finished?: boolean; shot?: { name: string; frame: number } | null } | null;
+        if (poll?.shot) {
+          const shot = (await chrome.send(
+            'Page.captureScreenshot',
+            { format: 'png' },
+            session
+          )) as {
+            data?: string;
+          };
+          const path = join(shotDir, `${poll.shot.name}.png`);
+          mkdirSync(shotDir, { recursive: true });
+          writeFileSync(path, Buffer.from(shot.data ?? '', 'base64'));
+          shots.push({ name: poll.shot.name, frame: poll.shot.frame, path });
+          await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.resume()');
+          continue;
+        }
+        if (poll?.finished) break;
       }
       botReport = (await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.stop()')) as Record<
         string,
@@ -272,6 +325,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(botReport ? { bot: botReport } : {}),
       game,
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
+      ...(shots.length > 0 ? { screenshots: shots } : {}),
     };
     const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
     const botFailed =
@@ -310,5 +364,7 @@ const formatPlayHuman = (report: PlayReport): string => {
     lines.push(`game: ${JSON.stringify(report.game)}`);
   }
   if (report.screenshot) lines.push(`screenshot: ${report.screenshot}`);
+  for (const shot of report.screenshots ?? [])
+    lines.push(`screenshot ${shot.name} (frame ${shot.frame}): ${shot.path}`);
   return `${lines.join('\n')}\n`;
 };

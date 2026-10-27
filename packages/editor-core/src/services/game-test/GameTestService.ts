@@ -1109,6 +1109,9 @@ export class GameTestService {
         return commands.dispatch(name, args) ? null : `command "${name}" refused or threw.`;
       },
 
+      requestScreenshot: (name, frame) =>
+        `screenshot "${name}" at frame ${frame}: a marker here — the editor saves no picture mid-run (pix3 play --bot does); pix3_screenshot shows the frame a run ends on.`,
+
       releaseAll: () => {
         if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
         swipeDown = null;

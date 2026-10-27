@@ -259,7 +259,7 @@ freezes a tween in flight; all tweens are dropped when the scene stops or change
 - `props` end values. On a node: `x` / `y` (→ `position.x/y`), `position: {x,y}`, `scale` (a number is uniform x/y, or `{x,y}`), `rotation` (RADIANS → `rotation.z`), `opacity`, `width` / `height`, plus any other numeric (dotted) path, e.g. `'position.x'`. On a plain object every key is a (dotted) path. Writes go through the node's public property, so a reactive schema setter redraws.
 - `opts`: `durationSec` (0.3), `ease` (`'cubicOut'`; any `KeyframeEasing` name), `delaySec` (0; the start value is captured when the delay ends, not when the tween was created), `yoyo` (false — odd iterations run backwards), `repeat` (0 extra iterations; `-1` = forever), `onUpdate(t)`, `onComplete()`.
 - `TweenHandle`: `cancel()` (leaves the target where it is), `finished: Promise<'completed' | 'cancelled'>` (never rejects), `isRunning`.
-- `scene.tween.fadeIn(node, sec)`, `fadeOut(node, sec, {hide=true})`, `crossFade(from, to, sec)` (fades `from` out and hides it while `to` becomes visible and fades in; the handle ends when both do), `killAll(target?)`.
+- `scene.tween.fadeIn(node, sec)`, `fadeOut(node, sec, {hide=true})`, `crossFade(from, to, sec)` (fades `from` out and hides it while `to` becomes visible and fades in; the handle ends when both do), `killAll(target?)` (no target = every tween of the scene, other UI's fades included).
 
 ### Audio (buses, snapshots, one-shots)
 
@@ -736,6 +736,13 @@ you never clone textures yourself. Author the region once and drive it from
 **both** `onUpdate` (play) and `tickEditorPreview` (edit) so the two modes match. A
 throwing `tickEditorPreview` disables the component and surfaces the error like a
 play-mode hook, so the editor keeps running.
+
+It draws only the component's own node: content a script spawns at play time (a match-3 board
+of 64 gem nodes) has no edit-mode picture — the viewport shows the empty board, and the board is
+seen in Play, `pix3 play --screenshot` or a policy's `bot.screenshot`. Temporary preview child
+nodes are deliberately not offered: the saver, the scene diff and the flush would treat them as
+authored nodes (decided 2026-10-27, core-tests/game8). Content that must be laid out in the editor
+is authored as nodes (instances of a cell prefab) that the script fills in.
 
 ---
 

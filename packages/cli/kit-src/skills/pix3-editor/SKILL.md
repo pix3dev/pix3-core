@@ -15,13 +15,8 @@ follows the disk, and `pix3_sync` is the barrier between the two.
 
 **No `pix3-browser` server in this session** (you are a subagent, in CI, or `agent-setup` asked
 for a new thread you cannot start): the same tools run from the shell through the same proxy —
-`npx pix3 bridge <tool> '<json>'` (`npx pix3 bridge sync '{"timeoutMs":15000}'`,
-`npx pix3 bridge play '{"action":"start"}'`, `npx pix3 bridge scene '{"nodeId":"hud"}'`), plus
-`npx pix3 bridge screenshot [--target game] [--aspect 9:16] [--out f.png]` (then look at the PNG;
-`--aspect` frames the Game tab like a phone), `npx pix3 bridge tap --node <id> [--touch]` (during
-play also a node a script spawned, by id or name) and
-`npx pix3 bridge swipe --from <id> --to <id> [--touch]` (or page CSS px). Everything below
-applies unchanged; only the transport differs. Do not write your own CDP or MCP client.
+`npx pix3 bridge`, section 9. Everything else here applies unchanged; only the transport differs.
+Do not write your own CDP or MCP client.
 
 ## 1. Find the tab (once per thread, and again after any reload)
 
@@ -147,7 +142,8 @@ type-checks the policy. `tick` runs after the game's tick and what it presses la
 one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
 between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
 (a board cell; both `physical-input` only, one finger — not while the other is still down) and
-`bot.command(name, args?)` dispatches one of the game's `scene.commands`. **Every `pix3_game_run`
+`bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
+saves a picture of that frame under `pix3 play --bot` and is only a log marker here. **Every `pix3_game_run`
 loads the policy afresh**: its module-level state (a step counter, a plan) starts over on each
 run, while the game keeps its state from the run before. A policy that spans runs reads where the
 game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
@@ -237,3 +233,27 @@ The tab is in the background while you work, and Chrome would throttle it. `pix3
 Chrome with throttling off, and every bridge call keeps the editor's own loops running for 60 s
 (a play session you started, until it stops). Nothing to do on your side; a tab that was opened
 by hand in another Chrome may still pause when hidden.
+
+## 9. Without MCP: `npx pix3 bridge`
+
+The same tab, tools, params and answers from the shell — `npx pix3 editor` (or `--headless` on a
+box with no screen) must have started the Chrome; no `agent-setup`, no new thread. The tool keeps
+its name (`pix3_sync`; the prefix may be dropped: `sync`); params are one JSON object in single
+quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
+
+| MCP | Shell |
+| --- | --- |
+| `pix3_status` | `npx pix3 bridge status` |
+| `pix3_sync {expect, timeoutMs}` | `npx pix3 bridge sync '{"expect":{"scenes/main.pix3scene":"<sha256>"},"timeoutMs":15000}'` |
+| `pix3_scene {nodeId}` / `{find}` | `npx pix3 bridge scene '{"nodeId":"hud"}'`, `npx pix3 bridge scene '{"find":"gem"}'` |
+| `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart`, `stop`, `resume`, `status`) |
+| `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":3600}'` |
+| `pix3_errors` | `npx pix3 bridge errors` |
+| `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--target game\|viewport] [--aspect 9:16] [--out f.png]` — then open the PNG |
+| `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) |
+| a drag | `npx pix3 bridge swipe --from <id> --to <id> [--touch] [--ms 180]` or four page CSS px |
+
+**`pix3_game_run` leaves the game paused on its outcome frame**: a `tap` / `swipe` after it reaches a
+frozen game and nothing reacts — `npx pix3 bridge play '{"action":"resume"}'` first (the CLI
+warns when it taps a paused game). The game's own page without the editor: `npx pix3 play`
+(`pix3-verify`).

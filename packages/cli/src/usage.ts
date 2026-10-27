@@ -52,7 +52,9 @@ Usage:
   pix3 font [add <family>]         List the fonts this CLI ships (Nunito, Rubik, Baloo 2, …);
         [--project <dir>] [--json] add copies one into fonts/ and registers it in pix3project.yaml
   pix3 play [dev|dist] [--bot <n>] The game's page (or the build) in a headless Chrome at a phone
-        [--size 390x844]           size, optionally played by a bot policy; screenshot, errors
+        [--size 390x844]           size, optionally played by a bot policy; screenshot, errors;
+        [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
+        [--shots <dir>]
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
                                    tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
@@ -250,7 +252,8 @@ Reference it from a scene or script as res://<path inside the project>.
   --json      machine-readable (the catalog; or {family, weight, copied, registered})
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
-                 [--bot <name>] [--seconds S] [--screenshot <file.png>] [--json] [--project <dir>]
+                 [--bot <name>] [--seconds S] [--screenshot <file.png>] [--shots <dir>] [--json]
+                 [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
   when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
@@ -264,8 +267,13 @@ Reference it from a scene or script as res://<path inside the project>.
   --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
                  physical-input only. Ends at done() or after --seconds (default 60 with a bot, 3
-                 without)
-  --screenshot   save a PNG of the page at the end
+                 without). The game ticks a fixed 1/60 s per frame while a bot plays, so a frame
+                 number means the same game time on any machine, and it stays paused on the frame
+                 of done()
+  --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)
+  --shots dir    where bot.screenshot(name) saves <name>.png — the game is frozen on the frame the
+                 policy asked on, photographed, then runs on (default: beside --screenshot, else
+                 .pix3/screenshots/play-<time>/)
   --json         machine-readable report
 
   Exit 0 = the page ran, nothing threw, the bot passed; 1 = errors, a failed or crashed bot, or a
