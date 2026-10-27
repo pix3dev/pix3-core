@@ -46,7 +46,8 @@ Usage:
         [--dry-run] [--force]      <variant>.<state> clips + a prefab with
         [--json] [--project <dir>] core:CharacterVisual2D (refuses to overwrite)
   pix3 sfx <preset|"text">         Synthesize a sound effect offline into a WAV (coin, jump,
-        [--out <file.wav>]         hit, explosion, powerup, click; or "big explosion")
+        [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose;
+                                   or "big explosion")
         [--seed <n>] [--json]
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
         [--kind capability|tool|node|doc|other] .pix3/gaps.jsonl;

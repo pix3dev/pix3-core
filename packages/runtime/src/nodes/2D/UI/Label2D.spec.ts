@@ -134,11 +134,12 @@ describe('Label2D script assignments (reactive schema properties)', () => {
     expect(names.has('labelColor')).toBe(false);
   });
 
-  it('the inspector range for labelFontSize covers display titles (96 px on a 1080-wide design)', () => {
+  it('the inspector range for labelFontSize covers display titles (a 1080×1920 logo)', () => {
     // The range is an inspector hint that `pix3 check` reports as W_PROPERTY_RANGE; at 8..64 every
-    // recipe's 96 px menu title warned on every check (trial 2026-09-27, D2).
+    // recipe's 96 px menu title warned on every check (trial 2026-09-27, D2), and at 8..200 a
+    // portrait game's title logo did (match-3 dogfood, 2026-10-26).
     const fontSize = Label2D.getPropertySchema().properties.find(p => p.name === 'labelFontSize');
-    expect(fontSize?.ui).toMatchObject({ min: 8, max: 200 });
+    expect(fontSize?.ui).toMatchObject({ min: 8, max: 512 });
   });
 
   it('exposes glow/outline in the schema, off by default, and clamps the strength', () => {

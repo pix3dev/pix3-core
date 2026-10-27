@@ -361,6 +361,9 @@ describe('pix3 tree: the scripts line follows the one project-script rule', () =
         "import { Script } from '@pix3/runtime';\nclass Impl extends Script {}\nexport { Impl as Boss };\n",
       'scripts/Legacy.js': 'export class Legacy extends Script {}\n',
       'scripts/Bat.test.ts': 'export class BatTest extends Script {}\n',
+      // Beside the scripts but not components: a model class, a helper, a constant, a type.
+      'scripts/BoardModel.ts':
+        'export class BoardModel {}\nexport function solve() {}\nexport const SIZE = 8;\nexport type Pos = [number, number];\n',
     };
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });

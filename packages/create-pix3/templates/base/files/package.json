@@ -21,6 +21,7 @@
     "@pix3/cli": "{{PIX3_VERSION}}",
     "@pix3/editor-core": "{{PIX3_VERSION}}",
     "@pix3/vite-plugin": "{{PIX3_VERSION}}",
+    "@types/node": "^22.15.0",
     "@types/three": "^0.183.1",
     "typescript": "~5.8.3",
     "vite": "^8.3.3"

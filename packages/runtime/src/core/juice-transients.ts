@@ -93,7 +93,7 @@ export interface FloatTextStyleOptions {
   zIndex?: number;
 }
 
-const BURST_DEFAULTS = {
+export const BURST_DEFAULTS = {
   count: 14,
   speed: 260,
   spread: Math.PI * 2,
@@ -106,7 +106,7 @@ const BURST_DEFAULTS = {
 /** Hard ceiling on particles per burst — a runaway `count` must not stall a frame. */
 export const BURST_MAX_PARTICLES = 512;
 
-const FLOAT_TEXT_DEFAULTS = {
+export const FLOAT_TEXT_DEFAULTS = {
   fontSizePx: 28,
   driftPx: 60,
   durationSec: 0.8,

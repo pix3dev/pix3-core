@@ -90,7 +90,9 @@ export class Combo extends Script {
   Anything else is a full entry: `name` (= the config key), `type` (`vector2` `vector3`
   `object` …), `ui` (`label`, `group`, …), `getValue`, `setValue` — `setValue` is what the
   loader calls with the scene's value; clamp and coerce there.
-- One mechanic = one script, 70–140 lines. Tunable numbers go into `config`, not into
+- One mechanic = one script — most land at 70–200 lines; a board or level manager runs longer,
+  so split pure rules (matching, scoring, generation) into a plain module beside it (no
+  `extends Script`) that a Node test can import. Tunable numbers go into `config`, not into
   constants: the human tunes them in the inspector.
 - Name methods after intent (`startGame()`, `restart()`, `addCombo()`), not after widgets.
 
@@ -141,7 +143,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Create at runtime with the YAML property names, then parent it:
   `const r = new ColorRect2D({ id: 'flash', width: 100, height: 100, color: '#ffffff' }); parent.adoptChild(r);`
   (also `Sprite2D({ id, texturePath: 'res://sprites/gem.svg', width, height })` — the texture
-  loads on `adoptChild`; `Label2D({ id, label, labelFontSize, labelColor })`, `Group2D`).
+  loads on `adoptChild`; `Label2D({ id, label, labelFontSize, labelColor })`, `Group2D`). A node
+  built without a `name` is named by its `id` — give each a readable one (`gem-3-5`), it is what
+  the editor's runtime tree and `pix3_scene` show.
 - A board whose pieces must not draw outside it (new gems falling in from above): put them
   under a `Group2D` with `clipChildren: true` sized to the board.
 
@@ -184,7 +188,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Juice — call it together with the mechanic. Scale it to the event: a pickup gets a sound and
   a pop, a hit adds a burst and a small shake, only a big impact (a death, a boss hit) gets
   hitstop and a flash. Juice is brief and returns to rest; it never delays input or the
-  simulation. Every option is optional; defaults shown. Note the three transform effects take
+  simulation. Every option is optional; defaults shown. Sizes and speeds are **design px** (the
+`viewportBaseSize` space); the defaults below are for a 540-px short side and grow with yours —
+×2 on a 1080×1920 design — while a value you pass is used as given. Note the three transform effects take
   `duration` (seconds), **not** `durationSec`:
   - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
     `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
@@ -212,7 +218,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick', { volume: 1, pitch: 1 })`;
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
   Sound without the editor: `pix3 sfx coin` writes `audio/coin.wav` (presets `coin`, `jump`,
-  `hit`, `explosion`, `powerup`, `click`, or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;
+  `hit`, `explosion`, `powerup`, `click`, `whoosh` (a swap, a swipe), `chime` (a match), `win`,
+  `lose`, or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;
   `--seed <n>` for a variation) — offline, no key; `.wav` plays everywhere `.ogg`/`.mp3` do.
   Sound cannot be proven audible from the bridge: the browser only starts Web Audio after
   a real user gesture, and a synthetic click from chrome-devtools-mcp is not one. Report a sound as

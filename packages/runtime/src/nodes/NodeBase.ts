@@ -121,7 +121,10 @@ export class NodeBase extends Object3D {
     this.nodeId = props.id;
     this.uuid = props.id;
     this.type = props.type ?? 'Group';
-    this.name = props.name ?? this.type;
+    // A node a script builds without a `name` is named by its id (64 rows of "Sprite2D" in the
+    // editor's runtime tree told nobody which gem was which). Scene files keep their convention: the
+    // loader passes the type as the name of a node the file does not name.
+    this.name = props.name ?? props.id;
     this.properties = { ...(props.properties ?? {}) };
     this.metadata = { ...(props.metadata ?? {}) };
     this._instancePath = props.instancePath ?? null;

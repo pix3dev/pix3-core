@@ -326,6 +326,30 @@ export class Spawner extends Script {
     expect(report.warnings).toEqual([]);
   });
 
+  it('changeScene with its default fade completes inside a stepped run (menu → game)', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Menu')),
+      'scenes/game.pix3scene': scene(component('user:Game')),
+      'scripts/Menu.ts': script(
+        'Menu',
+        `  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 3) void this.scene?.changeScene('res://scenes/game.pix3scene');
+  }`
+      ),
+      'scripts/Game.ts': script(
+        'Game',
+        `  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 2) console.log('game scene is running');
+  }`
+      ),
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 20 }));
+    expect(report.errors).toEqual([]);
+    expect(report.logs.lines.some(line => line.includes('game scene is running'))).toBe(true);
+  });
+
   it('reports a missing res:// file as a warning, not an error', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(

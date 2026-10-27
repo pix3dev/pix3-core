@@ -200,9 +200,10 @@ pix3 sfx "short high coin pickup" --out audio/pickup.wav --seed 7
 pix3 sfx explosion --json                       # { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
 ```
 
-Presets: `coin`, `jump`, `hit`, `explosion`, `powerup`, `click`. Free text picks the preset whose
-keyword appears first (`boom`, `pickup`, `button`, `hurt`, …) and applies modifier words
-(`high`/`low` pitch ×1.4/×0.7, `short`/`long` time ×0.65/×1.6, `soft`). `--seed <n>` renders a
+Presets: `coin`, `jump`, `hit`, `explosion`, `powerup`, `click`, `whoosh`, `chime`, `win`, `lose`.
+Free text picks a preset named in it, else the one whose keyword appears first (`boom`, `pickup`,
+`button`, `hurt`, `swap`, `bell`, `victory`, `game over`, …), and applies modifier words
+(`high`/`low` pitch ×1.4/×0.7, `short`/`long` time ×0.65/×1.6 — never below 60 ms, `soft`). `--seed <n>` renders a
 deterministic variation (pitch ±15 %, times ±20 %, duty/vibrato/cutoff nudged); without it the
 preset as tuned. Output is 44.1 kHz 16-bit mono PCM WAV — `AssetLoader.loadAudio` decodes it with
 `decodeAudioData` like any `.ogg`/`.mp3`, and the export embeds it as `audio/wav`. `res` in the

@@ -253,6 +253,12 @@ describe('scene.juice.floatText', () => {
     expect(root.children).not.toContain(popup);
   });
 
+  it('unset sizes grow with the design (1080 short side = ×2); explicit ones stay design px', () => {
+    const { service } = makeHarness();
+    expect(service.juice.floatText('+1')!.labelFontSize).toBe(56);
+    expect(service.juice.floatText('+1', { fontSizePx: 30 })!.labelFontSize).toBe(30);
+  });
+
   it('never participates in picking', () => {
     const { service, target } = makeHarness();
     const popup = service.juice.floatText('MISS', { at: target })!;

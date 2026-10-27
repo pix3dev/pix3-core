@@ -62,7 +62,7 @@ error: pageId: expected number" means it was left out.
 | `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
 | `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). Read-only |
-| `pix3_play` | `action` `start\|stop\|restart\|pause\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner |
+| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?` | play mode; `start` records you as the owner; `pause` / `resume` set that state (no-op when already in it) |
 | `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
@@ -157,7 +157,7 @@ The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means th
 only when the game registers a snapshot (below): `game.snapshot` at the outcome frame,
 `game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved. The run leaves the
 game **paused on the outcome frame** (so a screenshot shows what was judged); `pix3_play
-{action:"pause"}` toggles it back to running, or pass `pauseOnOutcome: false`. One run is at most
+{action:"resume"}` lets it run on, or pass `pauseOnOutcome: false`. One run is at most
 3600 frames (`maxFrames`, default 600) and 60 s of wall clock (`maxWallMs`, default 20000); a
 larger budget is clamped and the result's `notes` say so — a longer session (a whole bot round)
 is several runs in a row, the game keeps its state between them.

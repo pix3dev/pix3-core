@@ -6,6 +6,8 @@ import { ShakeBehavior, type ShakeOptions } from '../behaviors/ShakeBehavior';
 import { PunchScaleBehavior, type PunchScaleOptions } from '../behaviors/PunchScaleBehavior';
 import { PopInBehavior, type PopInOptions } from '../behaviors/PopInBehavior';
 import {
+  BURST_DEFAULTS,
+  FLOAT_TEXT_DEFAULTS,
   FloatText2D,
   ParticleBurst2D,
   type BurstOptions,
@@ -65,6 +67,9 @@ function isJuicePoint(value: unknown): value is JuicePoint2D {
  * effects: instead of a reusable component on an existing node they spawn a
  * short-lived 2D node that frees itself (see `./juice-transients`).
  */
+/** The design short side the juice defaults were tuned on (see `JuiceApi.designScale`). */
+const JUICE_REFERENCE_SHORT_SIDE = 540;
+
 export class JuiceApi {
   /** Monotonic id source for spawned transients (burst / floatText). */
   private transientCounter = 0;
@@ -73,6 +78,18 @@ export class JuiceApi {
   private readonly warned = new Set<string>();
 
   constructor(private readonly scene: SceneService) {}
+
+  /**
+   * How much the unset sizes of `burst` / `floatText` grow with the design: the defaults (a 10 px
+   * particle, a 28 px label) read right on a design whose short side is
+   * {@link JUICE_REFERENCE_SHORT_SIDE}; on a 1080×1920 one they were specks a phone could not show.
+   * Never below 1; an explicit option is always taken as given (design px).
+   */
+  private designScale(): number {
+    const { width, height } = this.scene.getLogicalCameraSize();
+    const scale = Math.min(width, height) / JUICE_REFERENCE_SHORT_SIDE;
+    return Number.isFinite(scale) && scale > 1 ? scale : 1;
+  }
 
   /**
    * Smooth positional shake on a node (or the active camera via `'camera'` /
@@ -190,9 +207,15 @@ export class JuiceApi {
       return null;
     }
 
+    const k = this.designScale();
     const burst = new ParticleBurst2D(
       { id: this.nextTransientId('burst'), name: 'JuiceBurst' },
-      options
+      {
+        ...options,
+        sizePx: options.sizePx ?? BURST_DEFAULTS.sizePx * k,
+        speed: options.speed ?? BURST_DEFAULTS.speed * k,
+        gravityY: options.gravityY ?? BURST_DEFAULTS.gravityY * k,
+      }
     );
     host.adoptChild(burst);
     const local = this.resolveHostLocalPoint(host, anchor, target);
@@ -226,10 +249,15 @@ export class JuiceApi {
       return null;
     }
 
+    const k = this.designScale();
     const popup = new FloatText2D(
       { id: this.nextTransientId('float-text'), name: 'JuiceFloatText' },
       label,
-      options
+      {
+        ...options,
+        fontSizePx: options.fontSizePx ?? FLOAT_TEXT_DEFAULTS.fontSizePx * k,
+        driftPx: options.driftPx ?? FLOAT_TEXT_DEFAULTS.driftPx * k,
+      }
     );
     host.adoptChild(popup);
     if (options.at !== undefined) {

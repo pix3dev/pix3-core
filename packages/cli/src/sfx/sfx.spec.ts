@@ -144,3 +144,21 @@ describe('pix3 sfx', () => {
     expect(help.out.stdout).toContain('coin, jump, hit, explosion, powerup, click');
   });
 });
+
+describe('pix3 sfx: the game-feel presets and the length floor', () => {
+  it('maps a swap, a gem, a win and a loss to their own presets', () => {
+    expect(resolveSfx('whoosh swap')?.preset).toBe('whoosh');
+    expect(resolveSfx('gem pop chime')?.preset).toBe('chime');
+    expect(resolveSfx('level complete fanfare')?.preset).toBe('win');
+    expect(resolveSfx('game over')?.preset).toBe('lose');
+  });
+
+  it('"short" never shrinks a sound below 60 ms (or its own length when shorter)', () => {
+    const shortCoin = resolveSfx('short quick coin');
+    expect(shortCoin && durationOf(shortCoin.params)).toBeGreaterThanOrEqual(0.06 - 1e-9);
+    const shortClick = resolveSfx('short click');
+    expect(shortClick && durationOf(shortClick.params)).toBeCloseTo(
+      durationOf(resolveSfx('click')!.params)
+    );
+  });
+});

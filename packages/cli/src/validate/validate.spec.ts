@@ -291,7 +291,7 @@ describe('level 1: node types and properties', () => {
           '    type: Label2D',
           '    properties:',
           '      label: Title',
-          '      labelFontSize: 240', // inspector range 8..200
+          '      labelFontSize: 600', // inspector range 8..512
         ].join('\n') + '\n'
       ),
     });

@@ -76,6 +76,12 @@ export interface SceneServiceDelegate {
    * skip it; the registry then stamps `0`.
    */
   getFrameNumber?(): number;
+  /**
+   * False while frames are stepped by hand (`pix3 smoke`, `pix3_game_run`, a headless test) —
+   * then wall-clock overlays such as `changeScene`'s fade would outlast the run. Optional: a
+   * delegate that does not say is a realtime one.
+   */
+  isRealtime?(): boolean;
   raycastViewport(normalizedX: number, normalizedY: number): SceneRaycastHit | null;
   reportFrameProfilerActivities(activities: readonly FrameProfilerActivity[]): void;
   /**
@@ -969,7 +975,10 @@ export class SceneService {
       return this.changeScenePromise;
     }
 
-    const transition = options.transition ?? 'fade';
+    // The fade runs on wall-clock time. Under stepped time (smoke, game_run) the frames race ahead
+    // of it — a whole smoke run is ~75 ms — so the new scene would never load inside the run: the
+    // change happens at once instead, which is what stepped time means for a transition.
+    const transition = delegate.isRealtime?.() === false ? 'none' : (options.transition ?? 'fade');
     const durationSec = Math.max(0, options.durationSec ?? 0.3);
 
     const run = async (): Promise<void> => {

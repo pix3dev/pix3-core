@@ -979,7 +979,9 @@ export class SceneLoader {
   async createNodeFromDefinition(definition: SceneNodeDefinition): Promise<NodeBase> {
     const baseProps: NodeBaseProps = {
       id: definition.id,
-      name: definition.name,
+      // An unnamed node in a file is named by its type, as it always was (NodeBase's own default,
+      // the id, is for nodes a script builds).
+      name: definition.name ?? resolveSceneNodeType(definition.type) ?? definition.type,
       instancePath: definition.instancePath ?? null,
       properties: { ...(definition.properties ?? {}) },
       metadata: definition.metadata ?? {},

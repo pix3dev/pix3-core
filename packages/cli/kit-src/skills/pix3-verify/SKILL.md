@@ -111,6 +111,15 @@ see (section 4). With the editor open, `pix3_game_run` (section 3) is the strong
 `pix3 smoke <the scene you changed>` (green), then ask the human to press Play in that scene,
 naming what to press and what they should see.
 
+### Logic tests in Node
+
+Engine-free rules (matching, scoring, a level generator — a plain module beside the scripts, no
+`extends Script`) are cheapest to test in Node: `design/tests/<name>.node.ts`, with `node:assert`,
+run as `node design/tests/<name>.node.ts` (Node 22.18+ / 23.6+ runs `.ts` directly). Name them
+`*.node.ts`: `tsconfig.node.json` gives exactly those (and `vite.config.ts`) the Node types and
+`pix3 check` type-checks them with it, while the game's `tsconfig.json` keeps `process` and
+`node:*` out of the scripts that ship to the browser.
+
 ## 2. What the editor does with a file you wrote
 
 The human edits the same files in the editor, which follows the disk: a scene you write is

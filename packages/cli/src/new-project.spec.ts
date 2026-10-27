@@ -123,6 +123,7 @@ describe('pix3 new', () => {
           'scenes/main.pix3scene',
           'src/main.ts',
           'tsconfig.json',
+          'tsconfig.node.json',
           'vite.config.ts',
         ].sort()
       );

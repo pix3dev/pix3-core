@@ -1272,7 +1272,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
         {
           name: 'labelFontSize',
           type: 'number',
-          ui: { label: 'Font Size', group: 'Label', min: 8, max: 200, step: 1 },
+          ui: { label: 'Font Size', group: 'Label', min: 8, max: 512, step: 1 },
           getValue: n => (n as UIControl2D).labelFontSize,
           setValue: (n, v) => {
             (n as UIControl2D).labelFontSize = Number(v);
@@ -1314,7 +1314,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
             label: 'Outline Width',
             group: 'Label',
             min: 0,
-            max: 12,
+            max: 32,
             step: 0.5,
             description: 'Half-width in px; the sticker outline the UI kit draws captions with',
           },
@@ -1349,7 +1349,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
         {
           name: 'labelShadowOffsetY',
           type: 'number',
-          ui: { label: 'Shadow Offset Y', group: 'Label', min: -12, max: 12, step: 0.5 },
+          ui: { label: 'Shadow Offset Y', group: 'Label', min: -64, max: 64, step: 0.5 },
           getValue: n => (n as UIControl2D).labelShadowOffsetY,
           setValue: (n, v) => {
             (n as UIControl2D).labelShadowOffsetY = Number(v);
@@ -1358,7 +1358,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
         {
           name: 'labelShadowOffsetX',
           type: 'number',
-          ui: { label: 'Shadow Offset X', group: 'Label', min: -12, max: 12, step: 0.5 },
+          ui: { label: 'Shadow Offset X', group: 'Label', min: -64, max: 64, step: 0.5 },
           getValue: n => (n as UIControl2D).labelShadowOffsetX,
           setValue: (n, v) => {
             (n as UIControl2D).labelShadowOffsetX = Number(v);

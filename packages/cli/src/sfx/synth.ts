@@ -45,7 +45,18 @@ export interface SfxParams {
   readonly volume: number;
 }
 
-export const SFX_PRESET_NAMES = ['coin', 'jump', 'hit', 'explosion', 'powerup', 'click'] as const;
+export const SFX_PRESET_NAMES = [
+  'coin',
+  'jump',
+  'hit',
+  'explosion',
+  'powerup',
+  'click',
+  'whoosh',
+  'chime',
+  'win',
+  'lose',
+] as const;
 export type SfxPresetName = (typeof SFX_PRESET_NAMES)[number];
 
 const BASE: SfxParams = {
@@ -162,6 +173,75 @@ export const SFX_PRESETS: Readonly<Record<SfxPresetName, SfxParams>> = {
     lowpassHz: 8000,
     volume: 0.6,
   },
+  // Airy noise sweep: a swap, a swipe, something flying past.
+  whoosh: {
+    ...BASE,
+    wave: 'noise',
+    freq: 260,
+    freqEnd: 1600,
+    slide: 0.22,
+    attack: 0.06,
+    decay: 0.08,
+    sustainLevel: 0.4,
+    sustain: 0.04,
+    release: 0.12,
+    lowpassHz: 2600,
+    lowpassQ: 0.9,
+    volume: 0.6,
+  },
+  // Bright bell: sine, a fifth up, long ring — a match, a gem, a sparkle.
+  chime: {
+    ...BASE,
+    wave: 'sine',
+    freq: 1320,
+    freqEnd: 1320,
+    arpAt: 0.06,
+    arpMul: 1.5,
+    vibratoDepth: 0.006,
+    vibratoHz: 6,
+    attack: 0.002,
+    decay: 0.08,
+    sustainLevel: 0.45,
+    sustain: 0.12,
+    release: 0.4,
+    volume: 0.65,
+  },
+  // Rising fanfare-ish: square up a fourth, held, with a little vibrato.
+  win: {
+    ...BASE,
+    wave: 'square',
+    freq: 523,
+    freqEnd: 784,
+    slide: 0.18,
+    arpAt: 0.22,
+    arpMul: 4 / 3,
+    duty: 0.4,
+    vibratoDepth: 0.01,
+    vibratoHz: 7,
+    attack: 0.005,
+    decay: 0.06,
+    sustainLevel: 0.7,
+    sustain: 0.3,
+    release: 0.25,
+    lowpassHz: 5000,
+    volume: 0.6,
+  },
+  // Falling, wobbling triangle: out of moves, game over, a wrong move.
+  lose: {
+    ...BASE,
+    wave: 'triangle',
+    freq: 440,
+    freqEnd: 150,
+    slide: 0.55,
+    vibratoDepth: 0.03,
+    vibratoHz: 6,
+    attack: 0.005,
+    decay: 0.08,
+    sustainLevel: 0.65,
+    sustain: 0.25,
+    release: 0.25,
+    volume: 0.7,
+  },
 };
 
 /** Words that pick a preset out of a free-text description. */
@@ -183,6 +263,10 @@ const KEYWORDS: Readonly<Record<SfxPresetName, readonly string[]>> = {
   explosion: ['explosion', 'explode', 'boom', 'blast', 'bomb', 'kaboom', 'explod', 'detonat'],
   powerup: ['powerup', 'power-up', 'power up', 'level up', 'upgrade', 'bonus', 'charge', 'magic'],
   click: ['click', 'tap', 'button', 'ui', 'menu', 'select', 'tick', 'toggle', 'blip'],
+  whoosh: ['whoosh', 'woosh', 'swoosh', 'swish', 'swipe', 'swap', 'slide', 'dash', 'wind'],
+  chime: ['chime', 'bell', 'sparkle', 'twinkle', 'match', 'crystal', 'glass'],
+  win: ['win', 'victory', 'success', 'fanfare', 'complete', 'cleared', 'triumph'],
+  lose: ['lose', 'loss', 'fail', 'game over', 'defeat', 'wrong', 'invalid', 'error', 'denied'],
 };
 
 export interface SfxResolution {
@@ -191,6 +275,9 @@ export interface SfxResolution {
   /** Modifier words that changed the preset (`high`, `short`, …). */
   readonly modifiers: readonly string[];
 }
+
+/** The shortest a modifier makes a sound: below it a click is not heard as one. */
+const MIN_SFX_SEC = 0.06;
 
 const scaleFreq = (params: SfxParams, factor: number): SfxParams => ({
   ...params,
@@ -246,6 +333,14 @@ export const resolveSfx = (input: string): SfxResolution | null => {
   const tokens = words(input);
   const exact = SFX_PRESET_NAMES.find(name => input.trim().toLowerCase() === name);
   let preset: SfxPresetName | undefined = exact;
+  // A preset named outright wins over a keyword of another one: "gem pop chime" is a chime even
+  // though `gem` is a coin keyword and comes first.
+  if (!preset) {
+    const named = tokens.find((token): token is SfxPresetName =>
+      (SFX_PRESET_NAMES as readonly string[]).includes(token)
+    );
+    if (named) preset = named;
+  }
   if (!preset) {
     let best = -1;
     for (const name of SFX_PRESET_NAMES) {
@@ -269,6 +364,11 @@ export const resolveSfx = (input: string): SfxResolution | null => {
         modifiers.push(word);
       }
     }
+    // "short" on an already short preset made a 16 ms click nobody hears: a modifier may shorten a
+    // sound down to MIN_SFX_SEC (or its own length, if that is shorter), not past it.
+    const floor = Math.min(durationOf(SFX_PRESETS[preset]), MIN_SFX_SEC);
+    const length = durationOf(params);
+    if (length < floor && length > 0) params = scaleTime(params, floor / length);
   }
   return { preset, params, modifiers };
 };

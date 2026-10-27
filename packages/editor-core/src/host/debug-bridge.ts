@@ -95,6 +95,7 @@ export interface Pix3DebugBridge {
     stop(options?: { force?: boolean }): Promise<BridgeResult>;
     restart(): Promise<BridgeResult>;
     pause(): Promise<BridgeResult>;
+    resume(): Promise<BridgeResult>;
   };
 }
 
@@ -295,6 +296,14 @@ const playStatus = (): PlayStatus => ({
   startedAt: appState.ui.playStartedAt,
 });
 
+const setPaused = async (paused: boolean): Promise<BridgeResult> => {
+  const refused = refuseDesignerSession();
+  if (refused) return refused;
+  if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing.');
+  if (service(GamePlaySessionService).runnerPaused === paused) return { ok: true };
+  return ran(await resolveCommandDispatcher().executeById('game.pause'), 'game.pause');
+};
+
 /** The designer's play session is theirs: the agent may not stop or restart it, even with force. */
 const refuseDesignerSession = (): BridgeResult | null =>
   appState.ui.isPlaying && appState.ui.playOwner === 'designer'
@@ -357,11 +366,13 @@ const play = {
     ]);
     return play.start();
   },
+  /** Pause (a no-op when already paused). `game.pause` is a toggle; the agent asks for a state. */
   async pause(): Promise<BridgeResult> {
-    const refused = refuseDesignerSession();
-    if (refused) return refused;
-    if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing.');
-    return ran(await resolveCommandDispatcher().executeById('game.pause'), 'game.pause');
+    return setPaused(true);
+  },
+  /** Resume (a no-op when running) — e.g. after a `pix3_game_run` left the outcome frame paused. */
+  async resume(): Promise<BridgeResult> {
+    return setPaused(false);
   },
 };
 
@@ -442,7 +453,7 @@ const EXECUTES: Record<string, Execute> = {
   },
 
   async pix3_play(params) {
-    const action = params.action as 'start' | 'stop' | 'restart' | 'pause' | 'status';
+    const action = params.action as 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'status';
     if (action === 'status') return { ok: true, ...playStatus() };
     const result =
       action === 'start'
@@ -572,7 +583,7 @@ export function createDebugBridge(): Pix3DebugBridge {
         'call(name, params)':
           'Any tool by name — the same tools, params and answers as execute_3p_developer_tool.',
         'status() / sync({expect?, timeoutMs?}) / scene(maxDepth) / node(id) / find(text) / screen(id) / pending() / selection() / play.* / errors() / clearErrors()':
-          'Short forms over call(): status → pix3_status, sync → pix3_sync, scene/node/find/screen → pix3_scene, play.start/stop/restart/pause/status → pix3_play, errors → pix3_errors.',
+          'Short forms over call(): status → pix3_status, sync → pix3_sync, scene/node/find/screen → pix3_scene, play.start/stop/restart/pause/resume/status → pix3_play, errors → pix3_errors.',
       };
       for (const tool of BRIDGE_TOOLS) out[tool.name] = tool.description;
       return out;
@@ -611,6 +622,7 @@ export function createDebugBridge(): Pix3DebugBridge {
         asResult(await callBridgeTool('pix3_play', { action: 'stop', force: options.force })),
       restart: async () => asResult(await callBridgeTool('pix3_play', { action: 'restart' })),
       pause: async () => asResult(await callBridgeTool('pix3_play', { action: 'pause' })),
+      resume: async () => asResult(await callBridgeTool('pix3_play', { action: 'resume' })),
     },
   };
 }

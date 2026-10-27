@@ -99,7 +99,16 @@ export type CheckCode = keyof typeof CHECK_CODES;
 
 export type CheckDiagnostic = Omit<BundledDiagnostic, 'code'> & { readonly code: string };
 
+/** A Node global or `node:` module used by code that ships to the browser (not the Node side). */
+const isNodeApiInGameCode = (file: string, tsCode: string, message: string): boolean =>
+  !/\.node\.ts$|^vite\.config\./.test(file) &&
+  (/^TS25(80|91)$/.test(tsCode) || (tsCode === 'TS2307' && /'node:/.test(message)));
+
+/** The Node-side tsconfig of a starter (`vite.config.ts`, Node tests); checked when it exists. */
+const NODE_TSCONFIG = 'tsconfig.node.json';
+
 /** Contract B (plan §B.2): what each construct is, and how to write it instead. */
+
 const EDITOR_CHAIN_CODES: Record<
   EditorChainIssueKind,
   { readonly code: CheckCode; readonly what: string; readonly fix: string }
@@ -142,6 +151,8 @@ export interface CheckReport {
      */
     readonly errors: number;
     readonly tsconfig: string | null;
+    /** `tsconfig.node.json`, when the project has one and it was checked too (the Node side). */
+    readonly nodeTsconfig?: string;
     /** `project` = the project's own tsconfig; `pix3-types` = `.pix3/tsconfig.check.json`. */
     readonly mode: 'project' | 'pix3-types';
     readonly files: number;
@@ -237,7 +248,7 @@ export const formatCheckHuman = (report: CheckReport): string => {
   for (const note of report.notes) out += `note: ${note}\n`;
   const tc = report.typecheck;
   const typecheckLine = tc.typescript
-    ? `typecheck ${tc.files} file(s) with TypeScript ${tc.typescript.version} (${tc.typescript.source}, ${tc.tsconfig}): ${tc.errors} error(s)`
+    ? `typecheck ${tc.files} file(s) with TypeScript ${tc.typescript.version} (${tc.typescript.source}, ${tc.tsconfig}${tc.nodeTsconfig ? ` + ${tc.nodeTsconfig}` : ''}): ${tc.errors} error(s)`
     : tc.skipped
       ? `typecheck skipped: ${tc.skipped}`
       : 'typecheck did not run';
@@ -335,6 +346,7 @@ export const checkProject = async (
   const typecheckStarted = Date.now();
   let resolved: ResolvedTypeScript | null = null;
   let result: TypecheckResult | null = null;
+  let checkedNodeTsconfig = false;
   if (skipped === null) {
     try {
       resolved = await resolveTypeScript({
@@ -344,6 +356,18 @@ export const checkProject = async (
         ...options.typescript,
       });
       result = runTypecheck(resolved.ts, projectRoot, tsconfig);
+      // The Node side (`vite.config.ts`, `design/tests/**/*.node.ts`) has its own config with Node
+      // types, so the game's config never sees `process` / `node:fs`: check it too when present.
+      if (ownTsconfig && existsSync(join(projectRoot, NODE_TSCONFIG))) {
+        const node = runTypecheck(resolved.ts, projectRoot, NODE_TSCONFIG);
+        checkedNodeTsconfig = true;
+        result = {
+          ...result,
+          files: [...result.files, ...node.files],
+          errors: [...result.errors, ...node.errors],
+          durationMs: result.durationMs + node.durationMs,
+        };
+      }
     } catch (error) {
       const command = error instanceof TypeScriptUnavailableError ? error.command : undefined;
       diagnostics.push(
@@ -361,6 +385,13 @@ export const checkProject = async (
       file: error.file,
       line: error.line,
       message: `${error.tsCode}: ${error.message}`,
+      // tsc's own advice for `process` / `node:fs` is "install @types/node" — wrong in a game
+      // script, which runs in the browser where those never exist.
+      ...(isNodeApiInGameCode(error.file, error.tsCode, error.message)
+        ? {
+            fix: 'a game script runs in the browser: Node APIs (process, Buffer, node:*) do not exist there. Node-side code belongs in vite.config.ts or a design/tests/*.node.ts test (tsconfig.node.json has the Node types)',
+          }
+        : {}),
     })
   );
   diagnostics.push(...typeDiagnostics);
@@ -453,6 +484,7 @@ export const checkProject = async (
       ok: typeErrors === 0,
       errors: typeErrors,
       tsconfig,
+      ...(checkedNodeTsconfig ? { nodeTsconfig: NODE_TSCONFIG } : {}),
       mode: ownTsconfig ? 'project' : 'pix3-types',
       files: result?.files.length ?? 0,
       typescript: resolved ? { version: resolved.version, source: resolved.source } : null,

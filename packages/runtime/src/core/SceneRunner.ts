@@ -1930,6 +1930,9 @@ export class SceneRunner {
       getFrameNumber(): number {
         return runner.frameNumber;
       },
+      isRealtime(): boolean {
+        return runner.timeConfig.mode !== 'manual';
+      },
       raycastViewport(normalizedX: number, normalizedY: number): SceneRaycastHit | null {
         return runner.raycastViewport(normalizedX, normalizedY);
       },

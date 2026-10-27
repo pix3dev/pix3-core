@@ -172,7 +172,8 @@ export class Combo extends Script {
 }
 ```
 
-- One mechanic = one new script of 70–140 lines.
+- One mechanic = one new script (most are 70–200 lines; keep the engine-free rules of a bigger
+  one — a match-3 board, a level generator — in a plain module beside it).
 - Talk between scripts the way the project already does. In a new project use signals on nodes:
   `node.emit('touch-scored', 1)` / `node.connect('touch-scored', this, fn)`; once named, never
   rename a signal or a node id other scripts use. An existing game may use its own event bus or

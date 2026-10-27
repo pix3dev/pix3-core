@@ -99,7 +99,7 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'status'] },
+        action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'resume', 'status'] },
         scenePath: { type: 'string' },
         force: { type: 'boolean' },
       },
