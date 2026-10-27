@@ -1,4 +1,4 @@
-import { NodeBase, SceneManager, type SceneNodeDefinition } from '@pix3/runtime';
+import { NodeBase, SceneManager, type RunOverrides, type SceneNodeDefinition } from '@pix3/runtime';
 
 import {
   clearErrors,
@@ -354,6 +354,22 @@ const playStatus = (): PlayStatus => ({
   aspect: ASPECT_NAMES[appState.ui.gameAspectRatio],
 });
 
+/** Why `run` is not `{seed?: integer, config?: {nodeId: {componentId: {…}}}}`, or null. */
+const runOverridesProblem = (run: RunOverrides): string | null => {
+  if (run.seed !== undefined && !Number.isInteger(run.seed)) return 'run.seed must be an integer';
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (run.config === undefined) return null;
+  if (!isObject(run.config)) return 'run.config must be {"<nodeId>": {"<componentId>": {…}}}';
+  for (const [nodeId, components] of Object.entries(run.config)) {
+    if (!isObject(components)) return `run.config["${nodeId}"] must map component ids to config`;
+    for (const [componentId, values] of Object.entries(components)) {
+      if (!isObject(values)) return `run.config["${nodeId}"]["${componentId}"] must be an object`;
+    }
+  }
+  return null;
+};
+
 /** The Game tab's presets as the bridge names them (the tab's own button labels). */
 const ASPECT_NAMES: Record<GameAspectRatio, PlayAspect> = {
   free: 'free',
@@ -531,6 +547,16 @@ const EXECUTES: Record<string, Execute> = {
       await service(GamePlaySessionService).setAspectRatio(
         aspectPreset(params.aspect as PlayAspect)
       );
+    }
+    // A test run's seed and component config: armed for this start / restart and the session's
+    // in-place restarts, cleared when play stops (core-tests/game10).
+    if (action === 'start' || action === 'restart') {
+      const run = params.run as RunOverrides | undefined;
+      if (run !== undefined) {
+        const problem = runOverridesProblem(run);
+        if (problem) return refuse('invalid_params', problem);
+      }
+      service(GamePlaySessionService).setRunOverrides(run ?? null);
     }
     if (action === 'status') return { ok: true, ...playStatus() };
     const result =

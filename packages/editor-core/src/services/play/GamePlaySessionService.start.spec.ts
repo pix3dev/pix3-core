@@ -30,6 +30,7 @@ const runtime = vi.hoisted(() => {
     setBatching2DEnabled = vi.fn();
     setEditorPeekMask = vi.fn();
     setProjectFonts = vi.fn();
+    setRunOverrides = vi.fn();
     setLocalizationConfig = vi.fn();
     setAutoloads = vi.fn();
     getLiveRootNodes = vi.fn(() => []);

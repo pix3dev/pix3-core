@@ -8,6 +8,7 @@ import { Physics2DService } from './Physics2DService';
 import { NetworkService } from '../net/NetworkService';
 import { NetworkNodeBinder } from './NetworkNodeBinder';
 import { GameTime } from './GameTime';
+import { SeededRandom } from './seeded-random';
 import { GameCommandRegistry } from './GameCommands';
 import { JuiceApi } from './JuiceApi';
 import { TweenApi, type TweenEndReason } from './TweenApi';
@@ -70,6 +71,8 @@ export interface SceneServiceDelegate {
   getResourceManager(): ResourceManager;
   getECSService(): ECSService | null;
   getGameTime(): GameTime;
+  /** The run's seeded random stream (`scene.random`). Optional for test stubs. */
+  getRandom?(): SeededRandom;
   /**
    * The runner's current frame number, used to stamp the command journal
    * ({@link SceneService.commands}). Optional so a delegate stub in a test can
@@ -248,6 +251,20 @@ export class SceneService {
    * per-frame delta fed to all gameplay. Example: `this.scene.time.hitstop(80)`.
    * Falls back to an inert controller when no scene is running.
    */
+  /**
+   * The game's random numbers (`next`, `int`, `range`, `pick`, `shuffle`, `fork`), seeded per run:
+   * `pix3 play --seed`, `pix3 smoke --seed` and the editor's run overrides replay the same
+   * sequence. Draw game logic from here, not `Math.random`, or a seeded run is not reproducible.
+   */
+  get random(): SeededRandom {
+    const fromDelegate = this.delegate?.getRandom?.();
+    if (fromDelegate) return fromDelegate;
+    this.fallbackRandom ??= new SeededRandom();
+    return this.fallbackRandom;
+  }
+
+  private fallbackRandom: SeededRandom | null = null;
+
   get time(): GameTime {
     const fromDelegate = this.delegate?.getGameTime();
     if (fromDelegate) {

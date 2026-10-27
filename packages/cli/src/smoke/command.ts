@@ -20,6 +20,7 @@ import {
   type SmokeReport,
   type SmokeRunSet,
   type SmokeCommand,
+  type SmokeRunOverrides,
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
 import { COMMAND_USAGE } from '../usage.ts';
@@ -48,6 +49,7 @@ interface SmokeArgs {
   readonly project?: string;
   readonly help: boolean;
   readonly commands: readonly SmokeCommand[];
+  readonly run?: SmokeRunOverrides;
 }
 
 const DEFAULT_FRAMES = 120;
@@ -83,6 +85,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let project: string | undefined;
   let help = false;
   const commands: SmokeCommand[] = [];
+  let run: SmokeRunOverrides | undefined;
   const valueOf = (arg: string, index: number): { value?: string; next: number } => {
     const eq = arg.indexOf('=');
     if (eq > 0) return { value: arg.slice(eq + 1), next: index };
@@ -106,6 +109,27 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
             '--command needs name[@frame] [json args], e.g. --command restart@60 or --command \'swap@30 {"x":2}\'',
         };
       commands.push(parsed);
+    } else if (name === '--seed' || name === '--config') {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      if (name === '--seed') {
+        const seed = Number(value);
+        if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
+        run = { ...run, seed };
+      } else {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(value ?? '');
+        } catch {
+          parsed = undefined;
+        }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          return {
+            error: `--config takes one JSON object {"<nodeId>": {"<componentId>": {"key": value}}}`,
+          };
+        }
+        run = { ...run, config: parsed as SmokeRunOverrides['config'] };
+      }
     } else if (name === '--frames' || name === '--timeout' || name === '--project') {
       const { value, next } = valueOf(arg, i);
       i = next;
@@ -131,7 +155,19 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     if (command.frame > frames)
       return { error: `--command ${command.name}@${command.frame} is past --frames ${frames}` };
   }
-  return { scene, changed, all, frames, timeoutSec, json, sync, project, help, commands };
+  return {
+    scene,
+    changed,
+    all,
+    frames,
+    timeoutSec,
+    json,
+    sync,
+    project,
+    help,
+    commands,
+    ...(run ? { run } : {}),
+  };
 };
 
 const failure = (code: SmokeFailureCode, reason: string, scene?: string): SmokeFailure => ({
@@ -201,6 +237,8 @@ export interface RunSmokeOptions {
   readonly cwd?: string;
   /** `--command`: game commands dispatched before the given frames. */
   readonly commands?: readonly SmokeCommand[];
+  /** `--seed` / `--config`: the run's `scene.random` seed and component config overrides. */
+  readonly run?: SmokeRunOverrides;
 }
 
 export interface RunOneSmokeOptions extends RunSmokeOptions {
@@ -288,6 +326,7 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   scene,
   frames: options.frames ?? DEFAULT_FRAMES,
   ...(options.commands?.length ? { commands: options.commands } : {}),
+  ...(options.run ? { run: options.run } : {}),
   viewport: prepared.manifest.viewport,
   autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
@@ -531,6 +570,7 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     timeoutSec: args.timeoutSec,
     cwd: io.cwd,
     commands: args.commands,
+    run: args.run,
   };
   // Files are the truth only once the editor has written them (plan §B.6): a dev server with an
   // editor tab (`.pix3/dev.json`) flushes before the scene is read.

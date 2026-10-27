@@ -582,6 +582,8 @@ runner clears it on stop, so the next scene never inherits a dead intent. A
 `GameDebugProvider` publishes it as `actions: () => scene.commands.list().map(c => c.name)`
 rather than keeping a second, hand-maintained list.
 
+**Test-only intents** (`test.place-special`) are registered behind `if (import.meta.env.DEV)`: dev, the editor's play and `pix3 smoke` (its script build defines `DEV: true`) have them; a Vite build defines `false` and the minifier drops the branch. Setting a run up needs no intent at all: `SceneRunner.setRunOverrides({ seed?, config? })` seeds `scene.random` and overrides component config (`{ nodeId: { componentId: { key: value } } }`, through the schema like a scene's `config:`, before the pre-roll `onStart`, on every graph the runner starts; a wrong address is a `console.error`). Hosts: the player's dev-only `?run=<json>` (`virtual:pix3/dev` `devRunOverrides`, null in a build) behind `pix3 play --seed/--config`, `pix3 smoke --seed/--config`, and the editor's `pix3_play {action: start|restart, run}` (`GamePlaySessionService.setRunOverrides`, cleared when play stops).
+
 **Boundary:** commands express intent, not continuous control. Movement, gestures
 and aiming stay on input axes/controls — "drive left" as a command loses both the
 analog magnitude and the per-frame cadence. The 1.x templates (now the scene corpus,
@@ -697,6 +699,7 @@ orientation-aware layouts (the 1.x `playable-3d` template's `user:CtaButton`, ke
 Inside any `Script` subclass:
 
 - `this.node` — the owning `NodeBase` (transform, `visible`, `getComponent`, `addComponent`, `connect`/`emit`, `findById`/`findByName`/`findByPath`, `children`, `parentNode`). `getComponent<T>(type: new (...args) => T): T | null` takes the component **class**, not a string ID — `node.getComponent(CarController)`, importing the class by relative path (`./CarController`). There is no string-based lookup (`getComponent('user:CarController')` fails); `user:*` IDs are for scene YAML only. To fetch by hand: `node.components.find(c => c instanceof CarController)`.
+- `this.scene.random` — the run's seeded random stream (`SeededRandom`, sfc32: `next()`, `int(min, max)`, `range`, `pick`, `shuffle`, `fork(name)`); seeded per run by `SceneRunner.setRunOverrides({seed})`, else from a random seed. Game logic draws from it so a seeded test run replays; `Math.random` is never patched.
 - `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getNodesInGroup(group)` / `callGroup(group, method, ...args)` for node groups (spec §6.19), `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, `commands` for named game intents, and `getAutoload(nameOrClass)` for the project's autoload singletons, §6.17 of the spec). May be `undefined` in some editor previews — guard it.
 - `this.input` — the `InputService` (§4 Input).
 - `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`).

@@ -54,6 +54,13 @@ describe('pix3 play', () => {
     expect(badArgs.code).toBe(2);
     expect(badArgs.err).toContain('--bot-args takes one JSON object');
 
+    // A test run's seed and config ride on the dev server's ?run= — never on a build (game10).
+    const distSeed = await run(['dist', '--seed', '7']);
+    expect(distSeed.code).toBe(2);
+    expect(distSeed.err).toContain('--seed / --config need the dev server');
+    expect((await run(['--seed', 'x'])).err).toContain('--seed takes a whole number');
+    expect((await run(['--config', '[1]'])).err).toContain('--config takes one JSON object');
+
     mkdirSync(join(root, 'dist'));
     writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
     const policy = await run(['dist', '--bot', 'missing']);

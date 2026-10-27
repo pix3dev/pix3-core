@@ -23,6 +23,8 @@ interface PlayArgs {
   readonly scale: number;
   readonly scene?: string;
   readonly bot?: string;
+  /** A test run's `{seed?, config?}` for the game (`?run=`, dev server only). */
+  readonly run: { seed?: number; config?: Record<string, unknown> } | null;
   /** `bot.args` for the policy, as one JSON object. */
   readonly botArgs: Record<string, unknown>;
   readonly seconds: number;
@@ -49,6 +51,8 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let scene: string | undefined;
   let bot: string | undefined;
   let botArgs: Record<string, unknown> = {};
+  let seed: number | undefined;
+  let config: Record<string, unknown> | undefined;
   let seconds: number | undefined;
   let frames: number | undefined;
   let screenshot: string | undefined;
@@ -69,7 +73,23 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     } else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
-    else if (flag === '--bot-args') {
+    else if (flag === '--seed') {
+      seed = Number(value());
+      if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
+    } else if (flag === '--config') {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value() ?? '');
+      } catch {
+        parsed = undefined;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return {
+          error: `--config takes one JSON object {"<nodeId>": {"<componentId>": {"key": value}}}, e.g. --config '{"game-root":{"rules":{"moves":3}}}'`,
+        };
+      }
+      config = parsed as Record<string, unknown>;
+    } else if (flag === '--bot-args') {
       let parsed: unknown;
       try {
         parsed = JSON.parse(value() ?? '');
@@ -107,6 +127,10 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     scene,
     bot,
     botArgs,
+    run:
+      seed !== undefined || config !== undefined
+        ? { ...(seed !== undefined ? { seed } : {}), ...(config ? { config } : {}) }
+        : null,
     seconds: budget,
     frames: frameBudget,
     screenshot,
@@ -122,10 +146,23 @@ const resolveTarget = (
   root: string | null,
   cwd: string
 ): string | { error: string } => {
+  const withParam = (url: string, name: string, value: string | undefined): string =>
+    value === undefined
+      ? url
+      : `${url}${url.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}`;
   const withScene = (url: string): string =>
-    args.scene
-      ? `${url}${url.includes('?') ? '&' : '?'}scene=${encodeURIComponent(args.scene)}`
-      : url;
+    withParam(
+      withParam(url, 'scene', args.scene),
+      'run',
+      args.run ? JSON.stringify(args.run) : undefined
+    );
+  // --seed / --config ride on the dev server's `?run=` (a build boots as it ships).
+  if (args.run && (args.target === 'dist' || (args.target && !/^https?:/.test(args.target)))) {
+    return {
+      error:
+        '--seed / --config need the dev server (`npm run dev`): a build boots as it ships, with no test settings',
+    };
+  }
   const dist = root ? join(root, 'dist', 'index.html') : null;
   if (args.target && /^(https?|file):/.test(args.target)) return withScene(args.target);
   if (args.target && args.target !== 'dist' && args.target !== 'dev') {
@@ -144,6 +181,11 @@ const resolveTarget = (
   }
   if (dist && existsSync(dist)) {
     if (args.scene) return { error: '--scene needs the dev server: a build boots its entry scene' };
+    if (args.run)
+      return {
+        error:
+          '--seed / --config need the dev server (`npm run dev`): a build boots as it ships, with no test settings',
+      };
     return pathToFileURL(dist).href;
   }
   return {

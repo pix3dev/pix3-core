@@ -235,6 +235,15 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`.
   Register one per game and publish state with `registerGameDebug` from one rules script —
   when you add a mechanic, add its field to that snapshot instead of registering a second one.
+  **Test-only intents** (`place-special`, `set-moves`) go behind `if (import.meta.env.DEV)` and are
+  named `test.…`: dev, the editor's play and `pix3 smoke` have them, the build drops them. A short
+  round or a set target needs no command at all — `pix3 play --config` / `pix3 smoke --config`
+  override the component's config for one run (`pix3-verify`).
+- Randomness: **`this.scene.random`**, not `Math.random` — `next()`, `int(min, max)`,
+  `range(min, max)`, `pick(list)`, `shuffle(list)`, `fork('fx')` (an independent stream for
+  cosmetics, so a particle does not change the board). A run seeded with `--seed N` (`pix3 play`,
+  `pix3 smoke`, `pix3_play {run: {seed}}`) then replays the same board and spawns; `Math.random`
+  cannot be seeded.
 
 ## `this.input`
 

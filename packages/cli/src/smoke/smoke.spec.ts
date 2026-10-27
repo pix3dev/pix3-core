@@ -309,6 +309,42 @@ export class Spawner extends Script {
     expect(report.warnings.map(w => w.code)).toContain('W_SMOKE_COMMAND');
   });
 
+  it('--seed and --config: scene.random replays and the config reaches onStart (core-tests/game10)', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Rules')),
+      'scripts/Rules.ts': script(
+        'Rules',
+        `  constructor(id: string, type: string) {
+    super(id, type);
+    this.config = { moves: 20 };
+  }
+  onStart(): void {
+    console.log('moves ' + String(this.config.moves) + ' draw ' + String(this.scene?.random.int(0, 1e9)));
+  }`
+      ),
+    });
+    const run = async (overrides?: { seed?: number; config?: Record<string, never> | object }) =>
+      asReport(
+        await runSmoke({
+          projectRoot: root,
+          scene: MAIN,
+          frames: 2,
+          ...(overrides ? { run: overrides as never } : {}),
+        })
+      );
+    const overrides = { seed: 7, config: { 'game-root': { 'user-rules': { moves: 3 } } } };
+    const a = await run(overrides);
+    const b = await run(overrides);
+    const line = (report: SmokeReport) => report.logs.lines.find(l => l.includes('moves ')) ?? '';
+    expect(a.errors).toEqual([]);
+    expect(line(a)).toMatch(/moves 3 draw \d+$/);
+    expect(line(b)).toBe(line(a));
+    expect(line(await run())).toMatch(/moves 20 draw/);
+    // A key the component does not have is an error of the run, not a silent skip.
+    const typo = await run({ config: { 'game-root': { 'user-rules': { mvoes: 3 } } } });
+    expect(typo.errors.map(e => e.message).join('\n')).toContain('no config key "mvoes"');
+  });
+
   it('scene.audio.play of an existing file runs silent headless (no error, no warning)', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:Sound')),

@@ -803,6 +803,72 @@ describe('SceneRunner scene transitions (loadAndStartScene)', () => {
     }
   });
 
+  it('run overrides: seed and config reach onStart; a wrong address is an error (core-tests/game10)', async () => {
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(1 as unknown as number);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    class Rules extends Script {
+      seen: { moves: unknown; draws: number[] } | null = null;
+      constructor(id: string, type: string) {
+        super(id, type);
+        this.config = { moves: 20, target: 3500 };
+      }
+      static getPropertySchema() {
+        return {
+          nodeType: 'Rules',
+          properties: [
+            {
+              name: 'moves',
+              type: 'number' as const,
+              getValue: (c: unknown) => (c as Rules).config.moves,
+              setValue: (c: unknown, v: unknown) => {
+                (c as Rules).config.moves = Number(v);
+              },
+            },
+          ],
+          groups: {},
+        };
+      }
+      override onStart(): void {
+        const random = this.scene!.random;
+        this.seen = { moves: this.config.moves, draws: [random.next(), random.next()] };
+      }
+    }
+    const run = async (overrides: Parameters<SceneRunner['setRunOverrides']>[0]) => {
+      const runner = new SceneRunner(
+        createSceneManagerStub(),
+        createRendererStub(320, 160),
+        new AudioService(),
+        new AssetLoader(new ResourceManager('/'), new AudioService())
+      );
+      runner.setRunOverrides(overrides);
+      const root = new NodeBase({ id: 'game', name: 'Game' });
+      const rules = new Rules('rules', 'user:Rules');
+      root.addComponent(rules);
+      await (runner as unknown as { runGraph: (graph: SceneGraph) => Promise<void> }).runGraph({
+        version: '1.0.0',
+        metadata: {},
+        rootNodes: [root],
+        nodeMap: new Map([[root.nodeId, root]]),
+      });
+      runner.stop();
+      return rules;
+    };
+
+    const a = await run({ seed: 7, config: { game: { rules: { moves: 3 } } } });
+    const b = await run({ seed: 7 });
+    expect(a.seen?.moves).toBe(3);
+    expect(a.config.target).toBe(3500); // untouched keys keep the authored value
+    expect(b.seen?.moves).toBe(20);
+    expect(a.seen?.draws).toEqual(b.seen?.draws); // same seed, same draws
+    expect(errors).not.toHaveBeenCalled();
+
+    await run({ config: { nope: {}, game: { other: {}, rules: { mvoes: 1 } } } });
+    const said = errors.mock.calls.map(call => String(call[0])).join('\n');
+    expect(said).toContain('no node "nope"');
+    expect(said).toContain('no component "other"');
+    expect(said).toContain('no config key "mvoes"');
+  });
+
   it('reads + parses the target and hands it to runGraph WITHOUT registering it in the SceneManager', async () => {
     const audioService = new AudioService();
     const resourceManager = new InMemoryResourceManager({

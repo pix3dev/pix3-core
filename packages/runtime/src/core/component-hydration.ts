@@ -88,15 +88,46 @@ function instantiateComponent(
   component.config = { ...component.config, ...configData };
 
   const properties = getComponentSchemaProperties(scriptRegistry, definition.type);
-  if (properties) {
-    for (const prop of properties) {
-      if (configData[prop.name] !== undefined) {
-        prop.setValue(component, configData[prop.name]);
-      }
-    }
-  }
+  if (properties) setThroughSchema(component, configData, properties);
 
   return component;
+}
+
+function setThroughSchema(
+  component: ScriptComponent,
+  configData: Record<string, unknown>,
+  properties: readonly PropertyDefinition[]
+): void {
+  for (const prop of properties) {
+    if (configData[prop.name] !== undefined) {
+      prop.setValue(component, configData[prop.name]);
+    }
+  }
+}
+
+/**
+ * Merge `values` into a live component's config the way a scene file's `config:` arrives (over
+ * the current values, then each schema property's `setValue`) — a test run's override
+ * (`SceneRunner.setRunOverrides`). Returns the keys neither the config nor the schema knows; they
+ * are not applied.
+ */
+export function applyComponentConfig(
+  component: ScriptComponent,
+  values: Record<string, unknown>
+): string[] {
+  const schema = (
+    component.constructor as { getPropertySchema?: () => { properties?: unknown } }
+  ).getPropertySchema?.();
+  const properties = (Array.isArray(schema?.properties) ? schema.properties : []).filter(
+    (prop): prop is PropertyDefinition =>
+      !!prop && typeof (prop as PropertyDefinition).setValue === 'function'
+  );
+  const known = new Set([...Object.keys(component.config ?? {}), ...properties.map(p => p.name)]);
+  const unknown = Object.keys(values).filter(key => !known.has(key));
+  const accepted = Object.fromEntries(Object.entries(values).filter(([key]) => known.has(key)));
+  component.config = { ...component.config, ...accepted };
+  setThroughSchema(component, accepted, properties);
+  return unknown;
 }
 
 /**

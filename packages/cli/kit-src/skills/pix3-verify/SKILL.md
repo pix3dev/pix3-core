@@ -90,7 +90,10 @@ presses PLAY: smoking the menu (the build's entry scene) proves nothing about th
 game's own intents can be driven: `--command start-game@1 --command restart@300` dispatches
 those `scene.commands` before frames 1 and 300, args as JSON after a space
 (`--command 'swap@30 {"x":2,"y":3}'`; an unknown name is `W_SMOKE_COMMAND`) — the handler runs,
-not the button. `W_SMOKE_UNTEXTURED` is a visible sprite whose texture never
+not the button. `--seed N` seeds `scene.random` (the same board every run) and `--config
+'{"game-root":{"rules":{"moves":3}}}'` overrides a component's config before its `onStart`
+(node id → component id → keys; a wrong address is an error) — a three-move round reaches the
+lose screen in a few frames. `W_SMOKE_UNTEXTURED` is a visible sprite whose texture never
 loaded (a white quad on screen). With no
 scene, smoke runs several, one line each and exit 1 if any fails: the top-level scenes your
 uncommitted changes reach (git: the scene, a prefab or overlay it instances, a `user:` script it
@@ -126,7 +129,9 @@ machine) and stops on the frame of `done()`; the budget is `--frames` game frame
 two minutes of game time, however slowly the headless page paints — a whole round fits), so `--screenshot` shows what was judged; mid-run
 pictures come from the policy: `bot.screenshot('result-card')` freezes the game on that frame,
 saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
-result card, all in one run. No editor, no MCP: it works from a subagent and in CI.
+result card, all in one run. On the dev server `--seed N` and `--config '<json>'` (as for smoke)
+set up the run — the same board, three moves to reach the lose screen — without test code in the
+game; `dist` refuses them (a build boots as it ships). No editor, no MCP: it works from a subagent and in CI.
 
 ### Logic tests in Node
 

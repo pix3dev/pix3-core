@@ -28,6 +28,7 @@ export * from './core/animated-sprite-layout';
 export * from './core/ecs';
 export * from './core/ECSService';
 export * from './core/GameTime';
+export * from './core/seeded-random';
 export * from './core/GameCommands';
 export * from './core/JuiceApi';
 export * from './core/juice-transients';

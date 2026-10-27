@@ -296,6 +296,11 @@ and starting the scene (`onAttach`/`onStart`, then 128 event-loop turns so spawn
 frame N is the N-th step. The run happens in a worker thread, so a script stuck in a loop is
 stopped by `--timeout` (default 20 s).
 
+`--seed N` and `--config '{"<nodeId>": {"<componentId>": {"moves": 3}}}'` set the run up through
+`SceneRunner.setRunOverrides`: `scene.random` seeded (the same board every run), component config
+overridden through the schema before the first `onStart`; a node, component or key the scene does
+not have is a `console.error`, so an error of the run.
+
 Stubbed: rendering (a null renderer; post-processing never loads), audio (no Web Audio in Node),
 input (no events), network (`scene.network` is null). Textures resolve empty, glTF models and
 Spine skeletons referenced by nodes are not built; images a script loads through three's
@@ -621,6 +626,7 @@ home directory. Chrome on macOS / Windows is untested (`.plans/done/agent-bridge
 ```bash
 npx pix3 play                                  # the running dev server (?clean), else dist/
 npx pix3 play dist --bot swiper --size 390x844 --screenshot shot.png
+npx pix3 play --bot round --seed 7 --config '{"game-root":{"rules":{"moves":3}}}' --shots shots/
 npx pix3 play https://example.com/game/ --seconds 5 --json
 ```
 
@@ -636,6 +642,15 @@ taps, swipes and keys are DOM events on the canvas, the policy is ticked by
 `SceneRunner.subscribeFrameStats`, `physical-input` only. Neither script carries `@pix3/runtime`
 (the page has one; a shim recognises its nodes by shape). Exit 0 = booted, nothing threw, the bot
 passed; 1 = otherwise; 2 = could not run. Code: `src/play/`.
+
+While a bot plays, the runner ticks a fixed 1/60 s per frame (`setTimeMode('fixed')`) whatever the
+headless page paints, so `bot.frame` is game time; the budget is `--frames` game frames (default
+7200) with `--seconds` as the wall-clock safety net (default 900), and the game stays paused on the
+frame of `done()` (what `--screenshot` then shows). `bot.screenshot(name)` pauses the runner on the
+policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next picture) captures
+`<name>.png` into `--shots <dir>` and resumes it. `--bot-args '<json>'` is the policy's `bot.args`.
+`--seed N` / `--config '<json>'` ride on the dev server's `?run=` (`virtual:pix3/dev`
+`devRunOverrides`, null in a build) into `SceneRunner.setRunOverrides`; `dist` refuses them.
 
 ## `pix3 bridge` — the editor tab without MCP
 

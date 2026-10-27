@@ -108,6 +108,13 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
         scenePath: { type: 'string' },
         force: { type: 'boolean' },
         aspect: { type: 'string', enum: ['free', '16:9', '9:16', '4:3'] },
+        run: {
+          type: 'object',
+          description:
+            'With start / restart: a test run — {seed?: integer (scene.random), config?: ' +
+            '{"<nodeId>": {"<componentId>": {key: value}}}} applied before the first onStart; ' +
+            'kept for the session’s restarts, cleared when play stops.',
+        },
       },
       required: ['action'],
       additionalProperties: false,

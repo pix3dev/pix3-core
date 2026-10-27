@@ -17,6 +17,8 @@ import type { NetworkService } from '../net/NetworkService';
 import { AudioService } from './AudioService';
 import { AssetLoader } from './AssetLoader';
 import { loadProjectFonts, type ProjectFontFaceSpec } from './ProjectFontLoader';
+import { SeededRandom } from './seeded-random';
+import { applyComponentConfig } from './component-hydration';
 import { ResourceManager } from './ResourceManager';
 import { Camera3D } from '../nodes/3D/Camera3D';
 import { NodeBase } from '../nodes/NodeBase';
@@ -261,6 +263,10 @@ export class SceneRunner {
    *  preview instance in-editor, or null in exports) — restored on `stop()`. */
   private previousActiveLocalization: LocalizationService | null = null;
   private localizationUnsub: (() => void) | null = null;
+  /** `scene.random`: the run's seeded stream. */
+  private readonly random = new SeededRandom();
+  /** Per-run test settings (`setRunOverrides`); null = the game as authored. */
+  private runOverrides: RunOverrides | null = null;
   /** The project's web fonts (`ProjectManifest.fonts`), injected by the host before
    *  `startScene`; null = nothing to register. */
   private projectFonts: readonly ProjectFontFaceSpec[] | null = null;
@@ -386,6 +392,48 @@ export class SceneRunner {
    * at a different width in a different face, which is the gap between a generated UI kit's
    * preview and the game.
    */
+  /**
+   * Settings for a test run, applied to every scene this runner starts until cleared (`null`):
+   * `seed` restarts `scene.random`, `config` overrides component config —
+   * `{ "<nodeId>": { "<componentId>": { key: value } } }`, set through the component's schema like
+   * the scene file's `config:` — before the first `onStart`. Hosts pass them only in development
+   * (`pix3 play --config/--seed` on the dev server, `pix3 smoke`, the editor's play), never in a
+   * build. A node, component or key the scene does not have is a `console.error`, not a silent
+   * skip: the loader forgives a file, an override is a test's claim.
+   */
+  setRunOverrides(overrides: RunOverrides | null): void {
+    this.runOverrides = overrides;
+  }
+
+  private applyRunOverrides(graph: { nodeMap: Map<string, NodeBase> }): void {
+    const overrides = this.runOverrides;
+    if (!overrides) return;
+    if (typeof overrides.seed === 'number') this.random.seed(overrides.seed);
+    for (const [nodeId, components] of Object.entries(overrides.config ?? {})) {
+      const node = graph.nodeMap.get(nodeId) ?? this.findNodeById(nodeId);
+      if (!node) {
+        console.error(`[pix3] run config: no node "${nodeId}" in the scene.`);
+        continue;
+      }
+      for (const [componentId, values] of Object.entries(components ?? {})) {
+        const component = node.components.find(c => c.id === componentId);
+        if (!component) {
+          const ids = node.components.map(c => c.id).join(', ') || 'none';
+          console.error(
+            `[pix3] run config: node "${nodeId}" has no component "${componentId}" (its components: ${ids}).`
+          );
+          continue;
+        }
+        const unknown = applyComponentConfig(component, values ?? {});
+        if (unknown.length > 0) {
+          console.error(
+            `[pix3] run config: ${nodeId}.${componentId} has no config key ${unknown.map(k => `"${k}"`).join(', ')}.`
+          );
+        }
+      }
+    }
+  }
+
   setProjectFonts(fonts: readonly ProjectFontFaceSpec[] | null): void {
     this.projectFonts = fonts && fonts.length > 0 ? fonts : null;
   }
@@ -635,6 +683,11 @@ export class SceneRunner {
       this.updateViewportSize(canvas.width, canvas.height);
       this.reflowRoot2DNodes();
     }
+
+    // A test run's settings, before the pre-roll tick fires any `onStart`: the seed, then the
+    // config a component reads there. Every graph this runner starts gets them (a `changeScene`
+    // from the menu to the game included).
+    this.applyRunOverrides(this.runtimeGraph);
 
     // The session's autoloads, once: their `onStart` runs in the pre-roll tick below, before any
     // scene component's.
@@ -1931,6 +1984,9 @@ export class SceneRunner {
       getGameTime(): GameTime {
         return runner.gameTime;
       },
+      getRandom(): SeededRandom {
+        return runner.random;
+      },
       getFrameNumber(): number {
         return runner.frameNumber;
       },
@@ -2412,4 +2468,10 @@ function repaintLabels(roots: readonly NodeBase[]): void {
     for (const child of node.children) if (child instanceof NodeBase) visit(child);
   };
   for (const root of roots) visit(root);
+}
+
+/** {@link SceneRunner.setRunOverrides}: a test run's seed and component config. */
+export interface RunOverrides {
+  seed?: number;
+  config?: Record<string, Record<string, Record<string, unknown>>>;
 }

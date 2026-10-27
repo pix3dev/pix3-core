@@ -10,7 +10,7 @@ import {
   SceneRunner,
   ScriptRegistry,
 } from '@pix3/runtime';
-import { devSceneOverride, installDevTools } from 'virtual:pix3/dev';
+import { devRunOverrides, devSceneOverride, installDevTools } from 'virtual:pix3/dev';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
 import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
@@ -165,6 +165,8 @@ export async function startGame(
     // failed boot still shows its errors there.
     installDevTools({ runner, renderer, audio: audioService, state });
     runner.setBatching2DEnabled(true);
+    // A test run's seed and component config (`?run=`, dev only; always null in a build).
+    runner.setRunOverrides(devRunOverrides());
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {
       runner.setLocalizationConfig({

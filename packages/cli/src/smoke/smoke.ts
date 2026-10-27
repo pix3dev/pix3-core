@@ -489,6 +489,8 @@ export const runSmokeJob = async (
       renderEveryNTicks: NEVER_RENDER,
       muteAudio: true,
     });
+    // `--seed` / `--config`: the same per-run overrides the player takes from `?run=`.
+    runner.setRunOverrides(job.run ? { ...job.run } : null);
     // The project's autoloads run here as in the player and the editor's play mode.
     runner.setAutoloads(normalizeAutoloads(job.autoloads), registry);
     // The locales the player loads (the plugin's rule: the manifest's block, else locales/*.json).

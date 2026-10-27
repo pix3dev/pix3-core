@@ -10,6 +10,7 @@ import {
   ScriptRegistry,
   setPhysicsDebugEnabled,
   setDirectionAxesEnabled,
+  type RunOverrides,
 } from '@pix3/runtime';
 import { appState } from '@/state';
 import type { GameAspectRatio } from '@/state/AppState';
@@ -318,6 +319,17 @@ export class GamePlaySessionService {
     if (!popup.closed) popup.close();
   }
 
+  /**
+   * A test run's seed and component config for the next start and every restart of that session
+   * (`pix3_play {run}`); cleared when play stops, so the designer's next Play is the game as
+   * authored.
+   */
+  setRunOverrides(overrides: RunOverrides | null): void {
+    this.runOverrides = overrides;
+  }
+
+  private runOverrides: RunOverrides | null = null;
+
   async restart(): Promise<void> {
     this.initialize();
     await this.enqueue(() => this.restartRuntime());
@@ -466,6 +478,7 @@ export class GamePlaySessionService {
     if (!appState.ui.isPlaying) {
       this.detachRuntime();
       this.updateHostRunningState(false);
+      this.runOverrides = null;
       // Play mode has ended; the banner ("the game may have stopped updating")
       // no longer applies. The failure is retained in the Logs panel.
       // Exception: a start that *failed* switches play mode back off itself, and that banner is the
@@ -607,6 +620,7 @@ export class GamePlaySessionService {
     // The project's own web fonts, registered before the first frame — otherwise a caption in a
     // family the manifest ships is drawn by a system substitute at a different width.
     runner.setProjectFonts(appState.project.manifest?.fonts ?? null);
+    runner.setRunOverrides(this.runOverrides);
 
     // Localization: hand the play instance the project's locale config and seed
     // it with the editor's current preview locale (so "preview ru → Play" starts

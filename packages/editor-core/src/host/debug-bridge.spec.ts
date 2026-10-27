@@ -455,6 +455,33 @@ describe('agent bridge', () => {
     expect(started).toEqual(['game.start']);
   });
 
+  it('play: run arms a seed and config for the start; a malformed one is refused (core-tests/game10)', async () => {
+    const container = ServiceContainer.getInstance();
+    const session = container.getService<GamePlaySessionService>(
+      container.getOrCreateToken(GamePlaySessionService)
+    );
+    const armed = vi.spyOn(session, 'setRunOverrides');
+    container
+      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
+      .registerMany({
+        metadata: { id: 'game.start', title: 'start', description: 'start', keywords: [] },
+        async execute(context) {
+          await context.container
+            .getService<OperationService>(context.container.getOrCreateToken(OperationService))
+            .invoke(new SetPlayModeOperation({ isPlaying: true, status: 'playing' }));
+          return { didMutate: true, payload: undefined };
+        },
+      });
+    expect(
+      await callBridgeTool('pix3_play', { action: 'start', run: { seed: 'x' } })
+    ).toMatchObject({ ok: false, reason: 'invalid_params', detail: 'run.seed must be an integer' });
+    expect(armed).not.toHaveBeenCalled();
+    const run = { seed: 7, config: { 'game-root': { rules: { moves: 3 } } } };
+    expect(await callBridgeTool('pix3_play', { action: 'start', run })).toMatchObject({ ok: true });
+    expect(armed).toHaveBeenLastCalledWith(run);
+    armed.mockRestore();
+  });
+
   it('play: stop and pause without a session say not_playing; game_run needs play', async () => {
     expect(await callBridgeTool('pix3_play', { action: 'stop' })).toMatchObject({
       ok: false,

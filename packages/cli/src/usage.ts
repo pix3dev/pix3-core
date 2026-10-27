@@ -36,6 +36,7 @@ Usage:
         [--changed | --all]        script throws with frame + stack, console errors, missing
         [--frames N] [--timeout S] res:// (exit 1 on errors, 2 when it cannot run). No scene =
         [--project <dir>]          the scenes git changes reach, else every top-level scene
+        [--seed N] [--config '<json>'] a test run: scene.random seeded, component config overridden
   pix3 tree [scene] [--json]       One line per node (type#id, pos, size, layout, components,
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
         [--props] [--project <dir>]
@@ -55,6 +56,7 @@ Usage:
         [--size 390x844]           size, optionally played by a bot policy; screenshot, errors;
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
+        [--seed N] [--config '<json>']
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
                                    tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
@@ -133,7 +135,7 @@ export const COMMAND_USAGE = {
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `,
   smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
-                  [--timeout S] [--json] [--no-sync] [--project <dir>]
+                  [--seed N] [--config '<json>'] [--timeout S] [--json] [--no-sync] [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -155,6 +157,9 @@ export const COMMAND_USAGE = {
                  with args as a JSON object after a space: --command 'swap@30 {"x":2,"y":3}'
                  (repeatable: --command start@1 --command restart@300); an unknown one is
                  W_SMOKE_COMMAND. Drives the game's intents headless — no input, no tap.
+  --seed N       seed scene.random, so the same run replays (the same board, the same spawns)
+  --config json  override component config for the run: '{"<nodeId>": {"<componentId>":
+                 {"moves": 3}}}' — set before the first onStart; a wrong address is an error
   --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
   --json         machine-readable report
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
@@ -252,8 +257,8 @@ Reference it from a scene or script as res://<path inside the project>.
   --json      machine-readable (the catalog; or {family, weight, copied, registered})
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
-                 [--bot <name>] [--bot-args '<json>'] [--frames N] [--seconds S] [--screenshot <file.png>] [--shots <dir>]
-                 [--json]
+                 [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
+                 [--seconds S] [--screenshot <file.png>] [--shots <dir>] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -272,6 +277,11 @@ Reference it from a scene or script as res://<path inside the project>.
                  wall-clock limit (default 900 with a bot; without one, how long the page runs: 3).
                  The game ticks a fixed 1/60 s per frame while a bot plays, so a frame number means
                  the same game time on any machine, and it stays paused on the frame of done()
+  --seed N       seed scene.random for this run (dev server only: ?run=), so a bot meets the
+                 same board every time
+  --config json  override component config for this run (dev server only):
+                 '{"<nodeId>": {"<componentId>": {"moves": 3}}}' — a short round, a set target;
+                 a wrong node, component or key is an error
   --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,
                  several variants
   --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)
