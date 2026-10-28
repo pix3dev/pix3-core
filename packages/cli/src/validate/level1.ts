@@ -1123,7 +1123,12 @@ export const checkSceneLevel1 = (
           code: 'E_YAML',
           file,
           line: error.line,
-          message: `YAML does not parse: ${error.message}`,
+          message: `YAML does not parse${error.column ? ` (column ${error.column})` : ''}: ${error.message}`,
+          ...(/compact mappings|Implicit map keys/i.test(error.message)
+            ? {
+                fix: 'a value with ": " in it (a description, a label) must be quoted: description: "Gem Rush: the board"',
+              }
+            : {}),
         })
       ),
       references: new Set(),

@@ -83,6 +83,17 @@ describe('level 1: structure', () => {
     expect(report.errorCount).toBe(1);
   });
 
+  it('E_YAML names the line and column, and says to quote a value with ": " (core-tests/game12)', async () => {
+    const report = await run({
+      'scenes/a.pix3scene':
+        'version: 1.0.0\nmetadata:\n  description: Gem Rush: the board\nroot: []\n',
+    });
+    const [error] = find(report, 'E_YAML');
+    expect(error.line).toBe(3);
+    expect(error.message).toMatch(/\(column \d+\)/);
+    expect(error.fix).toContain('must be quoted');
+  });
+
   it('E_SHAPE: the shapes the loader accepts silently or crashes on', async () => {
     const report = await run({
       'scenes/object-root.pix3scene': 'version: 1.0.0\nroot: { a: 1 }\n',

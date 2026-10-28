@@ -25,7 +25,10 @@ import type { FlashOptions } from './SceneService';
  */
 export type JuiceTarget = NodeBase | string;
 
-/** Where a transient 2D effect appears: a node, a node query, or a 2D world point. */
+/**
+ * Where a transient 2D effect appears: a node, a node query, a 2D world point `{x, y}`, or a point
+ * in a node's own space `{x, y, in: node}`.
+ */
 export type JuiceAnchor = JuiceTarget | JuicePoint2D;
 
 /** Options for {@link JuiceApi.floatText} — the style fields plus a spawn anchor. */
@@ -312,7 +315,14 @@ export class JuiceApi {
    */
   private resolveAnchorNode(target: JuiceAnchor, label: string): NodeBase | null | undefined {
     if (isJuicePoint(target)) {
-      return null;
+      if (target.in === undefined) return null;
+      // A point in a node's space: that node decides the host (its band) and the frame.
+      const frame = this.resolveNode(target.in);
+      if (!frame) {
+        console.warn(`[JuiceApi] ${label}: the point's frame "${String(target.in)}" not found.`);
+        return undefined;
+      }
+      return frame;
     }
     const node = this.resolveNode(target);
     if (!node) {
@@ -372,7 +382,11 @@ export class JuiceApi {
     target: JuiceAnchor
   ): Vector3 {
     const world = new Vector3();
-    if (anchor) {
+    if (anchor && isJuicePoint(target)) {
+      // `{ x, y, in }`: a point in the anchor's own space.
+      anchor.updateWorldMatrix(true, false);
+      anchor.localToWorld(world.set(target.x, target.y, 0));
+    } else if (anchor) {
       anchor.updateWorldMatrix(true, false);
       anchor.getWorldPosition(world);
     } else if (isJuicePoint(target)) {

@@ -121,7 +121,9 @@ own page in a private headless Chrome — the running dev server (`?clean`), or 
 exactly as it ships — at that CSS size, waits for it to boot, and reports page errors, the game
 snapshot (`registerGameDebug`) and, with `--bot`, the verdict of `design/tests/bots/<name>.ts`
 played there with real DOM pointer and key events (the same bot API as `pix3_game_run`,
-`physical-input` only). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
+`physical-input` only; a bot's taps and swipes are `pointerType: 'mouse'` pointer events — the
+engine's input reads them like a finger, but code that branches on touch needs
+`npx pix3 bridge tap --touch` in the editor). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
 the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
 nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot or a page that never
 booted. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
@@ -129,7 +131,9 @@ machine) and stops on the frame of `done()`; the budget is `--frames` game frame
 two minutes of game time, however slowly the headless page paints — a whole round fits), so `--screenshot` shows what was judged; mid-run
 pictures come from the policy: `bot.screenshot('result-card')` freezes the game on that frame,
 saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
-result card, all in one run. On the dev server `--seed N` and `--config '<json>'` (as for smoke)
+result card, all in one run. A card that fades or pops in is still half there on the frame the game shows it:
+take its picture `durationSec × 60` frames later (count frames from the `gameState` flag that
+says it is open). On the dev server `--seed N` and `--config '<json>'` (as for smoke)
 set up the run — the same board, three moves to reach the lose screen — without test code in the
 game; `dist` refuses them (a build boots as it ships). `--safe-area 47,0,34,0` emulates an iPhone's
 notch and home indicator (top,right,bottom,left CSS px) on dev and `dist` alike: check that nothing

@@ -23,9 +23,46 @@ export const isScriptEntry = (
   !NOT_A_SCRIPT_ENTRY.test(path) &&
   dirs.some(dir => path.startsWith(`${dir}/`));
 
-/** Drop comments so a commented-out `export class` does not count; strings are left alone. */
-const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+/**
+ * Drop comments so a commented-out `export class` does not count; strings are left alone. One pass
+ * that knows which construct it is in: two regexes in a row (block comments, then line comments)
+ * read the `/*` of `// scenes/ui/*` as a block comment and swallowed the code down to the next
+ * `*\/`, so a class below it "did not exist" (`E_USER_SCRIPT_NOT_FOUND`, core-tests/game12).
+ */
+export const stripComments = (source: string): string => {
+  let out = '';
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end < 0 ? source.length : end + 2;
+      // Keep the line breaks, so a line number read off the result still matches the file.
+      out += source.slice(i, stop).replace(/[^\n]/g, ' ');
+      i = stop;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      let j = i + 1;
+      while (j < source.length && source[j] !== ch) {
+        if (source[j] === '\\') j += 1;
+        else if (ch !== '`' && source[j] === '\n') break;
+        j += 1;
+      }
+      out += source.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+};
 
 const EXPORT_CLASS = /\bexport\s+(default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)?/g;
 const EXPORT_CONST_CLASS = /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*class\b/g;

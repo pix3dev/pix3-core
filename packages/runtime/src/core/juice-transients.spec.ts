@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AdditiveBlending, NormalBlending, type Material, type Mesh, type Object3D } from 'three';
+import {
+  AdditiveBlending,
+  NormalBlending,
+  Vector3,
+  type Material,
+  type Mesh,
+  type Object3D,
+} from 'three';
 
 import { SceneService, type SceneServiceDelegate } from './SceneService';
 import { GameTime } from './GameTime';
@@ -168,6 +175,26 @@ describe('scene.juice.burst', () => {
     expect(hud.children).toHaveLength(0);
     expect(burst!.position.x).toBeCloseTo(-200, 6);
     expect(burst!.position.y).toBeCloseTo(300, 6);
+  });
+
+  it("takes a point in a node's own space: {x, y, in} (core-tests/game12)", () => {
+    const { service, root } = makeHarness();
+    // A board inside a design area that the safe area moved down by 18.
+    const area = new Group2D({ id: 'design-area', name: 'Design Area' });
+    area.position.set(0, -18, 0);
+    const board = new Group2D({ id: 'board', name: 'board' });
+    board.position.set(0, -100, 0);
+    area.adoptChild(board);
+    root.adoptChild(area);
+
+    const burst = service.juice.burst({ x: 60, y: 60, in: 'board' })!;
+    const world = burst.getWorldPosition(new Vector3());
+    expect(world.x).toBeCloseTo(60, 6);
+    expect(world.y).toBeCloseTo(60 - 100 - 18, 6);
+    // A node instance works as the frame too.
+    const origin = service.juice.burst({ x: 0, y: 0, in: board })!;
+    expect(origin.getWorldPosition(new Vector3()).y).toBeCloseTo(-118, 6);
+    expect(service.juice.burst({ x: 0, y: 0, in: 'nowhere' })).toBeNull();
   });
 
   it('keeps a HUD-anchored burst inside the overlay band', () => {

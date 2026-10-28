@@ -9,7 +9,9 @@ import {
   BOT_POLICY_DIRECTORIES,
   isScriptEntry,
   NOT_A_SCRIPT_ENTRY,
+  scanExportNames,
   SCRIPT_DIRECTORIES,
+  stripComments,
 } from './script-rule.ts';
 
 /**
@@ -40,5 +42,22 @@ describe('the project-script rule of the Node-runnable commands', () => {
       expect(isScriptEntry(path), path).toBe(isProjectScriptEntry(path));
       expect(isScriptEntry(path, dirs), path).toBe(isProjectScriptEntry(path, dirs));
     }
+  });
+});
+
+describe('scanExportNames reads exports through comments and strings (core-tests/game12)', () => {
+  it('a `/*` inside a line comment does not open a block comment', () => {
+    const source = [
+      '// Shows the cards of scenes/ui/* and hides them again',
+      'export class ResultCards extends Script {}',
+      '/* export class Commented {} */',
+      "const url = 'https://example.com/*not-a-comment';",
+      'export class AfterString {}',
+    ].join('\n');
+    expect(scanExportNames(source).names).toEqual(['ResultCards', 'AfterString']);
+  });
+
+  it('keeps line breaks of a block comment and the text of strings', () => {
+    expect(stripComments('a /* x\ny */ b // c\n"// d"')).toBe('a     \n     b \n"// d"');
   });
 });

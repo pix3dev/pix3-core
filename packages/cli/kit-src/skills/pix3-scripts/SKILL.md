@@ -201,9 +201,14 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   - `floatText('+25', { at, color: '#ffffff', fontSizePx: 28, fontFamily: 'Arial', fontWeight, outlineWidth: 0, outlineColor: '#000000', driftPx: 60, durationSec: 0.8, glow, glowStrength: 1.5, zIndex })`
     — over busy art give it `fontWeight: 900, outlineWidth: 4`.
 
-  Bursts, float text and trails draw **above everything in their layer, a modal overlay
-  included** — they are meant to pop over the board. When a result screen opens, stop spawning
-  them (the round is over), or give them a `zIndex` below the overlay's.
+  **Where an effect appears** (`anchor` / `at`): a node (its origin), a node id or name, a point
+  `{ x, y }` in **2D world space** (the 2D root's: origin at the screen centre, Y up), or a point
+  in a **node's own space** `{ x, y, in: 'board' }` — the space that node's children are positioned
+  in. A board cell's centre is `{ x: cellX, y: cellY, in: 'board' }`; computed in the board's
+  space but passed as a world point it lands beside the cell whenever the board's parent is not
+  at the origin (the starter's `design-area` moves into the safe area on a phone with a notch).
+  Bursts, float text and trails draw above everything in their layer; a `scenes/ui/` overlay
+  with a `CanvasLayer2D` root is a layer of its own, drawn above them.
   - `trail(node, { lifeSec: 0.35, widthPx: 14, color | colors, additive: true, zIndex, maxPoints: 48 })` → `trail.stop()`.
 
   `target` = node | query | `'camera'` | `'camera2d'`; `anchor` = node | query | `{ x, y }` — pass

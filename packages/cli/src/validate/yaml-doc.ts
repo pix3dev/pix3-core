@@ -23,6 +23,7 @@ export interface ParsedYaml {
 export interface YamlParseError {
   readonly message: string;
   readonly line?: number;
+  readonly column?: number;
 }
 
 /**
@@ -34,10 +35,17 @@ export const parseYamlWithLines = (text: string): ParsedYaml | { errors: YamlPar
   const document = parseDocument(text, { lineCounter, prettyErrors: false, uniqueKeys: true });
   if (document.errors.length > 0) {
     return {
-      errors: document.errors.map(error => ({
-        message: error.message.split('\n')[0] ?? error.message,
-        line: error.linePos?.[0]?.line,
-      })),
+      // `prettyErrors: false` leaves `linePos` empty: the position comes from the offset, through
+      // the same line counter (an E_YAML without a line sent an agent to python to find it,
+      // core-tests/game12).
+      errors: document.errors.map(error => {
+        const at = error.linePos?.[0] ?? lineCounter.linePos(error.pos[0]);
+        return {
+          message: error.message.split('\n')[0] ?? error.message,
+          line: at.line,
+          column: at.col,
+        };
+      }),
     };
   }
   const lineOfOffset = (offset: number | undefined): number | undefined =>

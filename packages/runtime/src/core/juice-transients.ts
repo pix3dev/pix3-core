@@ -33,10 +33,17 @@ import { OVERLAY_2D_FLAG } from './render-order-2d';
  * - canvas textures go through `configure2DTexture` (mipmaps off).
  */
 
-/** A point in 2D world/design space (origin at the design-resolution centre, Y up). */
+/**
+ * A point for a juice effect. Without `in`: 2D world space — the 2D root's, origin at the screen
+ * centre, Y up. With `in` (a node, or its id / name): that node's own space, the one its children
+ * are positioned in — a board cell is `{ x: cellX, y: cellY, in: 'board' }`, and it stays right
+ * when the board's parent moves (the starter's `design-area` shifts into the safe area on a phone
+ * with a notch, which put world-space points beside the cells: core-tests/game12).
+ */
 export interface JuicePoint2D {
   x: number;
   y: number;
+  in?: import('../nodes/NodeBase').NodeBase | string;
 }
 
 /** Tuning for {@link ParticleBurst2D} — every field has a "already juicy" default. */
