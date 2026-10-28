@@ -208,7 +208,9 @@ deterministic variation (pitch ±15 %, times ±20 %, duty/vibrato/cutoff nudged)
 preset as tuned. Output is 16-bit mono PCM WAV at 22.05 kHz (`--rate 44100` for the top octave; half the bytes a single-file build embeds as base64) — `AssetLoader.loadAudio` decodes it with
 `decodeAudioData` like any `.ogg`/`.mp3`, and the export embeds it as `audio/wav`. `res` in the
 JSON is the `res://` path when the file lands inside a project. Exit 2 on a bad argument or a
-description that names no preset.
+description that names no preset. Words of a description no preset or modifier knows are listed
+(`unmatched` in the JSON) and, without `--seed`, seed a variation from the description's hash —
+the same words, the same sound — so `"coin sparkle"` is never a byte-for-byte `coin`.
 
 The synth (`src/sfx/synth.ts`, no dependencies) is one jsfxr-style voice: square / saw / sine /
 triangle / noise, exponential pitch slide, pitch jump, vibrato, ADSR, resonant low-pass, DC

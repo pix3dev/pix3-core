@@ -31,6 +31,8 @@ export interface SfxResult {
   readonly preset: string;
   readonly seed: number | null;
   readonly modifiers: readonly string[];
+  /** Description words no preset or modifier knows; with no --seed they picked the seed. */
+  readonly unmatched: readonly string[];
   readonly bytes: number;
   readonly peak: number;
   readonly params: SfxParams;
@@ -107,6 +109,14 @@ const parseSfxArgs = (argv: readonly string[]): Parsed => {
   return { text, out, seed, json, rate };
 };
 
+/** A stable seed from a description (FNV-1a), so the same words give the same sound. */
+const descriptionSeed = (text: string): number => {
+  let hash = 0x811c9dc5;
+  for (const char of text.trim().toLowerCase())
+    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+  return hash >>> 0;
+};
+
 /** Render the sound and write the WAV: `--out`, else `audio/<preset>.wav` of the project (or cwd). */
 const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: string } => {
   const resolved = resolveSfx(args.text);
@@ -117,7 +127,9 @@ const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: str
         describeSfxVocabulary(),
     };
   }
-  const { seed } = args;
+  // Words nothing matched still make the sound different: without --seed they seed a variation,
+  // so "coin sparkle" is not byte for byte "coin" (core-tests/game16).
+  const seed = args.seed ?? (resolved.unmatched.length > 0 ? descriptionSeed(args.text) : null);
   const params = seed === null ? resolved.params : mutateSfx(resolved.params, seed);
   const samples = renderSfx(params, seed ?? 1, args.rate);
   const wav = encodeWav16(samples, args.rate);
@@ -140,6 +152,7 @@ const writeSfx = (args: SfxArgs, cwd: string): SfxResult | { readonly error: str
     preset: resolved.preset,
     seed,
     modifiers: resolved.modifiers,
+    unmatched: resolved.unmatched,
     bytes: wav.byteLength,
     peak: round(peak, 3),
     params: roundedParams(params),
@@ -155,6 +168,9 @@ const formatSfxHuman = (result: SfxResult): string => {
     .join(', ');
   return (
     `wrote ${result.path}  ${result.preset}${how ? ` (${how})` : ''}, ${result.durationMs} ms, ${(result.bytes / 1024).toFixed(1)} KiB` +
+    (result.unmatched.length > 0
+      ? `\n  words no preset knows: ${result.unmatched.join(', ')} — they only vary the ${result.preset} preset (the seed); the vocabulary: pix3 sfx --help`
+      : '') +
     `${result.res ? `\n  use it as ${result.res}` : ''}\n`
   );
 };

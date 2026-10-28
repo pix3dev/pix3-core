@@ -198,7 +198,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 ×2 on a 1080×1920 design — while a value you pass is used as given. Note the three transform effects take
   `duration` (seconds), **not** `durationSec`:
   - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
-    `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
+    `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped. A screen shake is
+    `shake('camera2d')`: the active `Camera2D`, or — in the 2D starter, which has none — its
+    `design-area` (the HUD and the game; the background stays still).
   - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.
   - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start fraction of the node's resting scale (its scale when the pop first runs; an axis at 0 there rests at 1, so a node kept at `scale: [0, 0]` until its pop appears at full size). `easing` is accepted too.
   - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target; runs on

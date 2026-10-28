@@ -274,7 +274,23 @@ export interface SfxResolution {
   readonly params: SfxParams;
   /** Modifier words that changed the preset (`high`, `short`, …). */
   readonly modifiers: readonly string[];
+  /** Words of the description that matched nothing (filler like "sound" aside). */
+  readonly unmatched: readonly string[];
 }
+
+/** Words a description may carry that say nothing about the sound. */
+const FILLER_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'for',
+  'and',
+  'sound',
+  'sfx',
+  'effect',
+  'fx',
+]);
 
 /** The shortest a modifier makes a sound: below it a click is not heard as one. */
 const MIN_SFX_SEC = 0.06;
@@ -370,7 +386,22 @@ export const resolveSfx = (input: string): SfxResolution | null => {
     const length = durationOf(params);
     if (length < floor && length > 0) params = scaleTime(params, floor / length);
   }
-  return { preset, params, modifiers };
+  const keywords = [preset, ...KEYWORDS[preset]];
+  const modifierWords = new Set(MODIFIERS.flatMap(m => m.words));
+  const unmatched = exact
+    ? []
+    : tokens.filter(
+        token =>
+          !FILLER_WORDS.has(token) &&
+          !modifierWords.has(token) &&
+          !(SFX_PRESET_NAMES as readonly string[]).includes(token) &&
+          !keywords.some(keyword =>
+            keyword
+              .split(' ')
+              .some(part => token === part || (part.length >= 5 && token.startsWith(part)))
+          )
+      );
+  return { preset, params, modifiers, unmatched };
 };
 
 /** The words a description is matched by, per preset, and the modifier words — for a refusal. */

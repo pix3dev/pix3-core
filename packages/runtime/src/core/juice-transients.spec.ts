@@ -77,6 +77,17 @@ function advance(roots: NodeBase[], seconds: number, step = 1 / 60): void {
   }
 }
 
+describe("scene.juice.shake('camera2d') without a Camera2D (core-tests/game16)", () => {
+  it("shakes the starter's design-area: the HUD and the game, not the background", () => {
+    const { service, root } = makeHarness();
+    const area = new Group2D({ id: 'design-area', name: 'Design Area' });
+    root.adoptChild(area);
+    const effect = service.juice.shake('camera2d', { amplitude: 10, duration: 0.2 });
+    expect(effect).not.toBeNull();
+    expect(effect?.node).toBe(area);
+  });
+});
+
 describe('scene.juice.burst', () => {
   it('spawns into the 2D tree at the target position and frees itself when the particles die', () => {
     const { service, root } = makeHarness();

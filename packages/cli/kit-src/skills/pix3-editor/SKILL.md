@@ -128,7 +128,8 @@ scene (`{kind:"nodeAppeared", name}` of one of its nodes) before you assert anyt
 Predicates (`until` / `fail` are lists, OR over each): `{kind:"nodeProperty", name, path, op, value}`
 (a live node by name or id, dot path into its properties — `position.x`, `text`),
 `{kind:"gameState", path, op, value}` and `{kind:"gameStateChanged", path, by?}` (the game's
-`registerGameDebug` snapshot), `{kind:"nodeAppeared", name}`, `{kind:"nodeGone", name}`,
+`registerGameDebug` snapshot; "changed" is against the snapshot at the **start of this run** — a
+change between two `pix3_game_run` calls does not count, assert the value then), `{kind:"nodeAppeared", name}`, `{kind:"nodeGone", name}`,
 `{kind:"nodeMoved", name}`, `{kind:"newErrors", min?}`, `{kind:"frames", n}`,
 `{kind:"command", name}`, `{kind:"signal", name}`; `op` is `eq`, `ne`, `gt`, `gte`, `lt`,
 `lte` or `contains`.

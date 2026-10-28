@@ -99,6 +99,19 @@ describe('layout.safeArea', () => {
     expect(plain.hud.position.y).toBeCloseTo(2337 / 2 - 40 - 100, 6);
   });
 
+  it('keeps what a script or a shake did to an unanchored node across layout passes (core-tests/game16)', () => {
+    const { root, designArea } = build(true);
+    root.applyAnchoredLayoutRecursive(TALL, DESIGN, INSETS);
+    designArea.position.x += 12; // a shake's displacement this frame
+    root.applyAnchoredLayoutRecursive(TALL, DESIGN, INSETS);
+    expect(designArea.position.x).toBeCloseTo(12, 6);
+    expect(designArea.position.y).toBeCloseTo(-18, 6);
+    // Insets gone (rotated to a notchless edge): the shift is taken back, the displacement stays.
+    root.applyAnchoredLayoutRecursive(TALL, DESIGN);
+    expect(designArea.position.y).toBeCloseTo(0, 6);
+    expect(designArea.position.x).toBeCloseTo(12, 6);
+  });
+
   it('round-trips through the scene file as layout.safeArea', async () => {
     const { root } = build(true);
     const yaml = new SceneSaver().serializeScene({

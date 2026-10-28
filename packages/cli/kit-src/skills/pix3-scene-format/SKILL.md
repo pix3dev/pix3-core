@@ -242,8 +242,8 @@ scene with `properties: { visible: false }`. Two different flags, both needed:
 - `initiallyVisible: false|true` on the **overlay file's root node** — what **play mode**
   applies at start. A script reveals the overlay by setting `node.visible = true`.
 
-**The overlay file's root is a `CanvasLayer2D`** (width/height = `viewportBaseSize`), and its
-instance is the **last child** of the host's 2D root. A `CanvasLayer2D` subtree is drawn in its own
+**The overlay file's root is a `CanvasLayer2D` stretched over the screen**, and its instance is
+the **last child** of the host's 2D root (`game-root`, which covers the screen). A `CanvasLayer2D` subtree is drawn in its own
 pass after the game, so every `scene.juice` effect of the game (a cascade's "AMAZING!", a burst)
 stays **under** the card, a `shake('camera2d')` does not shake it and post-processing does not blur
 it — no `zIndex` and no delayed reveal needed. An effect anchored to a node **inside** the card
@@ -256,9 +256,31 @@ root:
   - id: result-layer
     type: CanvasLayer2D
     name: Result
-    properties: { width: 1080, height: 1920, initiallyVisible: false }
-    children: [ … the dimmer, the card, PLAY AGAIN … ]
+    properties:
+      width: 1080            # viewportBaseSize; the layout stretches it over the real screen
+      height: 1920
+      initiallyVisible: false
+      layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
+    children:
+      - id: dimmer           # stretched too: the whole screen, a tall phone's top and bottom included
+        type: ColorRect2D
+        name: Dimmer
+        properties:
+          color: "#000000"
+          opacity: 0.6
+          layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
+      - id: card             # the card, its title and PLAY AGAIN: centred in the safe area
+        type: Group2D
+        name: Card
+        properties:
+          width: 900
+          height: 1100
+          layout: { enabled: false, safeArea: true }
+        children: [ … ]
 ```
+
+A root of the design size (no `layout`) dims only the design: on a phone taller than the design the
+top and bottom of the screen stay bright (core-tests/game16).
 
 Never put a full-screen dimmer/panel inline in `main.pix3scene`.
 

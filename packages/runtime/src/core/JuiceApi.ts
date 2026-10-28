@@ -41,6 +41,9 @@ export interface FloatTextOptions extends FloatTextStyleOptions {
   at?: JuiceAnchor;
 }
 
+/** What `shake('camera2d')` shakes in a scene without a Camera2D: the 2D starter's group. */
+const SCREEN_SHAKE_FALLBACK = 'design-area';
+
 function isJuicePoint(value: unknown): value is JuicePoint2D {
   return (
     typeof value === 'object' &&
@@ -110,16 +113,22 @@ export class JuiceApi {
       const key = target.toLowerCase();
       if (key === 'camera2d') {
         const camera2d = this.scene.getActiveCamera2D();
-        if (!camera2d) {
+        if (camera2d) {
+          camera2d.shake(options);
+          return null;
+        }
+        // No Camera2D (the 2D starter has none): the screen's content is the starter's
+        // design-area — the HUD and the game; the background stays put (core-tests/game16).
+        const area = this.scene.findNode(SCREEN_SHAKE_FALLBACK);
+        if (!area) {
           this.warnOnce(
             'camera2d',
-            "juice.shake('camera2d') found no active Camera2D — nothing shook. Add a Camera2D to " +
-              'the scene, or shake a node instead.'
+            "juice.shake('camera2d') found no active Camera2D and no design-area — nothing shook. " +
+              'Add a Camera2D to the scene, or shake a node instead.'
           );
           return null;
         }
-        camera2d.shake(options);
-        return null;
+        return this.shake(area, options);
       }
       // `'camera'` in a pure-2D scene (no active Camera3D) targets the 2D camera.
       if (key === 'camera' && !this.scene.getActiveCamera()) {

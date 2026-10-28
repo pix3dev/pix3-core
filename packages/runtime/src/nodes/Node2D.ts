@@ -863,14 +863,15 @@ export class Node2D extends NodeBase {
         this.applyAnchoredLayout(safeReference, referenceAuthoredSize);
         this.position.set(this.position.x + dx, this.position.y + dy, this.position.z);
       } else {
-        this.position.set(
-          this.authoredLayoutPosition.x + dx,
-          this.authoredLayoutPosition.y + dy,
-          this.position.z
-        );
+        // Moved by the CHANGE of the offset, not set to authored + offset: a shake or a script
+        // moving the node keeps its own displacement (an overwrite every frame ate a screen
+        // shake of design-area on a phone with a notch).
+        this.shiftBySafeOffset(dx, dy);
       }
     } else if (this._layoutEnabled) {
       this.applyAnchoredLayout(referenceCurrentSize, referenceAuthoredSize);
+    } else {
+      this.shiftBySafeOffset(0, 0);
     }
     // The container's own size is settled by now, so the column can be laid out — and it must
     // happen before the children recurse, or each child would anchor against a stale slot.
@@ -888,6 +889,19 @@ export class Node2D extends NodeBase {
         child.applyAnchoredLayoutRecursive(nextCurrentSize, nextAuthoredSize, childInsets);
       }
     }
+  }
+
+  /** The safe-area shift this unanchored node carries now (see {@link applyAnchoredLayoutRecursive}). */
+  private readonly safeOffset = new Vector2();
+
+  private shiftBySafeOffset(dx: number, dy: number): void {
+    if (dx === this.safeOffset.x && dy === this.safeOffset.y) return;
+    this.position.set(
+      this.position.x + dx - this.safeOffset.x,
+      this.position.y + dy - this.safeOffset.y,
+      this.position.z
+    );
+    this.safeOffset.set(dx, dy);
   }
 
   /** Stretched over its reference on both axes with every margin 0: its rect is the reference's. */

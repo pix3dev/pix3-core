@@ -126,6 +126,28 @@ describe('pix3 sfx', () => {
     );
   });
 
+  it('words no preset knows vary the sound and are named, never a silent copy (core-tests/game16)', () => {
+    expect(resolveSfx('coin sparkle shiny')).toMatchObject({
+      preset: 'coin',
+      unmatched: ['sparkle', 'shiny'],
+    });
+    expect(resolveSfx('coin pickup sound')?.unmatched).toEqual([]);
+    const plain = capture(scratch);
+    expect(runSfx(['coin', '--out', 'v/plain.wav'], plain.io)).toBe(0);
+    const varied = capture(scratch);
+    expect(runSfx(['coin sparkle', '--out', 'v/varied.wav'], varied.io)).toBe(0);
+    expect(varied.out.stdout).toContain('words no preset knows: sparkle');
+    expect(
+      readFileSync(join(scratch, 'v/plain.wav')).equals(readFileSync(join(scratch, 'v/varied.wav')))
+    ).toBe(false);
+    // The same words give the same sound.
+    const again = capture(scratch);
+    expect(runSfx(['coin sparkle', '--out', 'v/again.wav'], again.io)).toBe(0);
+    expect(
+      readFileSync(join(scratch, 'v/varied.wav')).equals(readFileSync(join(scratch, 'v/again.wav')))
+    ).toBe(true);
+  });
+
   it('rejects what it cannot do, with exit 2', () => {
     const cases: [string[], string][] = [
       [[], 'say which sound'],
