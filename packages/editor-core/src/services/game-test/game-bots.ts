@@ -378,8 +378,9 @@ export interface Pix3TestBot {
   /**
    * Dispatch one of the game's `scene.commands` (`restart`, `next-level`, …) with optional
    * args — an intent, not a gesture: it proves the handler, never the button that sends it.
+   * `true` when the handler ran and did not decline (a handler declines by returning `false`).
    */
-  command(name: string, args?: Record<string, unknown>): void;
+  command(name: string, args?: Record<string, unknown>): boolean;
   /**
    * A picture of this frame, named: `pix3 play --bot` freezes the game here, saves
    * `<name>.png` and lets it run on, so a selected cell, a result card or a short effect is
@@ -861,12 +862,19 @@ export class BotSession {
     this.record('harness', note ?? `screenshot "${safe}" at frame ${this.currentFrame}`);
   }
 
-  private doCommand(name: string, args?: Record<string, unknown>): void {
+  private doCommand(name: string, args?: Record<string, unknown>): boolean {
     const command = String(name ?? '').trim();
-    if (!command) return this.refuse('command() needs a command name, e.g. command("restart").');
+    if (!command) {
+      this.refuse('command() needs a command name, e.g. command("restart").');
+      return false;
+    }
     const refusal = this.world.dispatchCommand(command, args);
-    if (refusal) return this.refuse(refusal);
+    if (refusal) {
+      this.refuse(refusal);
+      return false;
+    }
     this.sent += 1;
+    return true;
   }
 
   /** One tick of the swipe in progress: a move along the line, the release at its end. */

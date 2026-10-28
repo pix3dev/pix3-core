@@ -11,7 +11,12 @@ import {
 import { SceneService, type SceneServiceDelegate } from './SceneService';
 import { GameTime } from './GameTime';
 import { InputService } from './InputService';
-import { BURST_MAX_PARTICLES, FloatText2D, ParticleBurst2D } from './juice-transients';
+import {
+  BURST_MAX_PARTICLES,
+  FloatText2D,
+  JUICE_EFFECT_Z_INDEX,
+  ParticleBurst2D,
+} from './juice-transients';
 import { NodeBase } from '../nodes/NodeBase';
 import { Group2D } from '../nodes/2D/Group2D';
 import { CanvasLayer2D } from '../nodes/2D/CanvasLayer2D';
@@ -197,6 +202,12 @@ describe('scene.juice.burst', () => {
     expect(service.juice.burst({ x: 0, y: 0, in: 'nowhere' })).toBeNull();
   });
 
+  it("sits above the game's own z values by default, an explicit zIndex wins (core-tests/game13)", () => {
+    const { service } = makeHarness();
+    expect(service.juice.burst({ x: 0, y: 0 })!.zIndex).toBe(JUICE_EFFECT_Z_INDEX);
+    expect(service.juice.burst({ x: 0, y: 0 }, { zIndex: 5 })!.zIndex).toBe(5);
+  });
+
   it('keeps a HUD-anchored burst inside the overlay band', () => {
     const { service, hud } = makeHarness();
     const chip = new Sprite2D({ id: 'score-chip', name: 'score-chip' });
@@ -306,6 +317,11 @@ describe('scene.juice.floatText', () => {
     popup.tick(1 / 60);
     expect(popup.scale.x).toBeGreaterThan(0.5);
     expect(popup.scale.x).toBeLessThan(1);
+  });
+
+  it("a float text sits above the game's own z values by default (core-tests/game13)", () => {
+    const { service } = makeHarness();
+    expect(service.juice.floatText('+120')!.zIndex).toBe(JUICE_EFFECT_Z_INDEX);
   });
 
   it('never participates in picking', () => {

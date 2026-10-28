@@ -425,6 +425,21 @@ describe('BotSession actuators', () => {
     );
   });
 
+  it('command answers whether the game took it (core-tests/game13)', () => {
+    const world = makeWorld();
+    world.refuse.add('command:swap');
+    const answers: boolean[] = [];
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) answers.push(bot.command('restart'), bot.command('swap'));
+      }),
+      world
+    );
+    run(session, 1);
+    expect(answers).toEqual([true, false]);
+  });
+
   it('command dispatches a game command', () => {
     const world = makeWorld();
     const session = new BotSession(

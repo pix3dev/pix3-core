@@ -49,7 +49,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let target: string | undefined;
   let width = DEFAULT_SIZE.width;
   let height = DEFAULT_SIZE.height;
-  let scale = 3;
+  let scale: number | undefined;
   let scene: string | undefined;
   let bot: string | undefined;
   let botArgs: Record<string, unknown> = {};
@@ -120,6 +120,9 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     else if (target === undefined) target = arg;
     else return { error: `one target at a time (got ${target} and ${arg})` };
   }
+  // A bot run paints every frame: at DPR 3 a headless page took 5–6 minutes a round
+  // (core-tests/game13), so a bot defaults to 2; --scale 3 for the final pictures.
+  scale ??= bot ? 2 : 3;
   if (!Number.isFinite(scale) || scale <= 0) return { error: '--scale takes a positive number' };
   // With a bot the budget is game frames: a headless page at --scale 3 paints ~8 fps, and 60 wall
   // seconds were ~8 s of a fixed-tick game — a round never finished (core-tests/game9). Seconds
@@ -162,22 +165,9 @@ const resolveTarget = (
     value === undefined
       ? url
       : `${url}${url.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}`;
-  const withScene = (url: string): string =>
-    withParam(
-      withParam(url, 'scene', args.scene),
-      'run',
-      args.run ? JSON.stringify(args.run) : undefined
-    );
-  // --seed / --config ride on the dev server's `?run=` (a build boots as it ships).
-  const isBuildTarget =
-    args.target === 'dist' ||
-    (args.target !== undefined && args.target !== 'dev' && !/^https?:/.test(args.target));
-  if (args.run && isBuildTarget) {
-    return {
-      error:
-        '--seed / --config need the dev server (`npm run dev`): a build boots as it ships, with no test settings',
-    };
-  }
+  // --seed / --config are injected into the page before it loads (`__PIX3_RUN__`), dev and dist
+  // alike — not in the URL.
+  const withScene = (url: string): string => withParam(url, 'scene', args.scene);
   const dist = root ? join(root, 'dist', 'index.html') : null;
   if (args.target && /^(https?|file):/.test(args.target)) return withScene(args.target);
   if (args.target && args.target !== 'dist' && args.target !== 'dev') {
@@ -196,11 +186,6 @@ const resolveTarget = (
   }
   if (dist && existsSync(dist)) {
     if (args.scene) return { error: '--scene needs the dev server: a build boots its entry scene' };
-    if (args.run)
-      return {
-        error:
-          '--seed / --config need the dev server (`npm run dev`): a build boots as it ships, with no test settings',
-      };
     return pathToFileURL(dist).href;
   }
   return {
@@ -313,6 +298,16 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       session
     );
     await chrome.send('Page.enable', {}, session);
+    if (args.run) {
+      // A test run's seed and config, there before the player reads them (`devRunOverrides`):
+      // the build carries no test settings of its own, so dist plays the same seeded round
+      // (core-tests/game12, game13 added "weak move" test modes to their games for want of it).
+      await chrome.send(
+        'Page.addScriptToEvaluateOnNewDocument',
+        { source: `globalThis.__PIX3_RUN__ = ${JSON.stringify(args.run)};` },
+        session
+      );
+    }
     await chrome.send('Page.navigate', { url }, session);
 
     // Booted when the player says so (`__PIX3_PLAYER__.status`), within 20 s.

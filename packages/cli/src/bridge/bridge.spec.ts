@@ -157,5 +157,11 @@ describe('pix3 bridge', () => {
     const paused = io();
     expect(await runBridgeCli(['tap', '10', '20'], paused.io)).toBe(0);
     expect(paused.err.join('')).toContain(`play '{"action":"resume"}'`);
+    // Both gestures say how they were sent (core-tests/game13).
+    const swipe = io();
+    expect(
+      await runBridgeCli(['swipe', '1', '2', '30', '2', '--touch', '--ms', '20'], swipe.io)
+    ).toBe(0);
+    expect(swipe.out.join('')).toContain('with a touch');
   });
 });

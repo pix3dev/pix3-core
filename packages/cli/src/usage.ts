@@ -270,6 +270,7 @@ Reference it from a scene or script as res://<path inside the project>.
   dev | dist     the running dev server (?clean, no editor link) or dist/index.html (file://);
                  a URL or a folder holding index.html works too
   --size WxH     the viewport in CSS px (default 390x844, a phone); --scale the device pixel ratio
+                 (default 3, 2 with --bot: every frame is painted, and DPR 3 is a slow round)
   --safe-area    emulate a notch and a home indicator: top,right,bottom,left CSS px (an iPhone 14:
                  47,0,34,0) — the page's env(safe-area-inset-*), what layout.safeArea nodes avoid
   --scene path   boot another scene (dev server only)
@@ -280,9 +281,9 @@ Reference it from a scene or script as res://<path inside the project>.
                  wall-clock limit (default 900 with a bot; without one, how long the page runs: 3).
                  The game ticks a fixed 1/60 s per frame while a bot plays, so a frame number means
                  the same game time on any machine, and it stays paused on the frame of done()
-  --seed N       seed scene.random for this run (dev server only: ?run=), so a bot meets the
-                 same board every time
-  --config json  override component config for this run (dev server only):
+  --seed N       seed scene.random for this run (dev and dist: injected into the page), so a
+                 bot meets the same board every time
+  --config json  override component config for this run (dev and dist):
                  '{"<nodeId>": {"<componentId>": {"moves": 3}}}' — a short round, a set target;
                  a wrong node, component or key is an error
   --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,

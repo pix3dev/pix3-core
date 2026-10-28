@@ -133,9 +133,12 @@ pictures come from the policy: `bot.screenshot('result-card')` freezes the game 
 saves `<name>.png` (`--shots <dir>`) and lets it run on — a selected cell, a 200 ms effect, the
 result card, all in one run. A card that fades or pops in is still half there on the frame the game shows it:
 take its picture `durationSec × 60` frames later (count frames from the `gameState` flag that
-says it is open). On the dev server `--seed N` and `--config '<json>'` (as for smoke)
-set up the run — the same board, three moves to reach the lose screen — without test code in the
-game; `dist` refuses them (a build boots as it ships). `--safe-area 47,0,34,0` emulates an iPhone's
+says it is open). `--seed N` and `--config '<json>'` (as for smoke) set up the run on dev and
+`dist` alike — the same board, three moves to reach the lose screen — injected into the page by
+`pix3 play`, so the game needs **no test modes of its own**: check the win and the lose screen on
+the build with `--config`, not with a "weak move" switch in the game. A bot defaults to
+`--scale 2` (every frame is painted; DPR 3 made a round take minutes): `--scale 3` for the final
+pictures only. `--safe-area 47,0,34,0` emulates an iPhone's
 notch and home indicator (top,right,bottom,left CSS px) on dev and `dist` alike: check that nothing
 the player needs sits under them. No editor, no MCP: it works from a subagent and in CI.
 

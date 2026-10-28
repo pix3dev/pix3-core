@@ -30,9 +30,18 @@ describe('devSource', () => {
     expect(evaluate(dev, '?run=%7Bnope').devRunOverrides()).toBeNull();
   });
 
-  it('a build has none of it: no ?run= reader, always null', () => {
+  it('a build reads no ?run=, only what pix3 play injected before the page loaded (core-tests/game13)', () => {
     const build = devSource('none');
     expect(build).not.toContain("params.get('run')");
     expect(evaluate(build, '?run=%7B%22seed%22%3A1%7D').devRunOverrides()).toBeNull();
+    const injected = globalThis as { __PIX3_RUN__?: unknown };
+    injected.__PIX3_RUN__ = { seed: 3 };
+    try {
+      expect(evaluate(build, '').devRunOverrides()).toEqual({ seed: 3 });
+      const dev = devSource('dev', { overlayPath: '/o', editorLinkPath: '/l', editorUrl: null });
+      expect(evaluate(dev, '').devRunOverrides()).toEqual({ seed: 3 });
+    } finally {
+      delete injected.__PIX3_RUN__;
+    }
   });
 });

@@ -172,7 +172,9 @@ const buildPageWorld = (
             .join(', ') || 'none'
         }).`;
       }
-      return commands.dispatch(name, args) ? null : `command "${name}" refused or threw.`;
+      return commands.dispatch(name, args)
+        ? null
+        : `command "${name}" declined (its handler returned false) or threw.`;
     },
     requestScreenshot: (name, frame) => {
       // The policy ticks after the frame was drawn, so pausing here holds exactly what it saw.

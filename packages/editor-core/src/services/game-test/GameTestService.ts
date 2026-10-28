@@ -1111,7 +1111,9 @@ export class GameTestService {
           const known = commands.list().map(entry => entry.name);
           return `no command "${name}" is registered${known.length ? ` (registered: ${known.join(', ')})` : ' — the game registers none (scene.commands.register)'}.`;
         }
-        return commands.dispatch(name, args) ? null : `command "${name}" refused or threw.`;
+        return commands.dispatch(name, args)
+          ? null
+          : `command "${name}" declined (its handler returned false) or threw.`;
       },
 
       requestScreenshot: (name, frame) =>

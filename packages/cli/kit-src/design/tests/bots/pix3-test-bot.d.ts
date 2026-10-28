@@ -88,8 +88,11 @@ declare interface Pix3TestBot {
    * per tick, up — a swipe, a drag-and-drop, a slingshot pull. physical-input only.
    */
   swipe(from: BotPoint, to: BotPoint, frames?: number): void;
-  /** Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button. */
-  command(name: string, args?: Record<string, unknown>): void;
+  /**
+   * Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button.
+   * true when it ran and did not decline (a handler returns false to decline, e.g. a dead swap).
+   */
+  command(name: string, args?: Record<string, unknown>): boolean;
   /**
    * A named picture of this frame: `pix3 play --bot` freezes the game here, saves <name>.png
    * (--shots dir) and lets it run on — a selected cell, a result card, a 200 ms effect. In the

@@ -651,8 +651,10 @@ policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next pictu
 `<name>.png` into `--shots <dir>` and resumes it. `--bot-args '<json>'` is the policy's `bot.args`.
 `--safe-area T,R,B,L` emulates the page's `env(safe-area-inset-*)` (CSS px) through
 `Emulation.setSafeAreaInsetsOverride`, dev or `dist`, for `layout.safeArea` nodes.
-`--seed N` / `--config '<json>'` ride on the dev server's `?run=` (`virtual:pix3/dev`
-`devRunOverrides`, null in a build) into `SceneRunner.setRunOverrides`; `dist` refuses them.
+`--seed N` / `--config '<json>'` are injected before the page loads
+(`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
+player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
+global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.
 
 ## `pix3 bridge` — the editor tab without MCP
 

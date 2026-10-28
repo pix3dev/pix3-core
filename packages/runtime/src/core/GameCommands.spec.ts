@@ -102,6 +102,18 @@ describe('GameCommandRegistry — names', () => {
   });
 });
 
+describe('GameCommandRegistry — a handler that declines (core-tests/game13)', () => {
+  it('returning false makes dispatch false and journals the command as rejected', () => {
+    const registry = new GameCommandRegistry();
+    registry.register('swap', args => (args?.valid === true ? undefined : false));
+    expect(registry.dispatch('swap', { valid: true })).toBe(true);
+    expect(registry.dispatch('swap', { valid: false })).toBe(false);
+    const last = registry.log[registry.log.length - 1];
+    expect(last).toMatchObject({ name: 'swap', status: 'rejected' });
+    expect(String(last.error)).toContain('declined');
+  });
+});
+
 describe('GameCommandRegistry — arguments', () => {
   let registry: GameCommandRegistry;
   let handler: Mock<(args?: GameCommandArgs) => void>;

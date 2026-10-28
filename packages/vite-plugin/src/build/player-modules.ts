@@ -319,8 +319,10 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
   if (mode === 'none' || !options) {
     return [
       '// A build has no dev tools: the debug overlay, the editor link, ?scene= and ?run= are dev-only.',
+      '// A test run (`pix3 play dist --seed/--config`) is injected before the page loads as',
+      '// `__PIX3_RUN__`; a player nobody drives sees nothing there.',
       'export function devSceneOverride() { return null; }',
-      'export function devRunOverrides() { return null; }',
+      'export function devRunOverrides() { return globalThis.__PIX3_RUN__ ?? null; }',
       'export function installDevTools() {}',
       '',
     ].join('\n');
@@ -336,7 +338,7 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     // \`?run=<json>\` — a test run's seed and component config (\`pix3 play --seed/--config\`).
     `export function devRunOverrides() {`,
     `  const run = params.get('run');`,
-    `  if (!run) return null;`,
+    `  if (!run) return globalThis.__PIX3_RUN__ ?? null;`,
     `  try { return JSON.parse(run); }`,
     `  catch (error) { console.error('[pix3] ?run= is not JSON:', error); return null; }`,
     `}`,

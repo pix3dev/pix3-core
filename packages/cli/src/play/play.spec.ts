@@ -54,11 +54,8 @@ describe('pix3 play', () => {
     expect(badArgs.code).toBe(2);
     expect(badArgs.err).toContain('--bot-args takes one JSON object');
 
-    // A test run's seed and config ride on the dev server's ?run= — never on a build (game10).
-    const distSeed = await run(['dist', '--seed', '7']);
-    expect(distSeed.code).toBe(2);
-    expect(distSeed.err).toContain('--seed / --config need the dev server');
-    // `dev` is the dev server, not a build: with none running the answer says so.
+    // A test run's seed and config are injected into the page, so dist takes them too (game13).
+    // `dev` is the dev server: with none running the answer says so.
     const devSeed = await run(['dev', '--seed', '7']);
     expect(devSeed.err).toContain('no dev server is running');
     expect((await run(['--seed', 'x'])).err).toContain('--seed takes a whole number');

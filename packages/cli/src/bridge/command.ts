@@ -229,7 +229,7 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
       const ms = Number(str(parsed, 'ms') ?? 180);
       await swipeBetween(page, from, to, { touch, durationMs: Number.isFinite(ms) ? ms : 180 });
       io.stdout(
-        `swiped (${Math.round(from.x)}, ${Math.round(from.y)}) → (${Math.round(to.x)}, ${Math.round(to.y)})\n`
+        `swiped (${Math.round(from.x)}, ${Math.round(from.y)}) → (${Math.round(to.x)}, ${Math.round(to.y)})${touch ? ' with a touch' : ''}\n`
       );
       return 0;
     }

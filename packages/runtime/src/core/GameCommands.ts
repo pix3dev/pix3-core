@@ -84,8 +84,12 @@ export interface GameCommandUndo {
 /** Command arguments. Must be JSON-serialisable — see {@link GameCommandRegistry.dispatch}. */
 export type GameCommandArgs = Record<string, unknown>;
 
-/** A command handler: performs the intent, optionally returning how to reverse it. */
-export type GameCommandHandler = (args?: GameCommandArgs) => void | GameCommandUndo;
+/**
+ * A command handler: performs the intent, optionally returning how to reverse it — or `false` when
+ * it declined (a swap that matches nothing, a purchase without the coins): `dispatch` then answers
+ * `false` and the journal says `rejected`, so a test that raised it can tell (core-tests/game13).
+ */
+export type GameCommandHandler = (args?: GameCommandArgs) => void | boolean | GameCommandUndo;
 
 /** What `list()` publishes about one command. */
 export interface GameCommandDescriptor {
@@ -268,7 +272,7 @@ export class GameCommandRegistry {
    * {@link log} with `status: 'error'` and is reported, and the caller (usually
    * the frame loop, through a button handler) carries on.
    *
-   * @returns `true` only when a handler ran to completion.
+   * @returns `true` only when a handler ran to completion and did not decline (return `false`).
    */
   dispatch(name: string, args?: GameCommandArgs): boolean {
     const command = this.commands.get(name);
@@ -314,7 +318,12 @@ export class GameCommandRegistry {
     this.depth += 1;
     try {
       const result = command.handler(args);
-      if (result && typeof result.undo === 'function') {
+      if (result === false) {
+        entry.status = 'rejected';
+        entry.error = 'the handler declined (returned false)';
+        return false;
+      }
+      if (result && typeof result === 'object' && typeof result.undo === 'function') {
         this.undoStack.push({ name, undo: () => result.undo() });
         if (this.undoStack.length > MAX_UNDO_ENTRIES) {
           this.undoStack.shift();

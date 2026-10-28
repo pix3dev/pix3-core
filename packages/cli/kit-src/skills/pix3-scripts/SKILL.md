@@ -207,8 +207,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   in. A board cell's centre is `{ x: cellX, y: cellY, in: 'board' }`; computed in the board's
   space but passed as a world point it lands beside the cell whenever the board's parent is not
   at the origin (the starter's `design-area` moves into the safe area on a phone with a notch).
-  Bursts, float text and trails draw above everything in their layer; a `scenes/ui/` overlay
-  with a `CanvasLayer2D` root is a layer of its own, drawn above them.
+  Bursts and float text draw above everything in their layer (`zIndex` 1000 by default — pass a
+  lower one to put an effect under something); a trail keeps 0, under the thing it follows. A
+  `scenes/ui/` overlay with a `CanvasLayer2D` root is a layer of its own, drawn above them.
   - `trail(node, { lifeSec: 0.35, widthPx: 14, color | colors, additive: true, zIndex, maxPoints: 48 })` → `trail.stop()`.
 
   `target` = node | query | `'camera'` | `'camera2d'`; `anchor` = node | query | `{ x, y }` — pass
@@ -237,7 +238,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `scene.physics2d.getBody(node)` → `setVelocity`, `applyImpulse`, `teleport`. Never
   hand-write a 2D solver, never import rapier for 2D. (A game that already runs its own
   solver keeps it — do not add engine physics on top of it.)
-- Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`.
+- Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A
+  handler that cannot do it (a swap that matches nothing) returns `false`: `dispatch` — and a
+  bot's `bot.command()` — answers `false`.
   Register one per game and publish state with `registerGameDebug` from one rules script —
   when you add a mechanic, add its field to that snapshot instead of registering a second one.
   **Test-only intents** (`place-special`, `set-moves`) go behind `if (import.meta.env.DEV)` and are

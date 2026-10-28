@@ -34,6 +34,14 @@ import { OVERLAY_2D_FLAG } from './render-order-2d';
  */
 
 /**
+ * The `zIndex` a burst and a float text get by default: above anything a game sorts with its own
+ * small z values in the same layer (a gem lifted to `zIndex: 5` during a swap hid the "+120" that
+ * the kit said draws above everything: core-tests/game13). An overlay with a `CanvasLayer2D` root is
+ * a separate pass and stays above. Trails keep 0 — a ball's trail belongs under the ball.
+ */
+export const JUICE_EFFECT_Z_INDEX = 1000;
+
+/**
  * A point for a juice effect. Without `in`: 2D world space — the 2D root's, origin at the screen
  * centre, Y up. With `in` (a node, or its id / name): that node's own space, the one its children
  * are positioned in — a board cell is `{ x: cellX, y: cellY, in: 'board' }`, and it stays right
@@ -70,7 +78,7 @@ export interface BurstOptions {
   fadeOut?: boolean;
   /** Additive blending — the neon/glow look (default true). False = normal alpha blend. */
   additive?: boolean;
-  /** Draw-order override on the spawned node (Godot `z_index`, default 0). */
+  /** Draw-order override on the spawned node (Godot `z_index`, default {@link JUICE_EFFECT_Z_INDEX}). */
   zIndex?: number;
 }
 
@@ -96,7 +104,7 @@ export interface FloatTextStyleOptions {
   glow?: boolean | string;
   /** Glow strength 0..4 when {@link glow} is on (default 1.5). */
   glowStrength?: number;
-  /** Draw-order override on the spawned node (Godot `z_index`, default 0). */
+  /** Draw-order override on the spawned node (Godot `z_index`, default {@link JUICE_EFFECT_Z_INDEX}). */
   zIndex?: number;
 }
 
@@ -264,9 +272,7 @@ export class ParticleBurst2D extends Node2D {
     const size = clampNumber(options.sizePx, BURST_DEFAULTS.sizePx, 0.5, 1024);
     this.gravityY = clampNumber(options.gravityY, BURST_DEFAULTS.gravityY, -100000, 100000);
     this.fadeOut = options.fadeOut !== false;
-    if (options.zIndex !== undefined) {
-      this.zIndex = clampNumber(options.zIndex, 0, -4096, 4096);
-    }
+    this.zIndex = clampNumber(options.zIndex, JUICE_EFFECT_Z_INDEX, -4096, 4096);
 
     const palette = resolvePalette(options);
     this.geometry = new BufferGeometry();
@@ -448,7 +454,7 @@ export class FloatText2D extends Label2D {
       glowStrength: glowColor
         ? clampNumber(options.glowStrength, FLOAT_TEXT_DEFAULTS.glowStrength, 0, 4)
         : 0,
-      zIndex: options.zIndex,
+      zIndex: clampNumber(options.zIndex, JUICE_EFFECT_Z_INDEX, -4096, 4096),
     });
 
     this.isContainer = false;
