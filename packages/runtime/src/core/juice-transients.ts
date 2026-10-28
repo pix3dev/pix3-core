@@ -76,7 +76,10 @@ export interface BurstOptions {
   gravityY?: number;
   /** Fade particles out over their life (default true). */
   fadeOut?: boolean;
-  /** Additive blending — the neon/glow look (default true). False = normal alpha blend. */
+  /**
+   * Additive blending — the neon look, for sparks on a dark background. Default false: added over
+   * bright sprites (a board of gems) the sparks burned out to white (core-tests/game14).
+   */
   additive?: boolean;
   /** Draw-order override on the spawned node (Godot `z_index`, default {@link JUICE_EFFECT_Z_INDEX}). */
   zIndex?: number;
@@ -256,7 +259,13 @@ export class ParticleBurst2D extends Node2D {
   private readonly fadeOut: boolean;
   private aliveParticles: number;
 
-  constructor(props: Node2DProps, options: BurstOptions = {}) {
+  constructor(
+    props: Node2DProps,
+    options: BurstOptions = {},
+    /** The burst's random source — `scene.juice` hands it a `scene.random` stream, so a seeded
+     *  run repeats its sparks; `Math.random` without one. */
+    random: () => number = Math.random
+  ) {
     super(props, 'ParticleBurst2D');
 
     // A transient effect is never a drop target and has no children to hit-test.
@@ -282,20 +291,20 @@ export class ParticleBurst2D extends Node2D {
     const indices = new Uint16Array(count * 6);
 
     for (let i = 0; i < count; i++) {
-      const angle = direction + (Math.random() - 0.5) * spread;
-      const particleSpeed = speed * (0.55 + Math.random() * 0.45);
+      const angle = direction + (random() - 0.5) * spread;
+      const particleSpeed = speed * (0.55 + random() * 0.45);
       const particle: BurstParticle = {
         x: 0,
         y: 0,
         vx: Math.cos(angle) * particleSpeed,
         vy: Math.sin(angle) * particleSpeed,
         age: 0,
-        life: life * (0.7 + Math.random() * 0.6),
-        size: size * (0.7 + Math.random() * 0.6),
+        life: life * (0.7 + random() * 0.6),
+        size: size * (0.7 + random() * 0.6),
       };
       this.particles.push(particle);
 
-      const tint = palette[Math.floor(Math.random() * palette.length)] ?? palette[0];
+      const tint = palette[Math.floor(random() * palette.length)] ?? palette[0];
       for (let corner = 0; corner < 4; corner++) {
         const vertex = i * 4 + corner;
         uvAttribute.setXY(vertex, QUAD_UVS[corner][0], QUAD_UVS[corner][1]);
@@ -320,11 +329,11 @@ export class ParticleBurst2D extends Node2D {
       depthTest: false,
       depthWrite: false,
       vertexColors: true,
-      blending: options.additive === false ? NormalBlending : AdditiveBlending,
+      blending: options.additive === true ? AdditiveBlending : NormalBlending,
     });
     // The node's blend mode is what `registerOpacityMaterial` applies to the material: left at
     // 'normal' it overwrote the additive blending above, so `additive` did nothing.
-    this.blendMode = options.additive === false ? 'normal' : 'additive';
+    this.blendMode = options.additive === true ? 'additive' : 'normal';
     this.registerOpacityMaterial(material, 1);
 
     const mesh = new Mesh(this.geometry, material);

@@ -63,6 +63,17 @@ export class GameTime {
   private hitstopFrameStreak = 0;
   private warnedAboutHitstopStreak = false;
 
+  /**
+   * Seconds of REAL (unscaled) frame time the runner has advanced — a hitstop does not stop it, a
+   * pause does, and in fixed / manual time it is ticks × the tick length. The clock of effects
+   * that must outlive a hitstop yet stay in step with the run (`scene.flash`).
+   */
+  get unscaledElapsedSec(): number {
+    return this.unscaledElapsed;
+  }
+
+  private unscaledElapsed = 0;
+
   /** The multiplier gameplay dt is scaled by this frame. */
   get scale(): number {
     return this.effectiveScale;
@@ -167,6 +178,7 @@ export class GameTime {
   advance(realDtSec: number): void {
     const dt = Number.isFinite(realDtSec) && realDtSec > 0 ? realDtSec : 0;
     this.frameIndex += 1;
+    this.unscaledElapsed += dt;
 
     if (this.hitstopRemainingSec > 0) {
       this.hitstopRemainingSec = Math.max(0, this.hitstopRemainingSec - dt);

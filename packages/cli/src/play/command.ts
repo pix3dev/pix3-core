@@ -43,7 +43,7 @@ const DEFAULT_SIZE = { width: 390, height: 844 };
 /** A bot's game-frame budget: two minutes of game time. */
 const DEFAULT_BOT_FRAMES = 7200;
 /** A bot run's wall-clock safety net. */
-const DEFAULT_BOT_WALL_SECONDS = 900;
+const DEFAULT_BOT_WALL_SECONDS = 300;
 
 const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
   let target: string | undefined;
@@ -211,6 +211,8 @@ interface PlayReport {
 
 /** How often the CLI asks the page whether the policy is done or wants a picture. */
 const POLL_MS = 50;
+/** How often a bot run reports its frame on stderr. */
+const PROGRESS_MS = 15_000;
 
 export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<number> => {
   const parsed = parsePlayArgs(argv);
@@ -349,16 +351,33 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
             `play-${Date.now()}`
           )
       );
+      let gone = false;
+      let lastProgress = Date.now();
+      const started = Date.now();
       for (const deadline = Date.now() + args.seconds * 1000; Date.now() < deadline; ) {
         await sleep(POLL_MS);
         const poll = (await chrome.evaluate(
           session,
-          '(() => { const b = window.__PIX3_PAGE_BOT__; return { finished: b.finished, frame: b.frame, shot: b.takeShot() }; })()'
+          '(() => { const b = window.__PIX3_PAGE_BOT__; if (!b) return { gone: true }; return { finished: b.finished, frame: b.frame, shot: b.takeShot() }; })()'
         )) as {
+          gone?: boolean;
           finished?: boolean;
           frame?: number;
           shot?: { name: string; frame: number } | null;
         } | null;
+        // The page reloaded under the bot (Vite's full reload after a project file changed, a
+        // navigation): the policy went with it (core-tests/game14 read a TypeError on `finished`).
+        if (poll?.gone) {
+          gone = true;
+          break;
+        }
+        // A heartbeat for whoever waits on a long round: a bot that loops shows itself here.
+        if (Date.now() - lastProgress >= PROGRESS_MS) {
+          lastProgress = Date.now();
+          io.stderr(
+            `pix3 play: bot ${args.bot} at frame ${poll?.frame ?? 0} of ${args.frames} (${Math.round((Date.now() - started) / 1000)} s)\n`
+          );
+        }
         if (poll?.shot) {
           const shot = (await chrome.send(
             'Page.captureScreenshot',
@@ -376,10 +395,18 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         }
         if (poll?.finished || (poll?.frame ?? 0) >= args.frames) break;
       }
-      botReport = (await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.stop()')) as Record<
-        string,
-        unknown
-      >;
+      botReport = gone
+        ? {
+            name: args.bot,
+            error: {
+              message:
+                'the page reloaded during the run and took the bot with it — Vite reloads the dev page when a project file changes (or the page navigated); run again once the files are quiet, or play dist',
+            },
+          }
+        : ((await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.stop()')) as Record<
+            string,
+            unknown
+          >);
     } else if (status === 'running') {
       await sleep(args.seconds * 1000);
     }

@@ -489,7 +489,10 @@ export interface BotWorld {
   tapUp(target: string): void;
   setAxisValue(name: string, value: number): string | null;
   pointAt(point: BotPoint): string | null;
-  /** A pointer phase at a world point, on the bot's own finger (`swipe`). */
+  /**
+   * A pointer phase at a world point, on the bot's own finger (`swipe`). On `up` a sentence is a
+   * note for the log (the swipe was too short to read as one), not a refusal.
+   */
   pointerAt(phase: 'down' | 'move' | 'up', point: BotPoint): string | null;
   /** The bot's finger down at a world point (`tapAt`). The session schedules {@link tapAtUp}. */
   tapAtDown(point: BotPoint): string | null;
@@ -890,7 +893,8 @@ export class BotSession {
     this.world.pointerAt('move', at);
     if (t >= 1) {
       this.swipe = null;
-      this.world.pointerAt('up', swipe.to);
+      const note = this.world.pointerAt('up', swipe.to);
+      if (note) this.record('harness', note);
     }
   }
 

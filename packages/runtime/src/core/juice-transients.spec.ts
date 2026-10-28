@@ -22,6 +22,7 @@ import { Group2D } from '../nodes/2D/Group2D';
 import { CanvasLayer2D } from '../nodes/2D/CanvasLayer2D';
 import { Sprite2D } from '../nodes/2D/Sprite2D';
 import { LAYER_2D } from '../constants';
+import { SeededRandom } from './seeded-random';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
 import type { ResourceManager } from './ResourceManager';
@@ -378,11 +379,25 @@ describe('ParticleBurst2D is drawn (front faces, its own blending)', () => {
     }
   });
 
-  it('additive (default) blends additively; additive: false blends normally', () => {
-    const additive = meshOf(new ParticleBurst2D({ id: 'a' })).material as Material;
-    const normal = meshOf(new ParticleBurst2D({ id: 'n' }, { additive: false }))
+  it('blends normally by default, additively on request (core-tests/game14)', () => {
+    // Added over bright sprites the sparks burned out to white: additive is the opt-in neon look.
+    const normal = meshOf(new ParticleBurst2D({ id: 'n' })).material as Material;
+    const additive = meshOf(new ParticleBurst2D({ id: 'a' }, { additive: true }))
       .material as Material;
-    expect(additive.blending).toBe(AdditiveBlending);
     expect(normal.blending).toBe(NormalBlending);
+    expect(additive.blending).toBe(AdditiveBlending);
+  });
+
+  it('draws its sparks from the random source it is given: a seeded run repeats them', () => {
+    const positions = (seed: number) => {
+      const stream = new SeededRandom(seed);
+      const burst = new ParticleBurst2D({ id: `s${seed}` }, { count: 4 }, () => stream.next());
+      burst.tick(0.05);
+      return Array.from(
+        (meshOf(burst).geometry.getAttribute('position').array as Float32Array).slice(0, 8)
+      );
+    };
+    expect(positions(7)).toEqual(positions(7));
+    expect(positions(7)).not.toEqual(positions(8));
   });
 });

@@ -62,11 +62,19 @@ export interface GestureOptions {
    * (core-tests/game8).
    */
   readonly maxTapFrames?: number;
+  /**
+   * Skip a press a UI control claimed (`input.isPointerOverUI` while it was down): a tap on a
+   * button over the board is the button's, not a tap on the board as well (core-tests/game14).
+   * Default true; needs `update`'s `scene` (`this.scene`).
+   */
+  readonly ignoreUI?: boolean;
 }
 
 /** What {@link GestureTracker.update} needs from `this.scene` (only the conversion). */
 interface WorldConverter {
   screenToWorld2D(point: { x: number; y: number }, target?: Vector2): Vector2 | null;
+  /** The scene's input, to ask whether a UI control holds a finger. */
+  getInputService?(): { isPointerOverUI(pointerId: number): boolean } | null;
 }
 
 interface Press {
@@ -78,6 +86,10 @@ interface Press {
   /** The `update` call the press arrived in. */
   readonly frame: number;
   swiped: boolean;
+  /** The swipe was handed out (once per press). */
+  reported?: boolean;
+  /** A UI control held this finger at some frame of the press. */
+  ui: boolean;
 }
 
 export class GestureTracker {
@@ -86,6 +98,7 @@ export class GestureTracker {
   private readonly tapSlopPx: number;
   private readonly maxTapMs: number;
   private readonly maxTapFrames: number;
+  private readonly ignoreUI: boolean;
   /** `update` calls so far: the tracker's frame count. */
   private frame = 0;
 
@@ -94,6 +107,7 @@ export class GestureTracker {
     this.tapSlopPx = Math.max(0, options.tapSlopPx ?? 12);
     this.maxTapMs = Math.max(1, options.maxTapMs ?? 500);
     this.maxTapFrames = Math.max(0, options.maxTapFrames ?? 3);
+    this.ignoreUI = options.ignoreUI !== false;
   }
 
   /** Feed this frame's pointer events; returns the gestures they completed, in order. */
@@ -106,6 +120,11 @@ export class GestureTracker {
     const out: Gesture[] = [];
     const world = (x: number, y: number): Vector2 =>
       scene?.screenToWorld2D({ x, y }) ?? new Vector2(x, y);
+    const input = this.ignoreUI ? (scene?.getInputService?.() ?? null) : null;
+    const claimed = (pointerId: number): boolean => input?.isPointerOverUI(pointerId) === true;
+    // A control registers the finger in its own tick, maybe a frame after the press arrived:
+    // every frame a press is held, ask again.
+    for (const [pointerId, held] of this.presses) if (claimed(pointerId)) held.ui = true;
     for (const event of events) {
       if (event.type === 'down') {
         this.presses.set(event.pointerId, {
@@ -115,6 +134,7 @@ export class GestureTracker {
           scale: event.unitsPerCssPx && event.unitsPerCssPx > 0 ? event.unitsPerCssPx : 1,
           frame: this.frame,
           swiped: false,
+          ui: claimed(event.pointerId),
         });
         continue;
       }
@@ -128,8 +148,13 @@ export class GestureTracker {
       const dy = event.y - press.y;
       // In CSS px, so a threshold means the same at any device pixel ratio.
       const travel = Math.hypot(dx, dy) / press.scale;
+      if (claimed(event.pointerId)) press.ui = true;
       if (!press.swiped && travel >= this.swipeMinPx) {
         press.swiped = true;
+      }
+      // A press a control holds is the control's drag (a slider), not the board's swipe.
+      if (press.swiped && !press.reported && !press.ui) {
+        press.reported = true;
         out.push({
           type: 'swipe',
           pointerId: event.pointerId,
@@ -144,7 +169,7 @@ export class GestureTracker {
         this.presses.delete(event.pointerId);
         const quick =
           now - press.at <= this.maxTapMs || this.frame - press.frame <= this.maxTapFrames;
-        if (!press.swiped && travel <= this.tapSlopPx && quick) {
+        if (!press.swiped && !press.ui && travel <= this.tapSlopPx && quick) {
           out.push({ type: 'tap', pointerId: event.pointerId, at: world(press.x, press.y) });
         }
       }

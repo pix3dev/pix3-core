@@ -425,6 +425,25 @@ describe('BotSession actuators', () => {
     );
   });
 
+  it('a swipe the world finds too short is noted in the log, not refused (core-tests/game14)', () => {
+    const world = makeWorld('physical-input', {
+      pointerAt: (phase: 'down' | 'move' | 'up') => (phase === 'up' ? 'too short: 6 CSS px' : null),
+    });
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.swipe({ x: 0, y: 0 }, { x: 5, y: 0 }, 2);
+      }),
+      world
+    );
+    run(session, 4);
+    const report = session.report();
+    expect(report.refused).toBe(0);
+    expect(report.log).toContainEqual(
+      expect.objectContaining({ kind: 'harness', message: 'too short: 6 CSS px' })
+    );
+  });
+
   it('command answers whether the game took it (core-tests/game13)', () => {
     const world = makeWorld();
     world.refuse.add('command:swap');

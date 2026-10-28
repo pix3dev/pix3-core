@@ -253,6 +253,25 @@ export function projectToCanvasFraction(
   return { nx: backing.x / width, ny: backing.y / height };
 }
 
+/** `GestureTracker`'s default `swipeMinPx`: a drag shorter than this (CSS px) is not a swipe. */
+export const SWIPE_MIN_CSS_PX = 24;
+
+/**
+ * A note for a swipe whose finger travelled less than {@link SWIPE_MIN_CSS_PX} on screen, or null:
+ * `GestureTracker` reads it as a tap or nothing, which a policy otherwise learns only from a game
+ * that did not react (core-tests/game14). `from` / `to` are canvas fractions.
+ */
+export function shortSwipeNote(
+  canvas: { getBoundingClientRect(): { width: number; height: number } },
+  from: { nx: number; ny: number },
+  to: { nx: number; ny: number }
+): string | null {
+  const rect = canvas.getBoundingClientRect();
+  const travel = Math.hypot((to.nx - from.nx) * rect.width, (to.ny - from.ny) * rect.height);
+  if (!(rect.width > 0) || travel >= SWIPE_MIN_CSS_PX) return null;
+  return `this swipe travelled ${travel.toFixed(1)} CSS px on screen — under GestureTracker's ${SWIPE_MIN_CSS_PX} px (swipeMinPx) it is read as a tap, not a swipe; swipe between points farther apart (a whole cell).`;
+}
+
 /**
  * Pointer id the bot's taps and aim use. Distinct from the monkey's / negative control's
  * pointer so a policy tapping while other synthetic input is fed does not have the two

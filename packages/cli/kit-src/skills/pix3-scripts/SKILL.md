@@ -176,6 +176,11 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `scene.getPointer2DWorldPosition()` → `Vector2 | null` for the primary finger now.
 - Spawn: `const n = await scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent, instanceId })`
   (`parent` = node | query; prefab = a scene file with one root). Despawn: `n.queueFree()`.
+  **What the designer sees:** a board a script spawns is empty in the editor's viewport outside
+  Play. When the layout matters to them (a grid of cells), author the **cells** in the scene —
+  `instance:` of a cell prefab, 64 lines a `pix3 tree` reads at a glance, or one row the script
+  copies — and let the script fill them (swap a cell's texture, show its gem) instead of creating
+  them; spawn only what comes and goes (falling gems, effects).
 - Scene change: `await scene.changeScene('res://scenes/menu.pix3scene', { transition: 'fade' | 'none', durationSec: 0.3, onLoaded })`
   (`durationSec` is each of fade-out and fade-in). State that must survive it is an autoload:
   `scene.getAutoload(GameState)` (recipe: `pix3-scene-format/project-files.md` → "An autoload").
@@ -196,8 +201,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
     `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped.
   - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.
   - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start fraction of the node's resting scale (its scale when the pop first runs; an axis at 0 there rests at 1, so a node kept at `scale: [0, 0]` until its pop appears at full size). `easing` is accepted too.
-  - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target.
-  - `burst(anchor, { count: 14, speed: 260, spread: 2π, direction: π/2, lifeSec: 0.5, color | colors, sizePx: 10, gravityY: -600, fadeOut: true, additive: true, zIndex })` (angles in radians).
+  - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target; runs on
+    the game's unscaled time (plays through a hitstop, stops with a pause).
+  - `burst(anchor, { count: 14, speed: 260, spread: 2π, direction: π/2, lifeSec: 0.5, color | colors, sizePx: 10, gravityY: -600, fadeOut: true, additive: false, zIndex })` (angles in radians; `additive: true` is the neon look for a dark background — over bright sprites it burns to white; the sparks come from `scene.random`, so a seeded run repeats them).
   - `floatText('+25', { at, color: '#ffffff', fontSizePx: 28, fontFamily: 'Arial', fontWeight, outlineWidth: 0, outlineColor: '#000000', driftPx: 60, durationSec: 0.8, glow, glowStrength: 1.5, zIndex })`
     — over busy art give it `fontWeight: 900, outlineWidth: 4`.
 
@@ -265,7 +271,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `for (const g of this.gestures.update(this.input?.pointerEvents ?? [], this.scene))` →
   `{ type: 'tap', at }` or `{ type: 'swipe', direction: 'left'|'right'|'up'|'down', from, to }`
   (world units; a swipe fires once, as the finger crosses the threshold — a match-3 swap — and a
-  drag is never also a tap).
+  drag is never also a tap). Thresholds are CSS px at any pixel ratio. A press a UI control holds
+  (a button over the board, a slider) is skipped — the button's tap is not also a board tap
+  (`ignoreUI: false` to get every press).
 - Polled: `input.isPointerDown`, `input.pointerPosition` (canvas space — use
   `scene.getPointer2DWorldPosition()` for world), `input.isPointerOverUI(pointerId)`,
   `input.getButton(name)`, `input.getAxis(name)`.

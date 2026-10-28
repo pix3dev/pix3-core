@@ -9,6 +9,7 @@ import {
   projectToCanvasFraction,
   botPointInNode,
   raycastBotNodes,
+  shortSwipeNote,
   toCanvasFraction,
   type BotCanvasHandle,
   type BotSceneHandle,
@@ -143,10 +144,11 @@ const buildPageWorld = (
       const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y);
       if (!at)
         return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
+      const startedAt = swipeDown;
       if (phase === 'down') swipeDown = at;
       if (phase === 'up') swipeDown = null;
       sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
-      return null;
+      return phase === 'up' && startedAt ? shortSwipeNote(canvasHandle, startedAt, at) : null;
     },
     tapAtDown: point => {
       const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y);
@@ -177,8 +179,10 @@ const buildPageWorld = (
         : `command "${name}" declined (its handler returned false) or threw.`;
     },
     requestScreenshot: (name, frame) => {
-      // The policy ticks after the frame was drawn, so pausing here holds exactly what it saw.
+      // Paused on the tick the policy saw, and painted: a batch paints only its last tick, so this
+      // one may not have been drawn yet.
       runner.pause();
+      runner.renderOnce();
       shots.push({ name, frame });
       return null;
     },
@@ -193,6 +197,9 @@ const buildPageWorld = (
     },
   };
 };
+
+/** Logic ticks per painted frame while a bot plays on the page. */
+const BOT_TICKS_PER_FRAME = 4;
 
 /**
  * Start `policyModule` (the compiled policy file's exports) on the running game of this page.
@@ -223,11 +230,22 @@ export const startPageBot = (
   // tick's game time followed it, so `bot.frame` was not game time and a 300 ms effect lived a
   // different number of ticks each run — no frame of it could be asked for (core-tests/game8).
   const previousTime = runner.getTimeMode();
-  runner.setTimeMode({ mode: 'fixed', fixedDeltaSec: 1 / 60, ticksPerFrame: 1 });
+  // Four ticks per animation frame, one paint each: a headless page paints in software, and
+  // painting every tick held a round to 6–8 frames a second (core-tests/game14). A picture or the
+  // verdict paints its own tick (`renderOnce`), so nothing a policy photographs is a stale frame.
+  runner.setTimeMode({
+    mode: 'fixed',
+    fixedDeltaSec: 1 / 60,
+    ticksPerFrame: BOT_TICKS_PER_FRAME,
+    renderEveryNTicks: BOT_TICKS_PER_FRAME,
+  });
   const detach = runner.subscribeFrameStats(() => {
     session.tick();
     // Hold the frame the verdict was reached on: the final screenshot shows what was judged.
-    if (session.finished) runner.pause();
+    if (session.finished && !runner.paused) {
+      runner.pause();
+      runner.renderOnce();
+    }
   });
   const handle: PageBotHandle = {
     get finished() {

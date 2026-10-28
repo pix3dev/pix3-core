@@ -645,7 +645,9 @@ passed; 1 = otherwise; 2 = could not run. Code: `src/play/`.
 
 While a bot plays, the runner ticks a fixed 1/60 s per frame (`setTimeMode('fixed')`) whatever the
 headless page paints, so `bot.frame` is game time; the budget is `--frames` game frames (default
-7200) with `--seconds` as the wall-clock safety net (default 900), and the game stays paused on the
+7200) with `--seconds` as the wall-clock safety net (default 300; a heartbeat on stderr every 15 s,
+and a page that reloads under the bot ends the run with that reason), the runner ticks four logic
+frames per painted one (a picture or the verdict paints its own tick), and the game stays paused on the
 frame of `done()` (what `--screenshot` then shows). `bot.screenshot(name)` pauses the runner on the
 policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next picture) captures
 `<name>.png` into `--shots <dir>` and resumes it. `--bot-args '<json>'` is the policy's `bot.args`.

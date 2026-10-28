@@ -5,6 +5,7 @@ import { Node2D } from '../nodes/Node2D';
 import { ShakeBehavior, type ShakeOptions } from '../behaviors/ShakeBehavior';
 import { PunchScaleBehavior, type PunchScaleOptions } from '../behaviors/PunchScaleBehavior';
 import { PopInBehavior, type PopInOptions } from '../behaviors/PopInBehavior';
+import type { SeededRandom } from './seeded-random';
 import {
   BURST_DEFAULTS,
   FLOAT_TEXT_DEFAULTS,
@@ -218,7 +219,8 @@ export class JuiceApi {
         sizePx: options.sizePx ?? BURST_DEFAULTS.sizePx * k,
         speed: options.speed ?? BURST_DEFAULTS.speed * k,
         gravityY: options.gravityY ?? BURST_DEFAULTS.gravityY * k,
-      }
+      },
+      this.effectsRandom()
     );
     host.adoptChild(burst);
     const local = this.resolveHostLocalPoint(host, anchor, target);
@@ -397,6 +399,24 @@ export class JuiceApi {
     host.updateWorldMatrix(true, false);
     return host.worldToLocal(world);
   }
+
+  /**
+   * The effects' own stream of `scene.random`: a seeded run repeats its sparks, and drawing them
+   * does not move the game's sequence (a board dealt from `scene.random` stays the same however
+   * many bursts played). Re-forked whenever the run is re-seeded.
+   */
+  private effectsRandom(): () => number {
+    const random = this.scene.random;
+    if (!this.fx || this.fxSeed !== random.currentSeedValue) {
+      this.fx = random.fork('juice');
+      this.fxSeed = random.currentSeedValue;
+    }
+    const fx = this.fx;
+    return () => fx.next();
+  }
+
+  private fx: SeededRandom | null = null;
+  private fxSeed = -1;
 
   private nextTransientId(kind: string): string {
     this.transientCounter += 1;

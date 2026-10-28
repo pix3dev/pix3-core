@@ -1094,8 +1094,10 @@ export class SceneService {
    * Full-screen impact flash: snap a colored overlay to `intensity`, then fade
    * it to transparent over `durationSec`. Uses a dedicated overlay independent
    * of the fade-to-black one, so a flash never cancels a camera-transition
-   * fade. Runs on real (wall-clock) time, so it still plays while the game is
-   * frozen by a hitstop — exactly what an impact needs.
+   * fade. Runs on the runner's unscaled time ({@link GameTime.unscaledElapsedSec}), so it still
+   * plays while the game is frozen by a hitstop — exactly what an impact needs — yet stops with a
+   * pause and steps with fixed ticks: on wall-clock time it was gone before a bot's picture of
+   * that frame was taken (core-tests/game14). Without a runner it falls back to wall-clock time.
    */
   flash(options: FlashOptions = {}): void {
     const color =
@@ -1125,9 +1127,12 @@ export class SceneService {
       return;
     }
 
-    const startTime = performance.now();
-    const step = (now: number): void => {
-      const t = Math.min((now - startTime) / durationMs, 1);
+    const runnerTime = this.delegate?.getGameTime() ?? null;
+    const clockMs = (): number =>
+      runnerTime ? runnerTime.unscaledElapsedSec * 1000 : performance.now();
+    const startTime = clockMs();
+    const step = (): void => {
+      const t = Math.min((clockMs() - startTime) / durationMs, 1);
       overlay.style.opacity = String(intensity * (1 - t));
       if (t < 1) {
         this.flashAnimationId = requestAnimationFrame(step);

@@ -85,4 +85,31 @@ describe('GestureTracker', () => {
     g.update([at3('down', 0)], null, 100);
     expect(g.update([at3('move', 75)], null, 116)).toMatchObject([{ type: 'swipe' }]);
   });
+
+  it('a press a UI control holds is not a board tap or swipe (core-tests/game14)', () => {
+    const overUI = new Set<number>();
+    const ui = {
+      ...scene,
+      getInputService: () => ({ isPointerOverUI: (id: number) => overUI.has(id) }),
+    };
+    const g = new GestureTracker();
+    // The button registers the finger a frame after the press arrived.
+    g.update([ev('down', 5, 5, 1)], ui, 0);
+    overUI.add(1);
+    g.update([], ui, 16);
+    expect(g.update([ev('up', 5, 5, 1)], ui, 32)).toEqual([]);
+    overUI.clear();
+    // A slider's drag is not a board swipe either; the next free press is a tap again.
+    overUI.add(2);
+    expect(g.update([ev('down', 0, 0, 2), ev('move', 80, 0, 2)], ui, 40)).toEqual([]);
+    g.update([ev('up', 80, 0, 2)], ui, 56);
+    overUI.clear();
+    g.update([ev('down', 5, 5, 3)], ui, 60);
+    expect(g.update([ev('up', 5, 5, 3)], ui, 70)).toMatchObject([{ type: 'tap' }]);
+    // ignoreUI: false keeps the old behaviour.
+    const all = new GestureTracker({ ignoreUI: false });
+    overUI.add(4);
+    all.update([ev('down', 5, 5, 4)], ui, 0);
+    expect(all.update([ev('up', 5, 5, 4)], ui, 10)).toMatchObject([{ type: 'tap' }]);
+  });
 });

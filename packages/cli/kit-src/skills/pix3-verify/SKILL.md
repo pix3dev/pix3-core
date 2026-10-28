@@ -138,7 +138,12 @@ says it is open). `--seed N` and `--config '<json>'` (as for smoke) set up the r
 `pix3 play`, so the game needs **no test modes of its own**: check the win and the lose screen on
 the build with `--config`, not with a "weak move" switch in the game. A bot defaults to
 `--scale 2` (every frame is painted; DPR 3 made a round take minutes): `--scale 3` for the final
-pictures only. `--safe-area 47,0,34,0` emulates an iPhone's
+pictures only. A bot run paints one tick in four (four logic ticks per painted frame) — its
+pictures and the verdict frame are painted on their own tick, so nothing is stale; it prints its
+frame on stderr every 15 s and stops after `--seconds` (default 300). A page that reloads under
+the bot (Vite reloads the dev page when a project file changes) ends the run with that reason:
+do not edit files while a bot plays dev. A swipe shorter than 24 CSS px is noted in the bot's log
+(GestureTracker reads it as a tap). `--safe-area 47,0,34,0` emulates an iPhone's
 notch and home indicator (top,right,bottom,left CSS px) on dev and `dist` alike: check that nothing
 the player needs sits under them. No editor, no MCP: it works from a subagent and in CI.
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Vector2 } from 'three';
 import { SceneService, type SceneServiceDelegate } from './SceneService';
 import { GameTime } from './GameTime';
@@ -51,6 +51,31 @@ function makeHarness(): Harness {
 
   return { service, camera, gameTime, parent };
 }
+
+describe("scene.flash runs on the runner's unscaled time (core-tests/game14)", () => {
+  it('fades with the ticks the runner advances, through a hitstop, and holds while nothing advances', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const runFrame = () => frames.shift()?.(performance.now() + 10_000);
+    const { service, gameTime, parent } = makeHarness();
+    service.juice.flash({ intensity: 1, durationSec: 0.2 });
+    const overlay = parent.querySelector('div') as HTMLDivElement;
+
+    runFrame(); // wall clock moved a lot, the runner did not: still at full intensity
+    expect(Number(overlay.style.opacity)).toBeCloseTo(1, 5);
+    service.time.hitstop(500);
+    gameTime.advance(0.1); // half the flash in unscaled time, game frozen
+    runFrame();
+    expect(Number(overlay.style.opacity)).toBeCloseTo(0.5, 5);
+    gameTime.advance(0.1);
+    runFrame();
+    expect(Number(overlay.style.opacity)).toBe(0);
+    vi.restoreAllMocks();
+  });
+});
 
 describe('JuiceApi / impact combo (P0.3 acceptance)', () => {
   it('assembles a juicy hit from three calls: hitstop + camera shake + flash', () => {

@@ -278,7 +278,7 @@ Reference it from a scene or script as res://<path inside the project>.
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
                  physical-input only. Ends at done() or after --frames game frames (default 7200,
                  two minutes of game time, however slowly the page paints); --seconds is the
-                 wall-clock limit (default 900 with a bot; without one, how long the page runs: 3).
+                 wall-clock limit (default 300 with a bot; without one, how long the page runs: 3).
                  The game ticks a fixed 1/60 s per frame while a bot plays, so a frame number means
                  the same game time on any machine, and it stays paused on the frame of done()
   --seed N       seed scene.random for this run (dev and dist: injected into the page), so a

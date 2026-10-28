@@ -5,6 +5,7 @@ import {
   BOT_STICK_POINTER_BASE,
   botPointInNode,
   collectBotNodeViews,
+  shortSwipeNote,
   nearestBotNode,
   PhysicalAxisDriver,
   projectToCanvasFraction,
@@ -160,6 +161,17 @@ describe('collectBotNodeViews', () => {
     expect(view.position.x).toBe(3);
     expect(view.worldPosition.x).toBe(13);
     expect(view.worldPosition.y).toBe(5);
+  });
+});
+
+describe('shortSwipeNote (core-tests/game14)', () => {
+  const screen = { getBoundingClientRect: () => ({ width: 390, height: 844 }) };
+  it('names a swipe under 24 CSS px and lets a real one pass', () => {
+    const note = shortSwipeNote(screen, { nx: 0.5, ny: 0.5 }, { nx: 0.5 + 10 / 390, ny: 0.5 });
+    expect(note).toContain('10.0 CSS px');
+    expect(
+      shortSwipeNote(screen, { nx: 0.5, ny: 0.5 }, { nx: 0.5 + 40 / 390, ny: 0.5 })
+    ).toBeNull();
   });
 });
 

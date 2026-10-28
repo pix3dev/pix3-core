@@ -92,6 +92,7 @@ import {
   projectToCanvasFraction,
   botPointInNode,
   raycastBotNodes,
+  shortSwipeNote,
   type BotSceneHandle,
   keyCodeOf,
   toCanvasFraction,
@@ -1079,10 +1080,11 @@ export class GameTestService {
         if (!at) {
           return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
         }
+        const startedAt = swipeDown;
         if (phase === 'down') swipeDown = at;
         if (phase === 'up') swipeDown = null;
         sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
-        return null;
+        return phase === 'up' && startedAt ? shortSwipeNote(runtime.canvas, startedAt, at) : null;
       },
 
       tapAtDown: point => {
