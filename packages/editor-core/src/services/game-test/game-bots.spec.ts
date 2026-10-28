@@ -658,6 +658,12 @@ describe('buildBotVerdict', () => {
     expect(verdict).toContain('survived 30s');
   });
 
+  it("names the run's frame, the one outcome.frame says, and the policy tick when it differs (core-tests/game15)", () => {
+    const done = { ...base, done: { pass: true, reason: 'won', frame: 2897 } };
+    expect(buildBotVerdict(done, 0, 2830)).toContain('at frame 2830 (policy tick 2897)');
+    expect(buildBotVerdict(done, 0, 2897)).toContain('at frame 2897:');
+  });
+
   it('says a fail is a fail', () => {
     const verdict = buildBotVerdict(
       { ...base, done: { pass: false, reason: 'hero died: lives 0', frame: 517 } },

@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { NON_SHIPPABLE_DIRECTORIES } from '../files/scan.ts';
+import { isNonShippableDirectoryName } from '../files/scan.ts';
 import { RESERVED_ROOT_DIR } from '../files/paths.ts';
 import type { LocalizationSettings, ProjectManifestInfo } from './project-manifest.ts';
 import { normalizeResRoot, resToAbsolute, stripRes, wireToRes } from './project-manifest.ts';
@@ -202,7 +202,7 @@ export const listProjectFiles = async (root: string): Promise<string[]> => {
     for (const entry of entries) {
       const wirePath = wireDir ? `${wireDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (NON_SHIPPABLE_DIRECTORIES.has(entry.name)) continue;
+        if (isNonShippableDirectoryName(entry.name)) continue;
         if (!wireDir && entry.name === RESERVED_ROOT_DIR) continue;
         await walk(wirePath);
       } else if (entry.isFile()) {

@@ -419,6 +419,18 @@ class SceneChecker {
 
     this.checkNodeType(value, nodeId, propertyBag, at);
     this.checkComponents(value.components, nodeId, at);
+    if (value.children === null) {
+      // `children:` with nothing under it at the key's own indent: almost always the list that
+      // should have followed was indented one level too little, so its nodes became this node's
+      // SIBLINGS — loaded fine, drawn in the wrong place (core-tests/game15: a HUD under the board).
+      this.report({
+        code: 'W_EMPTY_CHILDREN',
+        nodeId,
+        message: `children: has no value — the nodes meant to be listed under it are not this node's children.`,
+        fix: 'indent the child list under children: (two spaces deeper than the key), or write children: [] for none',
+        at: [...at, 'children'],
+      });
+    }
     if (value.children !== undefined && value.children !== null) {
       if (!Array.isArray(value.children)) {
         this.report({

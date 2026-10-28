@@ -2135,7 +2135,7 @@ function composeVerdict(
   bot: BotReport | undefined
 ): string {
   if (bot && outcome.kind.startsWith('bot-')) {
-    return buildBotVerdict(bot, newErrorCount);
+    return buildBotVerdict(bot, newErrorCount, outcome.frame);
   }
   const base = buildVerdict(outcome, spec, unmetNotes, newErrorCount);
   if (!bot) return base;

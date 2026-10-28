@@ -36,6 +36,11 @@ export const DIAGNOSTIC_CODES = {
     summary: 'document structure is wrong (root, node, component or override shape)',
   },
   E_UNKNOWN_NODE_TYPE: { severity: 'error', level: 1, summary: 'unknown `type:`' },
+  W_EMPTY_CHILDREN: {
+    severity: 'warning',
+    level: 1,
+    summary: '`children:` has no value — an indentation slip that made the children siblings',
+  },
   W_TYPE_CASE: {
     severity: 'warning',
     level: 1,

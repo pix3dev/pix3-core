@@ -207,7 +207,10 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
   `visible`, `opacity`, `width`, `layoutEnabled`, `horizontalAlign`, the margins `layoutLeft` /
   `layoutRight` / `layoutTop` / `layoutBottom`, … plus a `transform` block (`position`,
   `rotation`, `scale`). The `layout:` / `flow:` blocks of a plain node are not read here — write
-  `layoutEnabled: true` + `horizontalAlign: right` + `layoutRight: 20` instead.
+  `layoutEnabled: true` + `horizontalAlign: right` + `layoutRight: 20` instead. A **texture**
+  overrides too — one cell prefab, a different gem per instance:
+  `properties: { texture: { type: texture, url: 'res://sprites/gem-red.svg' } }` (on the
+  instance for the prefab's root, under `overrides.byLocalId` for an inner `Sprite2D`).
 - Do **not** add `components` or `children` to an instance node — they are ignored (the
   content comes from the prefab). To change what is inside, edit the prefab file itself, or
   override one inner node's properties:

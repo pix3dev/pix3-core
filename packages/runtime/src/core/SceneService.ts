@@ -252,6 +252,29 @@ export class SceneService {
    * Falls back to an inert controller when no scene is running.
    */
   /**
+   * Phone vibration (`navigator.vibrate`): `vibrate(ms | [on, off, on…])` — a short buzz on a
+   * match, a pattern on a win — and `stop()`. Nothing happens, and `vibrate` answers false, where
+   * there is none (desktop, iOS Safari, a headless test, a hidden tab); never throws. One call
+   * instead of each game reaching past the engine for `navigator` (core-tests/game15).
+   */
+  readonly haptics = {
+    vibrate(pattern: number | readonly number[]): boolean {
+      const nav = typeof navigator === 'undefined' ? null : navigator;
+      if (!nav || typeof nav.vibrate !== 'function') return false;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+      const value = typeof pattern === 'number' ? Math.max(0, pattern) : [...pattern];
+      try {
+        return nav.vibrate(value);
+      } catch {
+        return false;
+      }
+    },
+    stop(): void {
+      this.vibrate(0);
+    },
+  };
+
+  /**
    * The game's random numbers (`next`, `int`, `range`, `pick`, `shuffle`, `fork`), seeded per run:
    * `pix3 play --seed`, `pix3 smoke --seed` and the editor's run overrides replay the same
    * sequence. Draw game logic from here, not `Math.random`, or a seeded run is not reproducible.

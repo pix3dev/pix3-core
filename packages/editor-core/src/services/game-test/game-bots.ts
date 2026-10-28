@@ -1045,8 +1045,20 @@ export class BotSession {
  * because a *finding* stands whether or not anything was driven ("I could not play" is
  * a result) while a *pass* does not. Any reordering here re-opens that disagreement.
  */
-export function buildBotVerdict(report: BotReport, newErrors: number): string {
+export function buildBotVerdict(
+  report: BotReport,
+  newErrors: number,
+  /** The run's frame the outcome is on (`outcome.frame`); the policy's ticks also count any settle. */
+  runFrame?: number
+): string {
   const where = `frame ${report.frames}`;
+  // The run's frame first — the one `outcome.frame` and `metrics.frames` say — and the policy's
+  // own tick beside it when they differ (a settle ran before the run's first frame): one number
+  // in the verdict and another in the outcome read as a bug (core-tests/game15).
+  const doneAt = (frame: number): string =>
+    runFrame === undefined || runFrame === frame
+      ? `frame ${frame}`
+      : `frame ${runFrame} (policy tick ${frame})`;
   const channel = `[${report.channel}]`;
   const drove = `${report.sent} action(s) driven${report.refused > 0 ? `, ${report.refused} refused` : ''}`;
   const errs = newErrors > 0 ? ` ${newErrors} NEW RUNTIME ERROR(S) during the run.` : '';
@@ -1063,7 +1075,7 @@ export function buildBotVerdict(report: BotReport, newErrors: number): string {
     return `BOT ERROR ${report.name} ${channel} — the POLICY threw at frame ${report.error.frame}: ${report.error.message}. This is a fault in ${botFilePath(report.name)}, NOT in the game; nothing is claimed about the game here. ${drove} before it died.${errs}`;
   }
   if (report.done && !report.done.pass) {
-    return `BOT FAIL ${report.name} ${channel} — the policy ended the run at frame ${report.done.frame}: ${report.done.reason}. ${drove} over ${report.frames} tick(s).${idle}${unproven}${errs}`;
+    return `BOT FAIL ${report.name} ${channel} — the policy ended the run at ${doneAt(report.done.frame)}: ${report.done.reason}. ${drove} over ${report.frames} tick(s).${idle}${unproven}${errs}`;
   }
   if (report.sent === 0) {
     const said = report.done
@@ -1072,7 +1084,7 @@ export function buildBotVerdict(report: BotReport, newErrors: number): string {
     return `BOT NOTHING DRIVEN ${report.name} ${channel} — ${report.frames} tick(s) ran and the policy actuated NOTHING${report.refused > 0 ? ` (all ${report.refused} attempt(s) were refused)` : ''}.${said}${errs}`;
   }
   if (report.done) {
-    return `BOT PASS ${report.name} ${channel} — the policy ended the run at frame ${report.done.frame}: ${report.done.reason}. ${drove} over ${report.frames} tick(s).${unproven}${errs}`;
+    return `BOT PASS ${report.name} ${channel} — the policy ended the run at ${doneAt(report.done.frame)}: ${report.done.reason}. ${drove} over ${report.frames} tick(s).${unproven}${errs}`;
   }
   return `BOT UNDECIDED ${report.name} ${channel} — the budget ran out at ${where} and the policy never called done(), so IT reached no verdict; whatever ended the run below is the harness's own budget or predicate. ${drove}.${unproven}${errs}`;
 }

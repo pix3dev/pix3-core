@@ -94,6 +94,28 @@ describe('level 1: structure', () => {
     expect(error.fix).toContain('must be quoted');
   });
 
+  it('W_EMPTY_CHILDREN: `children:` with nothing under it, the indentation slip (core-tests/game15)', async () => {
+    const report = await run({
+      'scenes/a.pix3scene': [
+        'version: 1.0.0',
+        'root:',
+        '  - id: design-area',
+        '    type: Group2D',
+        '    name: Design Area',
+        '    children:',
+        '  - id: hud',
+        '    type: Group2D',
+        '    name: HUD',
+        '    children: []',
+        '',
+      ].join('\n'),
+    });
+    const [warning] = find(report, 'W_EMPTY_CHILDREN');
+    expect(warning).toMatchObject({ nodeId: 'design-area', line: 6 });
+    expect(warning.fix).toContain('indent');
+    expect(find(report, 'W_EMPTY_CHILDREN')).toHaveLength(1); // `children: []` is fine
+  });
+
   it('E_SHAPE: the shapes the loader accepts silently or crashes on', async () => {
     const report = await run({
       'scenes/object-root.pix3scene': 'version: 1.0.0\nroot: { a: 1 }\n',

@@ -470,3 +470,30 @@ describe('SceneService.getPointer2DWorldPosition', () => {
     input.detach();
   });
 });
+
+describe('scene.haptics (core-tests/game15)', () => {
+  it('vibrates through navigator.vibrate where it exists, and is a quiet false where not', () => {
+    const service = new SceneService();
+    const calls: unknown[] = [];
+    const nav = navigator as Navigator & { vibrate?: unknown };
+    const saved = Object.getOwnPropertyDescriptor(nav, 'vibrate');
+    Object.defineProperty(nav, 'vibrate', {
+      configurable: true,
+      value: (pattern: unknown) => {
+        calls.push(pattern);
+        return true;
+      },
+    });
+    try {
+      expect(service.haptics.vibrate(30)).toBe(true);
+      expect(service.haptics.vibrate([20, 40, 20])).toBe(true);
+      service.haptics.stop();
+      expect(calls).toEqual([30, [20, 40, 20], 0]);
+      Object.defineProperty(nav, 'vibrate', { configurable: true, value: undefined });
+      expect(service.haptics.vibrate(30)).toBe(false);
+    } finally {
+      if (saved) Object.defineProperty(nav, 'vibrate', saved);
+      else delete (nav as { vibrate?: unknown }).vibrate;
+    }
+  });
+});

@@ -49,6 +49,7 @@ Codes and what they usually mean:
 | --- | --- |
 | `E_YAML` | Bad indentation, unquoted `#colour`, a `:` inside an unquoted string |
 | `E_UNKNOWN_NODE_TYPE` | Typo in the node type — use the suggested name |
+| `W_EMPTY_CHILDREN` | `children:` with nothing under it: the list below was indented one level short, so those nodes are this node's siblings (they load and draw — in the wrong place). Indent them under `children:`, or write `children: []` |
 | `E_UNKNOWN_COMPONENT` | `user:X` with no exported `class X extends Script` that has `static getPropertySchema()` in `scripts/`; or a `core:` name that does not exist |
 | `E_UNKNOWN_PROPERTY` | Key not read for that node / component — check `pix3-nodes`; a flat `horizontalAlign` belongs in `layout:` |
 | `E_PROPERTY_TYPE` | `"10"` for a number, a colour without quotes, an enum value not in the list |

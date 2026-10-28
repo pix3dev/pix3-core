@@ -11,17 +11,14 @@ import { RESERVED_ROOT_DIR } from './paths.ts';
  * `packages/cli/src/serve/scan.ts`).
  *
  * "Everything that ships" is decided the way `ProjectBuildService.collectShippableProjectFiles`
- * decides it: walk the whole root, skip directories named in `NON_SHIPPABLE_DIRECTORIES` at any
- * depth — plus `.pix3/` at the root (the plugin's state). Scenes, prefabs, scripts, assets of every
+ * decides it: walk the whole root, skip directories named in `NON_SHIPPABLE_DIRECTORIES` and every
+ * hidden directory (a name starting with `.`) at any depth — `.pix3/` (the plugin's state) among
+ * them. Scenes, prefabs, scripts, assets of every
  * type, `design/tests/`, `locales/` and `pix3project.yaml` all fall inside that walk; nothing is
  * filtered by extension. Symlinks are neither listed nor followed.
  */
 
-/**
- * Mirror of `NON_SHIPPABLE_DIRECTORIES` in
- * `packages/editor-core/src/services/export/ProjectBuildService.ts` (the editor cannot be imported
- * from here). Keep the two in sync.
- */
+/** Directories that are never part of the project's files, by name, at any depth. */
 export const NON_SHIPPABLE_DIRECTORIES: ReadonlySet<string> = new Set([
   'node_modules',
   '.git',
@@ -41,6 +38,14 @@ export const NON_SHIPPABLE_DIRECTORIES: ReadonlySet<string> = new Set([
  */
 export const SIBLING_TEMP_PATTERN = /^\..+\.pix3-tmp-[0-9a-f]+$/;
 
+/**
+ * A directory the project never ships: a name in {@link NON_SHIPPABLE_DIRECTORIES}, or a hidden
+ * one — `.claude/`, `.github/`, an agent's `.scratch/`. Watched, their screenshots and logs counted
+ * as project changes and held a sync `stale` during play (core-tests/game15).
+ */
+export const isNonShippableDirectoryName = (name: string): boolean =>
+  NON_SHIPPABLE_DIRECTORIES.has(name) || (name.startsWith('.') && name !== '.' && name !== '..');
+
 /** True when the wire path is outside the revision set (inside an excluded directory, or one itself). */
 export const isExcludedPath = (wirePath: string): boolean => {
   const segments = wirePath.split('/');
@@ -48,13 +53,13 @@ export const isExcludedPath = (wirePath: string): boolean => {
   if (SIBLING_TEMP_PATTERN.test(segments[segments.length - 1])) return true;
   // The last segment is excluded only as a directory; a FILE named `dist` is ordinary.
   for (let i = 0; i < segments.length - 1; i++) {
-    if (NON_SHIPPABLE_DIRECTORIES.has(segments[i])) return true;
+    if (isNonShippableDirectoryName(segments[i])) return true;
   }
   return false;
 };
 
 const isExcludedDirectory = (wirePath: string, name: string): boolean =>
-  wirePath === RESERVED_ROOT_DIR || NON_SHIPPABLE_DIRECTORIES.has(name);
+  wirePath === RESERVED_ROOT_DIR || isNonShippableDirectoryName(name);
 
 export interface FileEntry {
   readonly kind: 'file' | 'dir';

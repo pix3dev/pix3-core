@@ -244,6 +244,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `scene.physics2d.getBody(node)` → `setVelocity`, `applyImpulse`, `teleport`. Never
   hand-write a 2D solver, never import rapier for 2D. (A game that already runs its own
   solver keeps it — do not add engine physics on top of it.)
+- Phone vibration: `this.scene.haptics.vibrate(30)` / `vibrate([20, 40, 20])` / `stop()` — a quiet
+  `false` where there is none (desktop, iOS Safari, a hidden tab); never `navigator.vibrate` directly.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A
   handler that cannot do it (a swap that matches nothing) returns `false`: `dispatch` — and a
   bot's `bot.command()` — answers `false`.
