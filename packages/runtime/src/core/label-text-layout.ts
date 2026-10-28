@@ -248,14 +248,14 @@ export function paintLabelCanvas(ctx: CanvasRenderingContext2D, options: LabelPa
     startY = height - paddingY - layout.textHeight;
   }
 
-  // Decoration (off by default): an outline underlay drawn with strokeText, then
-  // additive glow passes under ctx.shadowBlur, then the plain fill on top.
+  // Decoration (off by default): additive glow passes under ctx.shadowBlur, then an outline
+  // drawn with strokeText over the glow, then the plain fill on top.
   const glowStrength = Math.min(LABEL_GLOW_STRENGTH_LIMIT, Math.max(0, options.glowStrength ?? 0));
   const glowBlur = labelGlowBlurPx(options.fontSize, glowStrength);
   const glowPasses = labelGlowPasses(glowStrength);
   const glowColor = options.glowColor?.trim() ? options.glowColor : options.color;
   // One decoration record for every line: the shared painter owns the layering (shadow →
-  // outline → glow → fill) so a Label2D and a Button2D caption cannot come out different.
+  // glow → outline → fill) so a Label2D and a Button2D caption cannot come out different.
   const decoration: StyledTextDecoration = {
     color: options.color,
     outlineWidth: options.outlineWidth,

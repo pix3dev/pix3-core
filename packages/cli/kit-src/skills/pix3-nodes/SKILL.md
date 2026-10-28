@@ -210,11 +210,10 @@ screen blooms — **raise** `bloomThreshold` (0.85–0.95) so only the accents g
 
 ## Known gaps
 
-- No safe-area insets: the starter's page is `viewport-fit=cover`, so on a phone the canvas runs
-  under the notch and the rounded corners, and the layout does not know where they are. Keep
-  buttons, the joystick and the score off the edges with anchor margins rather than flush at 0:
-  on a 1080×1920 portrait design about 150 px from the top and bottom (an iPhone's notch and
-  home bar are ~50 and ~35 CSS px), 48 px from the sides; in landscape, swap the two.
+- The notch and the home indicator: the starter's page is `viewport-fit=cover`, so the canvas
+  runs under them. Nodes with `layout.safeArea: true` (the starter's `design-area`) lay out inside
+  the safe area; a node anchored to the real screen edge outside it does not — keep such nodes
+  off the edges (`pix3-scene-format` → "Tall phones and the notch").
 
 - An `.svg` sprite must be served as `image/svg+xml`: a host that hands it back as `text/plain`
   draws nothing. The Vite dev server and the single-file build are fine.

@@ -499,7 +499,7 @@ A multiline text label for 2D UI. Wraps text to a fixed box, aligns it in both a
 - Set `width` manually to get word wrap — there is no auto-grow layout yet.
 - **Glow/outline are canvas-drawn** (`ctx.shadowBlur` passes + a `strokeText` underlay), not post-processing — which is exactly why HUD text can glow: a `CanvasLayer2D` subtree is drawn _after_ the post-processing composer and can never bloom. Both are off by default, so existing scenes are unchanged.
 - Turning either on grows the label's canvas (and the mesh showing it) by a bleed on each side so the blur/stroke isn't clipped; the tap target stays the authored box.
-- `glowStrength` 1 is a subtle halo, 2–3 reads as neon (each whole step adds an additive shadow pass, capped at 3); the blur scales with `labelFontSize`, so a HUD label and a title glow proportionally.
+- `glowStrength` 1 is a subtle halo, 2–3 reads as neon (each whole step adds an additive shadow pass, capped at 3); the blur scales with `labelFontSize`, so a HUD label and a title glow proportionally. Layering, bottom to top: drop shadow, glow, outline, fill — the outline stays crisp over the halo, so a glowing caption with an outline keeps its edge over a busy background (the glow used to be drawn over the outline and washed it out: core-tests/game11).
 - Scripts: `setText(text)` replaces the text and restarts the typewriter; `skipTypewriter()` completes it instantly; `restartTypewriter()` replays it; `isTyping` reports progress; the node emits `'typewriter-complete'` when the reveal finishes.
 - The typewriter runs in play mode only (it advances in `tick`); the editor viewport always shows the full text.
 

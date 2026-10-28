@@ -118,7 +118,7 @@ export interface StyledTextDecoration {
 
 /**
  * Paint one run of text at `(x, y)` with the current `textAlign` / `textBaseline`,
- * layering (bottom to top): drop shadow, outline, glow passes, fill.
+ * layering (bottom to top): drop shadow, glow passes, outline, fill (the glow under the outline keeps the letters' edge).
  *
  * The context's font must already be set (see {@link cssFont} /
  * {@link applyTextStyle}); this helper only owns colour and decoration state so a
@@ -169,13 +169,10 @@ export function drawStyledText(
     ctx.restore();
   }
 
-  // 2. Outline underlay.
-  if (outlineWidth > 0) {
-    ctx.strokeText(text, x, y);
-  }
-
-  // 3. Additive glow passes (canvas shadows accumulate, so a second pass is how a
-  //    glow gets brighter rather than merely wider).
+  // 2. Additive glow passes (canvas shadows accumulate, so a second pass is how a
+  //    glow gets brighter rather than merely wider). UNDER the outline: drawn after it,
+  //    the halo washed the dark outline out, and on a busy background (a board of gems)
+  //    the letters lost their edge and read as see-through (core-tests/game9, game11).
   if (glowBlur > 0 && glowPasses > 0) {
     ctx.save();
     ctx.shadowColor = style.glowColor?.trim() ? style.glowColor : style.color;
@@ -184,6 +181,11 @@ export function drawStyledText(
       ctx.fillText(text, x, y);
     }
     ctx.restore();
+  }
+
+  // 3. Outline, over the glow.
+  if (outlineWidth > 0) {
+    ctx.strokeText(text, x, y);
   }
 
   // 4. The plain fill on top.

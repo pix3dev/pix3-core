@@ -159,10 +159,12 @@ import { Vector3 } from 'three';
 /** Frames a run executes when the spec does not say. ~10 s of game at 1/60. */
 const DEFAULT_MAX_FRAMES = 600;
 /** Hard ceiling on the frame budget — one minute of game time at 1/60. */
-export const MAX_MAX_FRAMES = 3600;
+// A whole round of a casual game (a 20-move match-3 with its animations) on a headless editor
+// at 35–40 fps did not fit 3600 frames / 60 s (core-tests/game11).
+export const MAX_MAX_FRAMES = 10_800;
 /** Wall-clock ceiling. A manual loop is CPU-bound, so this is the real runaway guard. */
 const DEFAULT_MAX_WALL_MS = 20_000;
-export const MAX_MAX_WALL_MS = 60_000;
+export const MAX_MAX_WALL_MS = 180_000;
 /** Cap of `settleMs` — a real-time wait before the loop, so it is bounded like the wall budget. */
 const MAX_SETTLE_MS = 30_000;
 /**

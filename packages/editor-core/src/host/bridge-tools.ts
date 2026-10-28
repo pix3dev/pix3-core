@@ -145,14 +145,14 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
         maxFrames: {
           type: 'integer',
           minimum: 1,
-          maximum: 3600,
-          description: 'Frame budget (default 600, at most 3600 per run; more is clamped).',
+          maximum: 10800,
+          description: 'Frame budget (default 600, at most 10800 per run; more is clamped).',
         },
         maxWallMs: {
           type: 'integer',
           minimum: 1,
-          maximum: 60000,
-          description: 'Wall-clock budget in ms (default 20000, at most 60000 per run).',
+          maximum: 180000,
+          description: 'Wall-clock budget in ms (default 20000, at most 180000 per run).',
         },
         settleMs: { type: 'integer', minimum: 0 },
         fixedDeltaSec: { type: 'number' },

@@ -426,11 +426,21 @@ export function resolveBotPolicy(namespace: unknown): { policy: BotPolicy } | { 
     return { error: 'the compiled policy module exported nothing usable.' };
   }
   const record = namespace as Record<string, unknown>;
-  const candidate = record.default ?? record.policy ?? record.bot;
+  let candidate = record.default ?? record.policy ?? record.bot;
+  // A factory — `export default () => ({ tick(bot) { … } })` — is called once per run, so the
+  // policy's state starts fresh every run. The module itself stays evaluated in the editor until
+  // its file changes, so module-level variables carry over from the run before (core-tests/game11).
+  if (typeof candidate === 'function') {
+    try {
+      candidate = (candidate as () => unknown)();
+    } catch (error) {
+      return { error: `the exported policy factory threw: ${describeThrown(error).message}` };
+    }
+  }
   if (typeof candidate !== 'object' || candidate === null) {
     return {
       error:
-        'a policy file must export the policy object — `export default { name, tick(bot) { … } }` (a named `policy` or `bot` export works too). Nothing of that shape was exported.',
+        'a policy file must export the policy object — `export default { name, tick(bot) { … } }`, or a factory `export default () => ({ name, tick(bot) { … } })` for state that starts fresh every run (a named `policy` or `bot` export works too). Nothing of that shape was exported.',
     };
   }
   const policy = candidate as Partial<BotPolicy>;

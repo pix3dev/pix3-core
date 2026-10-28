@@ -79,8 +79,8 @@ const callTool = async (
     if (!bridge || typeof bridge.call !== 'function') return { ok: false, reason: 'no_bridge', detail: 'window.__PIX3_DEBUG__ is not on this page (is it the editor, and has it finished loading?)' };
     return await bridge.call(${JSON.stringify(tool)}, ${JSON.stringify(params)});
   })()`;
-  // pix3_game_run waits up to 60 s of wall clock (maxWallMs) plus settle time.
-  const value = await page.evaluate(expression, 120_000);
+  // pix3_game_run waits up to 180 s of wall clock (maxWallMs) plus settle time.
+  const value = await page.evaluate(expression, 240_000);
   return (value ?? { ok: false, reason: 'no_answer' }) as Record<string, unknown>;
 };
 

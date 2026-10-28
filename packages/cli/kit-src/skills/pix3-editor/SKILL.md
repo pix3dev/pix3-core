@@ -149,10 +149,13 @@ to publish world coordinates and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
 saves a picture of that frame under `pix3 play --bot` and is only a log marker here. `args` (one
 JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
-specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Every `pix3_game_run`
-loads the policy afresh**: its module-level state (a step counter, a plan) starts over on each
-run, while the game keeps its state from the run before. A policy that spans runs reads where the
-game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
+specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Policy state between runs:** in the
+editor the policy module stays evaluated until its file changes (and a `pix3_sync` re-imports it),
+so **module-level variables carry over** from one `pix3_game_run` to the next while the game keeps
+its own state too; `pix3 play` loads it fresh every time. For state that starts fresh every run,
+export a factory — `export default (() => ({ name, tick(bot) { … } })) satisfies () => BotPolicy`,
+with the state as locals of the factory — or reset it in `start(bot)`. A policy that spans runs
+reads where the game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
 the game's own page — the build too — with `npx pix3 play [dev|dist] --bot <name>` (no editor;
 `pix3-verify` → "`pix3 play`"). A policy written or changed during play needs only `pix3_sync`, not a restart.
 
@@ -176,9 +179,9 @@ only when the game registers a snapshot (below): `game.snapshot` at the outcome 
 `game.changed` = `{path: [atFrame0, atOutcome]}` for every scalar that moved. The run leaves the
 game **paused on the outcome frame** (so a screenshot shows what was judged); `pix3_play
 {action:"resume"}` lets it run on, or pass `pauseOnOutcome: false`. One run is at most
-3600 frames (`maxFrames`, default 600) and 60 s of wall clock (`maxWallMs`, default 20000); a
-larger budget is clamped and the result's `notes` say so — a longer session (a whole bot round)
-is several runs in a row, the game keeps its state between them.
+10800 frames (`maxFrames`, default 600) and 180 s of wall clock (`maxWallMs`, default 20000); a
+larger budget is clamped and the result's `notes` say so. A whole round of a casual game fits one
+run; a longer session is several runs in a row, the game keeps its state between them.
 
 **Judging a run** — a clean compile and a clean `pix3_errors` say nothing about whether the change
 works; a run with a stated success condition does:
@@ -253,7 +256,7 @@ quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
 | `pix3_sync {expect, timeoutMs}` | `npx pix3 bridge sync '{"expect":{"scenes/main.pix3scene":"<sha256>"},"timeoutMs":15000}'` |
 | `pix3_scene {nodeId}` / `{find}` | `npx pix3 bridge scene '{"nodeId":"hud"}'`, `npx pix3 bridge scene '{"find":"gem"}'` |
 | `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart` — a plain start when nothing plays — `stop`, `resume`, `status`) |
-| `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":3600}'` |
+| `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":10800,"maxWallMs":180000}'` |
 | `pix3_errors` | `npx pix3 bridge errors` |
 | `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--target game\|viewport] [--aspect 9:16] [--out f.png]` — then open the PNG |
 | `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) |

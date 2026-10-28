@@ -145,7 +145,43 @@ describe('label glow / outline decoration', () => {
     expect(labelGlowPasses(99)).toBe(3);
   });
 
-  it('paints an outline underlay and additive glow passes under the plain fill', () => {
+  it("draws the glow under the outline, so the halo does not wash the letters' edge (core-tests/game11)", () => {
+    const order: string[] = [];
+    let depth = 0;
+    const ctx = {
+      clearRect: () => undefined,
+      save: () => void (depth += 1),
+      restore: () => void (depth -= 1),
+      fillText: () => void order.push(depth > 0 ? 'glow' : 'fill'),
+      strokeText: () => void order.push('outline'),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      lineJoin: 'miter',
+      miterLimit: 10,
+      shadowColor: '',
+      shadowBlur: 0,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    } as unknown as CanvasRenderingContext2D;
+    paintLabelCanvas(ctx, {
+      layout: layout('NICE!'),
+      fontFamily: 'Arial',
+      fontSize: 110,
+      color: '#ff7ad9',
+      align: 'center',
+      vAlign: 'middle',
+      width: 600,
+      height: 160,
+      glowStrength: 1.5,
+      outlineColor: '#2a0f4a',
+      outlineWidth: 8,
+    });
+    expect(order).toEqual(['glow', 'glow', 'outline', 'fill']);
+  });
+
+  it('paints an outline and additive glow passes under the plain fill', () => {
     const fills: FillTextCall[] = [];
     const strokes: FillTextCall[] = [];
     const shadows: { color: string; blur: number }[] = [];

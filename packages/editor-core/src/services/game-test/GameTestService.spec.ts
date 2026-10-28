@@ -236,7 +236,7 @@ describe('validateSpec', () => {
 
   it('clamps the frame budget and defaults the rest', () => {
     const result = validateSpec({ until: [{ kind: 'frames', n: 5 }], maxFrames: 99_999 });
-    expect('spec' in result && result.spec.maxFrames).toBe(3600);
+    expect('spec' in result && result.spec.maxFrames).toBe(10_800); // a whole casual round fits one run (core-tests/game11)
     expect('spec' in result && result.spec.pauseOnOutcome).toBe(true);
     expect('spec' in result && result.spec.fixedDeltaSec).toBeCloseTo(1 / 60);
   });

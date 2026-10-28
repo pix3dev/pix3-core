@@ -105,6 +105,12 @@ declare interface Pix3TestBot {
   done(pass: boolean, reason: string): void;
 }
 
+/**
+ * A policy file exports a BotPolicy object, or a factory returning one — called once per run, so
+ * its locals are fresh state every run (module-level variables survive between pix3_game_run
+ * runs in the editor until the file changes):
+ *   export default (() => { let step = 0; return { tick(bot) { … } }; }) satisfies () => BotPolicy;
+ */
 declare interface BotPolicy {
   /** Optional label for the report; the file name is used when absent. */
   name?: string;

@@ -115,6 +115,32 @@ describe('resolveBotPolicy', () => {
     }
   });
 
+  it('calls a factory export once per resolve, so each run starts with fresh state (core-tests/game11)', () => {
+    let built = 0;
+    const namespace = {
+      default: () => {
+        built += 1;
+        let step = 0;
+        return {
+          tick: () => void (step += 1),
+          get step() {
+            return step;
+          },
+        };
+      },
+    };
+    const first = resolveBotPolicy(namespace);
+    const second = resolveBotPolicy(namespace);
+    expect(built).toBe(2);
+    expect('policy' in first && 'policy' in second && first.policy !== second.policy).toBe(true);
+    const thrower = resolveBotPolicy({
+      default: () => {
+        throw new Error('boom');
+      },
+    });
+    expect('error' in thrower && thrower.error).toContain('factory threw: Error: boom');
+  });
+
   it('refuses a module with no tick — the mistake whose symptom would be silence', () => {
     const resolved = resolveBotPolicy({ default: { name: 'x' } });
     expect('error' in resolved && resolved.error).toContain('no `tick(bot)` function');
