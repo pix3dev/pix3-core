@@ -144,6 +144,23 @@ export function botPointInNode(
   return { x: round3(world.x), y: round3(world.y), z: round3(world.z) };
 }
 
+/**
+ * Why a node cannot be tapped because it is not on screen, or null when it is visible all the way
+ * up. `visible` alone missed a hidden PARENT (an overlay instance still hidden): the tap landed on
+ * nothing and the run ended "no verdict" without a word (core-tests/game17).
+ */
+export function hiddenReason(node: NodeBase, target: string): string | null {
+  if (node.visible === false) {
+    return `"${target}" has visible:false, so it is not on screen and cannot be tapped. Show it first (or fix whatever should have).`;
+  }
+  let hidden: NodeBase | null = null;
+  for (let at = node.parent; at && !hidden; at = at.parent) {
+    if (at instanceof NodeBase && at.visible === false) hidden = at;
+  }
+  if (!hidden) return null;
+  return `"${target}" is inside "${hidden.name}" (${hidden.nodeId}), which is hidden, so it is not on screen and cannot be tapped — show that first (an overlay instance's visible / initiallyVisible).`;
+}
+
 /** Nearest live node of a type to a point, with the distance that made it nearest. */
 export function nearestBotNode(scene: BotSceneHandle, type: string, from: BotPoint): BotHit | null {
   const origin = new Vector3(from.x, from.y, from.z ?? 0);

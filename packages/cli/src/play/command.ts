@@ -205,6 +205,8 @@ interface PlayReport {
   readonly bot?: Record<string, unknown>;
   readonly game: unknown;
   readonly screenshot?: string;
+  /** The sounds the game asked for: how many, and the last ones with their frames. */
+  readonly sounds?: { requested: number; last: { sound: string; frame: number }[] };
   /** The pictures the policy took with `bot.screenshot(name)`, in order. */
   readonly screenshots?: readonly { name: string; frame: number; path: string }[];
 }
@@ -422,6 +424,16 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       'window.__PIX3_PLAYER__ ? window.__PIX3_PLAYER__.errors : []'
     )) ?? []) as string[];
     for (const error of playerErrors) if (!errors.includes(error)) errors.push(error);
+    // The sounds the game asked for (`scene.audio.requested()`): nobody can listen to a headless
+    // page, but which sound a round triggered, and when, is checkable (core-tests/game17).
+    const journal = (await chrome
+      .evaluate(
+        session,
+        `(() => { const r = window.__PIX3_PLAYER__ && window.__PIX3_PLAYER__.runner; const root = r && r.getLiveRootNodes()[0]; const a = root && root.scene && root.scene.audio; return a && a.requested ? JSON.parse(JSON.stringify(a.requested())) : null; })()`
+      )
+      .catch(() => null)) as { total: number; last: { sound: string; frame: number }[] } | null;
+    const sounds =
+      journal && journal.total > 0 ? { requested: journal.total, last: journal.last } : null;
     const game = await chrome
       .evaluate(
         session,
@@ -449,6 +461,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       game,
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
       ...(shots.length > 0 ? { screenshots: shots } : {}),
+      ...(sounds ? { sounds } : {}),
     };
     const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
     const botFailed =
@@ -485,6 +498,12 @@ const formatPlayHuman = (report: PlayReport): string => {
   }
   if (report.game !== null && report.game !== undefined) {
     lines.push(`game: ${JSON.stringify(report.game)}`);
+  }
+  if (report.sounds) {
+    const distinct = [...new Set(report.sounds.last.map(entry => entry.sound))];
+    lines.push(
+      `sounds: ${report.sounds.requested} requested${distinct.length ? ` (${distinct.slice(0, 8).join(', ')}${distinct.length > 8 ? ', …' : ''})` : ''}`
+    );
   }
   if (report.screenshot) lines.push(`screenshot: ${report.screenshot}`);
   for (const shot of report.screenshots ?? [])

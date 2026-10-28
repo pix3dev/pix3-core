@@ -140,7 +140,9 @@ change between two `pix3_game_run` calls does not count, assert the value then),
 exports `{ name, tick(bot) { … } } satisfies BotPolicy`. The types are the kit's
 `design/tests/bots/pix3-test-bot.d.ts` (global, no import); a starter's `pix3 check`
 type-checks the policy. `tick` runs after the game's tick and what it presses lands on the next
-one. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
+one; it starts on the run's first frame (`bot.frame` is 1 there), never during `settleMs`.
+`bot.tap(node)` refuses a node that is hidden or inside a hidden parent (an overlay instance not
+shown yet) with a bot error naming it — show the overlay first. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
 between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
 (both `physical-input` only, one finger — not while the other is still down). **A board cell is a
 point, not a node:** `bot.pointIn('board', x, y)` turns a position in the board node's own space
@@ -159,6 +161,26 @@ with the state as locals of the factory — or reset it in `start(bot)`. A polic
 reads where the game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
 the game's own page — the build too — with `npx pix3 play [dev|dist] --bot <name>` (no editor;
 `pix3-verify` → "`pix3 play`"). A policy written or changed during play needs only `pix3_sync`, not a restart.
+
+A tap-tap game (select a gem, then its neighbour) taps twice with a gap — a tap holds its finger
+for 3 ticks and the next `tapAt` must not start while it is down — and reads the game's state
+before judging:
+
+```ts
+const CELL = 120; // the board's cell size, in the board node's own space
+
+export default {
+  name: 'swap-once',
+  tick(bot) {
+    if (bot.frame === 1) bot.tapAt(bot.pointIn('board', 0, 0)!); // select
+    if (bot.frame === 10) bot.tapAt(bot.pointIn('board', CELL, 0)!); // its right neighbour
+    if (bot.frame === 70) {
+      const state = bot.gameState() as { moves?: number } | null;
+      bot.done((state?.moves ?? 0) > 0, `moves after the swap: ${state?.moves}`);
+    }
+  },
+} satisfies BotPolicy;
+```
 
 The answer — a `fail` or a `timeout` is still `ok: true`; `ok: false` means the run never started:
 
@@ -201,6 +223,10 @@ works; a run with a stated success condition does:
   verify, and then only screenshots are left. `pix3 smoke` prints the same snapshot; in any page
   that runs the game (the dev server, a built `dist/index.html`) a test script of your own reads it
   as `window.__PIX3_GAME_DEBUG__.snapshot()` and calls `.action(name, args)` the same way.
+- **Sound nobody can hear**: the answer's `sounds` lists what the game asked to play during the
+  run — `{requested, last: [{sound, frame}]}`, a `scene.audio.play` path or `sfx:<preset>`, the
+  frame counted like the timeline's — whether or not anything was audible; absent = nothing was
+  asked. A match that should click and has no `sounds` never called the audio.
 - **Slow motion for a photo of a short effect**: `this.scene.time.slowMotion(0.1)` from a debug
   action (`time.reset()` to end it) — it is the game's own clock, so effects play exactly as fast.
 - **Transient effects** (a hover scale, a flash, a punch, a fade) are back at rest by the time a

@@ -119,7 +119,7 @@ export class JuiceApi {
         }
         // No Camera2D (the 2D starter has none): the screen's content is the starter's
         // design-area — the HUD and the game; the background stays put (core-tests/game16).
-        const area = this.scene.findNode(SCREEN_SHAKE_FALLBACK);
+        const area = this.scene.lookupNode(SCREEN_SHAKE_FALLBACK);
         if (!area) {
           this.warnOnce(
             'camera2d',
@@ -442,7 +442,7 @@ export class JuiceApi {
       const resolved =
         target.toLowerCase() === 'camera'
           ? this.scene.getActiveCamera()
-          : this.scene.findNode(target);
+          : this.scene.lookupNode(target);
       if (!resolved) {
         // Every juice method returns null for an unresolved target, and callers reasonably ignore
         // the return value — juice is decoration. Without this, a renamed node turns its effects

@@ -69,6 +69,7 @@ export class AudioPlayer extends NodeBase {
       console.warn(`[AudioPlayer] Node "${this.name}" is not attached to a running scene.`);
       return;
     }
+    scene.audio.noteRequest(this.audioTrack);
 
     const assetLoader = scene.getAssetLoader();
     const audioService = scene.getAudioService();

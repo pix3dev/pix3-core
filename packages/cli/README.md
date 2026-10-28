@@ -659,6 +659,9 @@ policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next pictu
 (`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
 player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
 global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.
+The report carries `sounds: { requested, last: [{ sound, frame }] }` read from the page's
+`scene.audio.requested()` (a clip path or `sfx:<preset>`, the runner frame) — absent when the
+game asked for no sound; `pix3_game_run` answers the same field for its run.
 
 ## `pix3 bridge` — the editor tab without MCP
 

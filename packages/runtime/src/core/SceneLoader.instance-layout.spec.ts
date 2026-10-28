@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHeadlessGame } from '../testing/headless-game';
 import type { Node2D } from '../nodes/Node2D';
 
@@ -61,5 +61,22 @@ describe('SceneLoader: an instanced prefab keeps its layout and flow', () => {
     expect(column.flow).toMatchObject({ enabled: true, gap: 10 });
     expect(game.errors).toEqual([]);
     game.dispose();
+  });
+});
+
+describe('scene.findNode by the prefab root id (core-tests/game17)', () => {
+  it("finds the instance whose prefab root carried the id, after the instance's own id and name", async () => {
+    const game = await createHeadlessGame({
+      files: { 'scenes/main.pix3scene': main, 'scenes/ui/result.pix3scene': overlay },
+    });
+    await game.start('scenes/main.pix3scene');
+    // `result-root` is the id in the prefab file; in the scene the root is the instance `result`.
+    expect(game.scene.findNode('result-root')).toBe(game.scene.findNode('result'));
+    // A miss is said once per query, not silently null.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(game.scene.findNode('nothing-here')).toBeNull();
+    expect(game.scene.findNode('nothing-here')).toBeNull();
+    expect(warn.mock.calls.filter(c => String(c[0]).includes('"nothing-here"'))).toHaveLength(1);
+    warn.mockRestore();
   });
 });

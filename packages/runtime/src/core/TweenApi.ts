@@ -538,7 +538,7 @@ export class TweenApi {
       return target;
     }
     if (typeof target === 'string') {
-      const node = this.scene.findNode(target);
+      const node = this.scene.lookupNode(target);
       if (!node) {
         this.warnOnce(target, `tween: no node named "${target}" — the tween did nothing.`);
         return null;

@@ -110,7 +110,10 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - `this.scene` — `SceneService`; may be `undefined` in editor previews, guard it.
 - `this.input` — `InputService`; typed optional (unset in editor previews), so guard it like
   `this.scene`: `const input = this.input; if (!input) return;`.
-- `this.findNode(query)` — id, name or slash path → `NodeBase | null`. `NodeBase` has no 2D
+- `this.findNode(query)` — id, name or slash path → `NodeBase | null`; the id of a prefab or
+  overlay instance (`result` in `- id: result, instance: …`) finds that instance's root. A query
+  that finds nothing warns once in the console (`[pix3] scene.findNode("…") found no node`).
+  `NodeBase` has no 2D
   fields (`opacity`, `width`, `zIndex`): narrow first — `if (n instanceof Node2D) n.opacity = 0.5`,
   or `instanceof Sprite2D` / `Label2D` for theirs (`getNode<T>(q)` casts without checking).
   `this.getNode(query)` — same, throws when missing.
@@ -177,10 +180,12 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Spawn: `const n = await scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent, instanceId })`
   (`parent` = node | query; prefab = a scene file with one root). Despawn: `n.queueFree()`.
   **What the designer sees:** a board a script spawns is empty in the editor's viewport outside
-  Play. When the layout matters to them (a grid of cells), author the **cells** in the scene —
-  `instance:` of a cell prefab, 64 lines a `pix3 tree` reads at a glance, or one row the script
-  copies — and let the script fill them (swap a cell's texture, show its gem) instead of creating
-  them; spawn only what comes and goes (falling gems, effects).
+  Play. Split a board in two: the **backing cells** (the tiles that never move) are authored in
+  the scene — `instance:` of a cell prefab, 64 lines a `pix3 tree` reads at a glance — so the
+  designer sees and moves the grid; the **pieces** (gems that are matched, fall and refill) are
+  spawned by the script into a separate `Group2D` above the cells (`clipChildren: true`), never
+  into the cell nodes. The script reads the cells' positions (or the same `cell × size` formula)
+  to place a piece, and taps land on the cell rect under it.
 - Scene change: `await scene.changeScene('res://scenes/menu.pix3scene', { transition: 'fade' | 'none', durationSec: 0.3, onLoaded })`
   (`durationSec` is each of fade-out and fade-in). State that must survive it is an autoload:
   `scene.getAutoload(GameState)` (recipe: `pix3-scene-format/project-files.md` → "An autoload").
@@ -232,6 +237,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   fade included; pass the board's node to reset only its own. Default `sec` = 0.3. Prefer these over hand-lerping.
 - Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick', { volume: 1, pitch: 1 })`;
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
+  Every request (these two, `AudioPlayer`, `core:PlaySound`) is journaled even when nothing is
+  audible: `scene.audio.requested()` → `{ total, last: [{ sound, frame }] }`, and a run reports it
+  as `sounds` (`pix3 play`, `pix3_game_run`).
   Sound without the editor: `pix3 sfx coin` writes `audio/coin.wav` (presets `coin`, `jump`,
   `hit`, `explosion`, `powerup`, `click`, `whoosh` (a swap, a swipe), `chime` (a match), `win`,
   `lose`, or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;

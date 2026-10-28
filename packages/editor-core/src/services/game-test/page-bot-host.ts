@@ -8,6 +8,7 @@ import {
   nearestBotNode,
   projectToCanvasFraction,
   botPointInNode,
+  hiddenReason,
   raycastBotNodes,
   shortSwipeNote,
   toCanvasFraction,
@@ -118,7 +119,8 @@ const buildPageWorld = (
     tapDown: target => {
       const node = runner.getLiveNodeById(target) ?? runner.findLiveNodeByName(target);
       if (!node) return `no live node named or with id "${target}" in the running scene.`;
-      if (!node.visible) return `"${target}" has visible:false, so it cannot be tapped.`;
+      const hidden = hiddenReason(node, target);
+      if (hidden) return hidden;
       const backing = runner.projectNodeToCanvas(node);
       const at = backing ? toCanvasFraction(canvas, backing) : null;
       if (!at) return `"${target}" could not be projected to the canvas.`;

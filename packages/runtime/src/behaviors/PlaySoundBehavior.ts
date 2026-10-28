@@ -175,6 +175,7 @@ export class PlaySoundBehavior extends Script {
       console.warn('[PlaySoundBehavior] audioTrack is not configured.');
       return;
     }
+    scene.audio.noteRequest(track);
 
     const assetLoader = scene.getAssetLoader();
     const audioService = scene.getAudioService();

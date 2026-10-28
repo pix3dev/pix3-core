@@ -146,7 +146,10 @@ the bot (Vite reloads the dev page when a project file changes) ends the run wit
 do not edit files while a bot plays dev. A swipe shorter than 24 CSS px is noted in the bot's log
 (GestureTracker reads it as a tap). `--safe-area 47,0,34,0` emulates an iPhone's
 notch and home indicator (top,right,bottom,left CSS px) on dev and `dist` alike: check that nothing
-the player needs sits under them. No editor, no MCP: it works from a subagent and in CI.
+the player needs sits under them. The report also lists the sounds the game asked to play
+(`sounds: N requested`, and in `--json` `sounds.last` = `[{sound, frame}]`, a clip path or
+`sfx:<preset>`) — nobody listens to a headless page, so this is how a run proves a match clicks.
+No editor, no MCP: it works from a subagent and in CI.
 
 ### Logic tests in Node
 

@@ -7,6 +7,7 @@ import {
   GameTestService,
   LiveSignalWatcher,
   runGameTestLoop,
+  soundsDuring,
   validateSpec,
   type CommandJournalReading,
   type GameRunLoopDeps,
@@ -444,17 +445,22 @@ describe('runGameTestLoop — real time before and around the loop', () => {
     const runner = makeRunner({ startMode: 'realtime' });
     const slept: number[] = [];
     let modeWhenSleeping = '';
+    const order: string[] = [];
     const deps = makeDeps(runner, {
       sleep: async ms => {
         slept.push(ms);
+        order.push('sleep');
         modeWhenSleeping = runner.getTimeMode().mode;
       },
+      onLoopStart: () => order.push('loop-start'),
     });
 
     const result = await runGameTestLoop(deps, makeSpec({ settleMs: 1500 }));
 
     expect(slept).toEqual([1500]);
     expect(modeWhenSleeping).toBe('realtime');
+    // A bot is armed only after the settle (core-tests/game17): onLoopStart comes after the sleep.
+    expect(order).toEqual(['sleep', 'loop-start']);
     expect(runner.modeHistory).toEqual(['manual', 'realtime']);
     expect(result.time?.settledMs).toBeTypeOf('number');
   });
@@ -2215,5 +2221,33 @@ describe('GameTestService — bot taps feed the reachability journal', () => {
     spy.world.releaseAll();
 
     expect(spy.noted).toEqual([]);
+  });
+});
+
+describe('soundsDuring — the sounds a run asked for (core-tests/game17)', () => {
+  it('lists only what was asked during the run, with frames from its first frame', () => {
+    const start = { total: 4, frame: 100, last: [{ sound: 'sfx:click', frame: 90 }] };
+    const end = {
+      total: 6,
+      frame: 160,
+      last: [
+        { sound: 'sfx:click', frame: 90 },
+        { sound: 'res://audio/match.ogg', frame: 112 },
+        { sound: 'sfx:pop', frame: 140 },
+      ],
+    };
+    expect(soundsDuring(start, end)).toEqual({
+      requested: 2,
+      last: [
+        { sound: 'res://audio/match.ogg', frame: 12 },
+        { sound: 'sfx:pop', frame: 40 },
+      ],
+    });
+  });
+
+  it('is null when the game asked for nothing', () => {
+    const journal = { total: 1, frame: 5, last: [{ sound: 'sfx:click', frame: 1 }] };
+    expect(soundsDuring(journal, { ...journal, frame: 50 })).toBeNull();
+    expect(soundsDuring(null, null)).toBeNull();
   });
 });

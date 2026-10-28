@@ -32,6 +32,7 @@ describe('PlaySoundBehavior', () => {
 
     behavior.node = node;
     behavior.scene = {
+      audio: { noteRequest: vi.fn() },
       getAssetLoader: () => ({
         loadAudio,
         getAudioMetadata,
@@ -66,6 +67,7 @@ describe('PlaySoundBehavior', () => {
 
     behavior.node = node;
     behavior.scene = {
+      audio: { noteRequest: vi.fn() },
       getAssetLoader: () => ({
         loadAudio: vi.fn().mockResolvedValue({} as AudioBuffer),
         getAudioMetadata: vi.fn().mockReturnValue({ sizeBytes: 128 }),
@@ -93,6 +95,7 @@ describe('PlaySoundBehavior', () => {
 
     behavior.node = node;
     behavior.scene = {
+      audio: { noteRequest: vi.fn() },
       getAssetLoader: () => ({
         loadAudio: vi.fn().mockResolvedValue({} as AudioBuffer),
         getAudioMetadata: vi.fn().mockReturnValue(null),

@@ -42,7 +42,7 @@ declare interface BotHit {
 }
 
 declare interface Pix3TestBot {
-  /** Ticks this policy has been ticked for. 1 on the first tick. */
+  /** Ticks this policy has been ticked for: 1 on the run's first frame (never during settleMs). */
   readonly frame: number;
   /**
    * The run's parameters (frozen; `{}` when none): pix3_game_run {bot: {name, args: {…}}} or
@@ -72,7 +72,10 @@ declare interface Pix3TestBot {
   press(action: string, frames?: number): void;
   /** Let go of something press() is holding. */
   release(action: string): void;
-  /** Tap a control by node name/id: down now, up a few ticks later. */
+  /**
+   * Tap a control by node name/id: down now, up a few ticks later. Refused (a bot error that names
+   * it) when the node or one of its ancestors is hidden — an overlay instance still invisible.
+   */
   tap(target: string): void;
   /**
    * Tap a world point (a board cell): down now, up a few ticks later, on the same finger as
@@ -113,6 +116,8 @@ declare interface Pix3TestBot {
  * its locals are fresh state every run (module-level variables survive between pix3_game_run
  * runs in the editor until the file changes):
  *   export default (() => { let step = 0; return { tick(bot) { … } }; }) satisfies () => BotPolicy;
+ * Two taps in a row (select a cell, then its neighbour) need a gap: a tap holds its finger down
+ * for 3 ticks, so tap on one frame and the next one at least ~6 frames later.
  */
 declare interface BotPolicy {
   /** Optional label for the report; the file name is used when absent. */

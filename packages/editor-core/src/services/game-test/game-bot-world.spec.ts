@@ -4,6 +4,7 @@ import { NodeBase } from '@pix3/runtime';
 import {
   BOT_STICK_POINTER_BASE,
   botPointInNode,
+  hiddenReason,
   collectBotNodeViews,
   shortSwipeNote,
   nearestBotNode,
@@ -172,6 +173,21 @@ describe('shortSwipeNote (core-tests/game14)', () => {
     expect(
       shortSwipeNote(screen, { nx: 0.5, ny: 0.5 }, { nx: 0.5 + 40 / 390, ny: 0.5 })
     ).toBeNull();
+  });
+});
+
+describe('hiddenReason (core-tests/game17)', () => {
+  it('names a hidden ancestor, not only a hidden node', () => {
+    const overlay = makeNode('menu-overlay', { name: 'Menu' });
+    const play = makeNode('play-button', { name: 'Play' });
+    overlay.adoptChild(play);
+    expect(hiddenReason(play, 'play-button')).toBeNull();
+    overlay.visible = false;
+    expect(hiddenReason(play, 'play-button')).toContain(
+      'inside "Menu" (menu-overlay), which is hidden'
+    );
+    play.visible = false;
+    expect(hiddenReason(play, 'play-button')).toContain('has visible:false');
   });
 });
 

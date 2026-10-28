@@ -2,6 +2,17 @@ import type { SceneService } from './SceneService';
 import type { AudioBusName, AudioPlayback, AudioSnapshot, PlayAudioOptions } from './AudioService';
 import { SfxSynth, clampSfxPitch, isSfxPreset, type SfxOptions, type SfxPreset } from './SfxSynth';
 
+/** One sound a game asked for ({@link AudioApi.requested}). */
+export interface AudioRequest {
+  /** The clip's path, or `sfx:<preset>`. */
+  readonly sound: string;
+  /** The runner frame it was asked on. */
+  readonly frame: number;
+}
+
+/** How many requests {@link AudioApi.requested} keeps. */
+export const AUDIO_REQUEST_LOG_LIMIT = 64;
+
 /** Options for {@link AudioApi.play} — the path replaces the resource-metadata fields. */
 export type ScenePlayOptions = Omit<PlayAudioOptions, 'resourcePath' | 'sizeBytes' | 'label'>;
 
@@ -25,8 +36,33 @@ export class AudioApi {
 
   constructor(private readonly scene: SceneService) {}
 
+  /** The sounds the game asked for, newest last (see {@link requested}). */
+  private readonly asked: AudioRequest[] = [];
+  private askedTotal = 0;
+
+  /**
+   * The last {@link AUDIO_REQUEST_LOG_LIMIT} sounds the game asked to play — a clip path or an
+   * `sfx:<preset>` — with the frame, whether or not anything was audible (no Web Audio in a
+   * headless test, a muted tab). A run can then say which sounds a round triggered, where nobody
+   * can listen (core-tests/game17). `total` counts every request since the scene started.
+   */
+  requested(): { readonly total: number; readonly last: readonly AudioRequest[] } {
+    return { total: this.askedTotal, last: [...this.asked] };
+  }
+
+  /**
+   * @internal Journal one request. `play` / `sfx` call it; so do `AudioPlayer` and
+   * `core:PlaySound`, which reach the AudioService directly.
+   */
+  noteRequest(sound: string): void {
+    this.askedTotal += 1;
+    this.asked.push({ sound, frame: this.scene.frame });
+    if (this.asked.length > AUDIO_REQUEST_LOG_LIMIT) this.asked.shift();
+  }
+
   /** Load and play a clip on a bus, with optional per-shot pitch/volume variation. */
   async play(path: string, options: ScenePlayOptions = {}): Promise<AudioPlayback | null> {
+    this.noteRequest(path);
     const loader = this.scene.getAssetLoader();
     if (!loader || !this.scene.getAudioService()) {
       return null;
@@ -59,6 +95,7 @@ export class AudioApi {
    * or the preset name is unknown.
    */
   sfx(preset: SfxPreset, options: SfxOptions = {}): AudioPlayback | null {
+    this.noteRequest(`sfx:${String(preset)}`);
     const audio = this.scene.getAudioService();
     if (!audio) {
       return null;

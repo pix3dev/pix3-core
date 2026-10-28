@@ -264,7 +264,7 @@ freezes a tween in flight; all tweens are dropped when the scene stops or change
 ### Audio (buses, snapshots, one-shots)
 
 3-bus mixer (`master`/`music`/`sfx`) with named snapshots + auto-muffle under
-slow-mo. **Use from scripts:** `scene.audio.play('res://sfx/hit.ogg', { bus:'sfx', pitchVariation:0.1, volumeVariation:0.1 })`, `setBusVolume`, `applySnapshot`/`resetSnapshot`, `registerSnapshot`. **In the scene:** `AudioPlayer` node or `core:PlaySound` behavior (both take `bus`/`pitchVariation`/`volumeVariation`). node-types-reference "Buses, snapshots & scene.audio".
+slow-mo. **Use from scripts:** `scene.audio.play('res://sfx/hit.ogg', { bus:'sfx', pitchVariation:0.1, volumeVariation:0.1 })`, `setBusVolume`, `applySnapshot`/`resetSnapshot`, `registerSnapshot`. **In the scene:** `AudioPlayer` node or `core:PlaySound` behavior (both take `bus`/`pitchVariation`/`volumeVariation`). node-types-reference "Buses, snapshots & scene.audio". **What was asked:** `scene.audio.requested()` → `{ total, last: [{ sound, frame }] }` journals every request — `play` paths, `sfx:<preset>`, `AudioPlayer` and `core:PlaySound` tracks — with the runner frame, whether or not anything was audible (the last 64; `AudioApi.noteRequest`). `pix3 play` and `pix3_game_run` report it as `sounds`, the only way a headless run can say a match clicked (core-tests/game17).
 
 ### Procedural SFX (no assets)
 
@@ -705,7 +705,7 @@ Inside any `Script` subclass:
 - `this.scene.random` — the run's seeded random stream (`SeededRandom`, sfc32: `next()`, `int(min, max)`, `range`, `pick`, `shuffle`, `fork(name)`); seeded per run by `SceneRunner.setRunOverrides({seed})`, else from a random seed. Game logic draws from it so a seeded test run replays; `Math.random` is never patched.
 - `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getNodesInGroup(group)` / `callGroup(group, method, ...args)` for node groups (spec §6.19), `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, `commands` for named game intents, and `getAutoload(nameOrClass)` for the project's autoload singletons, §6.17 of the spec). May be `undefined` in some editor previews — guard it.
 - `this.input` — the `InputService` (§4 Input).
-- `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`).
+- `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`). The authored id of a prefab / overlay instance (`- id: result, instance: …`) also finds that instance's root (`metadata.__pix3Prefab`); a query that finds nothing in a loaded scene warns once per query. Engine resolvers (juice, tween, cutscene targets) use the quiet `scene.lookupNode` (internal). `scene.frame` is the runner's frame number.
 - `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`); `getNode<T>(query)` types the result.
 
 **Lifecycle:** `onAttach(node)` → `onStart()` (first frame) → `onUpdate(dt)` (every

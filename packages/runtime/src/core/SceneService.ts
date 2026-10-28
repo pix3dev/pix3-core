@@ -348,6 +348,11 @@ export class SceneService {
     this.tweenApi?.cancelAll();
   }
 
+  /** The runner's current frame (0 without a running scene). */
+  get frame(): number {
+    return this.delegate?.getFrameNumber?.() ?? 0;
+  }
+
   /**
    * Audio mixer facade — buses (`master`/`music`/`sfx`), snapshots, and
    * one-shot playback by path. Example: `this.scene.audio.play('res://sfx/hit.ogg',
@@ -809,7 +814,60 @@ export class SceneService {
     if (query.includes('/')) {
       return this.findNodeByPath(query);
     }
-    return this.findNodeById(query) ?? this.findNodeByName(query);
+    const found = this.lookupNode(query);
+    // Said once per query: a null from a typo or a renamed id otherwise surfaces three systems
+    // later as "the menu never hid" (core-tests/game17). smoke reports it as W_SMOKE_CONSOLE_WARN.
+    if (!found && this.getRootNodes().length > 0 && !this.missedQueries.has(query)) {
+      this.missedQueries.add(query);
+      console.warn(
+        `[pix3] scene.findNode("${query}") found no node (no id, name or prefab root id).`
+      );
+    }
+    return found;
+  }
+
+  private readonly missedQueries = new Set<string>();
+
+  /**
+   * {@link findNode} without its warning — for the engine's own resolvers (juice, tweens,
+   * cutscenes), which say what they could not reach in their own words.
+   * @internal
+   */
+  lookupNode(query: string): NodeBase | null {
+    if (query.includes('/')) {
+      return this.findNodeByPath(query);
+    }
+    return (
+      this.findNodeById(query) ??
+      this.findNodeByName(query) ??
+      this.findPrefabRootByAuthoredId(query)
+    );
+  }
+
+  /**
+   * An instanced prefab's root takes the INSTANCE's id (`menu-overlay`), so the id written in the
+   * prefab file (`menu-layer`) found nothing — a script holding the prefab's own id got null and a
+   * menu never hid, with no word from check, smoke or play (core-tests/game17). The first instance
+   * root whose prefab root carried `id`, in tree order.
+   */
+  private findPrefabRootByAuthoredId(id: string): NodeBase | null {
+    let found: NodeBase | null = null;
+    const visit = (node: NodeBase): void => {
+      if (found) return;
+      const marker = (
+        node.metadata as { __pix3Prefab?: { localId?: unknown; instanceRootId?: unknown } }
+      ).__pix3Prefab;
+      if (marker && marker.instanceRootId === node.nodeId && marker.localId === id) {
+        found = node;
+        return;
+      }
+      for (const child of node.children) if (child instanceof NodeBase) visit(child);
+    };
+    for (const root of this.getRootNodes()) {
+      if (root instanceof NodeBase) visit(root);
+      if (found) break;
+    }
+    return found;
   }
 
   // ── Groups (spec §6.19) ───────────────────────────────────────────────────

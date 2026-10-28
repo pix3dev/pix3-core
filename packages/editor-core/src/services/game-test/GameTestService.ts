@@ -91,6 +91,7 @@ import {
   PhysicalAxisDriver,
   projectToCanvasFraction,
   botPointInNode,
+  hiddenReason,
   raycastBotNodes,
   shortSwipeNote,
   type BotSceneHandle,
@@ -362,6 +363,12 @@ export interface GameRunResult {
   bot?: BotReport;
   /** Whether the negative control proved the binding — three-valued (§5.4.4). */
   control?: NegativeControlReport;
+  /**
+   * The sounds the game asked to play during the run (`scene.audio.play` paths, `sfx:<preset>`),
+   * whether or not anything was audible; `frame` counts from the run's first frame, like the
+   * timeline. Absent when nothing was asked (core-tests/game17).
+   */
+  sounds?: { requested: number; last: Array<{ sound: string; frame: number }> };
 }
 
 /**
@@ -543,6 +550,8 @@ export interface GameRunLoopDeps {
    * without it skips the settle and the report says so.
    */
   sleep?: (ms: number) => Promise<void>;
+  /** Called once, after the settle and before the run's first frame. */
+  onLoopStart?: () => void;
   /**
    * Called immediately before `stepFrames(1)` executes `frame`, i.e. in the gap
    * between two ticks. This is the seam the negative control's gesture is fed
@@ -694,7 +703,16 @@ export class GameTestService {
     // watch recorder uses. That is what makes one session work under manual stepping
     // and in realtime alike, and it is why the subscription is owned here (for the
     // length of the call) rather than by the loop.
-    const detachBot = bot ? runtime.runner.subscribeFrameStats(() => bot?.tick()) : null;
+    // Armed when the run's first frame comes, not during `settleMs`: a policy that ticked through
+    // the settle counted frames the run never had, and its frame numbers and the timeline's
+    // disagreed (core-tests/game15, game17).
+    let botArmed = false;
+    let audioAtStart: AudioJournal | null = null;
+    const detachBot = bot
+      ? runtime.runner.subscribeFrameStats(() => {
+          if (botArmed) bot?.tick();
+        })
+      : null;
     let main: GameRunResult;
     try {
       main = await this.runSession(runtime.runner, deps =>
@@ -704,6 +722,10 @@ export class GameTestService {
             signal,
             onBaseline: baseline => {
               mainBaseline = baseline;
+            },
+            onLoopStart: () => {
+              botArmed = true;
+              audioAtStart = audioJournalOf(runtime.runner);
             },
             ...(normalized.monkey ? { monkey: this.buildMonkeyWorld(runtime) } : {}),
             ...(bot ? { bot } : {}),
@@ -719,6 +741,8 @@ export class GameTestService {
       // controls, and each press happens inside the frame loop the run is judged by.
       if (bot) await this.gameInput.flushReachJournal();
     }
+    const sounds = soundsDuring(audioAtStart, audioJournalOf(runtime.runner));
+    if (sounds) main.sounds = sounds;
     const result = await this.judgeWithNegativeControl(main, normalized, mainBaseline);
     // A budget over the cap is clamped, not refused: say so, or a long run reads as a game that
     // stopped early (a 20-move bot round needed four runs and no one said why).
@@ -1017,9 +1041,8 @@ export class GameTestService {
         if (!node) {
           return `no live node named or with id "${target}" in the running scene.`;
         }
-        if (!node.visible) {
-          return `"${target}" has visible:false, so it is not on screen and cannot be tapped. Show it first (or fix whatever should have).`;
-        }
+        const hidden = hiddenReason(node, target);
+        if (hidden) return hidden;
         if (channel === 'direct-action') {
           const owner = findInteractionOwner(node, 'click');
           if (!owner) {
@@ -1273,6 +1296,38 @@ export class GameTestService {
       sleep: keepaliveSleep,
     };
   }
+}
+
+interface AudioJournal {
+  total: number;
+  frame: number;
+  last: ReadonlyArray<{ sound: string; frame: number }>;
+}
+
+/** The running scene's sound requests, through a live root like {@link findCommandRegistry}. */
+function audioJournalOf(runner: SceneRunner): AudioJournal | null {
+  for (const root of runner.getLiveRootNodes()) {
+    const scene = root.scene;
+    if (scene) return { ...scene.audio.requested(), frame: scene.frame };
+  }
+  return null;
+}
+
+/** @internal What was asked between two journal reads, framed from the run's first frame. */
+export function soundsDuring(
+  start: AudioJournal | null,
+  end: AudioJournal | null
+): GameRunResult['sounds'] | null {
+  if (!end) return null;
+  const requested = end.total - (start?.total ?? 0);
+  if (requested <= 0) return null;
+  const from = start?.frame ?? 0;
+  return {
+    requested,
+    last: end.last
+      .slice(-requested)
+      .map(entry => ({ sound: entry.sound, frame: entry.frame - from })),
+  };
 }
 
 /**
@@ -1903,6 +1958,7 @@ export async function runGameTestLoop(
       notes.push(`settleMs ${spec.settleMs} was ignored: this runtime cannot wait in real time.`);
     }
   }
+  deps.onLoopStart?.();
   const startedAt = deps.now();
   const errorsBefore = deps.errorCount();
 

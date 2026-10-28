@@ -495,7 +495,7 @@ export class CutsceneApi {
     this.active?.stop();
     this.active = null;
 
-    const node = this.scene.findNode(id);
+    const node = this.scene.lookupNode(id);
     const player = node ? findPlayerOn(node) : null;
     const hostNode = player?.node ?? null;
     if (!node || !player || !hostNode) {
