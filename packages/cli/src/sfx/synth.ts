@@ -56,6 +56,7 @@ export const SFX_PRESET_NAMES = [
   'chime',
   'win',
   'lose',
+  'deny',
 ] as const;
 export type SfxPresetName = (typeof SFX_PRESET_NAMES)[number];
 
@@ -226,7 +227,7 @@ export const SFX_PRESETS: Readonly<Record<SfxPresetName, SfxParams>> = {
     lowpassHz: 5000,
     volume: 0.6,
   },
-  // Falling, wobbling triangle: out of moves, game over, a wrong move.
+  // Falling, wobbling triangle: out of moves, game over.
   lose: {
     ...BASE,
     wave: 'triangle',
@@ -241,6 +242,25 @@ export const SFX_PRESETS: Readonly<Record<SfxPresetName, SfxParams>> = {
     sustain: 0.25,
     release: 0.25,
     volume: 0.7,
+  },
+  // Short low two-tone buzz, the second note lower: a wrong move, a refused swap, a locked
+  // button — the "no" every puzzle needs (core-tests/game18 had only `hit` for it).
+  deny: {
+    ...BASE,
+    wave: 'square',
+    freq: 233,
+    freqEnd: 233,
+    arpAt: 0.08,
+    arpMul: 0.75,
+    duty: 0.5,
+    attack: 0.002,
+    decay: 0.03,
+    sustainLevel: 0.75,
+    sustain: 0.1,
+    release: 0.05,
+    lowpassHz: 1800,
+    lowpassQ: 1.1,
+    volume: 0.6,
   },
 };
 
@@ -266,7 +286,21 @@ const KEYWORDS: Readonly<Record<SfxPresetName, readonly string[]>> = {
   whoosh: ['whoosh', 'woosh', 'swoosh', 'swish', 'swipe', 'swap', 'slide', 'dash', 'wind'],
   chime: ['chime', 'bell', 'sparkle', 'twinkle', 'match', 'crystal', 'glass'],
   win: ['win', 'victory', 'success', 'fanfare', 'complete', 'cleared', 'triumph'],
-  lose: ['lose', 'loss', 'fail', 'game over', 'defeat', 'wrong', 'invalid', 'error', 'denied'],
+  lose: ['lose', 'loss', 'fail', 'game over', 'defeat'],
+  deny: [
+    'deny',
+    'denied',
+    'wrong',
+    'invalid',
+    'error',
+    'buzz',
+    'buzzer',
+    'nope',
+    'reject',
+    'refuse',
+    'forbidden',
+    'locked',
+  ],
 };
 
 export interface SfxResolution {

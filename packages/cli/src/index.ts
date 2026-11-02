@@ -159,6 +159,8 @@ const dispatch = async (
       return (await import('./gap/command.ts')).runGapCli(argv, io);
     case 'font': // copies a bundled face into fonts/, edits pix3project.yaml
       return (await import('./font/command.ts')).runFontCli(argv, io);
+    case 'grid': // plain YAML: rows × cols prefab instances written into a scene
+      return (await import('./grid/command.ts')).runGridCli(argv, io);
     case 'sfx': // offline synth, no dependencies
       return (await import('./sfx/command.ts')).runSfx(argv, io);
   }

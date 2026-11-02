@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runPlayCli } from './command.ts';
+import { runPlayCli, safeAreaOverlayScript } from './command.ts';
 
 /**
  * `pix3 play`'s refusals, which happen before a browser starts. The run itself (a private headless
@@ -69,5 +69,23 @@ describe('pix3 play', () => {
     const policy = await run(['dist', '--bot', 'missing']);
     expect(policy.code).toBe(2);
     expect(policy.err).toContain(join('design', 'tests', 'bots', 'missing.ts'));
+  });
+
+  it('shades the unsafe bands for a picture and takes them off again (core-tests/game18)', async () => {
+    const { Window } = await import('happy-dom');
+    const window = new Window();
+    const evaluate = (script: string): unknown =>
+      new window.Function('document', `return ${script}`)(window.document);
+    const insets = { top: 47, right: 0, bottom: 34, left: 0 };
+    expect(evaluate(safeAreaOverlayScript(insets, true))).toBe(true);
+    const host = window.document.getElementById('__pix3_safe_area__') as unknown as HTMLElement;
+    expect(host.style.pointerEvents).toBe('none');
+    const bands = [...host.children].map(band => (band as HTMLElement).style);
+    expect(bands.map(band => band.height)).toEqual(['47px', '34px']);
+    expect(bands[0].top).toBe('0px');
+    expect(bands[1].bottom).toBe('0px');
+    evaluate(safeAreaOverlayScript(insets, false));
+    expect(window.document.getElementById('__pix3_safe_area__')).toBeNull();
+    await window.happyDOM.close();
   });
 });

@@ -72,6 +72,8 @@ export interface PlayStatus {
   startedAt: number | null;
   /** The Game tab's aspect preset (`free` fills the panel). */
   aspect: PlayAspect;
+  /** Set while paused on a `pix3_game_run` outcome frame (not a pause someone asked for). */
+  pausedBy?: 'pix3_game_run';
 }
 
 /** `window.__PIX3_DEBUG__`: the tool table, `call`, and short forms over the same calls. */
@@ -352,6 +354,9 @@ const playStatus = (): PlayStatus => ({
   playOwner: appState.ui.playOwner,
   startedAt: appState.ui.playStartedAt,
   aspect: ASPECT_NAMES[appState.ui.gameAspectRatio],
+  ...(appState.ui.playModeStatus === 'paused' && service(GamePlaySessionService).pauseHeldByGameRun
+    ? { pausedBy: 'pix3_game_run' as const }
+    : {}),
 });
 
 /** Why `run` is not `{seed?: integer, config?: {nodeId: {componentId: {…}}}}`, or null. */

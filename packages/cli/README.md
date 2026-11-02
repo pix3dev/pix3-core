@@ -200,9 +200,10 @@ pix3 sfx "short high coin pickup" --out audio/pickup.wav --seed 7
 pix3 sfx explosion --json                       # { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
 ```
 
-Presets: `coin`, `jump`, `hit`, `explosion`, `powerup`, `click`, `whoosh`, `chime`, `win`, `lose`.
+Presets: `coin`, `jump`, `hit`, `explosion`, `powerup`, `click`, `whoosh`, `chime`, `win`, `lose`,
+`deny` (a short low two-tone buzz: a wrong move, a refused swap — not `lose`, the end of a round).
 Free text picks a preset named in it, else the one whose keyword appears first (`boom`, `pickup`,
-`button`, `hurt`, `swap`, `bell`, `victory`, `game over`, …), and applies modifier words
+`button`, `hurt`, `swap`, `bell`, `victory`, `game over`, `wrong`, `error`, `buzz`, …), and applies modifier words
 (`high`/`low` pitch ×1.4/×0.7, `short`/`long` time ×0.65/×1.6 — never below 60 ms, `soft`). `--seed <n>` renders a
 deterministic variation (pitch ±15 %, times ±20 %, duty/vibrato/cutoff nudged); without it the
 preset as tuned. Output is 16-bit mono PCM WAV at 22.05 kHz (`--rate 44100` for the top octave; half the bytes a single-file build embeds as base64) — `AssetLoader.loadAudio` decodes it with
@@ -414,6 +415,31 @@ the file) prints its file position as before.
 `pix3 tree` with no scene is the project overview: manifest facts, the `user:` scripts, and every
 scene/prefab/overlay with its node count, node types, components and instances (entry scene
 marked `*`). Exit 0, 1 when a scene does not parse, 2 for bad arguments or a missing file.
+
+## `pix3 grid` — a board's cells written into a scene
+
+```bash
+npx pix3 grid scenes/main.pix3scene --parent cells --prefab res://scenes/prefabs/cell.pix3scene \
+  --rows 8 --cols 8 --checker '{"texture":{"type":"texture","url":"res://sprites/cell-b.svg"}}'
+npx pix3 grid scenes/main.pix3scene --parent cells --prefab res://scenes/prefabs/cell.pix3scene \
+  --rows 7 --cols 7 --step 140 --replace     # rewrite the cells an earlier run wrote
+```
+
+Writes rows × cols instances of one prefab as children of `--parent`, once: one `instance:` entry
+per cell with `transform: { position: [x, y] }` and its overrides — the YAML core-tests/game18
+typed 64 times, byte for byte. The grid is centred on the parent's origin, row 0 on top (Y up), the
+step between centres is the prefab root's `width` × `height` unless `--step W[xH]` says otherwise.
+Ids and names come from `--id` / `--name` patterns with `{row}` `{col}` `{i}` (default
+`<prefab root id>-{row}-{col}`, `<prefab root name> {row}-{col}`); `--props '<json>'` overrides every
+cell (the same placeholders fill its strings), `--checker '<json>'` the cells where row + col is odd.
+The cells are **spliced** into the file's text — the parent's block `children:` gains them, an
+empty `children: []` or a missing one becomes a block — so every other byte (comments, quotes,
+`[0, 700]` spacing) stays as written. Refused, with nothing written: cells of the same pattern
+already under the parent (an earlier run: `--replace` rewrites them where they were, keeping the
+parent's other children), an id another node of the scene has, a parent that is a prefab
+instance, more than 1024 cells (spawn those from a script). `--dry-run` prints the result,
+`--json` the summary. It is a one-off write, not a node: nothing repeats at run time, and the
+editor, `pix3 tree` and `pix3 validate` see ordinary instances. Code: `src/grid/`.
 
 ## `pix3 kit` — the agent kit
 
@@ -654,7 +680,11 @@ frame of `done()` (what `--screenshot` then shows). `bot.screenshot(name)` pause
 policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next picture) captures
 `<name>.png` into `--shots <dir>` and resumes it. `--bot-args '<json>'` is the policy's `bot.args`.
 `--safe-area T,R,B,L` emulates the page's `env(safe-area-inset-*)` (CSS px) through
-`Emulation.setSafeAreaInsetsOverride`, dev or `dist`, for `layout.safeArea` nodes.
+`Emulation.setSafeAreaInsetsOverride`, dev or `dist`, for `layout.safeArea` nodes. With it, every
+picture (`--screenshot`, `bot.screenshot`) shades the unsafe bands in translucent magenta with a
+dashed edge — fixed, pointer-transparent divs added to the page for the capture and removed right
+after, so the game never sees them — which makes "nothing under the notch" a thing to look at
+(core-tests/game18 worked it out by arithmetic); `--no-safe-area-overlay` takes them off.
 `--seed N` / `--config '<json>'` are injected before the page loads
 (`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
 player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
@@ -685,7 +715,10 @@ on `{ok:false}`, 2 when there is no editor to reach. `screenshot` brings the sur
 first, through `pix3_play`'s `aspect`); `tap` / `swipe` dispatch real mouse or
 `--touch` events (`Input.dispatchMouseEvent` / `dispatchTouchEvent`) at page CSS px or at a node's
 `pix3_scene` `screen` (during play, the running node on the Game tab — a node a script spawned
-included, by id or name). The token is never printed.
+included, by id or name). Before either, a pause `pix3_game_run` left on its outcome frame
+(`pix3_play status` → `pausedBy: "pix3_game_run"`) is resumed and said on stderr — game18 spent a swipe
+on a frozen game; a pause someone asked for (the Pause button, `pix3_play pause`) is only warned
+about. The token is never printed.
 Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine

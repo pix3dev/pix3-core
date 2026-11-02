@@ -213,6 +213,9 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   script throw, `console.error` or unhandled rejection. Name the game scene.
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
+- `pix3 grid <scene> --parent <id> --prefab <res://…> --rows R --cols C [--step W[xH]]
+  [--checker '<json>'] [--replace]` — write a board's backing cells (rows × cols prefab instances,
+  centred on the parent, row 0 on top) into the scene once, as plain YAML; never type them by hand.
 - `pix3 font add <family>` — copy a bundled display font (Nunito, Rubik — both with Cyrillic —
   Baloo 2, Fredoka, Lilita One, Luckiest Guy; `pix3 font` lists them) into `fonts/` and register
   it in `pix3project.yaml`. Text without one renders in each machine's own system face.

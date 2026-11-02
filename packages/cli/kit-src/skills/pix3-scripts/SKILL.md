@@ -182,7 +182,10 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   **What the designer sees:** a board a script spawns is empty in the editor's viewport outside
   Play. Split a board in two: the **backing cells** (the tiles that never move) are authored in
   the scene — `instance:` of a cell prefab, 64 lines a `pix3 tree` reads at a glance — so the
-  designer sees and moves the grid; the **pieces** (gems that are matched, fall and refill) are
+  designer sees and moves the grid. Do not type them: `npx pix3 grid scenes/main.pix3scene
+  --parent cells --prefab res://scenes/prefabs/cell.pix3scene --rows 8 --cols 8 --checker
+  '{"texture":{"type":"texture","url":"res://sprites/cell-b.svg"}}'` writes `cell-0-0` … `cell-7-7`
+  (step = the prefab's size, or `--step`; row 0 on top; `--replace` rewrites them after a change); the **pieces** (gems that are matched, fall and refill) are
   spawned by the script into a separate `Group2D` above the cells (`clipChildren: true`), never
   into the cell nodes. The script reads the cells' positions (or the same `cell × size` formula)
   to place a piece, and taps land on the cell rect under it.
@@ -235,14 +238,15 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `fadeIn(node, sec)` and `crossFade(a, b, sec)` — no options; `fadeOut(node, sec, { hide: true })`;
   `killAll(target?)` — **without a target it kills every tween of the scene**, a result card's
   fade included; pass the board's node to reset only its own. Default `sec` = 0.3. Prefer these over hand-lerping.
-- Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick', { volume: 1, pitch: 1 })`;
+- Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick' | 'deny', { volume: 1, pitch: 1 })`
+  (`deny`: a short low two-tone buzz for a wrong move or a refused swap; `lose` ends a round);
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
   Every request (these two, `AudioPlayer`, `core:PlaySound`) is journaled even when nothing is
   audible: `scene.audio.requested()` → `{ total, last: [{ sound, frame }] }`, and a run reports it
   as `sounds` (`pix3 play`, `pix3_game_run`).
   Sound without the editor: `pix3 sfx coin` writes `audio/coin.wav` (presets `coin`, `jump`,
   `hit`, `explosion`, `powerup`, `click`, `whoosh` (a swap, a swipe), `chime` (a match), `win`,
-  `lose`, or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;
+  `lose`, `deny` (a wrong move), or words: `pix3 sfx "short high coin pickup" --out audio/pickup.wav`;
   `--seed <n>` for a variation) — offline, no key; `.wav` plays everywhere `.ogg`/`.mp3` do.
   Sound cannot be proven audible from the bridge: the browser only starts Web Audio after
   a real user gesture, and a synthetic click from chrome-devtools-mcp is not one. Report a sound as

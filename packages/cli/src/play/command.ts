@@ -25,6 +25,8 @@ interface PlayArgs {
   readonly bot?: string;
   /** Emulated `env(safe-area-inset-*)` in CSS px (a notch and a home indicator). */
   readonly safeArea: { top: number; right: number; bottom: number; left: number } | null;
+  /** Shade the unsafe bands on the pictures (default with --safe-area; --no-safe-area-overlay). */
+  readonly safeAreaOverlay: boolean;
   /** A test run's `{seed?, config?}` for the game (`?run=`, dev server only). */
   readonly run: { seed?: number; config?: Record<string, unknown> } | null;
   /** `bot.args` for the policy, as one JSON object. */
@@ -55,6 +57,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let botArgs: Record<string, unknown> = {};
   let seed: number | undefined;
   let safeArea: PlayArgs['safeArea'] = null;
+  let safeAreaOverlay = true;
   let config: Record<string, unknown> | undefined;
   let seconds: number | undefined;
   let frames: number | undefined;
@@ -84,7 +87,8 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
         };
       }
       safeArea = { top: parts[0], right: parts[1], bottom: parts[2], left: parts[3] };
-    } else if (flag === '--seed') {
+    } else if (flag === '--no-safe-area-overlay') safeAreaOverlay = false;
+    else if (flag === '--seed') {
       seed = Number(value());
       if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
     } else if (flag === '--config') {
@@ -142,6 +146,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     bot,
     botArgs,
     safeArea,
+    safeAreaOverlay,
     run:
       seed !== undefined || config !== undefined
         ? { ...(seed !== undefined ? { seed } : {}), ...(config ? { config } : {}) }
@@ -192,6 +197,30 @@ const resolveTarget = (
     error:
       'nothing to play: no dev server is running and there is no dist/index.html (`npm run build`)',
   };
+};
+
+/**
+ * The page's unsafe bands (`--safe-area`) shaded over everything, for one picture: a notch and a
+ * home indicator are nothing on a headless page, and core-tests/game18 checked by arithmetic that
+ * no HUD sat under them. Fixed divs above the canvas, gone again after the capture; they take no
+ * pointer events and the game never sees them.
+ */
+export const safeAreaOverlayScript = (
+  insets: NonNullable<PlayArgs['safeArea']>,
+  show: boolean
+): string => {
+  if (!show) return `document.getElementById('__pix3_safe_area__')?.remove(), true`;
+  const band = (side: string, size: number): string =>
+    size > 0
+      ? `<div style="position:fixed;${side}:0;${side === 'top' || side === 'bottom' ? `left:0;right:0;height:${size}px` : `top:0;bottom:0;width:${size}px`};background:rgba(255,0,170,0.35);border-${{ top: 'bottom', bottom: 'top', left: 'right', right: 'left' }[side]}:1px dashed rgba(255,0,170,0.9)"></div>`
+      : '';
+  const html = [
+    band('top', insets.top),
+    band('right', insets.right),
+    band('bottom', insets.bottom),
+    band('left', insets.left),
+  ].join('');
+  return `(() => { const host = document.createElement('div'); host.id = '__pix3_safe_area__'; host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647'; host.innerHTML = ${JSON.stringify(html)}; (document.body || document.documentElement).appendChild(host); return true; })()`;
 };
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -281,6 +310,19 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       }
     });
     await chrome.send('Runtime.enable', {}, session);
+    const overlay = args.safeArea && args.safeAreaOverlay ? args.safeArea : null;
+    /** One PNG of the page, the unsafe bands shaded on it when --safe-area is given. */
+    const capture = async (): Promise<Buffer> => {
+      if (overlay) await chrome.evaluate(session, safeAreaOverlayScript(overlay, true));
+      try {
+        const shot = (await chrome.send('Page.captureScreenshot', { format: 'png' }, session)) as {
+          data?: string;
+        };
+        return Buffer.from(shot.data ?? '', 'base64');
+      } finally {
+        if (overlay) await chrome.evaluate(session, safeAreaOverlayScript(overlay, false));
+      }
+    };
     await chrome.send(
       'Emulation.setDeviceMetricsOverride',
       { width: args.width, height: args.height, deviceScaleFactor: args.scale, mobile: true },
@@ -381,16 +423,10 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
           );
         }
         if (poll?.shot) {
-          const shot = (await chrome.send(
-            'Page.captureScreenshot',
-            { format: 'png' },
-            session
-          )) as {
-            data?: string;
-          };
+          const png = await capture();
           const path = join(shotDir, `${poll.shot.name}.png`);
           mkdirSync(shotDir, { recursive: true });
-          writeFileSync(path, Buffer.from(shot.data ?? '', 'base64'));
+          writeFileSync(path, png);
           shots.push({ name: poll.shot.name, frame: poll.shot.frame, path });
           await chrome.evaluate(session, 'window.__PIX3_PAGE_BOT__.resume()');
           continue;
@@ -443,12 +479,10 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
 
     let screenshotPath: string | undefined;
     if (args.screenshot) {
-      const shot = (await chrome.send('Page.captureScreenshot', { format: 'png' }, session)) as {
-        data?: string;
-      };
+      const png = await capture();
       screenshotPath = resolve(io.cwd, args.screenshot);
       mkdirSync(dirname(screenshotPath), { recursive: true });
-      writeFileSync(screenshotPath, Buffer.from(shot.data ?? '', 'base64'));
+      writeFileSync(screenshotPath, png);
     }
 
     const report: PlayReport = {

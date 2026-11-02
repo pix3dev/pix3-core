@@ -116,6 +116,12 @@ export class GamePlaySessionService {
    * milliseconds later while the report still claimed it was paused.
    */
   private hostPauseRequested = false;
+  /**
+   * The held pause is `pix3_game_run`'s outcome frame, not one a person or an agent asked for: the
+   * bridge's tap / swipe release only this one before they send input (core-tests/game18 swiped
+   * into a game the run had left frozen).
+   */
+  private pausedByGameRun = false;
   /** True between a failed launch and the next one, so its banner is not cleared by its own stop. */
   private startFailed = false;
   private syncPromise: Promise<void> = Promise.resolve();
@@ -400,8 +406,9 @@ export class GamePlaySessionService {
    * from — so a caller that pauses the game to inspect a frame keeps it paused
    * until it (or the user) asks for the opposite. Idempotent.
    */
-  setPauseRequested(paused: boolean): void {
+  setPauseRequested(paused: boolean, by?: 'pix3_game_run'): void {
     this.hostPauseRequested = paused;
+    this.pausedByGameRun = paused && by === 'pix3_game_run';
     this.handleFocusPause();
     // Fire-and-forget: `playModeStatus` is UI-only and the operation carries no undo entry, while
     // every caller of this method (the agent's `game_time`, `game_run`'s outcome pause, the input
@@ -421,6 +428,7 @@ export class GamePlaySessionService {
       return;
     }
     this.hostPauseRequested = paused;
+    this.pausedByGameRun = false;
     this.handleFocusPause();
     await this.syncPauseStatus();
   }
@@ -442,6 +450,11 @@ export class GamePlaySessionService {
   /** True while a host-requested pause is being held. */
   get pauseRequested(): boolean {
     return this.hostPauseRequested;
+  }
+
+  /** True while the held pause is the one `pix3_game_run` left on its outcome frame. */
+  get pauseHeldByGameRun(): boolean {
+    return this.hostPauseRequested && this.pausedByGameRun;
   }
 
   /** True when a scene is loaded and its runner is currently halted. */
@@ -698,6 +711,7 @@ export class GamePlaySessionService {
     // restart or a host swap must not hand the next scene a game that starts
     // frozen for a reason nothing on screen explains.
     this.hostPauseRequested = false;
+    this.pausedByGameRun = false;
     // Keep atlasing strictly play-mode-scoped: edit-mode texture loads on the
     // shared AssetLoader must always get raw standalone textures.
     this.assetLoader.setAtlasResolver(null);

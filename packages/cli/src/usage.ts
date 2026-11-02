@@ -40,6 +40,10 @@ Usage:
   pix3 tree [scene] [--json]       One line per node (type#id, pos, size, layout, components,
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
         [--props] [--project <dir>]
+  pix3 grid <scene> --parent <id>  Write rows × cols instances of a prefab under a node, once
+        --prefab <res://…>         (a board's cells, a level page): plain YAML, centred on the
+        --rows R --cols C          parent, row 0 on top; --checker for alternate cells,
+        [--step W[xH]] [--replace] --replace rewrites an earlier run's cells
   pix3 kit [--update]              Install (or update) the agent kit: AGENTS.md, CLAUDE.md,
         [--migrate]                .claude/skills/pix3-*, script types; --migrate: a 1.x kit
         [--project <dir>]          → 2.x (drops the pix3 mcp server, retired files, pix3Hybrid)
@@ -47,8 +51,8 @@ Usage:
         [--dry-run] [--force]      <variant>.<state> clips + a prefab with
         [--json] [--project <dir>] core:CharacterVisual2D (refuses to overwrite)
   pix3 sfx <preset|"text">         Synthesize a sound effect offline into a WAV (coin, jump,
-        [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose;
-                                   or "big explosion")
+        [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose,
+                                   deny; or "big explosion")
         [--seed <n>] [--json]
   pix3 font [add <family>]         List the fonts this CLI ships (Nunito, Rubik, Baloo 2, …);
         [--project <dir>] [--json] add copies one into fonts/ and registers it in pix3project.yaml
@@ -186,6 +190,36 @@ export const COMMAND_USAGE = {
   --json         the same as nested JSON
   --project dir  project folder (default: nearest folder with pix3project.yaml, else cwd)
 `,
+  grid: `Usage: pix3 grid <scene> --parent <node id> --prefab <res://…> --rows R --cols C
+                 [--step W[xH]] [--id <pattern>] [--name <pattern>] [--props '<json>']
+                 [--checker '<json>'] [--replace] [--dry-run] [--json] [--project <dir>]
+
+  Writes rows × cols instances of one prefab as children of a node of the scene, once — a board's
+  backing cells, a level-select page — instead of typing 64 near-identical YAML blocks. The result
+  is ordinary YAML (one instance: entry per cell with its position and overrides): the editor
+  shows it, pix3 tree lists it, you edit it like any node. Nothing repeats at run time; pieces a
+  script moves are still spawned by the script.
+
+  scene          the .pix3scene to write into (res://, project-relative or a path)
+  --parent id    the node the cells go under (a Group2D of this scene, not a prefab instance)
+  --prefab res   the prefab every cell instances (res://scenes/prefabs/cell.pix3scene)
+  --rows --cols  how many (or --size CxR); at most 1024 cells
+  --step W[xH]   distance between cell centres in the parent's units (default: the prefab root's
+                 width x height). The grid is centred on the parent's origin, row 0 at the top
+                 (Y up), col 0 on the left: an 8x8 of 124 puts cell-0-0 at (-434, 434)
+  --id pattern   cell ids, with {row} {col} {i} (default <prefab root id>-{row}-{col}: cell-3-5)
+  --name pattern cell names (default "<prefab root name> {row}-{col}")
+  --props json   property overrides for every cell; {row} {col} {i} fill in its strings
+  --checker json overrides for the cells where row + col is odd, over --props (a two-tone board:
+                 --checker '{"texture":{"type":"texture","url":"res://sprites/cell-b.svg"}}')
+  --replace      the parent already holds cells of this --id pattern (an earlier run): rewrite
+                 them in place; without it the command refuses and writes nothing
+  --dry-run      print the scene as it would be written, write nothing
+  --json         {scene, parent, prefab, rows, cols, step, first, last, written, replaced}
+  --project dir  project folder (default: nearest folder with pix3project.yaml, else cwd)
+
+  Comments and the rest of the file stay as written. Then: pix3 tree <scene> --depth 4, pix3 check.
+`,
   kit: `Usage: pix3 kit [--update] [--migrate] [--project <dir>]
 
   Install the agent kit into a project: AGENTS.md, CLAUDE.md, .claude/skills/pix3-*, the script
@@ -258,8 +292,8 @@ Reference it from a scene or script as res://<path inside the project>.
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
-                 [--seconds S] [--safe-area T,R,B,L] [--screenshot <file.png>]
-                 [--shots <dir>] [--json]
+                 [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay]
+                 [--screenshot <file.png>] [--shots <dir>] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -272,7 +306,10 @@ Reference it from a scene or script as res://<path inside the project>.
   --size WxH     the viewport in CSS px (default 390x844, a phone); --scale the device pixel ratio
                  (default 3, 2 with --bot: every frame is painted, and DPR 3 is a slow round)
   --safe-area    emulate a notch and a home indicator: top,right,bottom,left CSS px (an iPhone 14:
-                 47,0,34,0) — the page's env(safe-area-inset-*), what layout.safeArea nodes avoid
+                 47,0,34,0) — the page's env(safe-area-inset-*), what layout.safeArea nodes avoid.
+                 Every picture shades those bands in translucent magenta with a dashed edge, so a
+                 screenshot shows what would sit under the notch or the home indicator;
+                 --no-safe-area-overlay takes the shading off (the page itself never has it)
   --scene path   boot another scene (dev server only)
   --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —

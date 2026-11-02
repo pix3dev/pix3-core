@@ -532,7 +532,8 @@ describe('runGameTestLoop — time-mode discipline', () => {
     const setHostPaused = vi.fn();
     await runGameTestLoop(makeDeps(runner, { setHostPaused }), makeSpec());
 
-    expect(setHostPaused).toHaveBeenLastCalledWith(true);
+    // Marked as the run's own pause, which the bridge's tap / swipe may lift (core-tests/game18).
+    expect(setHostPaused).toHaveBeenLastCalledWith(true, 'pix3_game_run');
   });
 
   it('releases a host-held pause before stepping, so the run is not stepped into a frozen game', async () => {
@@ -760,6 +761,10 @@ describe('GameTestService.run — the pause survives the focus rule', () => {
       expect(runner.paused).toBe(true);
       expect(session.pauseRequested).toBe(true);
       expect(result.time?.leftPaused).toBe(true);
+      // The pause is the run's; one asked for afterwards is not (core-tests/game18).
+      expect(session.pauseHeldByGameRun).toBe(true);
+      session.setPauseRequested(true);
+      expect(session.pauseHeldByGameRun).toBe(false);
     } finally {
       appState.ui.isPlaying = false;
     }

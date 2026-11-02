@@ -99,17 +99,26 @@ const screenOfNode = async (
 const ASPECT_SETTLE_MS = 250;
 
 /**
- * A tap or swipe into a paused game reaches a frozen frame — `pix3_game_run` leaves play paused on
- * its outcome — and nothing answers it until play resumes (core-tests/game8). Said, not fixed: the
- * pause may be the point (a screenshot of the judged frame).
+ * A tap or swipe into a paused game reaches a frozen frame, and nothing answers it until play
+ * resumes (core-tests/game8). The pause `pix3_game_run` leaves on its outcome frame is lifted here,
+ * before the input, and said so — game18 spent a swipe on it and read the warning after the fact.
+ * A pause someone asked for (the Pause button, `pix3_play pause`) stays: it is said, not undone.
  */
-const warnIfPaused = async (page: CdpPage, io: CliIo, command: string): Promise<void> => {
+const releaseRunPause = async (page: CdpPage, io: CliIo, command: string): Promise<void> => {
   const play = await callTool(page, 'pix3_play', { action: 'status' });
-  if (play.ok !== false && play.status === 'paused') {
+  if (play.ok === false || play.status !== 'paused') return;
+  if (play.pausedBy === 'pix3_game_run') {
+    const resumed = await callTool(page, 'pix3_play', { action: 'resume' });
     io.stderr(
-      `pix3 bridge ${command}: the game is paused (pix3_game_run leaves it paused on its outcome frame), so nothing reacts until it resumes: pix3 bridge play '{"action":"resume"}'.\n`
+      resumed.ok === false
+        ? `pix3 bridge ${command}: the game is paused on a pix3_game_run outcome frame and would not resume (${String(resumed.detail ?? resumed.reason)}), so nothing reacts to this input.\n`
+        : `pix3 bridge ${command}: resumed the game pix3_game_run had left paused on its outcome frame.\n`
     );
+    return;
   }
+  io.stderr(
+    `pix3 bridge ${command}: the game is paused (someone pressed Pause, or pix3_play pause), so nothing reacts until it resumes: pix3 bridge play '{"action":"resume"}'.\n`
+  );
 };
 
 const numbers = (values: readonly string[]): number[] | null => {
@@ -195,7 +204,7 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
         return 2;
       }
       const [x, y] = Array.isArray(point) ? point : [point.x, point.y];
-      await warnIfPaused(page, io, 'tap');
+      await releaseRunPause(page, io, 'tap');
       await tapAt(page, x, y, { touch });
       io.stdout(`tapped (${Math.round(x)}, ${Math.round(y)})${touch ? ' with a touch' : ''}\n`);
       return 0;
@@ -225,7 +234,7 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
         from = { x: values[0], y: values[1] };
         to = { x: values[2], y: values[3] };
       }
-      await warnIfPaused(page, io, 'swipe');
+      await releaseRunPause(page, io, 'swipe');
       const ms = Number(str(parsed, 'ms') ?? 180);
       await swipeBetween(page, from, to, { touch, durationMs: Number.isFinite(ms) ? ms : 180 });
       io.stdout(

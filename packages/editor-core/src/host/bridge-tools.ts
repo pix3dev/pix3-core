@@ -98,7 +98,8 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
       '`stop`, `restart` (stop → apply deferred file changes → start; a plain start when nothing ' +
       'plays) and `pause` work on any ' +
       'session an agent started; a session the designer started from the UI is refused with ' +
-      'reason not_owner, even with `force`. `status` returns playOwner and startedAt. `aspect` ' +
+      'reason not_owner, even with `force`. `status` returns playOwner and startedAt, and ' +
+      '`pausedBy: "pix3_game_run"` while paused on a pix3_game_run outcome frame. `aspect` ' +
       'sets the Game tab’s frame with any action ("9:16" for a phone, "free" fills the panel; ' +
       'exact phone sizes: `pix3 play --size`).',
     inputSchema: {

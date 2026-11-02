@@ -1316,7 +1316,8 @@ axis measures its margins from the safe edges, an unanchored node is shifted to 
 the change of that offset (so a script's or a shake's own displacement of it stays). Deeper nodes ignore the flag; nodes without it — the background — keep the whole screen.
 No insets (the editor, a desktop, `pix3 smoke`) is exactly the layout without the flag, and a file
 without the key loads as before (core-tests/game10). `pix3 play --safe-area 47,0,34,0` emulates a
-notch through `Emulation.setSafeAreaInsetsOverride`. The 2D starter carries the shape every game
+notch through `Emulation.setSafeAreaInsetsOverride` and shades the unsafe bands on its screenshots
+(`--no-safe-area-overlay` for a clean picture). The 2D starter carries the shape every game
 needs: `game-root` stretched over the screen with the background, and **`design-area`** — an
 unanchored `Group2D` of the design size, `safeArea: true` — which holds the HUD and the game, so
 on a tall phone they stay together in the middle instead of the HUD drifting to the top edge.

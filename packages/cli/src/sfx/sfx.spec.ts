@@ -174,6 +174,9 @@ describe('pix3 sfx: the game-feel presets and the length floor', () => {
     expect(resolveSfx('gem pop chime')?.preset).toBe('chime');
     expect(resolveSfx('level complete fanfare')?.preset).toBe('win');
     expect(resolveSfx('game over')?.preset).toBe('lose');
+    // A refused move is its own sound, not a softened hit (core-tests/game18).
+    expect(resolveSfx('wrong move buzz')?.preset).toBe('deny');
+    expect(resolveSfx('error')?.preset).toBe('deny');
   });
 
   it('"short" never shrinks a sound below 60 ms (or its own length when shorter)', () => {

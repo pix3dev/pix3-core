@@ -289,7 +289,9 @@ quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
 | `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) |
 | a drag | `npx pix3 bridge swipe --from <id> --to <id> [--touch] [--ms 180]` or four page CSS px |
 
-**`pix3_game_run` leaves the game paused on its outcome frame**: a `tap` / `swipe` after it reaches a
-frozen game and nothing reacts — `npx pix3 bridge play '{"action":"resume"}'` first (the CLI
-warns when it taps a paused game). The game's own page without the editor: `npx pix3 play`
+**`pix3_game_run` leaves the game paused on its outcome frame** (`pix3_play status` says
+`pausedBy: "pix3_game_run"`). `npx pix3 bridge tap` / `swipe` resume that pause before they send the input
+and say so on stderr, so the gesture lands in a running game. A pause someone asked for — the Pause
+button, `pix3_play pause` — stays: the CLI warns and the input reaches a frozen game, so
+`npx pix3 bridge play '{"action":"resume"}'` first. The game's own page without the editor: `npx pix3 play`
 (`pix3-verify`).

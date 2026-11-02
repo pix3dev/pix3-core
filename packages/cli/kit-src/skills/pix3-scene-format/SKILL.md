@@ -126,7 +126,8 @@ that must reach the real screen edge) stays on `game-root`. `design-area` has
 notch and the home indicator). `safeArea: true` works on a child of a full-screen root (a node
 anchored to the top with it measures `top` from below the notch); deeper it does nothing. A project
 without `design-area`: add one as the last child of the 2D root and move the HUD and the game into
-it. Check it with `npx pix3 play --size 390x844 --safe-area 47,0,34,0`.
+it. Check it with `npx pix3 play --size 390x844 --safe-area 47,0,34,0 --screenshot shot.png`: the
+notch and the home indicator are the magenta bands on the picture, and nothing may sit in them.
 
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
@@ -281,6 +282,23 @@ root:
 
 A root of the design size (no `layout`) dims only the design: on a phone taller than the design the
 top and bottom of the screen stay bright (core-tests/game16).
+
+**A celebration over the card** (the win confetti, a "+500" on the result): anchor the effect to a
+node of the card, never to a point of the game's world — an effect in world coordinates is a game
+effect and is drawn **under** the card (core-tests/game18's victory burst was invisible). A node
+of the card, or a point in one, puts it in the card's layer, above the dimmer, the card and its
+text:
+
+```ts
+// in the script that reveals the card
+result.visible = true;
+this.scene.juice.burst({ x: 0, y: 420, in: 'card' }, { count: 48, colors: ['#ffcf33', '#ff4d6d'] });
+this.scene.juice.burst('result-title', { count: 24 });          // or on a node of the card
+this.scene.juice.floatText('+500', { at: 'result-score', color: '#ffcf33' });
+```
+
+`{ x, y, in: 'card' }` is a point in the card's own space (its centre is 0, 0, Y up). A `flash` or a
+`shake('camera2d')` is a game effect: fire it before the card shows.
 
 Never put a full-screen dimmer/panel inline in `main.pix3scene`.
 

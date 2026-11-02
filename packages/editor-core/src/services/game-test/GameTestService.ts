@@ -569,7 +569,7 @@ export interface GameRunLoopDeps {
    * later. Optional: a runtime without a host pause owner falls back to
    * `runner.pause()`, and `leftPaused` reports whichever state actually held.
    */
-  setHostPaused?: (paused: boolean) => void;
+  setHostPaused?: (paused: boolean, by?: 'pix3_game_run') => void;
   /**
    * The action surface and the executor for a monkey run. Optional: a spec that
    * asks for a monkey against a runtime that cannot supply one is reported as
@@ -1287,7 +1287,7 @@ export class GameTestService {
         return registry ? { entries: registry.log, dropped: registry.droppedLogEntries } : null;
       },
       watchSignals: specs => new LiveSignalWatcher(() => runner.getLiveRootNodes(), specs),
-      setHostPaused: paused => this.playSession.setPauseRequested(paused),
+      setHostPaused: (paused, by) => this.playSession.setPauseRequested(paused, by),
       now: () => performance.now(),
       // A macrotask, not a microtask: a microtask queue drain never lets the host
       // paint or deliver events, so the editor would still look frozen.
@@ -2015,7 +2015,9 @@ export async function runGameTestLoop(
     // Route it through the host when there is one: the host owns the pause
     // decision and re-applies it on every focus event, so a pause it does not
     // know about does not survive the end of this call.
-    deps.setHostPaused?.(shouldLeavePaused);
+    // Marked as the run's own pause only when `pauseOnOutcome` is what holds it: the bridge's tap /
+    // swipe release that one and leave any other alone.
+    deps.setHostPaused?.(shouldLeavePaused, spec.pauseOnOutcome ? 'pix3_game_run' : undefined);
     if (shouldLeavePaused && !runner.paused) runner.pause();
     runner.setTimeMode(previousMode);
     // The FACT, never the intent: if something resumed the game anyway, the

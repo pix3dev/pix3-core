@@ -21,6 +21,8 @@ import { NodeBase } from '../nodes/NodeBase';
 import { Group2D } from '../nodes/2D/Group2D';
 import { CanvasLayer2D } from '../nodes/2D/CanvasLayer2D';
 import { Sprite2D } from '../nodes/2D/Sprite2D';
+import { ColorRect2D } from '../nodes/2D/ColorRect2D';
+import { assign2DRenderOrder } from './render-order-2d';
 import { LAYER_2D } from '../constants';
 import { SeededRandom } from './seeded-random';
 import type { AudioService } from './AudioService';
@@ -242,6 +244,39 @@ describe('scene.juice.burst', () => {
     expect(service.juice.burst(button)!.parent).toBe(card);
     // The board's effects stay in the main band, under the card.
     expect(service.juice.burst('bumper')!.parent).toBe(root);
+  });
+
+  it('paints a burst anchored inside a result card above the whole card (core-tests/game18)', () => {
+    // The win confetti: the card is a `scenes/ui/` overlay (a CanvasLayer2D) over the board, with
+    // a full-screen dim, a panel and a title. A burst at a point in the card's title lands in the
+    // card's band and draws over every node of the card, the panel included.
+    const { service, root } = makeHarness();
+    const card = new CanvasLayer2D({ id: 'result-card', name: 'Result Card' });
+    const dim = new ColorRect2D({ id: 'dim', name: 'dim', width: 1080, height: 1920 });
+    const panel = new ColorRect2D({ id: 'panel', name: 'panel', width: 900, height: 700 });
+    const title = new Sprite2D({ id: 'title', name: 'title' });
+    title.position.set(0, 220, 0);
+    panel.adoptChild(title);
+    card.adoptChild(dim);
+    card.adoptChild(panel);
+    root.adoptChild(card);
+
+    const burst = service.juice.burst({ x: 0, y: 0, in: 'title' }, { count: 8 });
+    expect(burst!.parent).toBe(card);
+    advance([root], 1 / 60);
+    assign2DRenderOrder([root]);
+
+    const ordersOf = (node: Object3D): number[] => {
+      const orders: number[] = [];
+      node.traverse(child => {
+        if ((child as Mesh).isMesh) orders.push(child.renderOrder);
+      });
+      return orders;
+    };
+    const cardTop = Math.max(...ordersOf(dim), ...ordersOf(panel), ...ordersOf(title));
+    const burstOrders = ordersOf(burst!);
+    expect(burstOrders.length).toBeGreaterThan(0);
+    expect(Math.min(...burstOrders)).toBeGreaterThan(cardTop);
   });
 
   it('returns null for an unresolvable target', () => {
