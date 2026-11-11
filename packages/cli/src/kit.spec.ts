@@ -1320,6 +1320,8 @@ describe('pix3 kit', () => {
     const tsconfigPath = join(root, 'tsconfig.json');
     const tsconfig = JSON.parse(readFileSync(tsconfigPath, 'utf8')) as Record<string, unknown>;
     writeFileSync(tsconfigPath, JSON.stringify({ ...tsconfig, include: ['design/tests'] }));
+    // `pix3 check` also checks the Node side (tsconfig.node.json: vite.config.ts, the same import).
+    rmSync(join(root, 'tsconfig.node.json'));
     symlinkSync(join(repoRootOfCheckout(), 'node_modules'), join(root, 'node_modules'), 'dir');
     writeFileSync(
       join(root, 'design/tests/bots/dodge.ts'),
