@@ -4,7 +4,7 @@
  *
  * Why a stub and not a runtime refactor: the plugin already owns the `load` hook, so "leave this
  * out" costs one stub and changes no `@pix3/runtime` API — which matters because the package is
- * consumed by external projects. See `../pix3/.plans/done/playable-export-size.md` §2 Р3/Р4.
+ * consumed by external projects. See `.plans/done/playable-export-size.md` §2 Р3/Р4.
  *
  * The table is only safe because of two invariants, both enforced by
  * `strippable-runtime-modules.spec.ts` against the real import graph of `packages/runtime/src`:

@@ -1356,7 +1356,7 @@ packages/
 
 ## 12. Roadmap and Milestones
 
-Phases and gates are §G of `../pix3/.plans/pix3-core.md`; what is built and what is not is the status paragraph of `CLAUDE.md` and the as-built records in `.plans/`.
+Phases and gates are §G of `.plans/pix3-core.md`; what is built and what is not is the status paragraph of `CLAUDE.md` and the as-built records in `.plans/`.
 
 ## 13. Change Log
 

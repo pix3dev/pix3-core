@@ -1,6 +1,6 @@
 # editor-core port (P1)
 
-Date: 2026-10-08. Derived from `../pix3/.plans/pix3-core.md` §B, §C (seams only), §D.1, §F, §G.2 — those stay authoritative; where this file disagrees with them it says so (AGENTS.md rule 13). Design by the architect pass; owner defaults recorded in §8.
+Date: 2026-10-08. Derived from `.plans/pix3-core.md` §B, §C (seams only), §D.1, §F, §G.2 — those stay authoritative; where this file disagrees with them it says so (AGENTS.md rule 13). Design by the architect pass; owner defaults recorded in §8.
 
 Status (2026-10-24): complete — M0–M4 done, §9–§12 in; the "Remaining after M3" items are closed (write model `.plans/done/write-model.md`, 3p tools `.plans/done/agent-bridge.md` B-M1, designer play checked in `bridge-e2e`); released in `2.0.0-alpha.1` (`6bc2382`). Left: optional spec hygiene (golden-layout mocks, `help` in `MENU_SECTION_ORDER`) and the accepted debts of §11/§12. Paths moved since: `ExternalChangeService` is `EC/services/project/disk/`, `SceneWriteService` is `FlushService`; the browser checks are in `../pix3-e2e`.
 
@@ -309,7 +309,7 @@ The editor is an editor of a project that is already open. Files, folders, scrip
 | Editor Settings | "Warn me about unsaved changes when leaving" and `ui.warnOnUnsavedUnload`; the `beforeunload` guard is always on while a tab is dirty, until the IndexedDB draft of plan §C.1 exists. |
 | Menus | no `file` or `project` section: Save (Mod+S, "write now", §C.1) is `edit` 300, Pause/Resume is `run` 220. The menu logo no longer "closes the project" (a dead `project.close` call); it is a plain mark. |
 
-Disagreements with `../pix3/.plans/pix3-core.md` (rule 13), decided by the owner:
+Disagreements with `.plans/pix3-core.md` (rule 13), decided by the owner:
 - §F.2 moves `SaveAsScene*` onto `host.files`; it is removed instead.
 - This file's §5 (and plan §A's `EditorHost` sketch, `openInEditor?`) routed `OpenProjectInIdeCommand` and script activation to `host.openInEditor`; both are removed together with the contract method.
 - §2.2 here kept `moveItem` and the `*AfterMove` path-rewrite family (and §5 kept `TemplateService`); removed. A moved file's `res://` references are the agent's job now (it moves the file and rewrites the scenes), not the editor's.

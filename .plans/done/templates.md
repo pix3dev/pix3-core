@@ -1,6 +1,6 @@
 # Templates: two blank starters (P1)
 
-Date: 2026-10-10. Owner decision of that day, overriding `../pix3/.plans/pix3-core.md` §G.2 row
+Date: 2026-10-10. Owner decision of that day, overriding `.plans/pix3-core.md` §G.2 row
 «`create-pix3` + 4 рецепта» and §A.1 «шаблоны … и kit, код бандлится внутрь»; the shape of a
 project is §B.5 «Шаблон», which stays authoritative. Where this file disagrees with the plan it
 says so (AGENTS.md rule 13).

@@ -31,7 +31,7 @@ const PIX3_LINKS: readonly { href: string; icon: string; label: string; hint: st
     href: 'https://github.com/pix3dev/pix3',
     icon: 'github',
     label: 'github.com/pix3dev/pix3',
-    hint: 'Source, issue tracker and releases.',
+    hint: 'Start here: setup for coding agents, issues and discussions.',
   },
 ];
 

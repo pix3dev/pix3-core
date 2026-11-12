@@ -3,7 +3,7 @@
 Open items with no active plan. A finished plan's follow-ups land here; an item that grows a plan
 moves to its own file.
 
-- **C1 dogfood** (gate P1, `../pix3/.plans/pix3-core.md` §G.2): the remaining scenarios in Codex,
+- **C1 dogfood** (gate P1, `.plans/pix3-core.md` §G.2): the remaining scenarios in Codex,
   plus the "Not yet" list in `CLAUDE.md` → Status.
 - **Safe-area insets in the runtime**: the starter's page is `viewport-fit=cover`, but the layout
   does not read `env(safe-area-inset-*)` / the visual viewport, so a phone's notch and home bar

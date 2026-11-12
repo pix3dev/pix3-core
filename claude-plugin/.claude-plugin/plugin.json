@@ -1,0 +1,12 @@
+{
+  "name": "pix3",
+  "description": "Start a Pix3 game: creates the Vite + TypeScript project with the Pix3 editor and agent kit, connects the agent to the editor in Chrome, and hands over to a session in the new project.",
+  "author": {
+    "name": "Igor Gritsenko",
+    "email": "igor@gritsenko.biz"
+  },
+  "homepage": "https://pix3.dev",
+  "repository": "https://github.com/pix3dev/pix3-core",
+  "license": "Apache-2.0",
+  "keywords": ["gamedev", "html5", "game-engine", "three.js", "vite"]
+}

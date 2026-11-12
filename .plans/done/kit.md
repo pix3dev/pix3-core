@@ -1,6 +1,6 @@
 # Kit: `.pix3anim`, `character-compile`, `kit --migrate`, the version gate (P1)
 
-Date: 2026-10-10. Derived from `../pix3/.plans/pix3-core.md` §F.5 «Kit» (а–д and the
+Date: 2026-10-10. Derived from `.plans/pix3-core.md` §F.5 «Kit» (а–д and the
 `E_EMOJI_AS_ART` bullet), §G.2 row «Kit: `.pix3anim`, `character-compile`, `kit --migrate`, гейт
 версий CLI», §A.1 (the `@pix3/cli` row: the version gate), §A.4 (DeepCore migration, step 2).
 F.5 (а) — the `pix3-editor` skill, `.mcp.json` / `mcp-tools` out of the kit, `pix3-verify`

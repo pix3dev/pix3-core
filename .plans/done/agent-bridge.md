@@ -1,6 +1,6 @@
 # Agent bridge v1: page 3p tools, `pix3 editor`, `pix3 agent-setup` (P1); the CDP token proxy, Remote SSH, `pix3 gap` (P2)
 
-Date: 2026-10-10. Derived from `../pix3/.plans/pix3-core.md` §D (D.1–D.6), §B.3 (sync barrier, play
+Date: 2026-10-10. Derived from `.plans/pix3-core.md` §D (D.1–D.6), §B.3 (sync barrier, play
 ownership), §E (user flows), §G.2 (P1 row «Мост v1, 3p, inline-fallback, `pix3 editor` с проверкой
 9333, `agent-setup --repair`, keepalive» and the gate rows about play/sync from the agent), the S4
 spike (its `skeleton-3p-tools.ts` is no longer kept; `../pix3-e2e/mcp-call.mjs`) and

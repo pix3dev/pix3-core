@@ -2,7 +2,7 @@
 
 Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript project; `@pix3/vite-plugin` serves the editor on the same dev server at `/__pix3/`, writes scene edits back to the files, and builds playable HTML. Coding agents (Codex, Claude Code) work on the same files and drive the open editor through Chrome DevTools MCP.
 
-> **Status: development alpha.** `2.0.0-alpha.4` is on npm under the `next` tag. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3`](https://github.com/pix3dev/pix3).
+> **Status: development alpha.** `2.0.0-alpha.4` is on npm under the `next` tag. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy), the archived 1.x browser editor.
 
 ## Quick start: make a game with an AI agent
 
@@ -10,6 +10,10 @@ You need [Node.js 24](https://nodejs.org/) (24.15 or newer), Google Chrome and a
 (Claude Code or Codex).
 
 ### Create a new game
+
+In Claude Code you can skip step 1 and let the agent do it: add the Pix3 plugin once
+(`/plugin marketplace add pix3dev/pix3`, then `/plugin install pix3@pix3`) and say
+"create a Pix3 project". It runs the commands below and tells you where to continue.
 
 1. Create the project in a terminal (pick `2d` or `3d`) and install it:
 
@@ -104,7 +108,7 @@ Docs: [`docs/pix3-specification.md`](docs/pix3-specification.md) (version of rec
 
 ## Releasing
 
-Versions are lockstep (`2.0.0-alpha.N` for all five packages, plan §A.3); internal dependencies are pinned to that exact version, and a new project's `@pix3/*` versions are the same number (`{{PIX3_VERSION}}` is the CLI's own version). Every package has `publishConfig: { access: "public", tag: "next" }`, so a prerelease never lands on `latest` (which stays 1.6.x from [`pix3`](https://github.com/pix3dev/pix3)) even without `--tag`.
+Versions are lockstep (`2.0.0-alpha.N` for all five packages, plan §A.3); internal dependencies are pinned to that exact version, and a new project's `@pix3/*` versions are the same number (`{{PIX3_VERSION}}` is the CLI's own version). Every package has `publishConfig: { access: "public", tag: "next" }`, so a prerelease never lands on `latest` (which stays 1.6.x from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy)) even without `--tag`.
 
 **1. Bump** (on a clean `main`):
 

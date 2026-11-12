@@ -1,6 +1,6 @@
 # Scripts and bot policies through Vite (P1)
 
-Date: 2026-10-10. Derived from `../pix3/.plans/pix3-core.md` §B.1 (the watched set, incl. bot
+Date: 2026-10-10. Derived from `.plans/pix3-core.md` §B.1 (the watched set, incl. bot
 policies `design/tests/bots/**` and the transitive local sources of the script roots), §B.2
 «Скрипты» (the two roots, the executed stamp, contract B, `check` warnings, the page check, the
 deletion list), §B.3 (the sync barrier's stamps) and §G.2 P1 row «Скрипты и bot-политики через
