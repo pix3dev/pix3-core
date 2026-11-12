@@ -166,6 +166,10 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `typewriter-complete`. Wire game buttons to `pressed` (instant); `click` can be
   cancelled by sliding off — use it for menus and anything costly (purchases):
   `button.connect('click', this, this.onBuy)`.
+- What a button does or what an icon means goes in a hover tooltip, not on the screen:
+  `core:Tooltip` (`config: { text: 'Probe: explore a zone' }` in the scene, or
+  `node.addComponent(TooltipBehavior.create('…'))` on a node a script builds). The node needs a
+  `width`/`height`; hover only, a touch never opens one. Look: `TooltipBehavior.style` once.
 - Scripts talk through signals on a shared node such as `game-root` (`score-changed`,
   `lives-changed`, `game-won`, `game-lost`, …). Listen to the ones that exist; add new signal
   names for new mechanics; never rename existing ones.

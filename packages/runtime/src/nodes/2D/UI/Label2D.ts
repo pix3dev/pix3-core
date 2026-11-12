@@ -157,6 +157,17 @@ export class Label2D extends UIControl2D {
     this.updateLabel();
   }
 
+  /**
+   * The size the text was laid out at (design px, without glow / outline bleed): the authored
+   * `width` / `height` when set, else the measured text. Fits a background to a label — a tooltip,
+   * a speech bubble. `{0, 0}` before the first draw.
+   */
+  get textSize(): { width: number; height: number } {
+    const state = this.renderState;
+    if (!state) return { width: 0, height: 0 };
+    return { width: state.boxWidth - state.pad * 2, height: state.boxHeight - state.pad * 2 };
+  }
+
   /** True while a typewriter reveal is still printing characters. */
   get isTyping(): boolean {
     return this.typewriterActive;

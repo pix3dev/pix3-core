@@ -460,6 +460,10 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       'window.__PIX3_PLAYER__ ? window.__PIX3_PLAYER__.errors : []'
     )) ?? []) as string[];
     for (const error of playerErrors) if (!errors.includes(error)) errors.push(error);
+    // A page that says `running` but never advanced its loop is as dead as a black one: the
+    // run passes only when frames went by (the release check plays the built page on this).
+    if (status === 'running' && frames === 0)
+      errors.push(`the game booted but its loop ran no frame in ${args.seconds} s`);
     // The sounds the game asked for (`scene.audio.requested()`): nobody can listen to a headless
     // page, but which sound a round triggered, and when, is checkable (core-tests/game17).
     const journal = (await chrome

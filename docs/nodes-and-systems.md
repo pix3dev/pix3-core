@@ -551,6 +551,22 @@ also have to disable them, and a hidden control no longer registers hover, so
 **not** change: `tick` still runs on hidden nodes on purpose, so components on a
 hidden node (a spawner, a timer, a state machine) keep working.
 
+**Tooltips (`core:Tooltip`).** Attach it to any sized 2D node — a button, an icon, a resource
+counter — with `text` (and `delay`, default 0.35 s): while the mouse rests on the node, a panel
+with the text appears beside the pointer, drawn in the node's own `CanvasLayer2D` above
+everything in it (`zIndex` 4096) and flipped to stay on screen. Hover only: a press hides it and
+a touch never opens one (a finger that lifts is not a hover — the pointer has to move with
+nothing down). One at a time: the topmost node in paint order wins (components tick in tree
+order, so the last offer of a frame is settled on the next one). From a script:
+`icon.addComponent(TooltipBehavior.create('Coins: every action costs some'))`, `tooltip.text = …`
+to change it; the look is game-wide, `TooltipBehavior.style` (`fontFamily`, `fontSize`, `color`,
+`background`, …), set once at start. It is the place for the words an icon-only play screen does
+not carry (what a button does, what a pictogram means). The hit test is public on every 2D node:
+`node.containsScreenPoint(x, y)` (input units, the node's `width` × `height` centred on its
+origin, through its whole transform, overlay band or Camera2D) and `node.screenPointToWorld(x, y,
+target?)` — pass your own `target`, the default is a shared scratch vector. `Label2D.textSize` is
+the laid-out text size, to fit a background to a label.
+
 ### Signals (node events)
 
 `node.connect(name, target, method)` / `disconnect` / `emit(name, ...args)`. The

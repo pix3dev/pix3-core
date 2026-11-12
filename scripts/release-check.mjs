@@ -12,7 +12,10 @@
 //    the packed `create-pix3` installed with the packed `@pix3/cli`, its bin run for a 2D project;
 //    the project's `@pix3/*` versions asserted equal to the lockstep version, then pointed at the
 //    local tarballs (third-party dependencies come from the registry), `npm install`,
-//    `npm run check`, `npm run smoke`, `npm run build`, and `dist/index.html` must exist.
+//    `npm run check`, `npm run smoke`, then a plain and a `compress` build, each opened in
+//    headless Chrome by `pix3 play dist` (booted, frames counted, no error: a build that
+//    succeeds can still be a black page). The same two builds and runs for a 3D starter that
+//    shares the install. Needs a Chrome `pix3 play` can find (`PIX3_CHROME` names one).
 //    `--keep` leaves the project for a manual look and prints what to run in it; a failure keeps it too.
 //
 // Exit 0 when everything passed, 1 otherwise. CI runs `--pack-only` (no install).
@@ -26,6 +29,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -343,23 +347,73 @@ try {
     }
     run('npm', ['run', 'check'], { cwd: project });
     run('npm', ['run', 'smoke'], { cwd: project });
-    run('npm', ['run', 'build'], { cwd: project });
-    const html = join(project, 'dist', 'index.html');
-    if (!existsSync(html)) fail('starter', 'npm run build left no dist/index.html');
-    else {
-      console.log(`\ndist/index.html: ${formatBytes(statSync(html).size)}`);
-      // The page runs its bundle as a classic script: one `import.meta` left in it is a syntax
-      // error and a black page (2.0.0-alpha.2 shipped that under vite-plugin-singlefile 2.3.4).
-      // This project installed today's dependency versions, so this is where such a drift shows.
-      const page = readFileSync(html, 'utf8');
-      if (/<script\b[^>]*type=["']module["']/i.test(page) || /\bimport\.meta\b/.test(page))
-        fail(
-          'starter',
-          'dist/index.html carries ES-module code in its classic script (black page)'
+    // Every build is opened in headless Chrome (`pix3 play dist`): booted, frames counted, no
+    // error. 2.0.0-alpha.2 built fine and shipped a black page — `import.meta` left in the
+    // classic script once vite-plugin-singlefile 2.3.4 reordered its hook — so a successful
+    // build proves nothing. This project installed today's dependency versions (the e2e
+    // build-check links the checkout's locked ones), so this is where such a drift shows.
+    const viteConfig = join(project, 'vite.config.ts');
+    const plainConfig = readFileSync(viteConfig, 'utf8');
+    const compressConfig = plainConfig.replace('pix3()', 'pix3({ compress: true })');
+    if (compressConfig === plainConfig)
+      fail('starter', 'vite.config.ts has no `pix3()` to compress');
+    const buildAndPlay = (dir, label) => {
+      for (const [mode, config] of [
+        ['plain', plainConfig],
+        ['compress', compressConfig],
+      ]) {
+        const where = `${label} build (${mode})`;
+        writeFileSync(join(dir, 'vite.config.ts'), config);
+        run('npm', ['run', 'build'], { cwd: dir });
+        const html = join(dir, 'dist', 'index.html');
+        if (!existsSync(html)) {
+          fail(where, 'npm run build left no dist/index.html');
+          continue;
+        }
+        console.log(`\n${label} dist/index.html (${mode}): ${formatBytes(statSync(html).size)}`);
+        const page = readFileSync(html, 'utf8');
+        if (/<script\b[^>]*type=["']module["']/i.test(page) || /\bimport\.meta\b/.test(page))
+          fail(where, 'dist/index.html carries ES-module code in its classic script (black page)');
+        const cli = join(dir, 'node_modules', '@pix3', 'cli', 'dist', 'index.js');
+        console.log(`\n$ pix3 play dist --json --seconds 3   (in ${dir})`);
+        const played = spawnSync(
+          process.execPath,
+          [cli, 'play', 'dist', '--json', '--seconds', '3', '--scale', '1'],
+          { cwd: dir, encoding: 'utf8' }
         );
-    }
+        let report = null;
+        try {
+          report = JSON.parse(played.stdout);
+        } catch {
+          // no report: the reason is on stderr
+        }
+        if (!report) {
+          fail(where, `pix3 play gave no report (exit ${played.status}): ${played.stderr.trim()}`);
+          continue;
+        }
+        console.log(
+          `${report.status}, ${report.frames} frame(s), ${report.errors.length} error(s)`
+        );
+        if (report.status !== 'running' || report.frames <= 0 || report.errors.length > 0)
+          fail(
+            where,
+            `the page in Chrome: ${report.status}, ${report.frames} frame(s)` +
+              (report.errors.length > 0 ? `; ${report.errors.slice(0, 3).join(' | ')}` : '')
+          );
+      }
+      writeFileSync(join(dir, 'vite.config.ts'), plainConfig);
+    };
+    buildAndPlay(project, '2D');
+
+    // The 3D starter too (Skyways hit the black page on a 3D project): same package.json, so
+    // it shares the 2D project's install.
+    run(process.execPath, [createBin, 'game3d', '--template', '3d', '--yes'], { cwd: scratch });
+    const project3d = join(scratch, 'game3d');
+    symlinkSync(join(project, 'node_modules'), join(project3d, 'node_modules'), 'junction');
+    buildAndPlay(project3d, '3D');
+
     if (failures.length > 0) throw new Error('the starter project failed');
-    console.log('\nScratch project: install, check, smoke, build — passed.');
+    console.log('\nScratch projects: install, check, smoke, build, play in Chrome — passed.');
   }
   ok = true;
 } catch (error) {

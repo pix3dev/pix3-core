@@ -12,6 +12,7 @@ import { SineBehavior } from './SineBehavior';
 import { PinToNodeBehavior } from './PinToNodeBehavior';
 import { FollowBehavior } from './FollowBehavior';
 import { FadeBehavior } from './FadeBehavior';
+import { TooltipBehavior } from './TooltipBehavior';
 import { RadialProgressBehavior } from './RadialProgressBehavior';
 import { PlaySoundBehavior } from './PlaySoundBehavior';
 import { SfxOnSignalBehavior } from './SfxOnSignalBehavior';
@@ -89,6 +90,15 @@ export function registerBuiltInScripts(registry: ScriptRegistry): void {
     category: 'Animation',
     componentClass: FadeBehavior,
     keywords: ['fade', 'opacity', 'animation'],
+  });
+
+  registry.registerComponent({
+    id: 'core:Tooltip',
+    displayName: 'Tooltip',
+    description: 'Explains a button or an icon next to the mouse while it rests on the node',
+    category: 'UI',
+    componentClass: TooltipBehavior,
+    keywords: ['tooltip', 'hint', 'hover', 'help', 'ui'],
   });
 
   registry.registerComponent({

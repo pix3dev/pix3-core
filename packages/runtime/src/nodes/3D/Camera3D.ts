@@ -72,6 +72,13 @@ export class Camera3D extends Node3D {
   private projectionMode: 'perspective' | 'orthographic';
   private perspectiveFov: number;
   private orthographicSizeValue: number;
+  /**
+   * The viewport aspect the renderer last gave {@link updateAspectRatio}. A size or projection
+   * change applies it at once: before, an orthographic size set from a script built a square
+   * frustum until the next frame's resize, so a screen→world ray cast right after a zoom (keep
+   * the point under the cursor still) landed off by the aspect ratio (Skyways, 2026-11-11).
+   */
+  private aspect = 1;
 
   constructor(props: Camera3DProps) {
     super(props, 'Camera3D');
@@ -200,6 +207,7 @@ export class Camera3D extends Node3D {
   }
 
   updateAspectRatio(aspect: number): void {
+    if (Number.isFinite(aspect) && aspect > 0) this.aspect = aspect;
     if (this.camera instanceof PerspectiveCamera) {
       if (this.camera.aspect !== aspect) {
         this.camera.aspect = aspect;
@@ -288,7 +296,7 @@ export class Camera3D extends Node3D {
     const previousCamera = this.camera;
     const nextCamera =
       projection === 'perspective'
-        ? new PerspectiveCamera(this.perspectiveFov, 1, near, far)
+        ? new PerspectiveCamera(this.perspectiveFov, this.aspect, near, far)
         : new OrthographicCamera(-1, 1, 1, -1, near, far);
 
     nextCamera.layers.mask = previousCamera.layers.mask;
@@ -319,8 +327,9 @@ export class Camera3D extends Node3D {
 
   private applyOrthographicSize(camera: OrthographicCamera, size: number): void {
     const halfHeight = Math.max(0.0001, size) / 2;
-    camera.left = -halfHeight;
-    camera.right = halfHeight;
+    const halfWidth = halfHeight * this.aspect;
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
     camera.top = halfHeight;
     camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();

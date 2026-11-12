@@ -74,6 +74,29 @@ describe('Camera3D', () => {
     expect(camera.right).toBe(10);
   });
 
+  it('keeps the viewport aspect when a script changes the size or the projection mid-frame', () => {
+    // A zoom toward the cursor sets the size, then casts a ray through the same screen point in
+    // the same frame; a square frustum until the next resize put that ray off by the aspect.
+    const cameraNode = new Camera3D({
+      id: 'cam-zoom',
+      name: 'Camera',
+      projection: 'orthographic',
+      orthographicSize: 10,
+    });
+    cameraNode.updateAspectRatio(16 / 9);
+
+    cameraNode.orthographicSize = 6;
+    const camera = cameraNode.camera as OrthographicCamera;
+    expect(camera.top).toBe(3);
+    expect(camera.right).toBeCloseTo(3 * (16 / 9));
+    expect(camera.projectionMatrix.elements[0]).toBeCloseTo(1 / (3 * (16 / 9)));
+
+    cameraNode.projection = 'perspective';
+    expect((cameraNode.camera as PerspectiveCamera).aspect).toBeCloseTo(16 / 9);
+    cameraNode.projection = 'orthographic';
+    expect((cameraNode.camera as OrthographicCamera).left).toBeCloseTo(-3 * (16 / 9));
+  });
+
   /**
    * `Object3D.lookAt` aims +Z at the target for anything that is not itself a camera, and this node
    * only *holds* one — so without the override the rendered camera faces exactly backwards and the

@@ -465,6 +465,16 @@ clone keeps the manifest. A project whose `.gitignore` ignores all of `.pix3/` (
 hand) loses it on a fresh clone, and every differing kit file then counts as
 edited — replace that line with the three of the starter.
 
+**The design record.** The kit writes no design doc, and `pix3 new` no empty skeleton (it would
+rot). The kit's `AGENTS.md` has the agent write `design/GDD.md` with the first playable change and
+read it before any other file: pitch, loop, how the game differs from its references, what is not
+in the prototype, decisions as `X, because Y`, open questions — at most 60 lines, superseded
+lines replaced, nothing the scenes and scripts already say. A structural choice, or anything the
+human decided or rejected, is recorded in the same turn, and the final report says which ("none"
+otherwise). It exists because intent, rejected options and scope otherwise live only in chat and
+are lost on a new thread, a compaction or a switch of agent — after which the next agent "fixes"
+a deliberate choice. A project with its own design doc keeps that one.
+
 **Generated, not copied.** `scripts/build-kit.mjs` (run at `prepack`; a repo checkout regenerates
 `kit/` automatically whenever an input changed) expands the templates in `kit-src/`: hand-written
 prose plus `{{include:<repo path>#<heading>}}` / `{{include:<repo path>@<paragraph>}}` directives
@@ -668,8 +678,9 @@ editor's own `BotSession` and a page world (`packages/editor-core/src/services/g
 page-bot-host.ts`, bundled into `dist/play/prebuilt/` at `prepack`, from source in a checkout):
 taps, swipes and keys are DOM events on the canvas, the policy is ticked by
 `SceneRunner.subscribeFrameStats`, `physical-input` only. Neither script carries `@pix3/runtime`
-(the page has one; a shim recognises its nodes by shape). Exit 0 = booted, nothing threw, the bot
-passed; 1 = otherwise; 2 = could not run. Code: `src/play/`.
+(the page has one; a shim recognises its nodes by shape). Exit 0 = booted, frames went by, nothing
+threw, the bot passed; 1 = otherwise (a page that says `running` with no frame counted is an
+error too); 2 = could not run. Code: `src/play/`.
 
 While a bot plays, the runner ticks a fixed 1/60 s per frame (`setTimeMode('fixed')`) whatever the
 headless page paints, so `bot.frame` is game time; the budget is `--frames` game frames (default

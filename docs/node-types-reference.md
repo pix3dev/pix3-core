@@ -497,6 +497,7 @@ A multiline text label for 2D UI. Wraps text to a fixed box, aligns it in both a
 
 - The box is centered on the node position (like other UI controls); alignment places the text inside that box.
 - Set `width` manually to get word wrap — there is no auto-grow layout yet.
+- `textSize` (read-only, scripts) is the laid-out text size in design px — fit a background to it (the `core:Tooltip` panel does).
 - **Glow/outline are canvas-drawn** (`ctx.shadowBlur` passes + a `strokeText` underlay), not post-processing — which is exactly why HUD text can glow: a `CanvasLayer2D` subtree is drawn _after_ the post-processing composer and can never bloom. Both are off by default, so existing scenes are unchanged.
 - Turning either on grows the label's canvas (and the mesh showing it) by a bleed on each side so the blur/stroke isn't clipped; the tap target stays the authored box.
 - `glowStrength` 1 is a subtle halo, 2–3 reads as neon (each whole step adds an additive shadow pass, capped at 3); the blur scales with `labelFontSize`, so a HUD label and a title glow proportionally. Layering, bottom to top: drop shadow, glow, outline, fill — the outline stays crisp over the halo, so a glowing caption with an outline keeps its edge over a busy background (the glow used to be drawn over the outline and washed it out: core-tests/game11).
@@ -837,12 +838,13 @@ A camera node that defines the viewpoint for rendering. The scene can have multi
 
 **Properties:**
 
-| Property     | Type   | Default     | Description             |
-| ------------ | ------ | ----------- | ----------------------- |
-| `projection` | enum   | perspective | Projection type         |
-| `fov`        | number | 60          | Field of view (degrees) |
-| `near`       | number | 0.1         | Near clipping plane     |
-| `far`        | number | 1000        | Far clipping plane      |
+| Property           | Type   | Default     | Description                                                                         |
+| ------------------ | ------ | ----------- | ----------------------------------------------------------------------------------- |
+| `projection`       | enum   | perspective | Projection type                                                                     |
+| `fov`              | number | 60          | Field of view (degrees)                                                             |
+| `near`             | number | 0.1         | Near clipping plane                                                                 |
+| `far`              | number | 1000        | Far clipping plane                                                                  |
+| `orthographicSize` | number | 5           | Visible height in world units (orthographic); the width follows the viewport aspect |
 
 **Projection Types:**
 
@@ -857,6 +859,9 @@ A camera node that defines the viewpoint for rendering. The scene can have multi
 - Orthographic: No perspective distortion
 - Default looks down the negative Z axis
 - Use `setTargetPosition()` to point camera at a target
+- Map zoom: set `orthographicSize` from a script (`camera.orthographicSize *= factor`). The new
+  frustum keeps the viewport aspect at once, so a ray cast through the cursor in the same frame
+  (zoom toward the cursor) is already right; before the fix it was square until the next frame.
 
 ---
 

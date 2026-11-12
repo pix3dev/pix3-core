@@ -84,6 +84,10 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
   { modulePath: 'behaviors/FollowBehavior', keepWhenMentioned: ['FollowBehavior', 'core:Follow'] },
   { modulePath: 'behaviors/FadeBehavior', keepWhenMentioned: ['FadeBehavior', 'core:Fade'] },
   {
+    modulePath: 'behaviors/TooltipBehavior',
+    keepWhenMentioned: ['TooltipBehavior', 'core:Tooltip'],
+  },
+  {
     modulePath: 'behaviors/RadialProgressBehavior',
     keepWhenMentioned: ['RadialProgressBehavior', 'core:RadialProgress'],
   },
@@ -132,8 +136,15 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     // `UIControl2D.findPointerTarget` only tests `instanceof ColorRect2D`; against the stub that is
     // false for every node, which is exactly right when no scene places one.
     lazyValueImporters: ['nodes/2D/UI/UIControl2D'],
+    // The tooltip's background panel.
+    importers: ['behaviors/TooltipBehavior'],
   },
-  { modulePath: 'nodes/2D/CanvasLayer2D', keepWhenMentioned: ['CanvasLayer2D'] },
+  {
+    modulePath: 'nodes/2D/CanvasLayer2D',
+    keepWhenMentioned: ['CanvasLayer2D'],
+    // `core:Tooltip` draws in its node's CanvasLayer2D (an `instanceof` walk up the tree).
+    importers: ['behaviors/TooltipBehavior'],
+  },
   { modulePath: 'nodes/2D/TiledSprite2D', keepWhenMentioned: ['TiledSprite2D'] },
   { modulePath: 'nodes/2D/SpineSkeleton2D', keepWhenMentioned: ['SpineSkeleton2D'] },
   {

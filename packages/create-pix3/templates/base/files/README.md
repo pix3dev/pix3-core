@@ -23,7 +23,7 @@ address in use is what `npm run dev` / `npm run editor` prints, and `.pix3/dev.j
   (`defaultExportScenePath` in `pix3project.yaml`)
 - `scripts/` — script components (`export class X extends Script`, used as `user:X`)
 - `sprites/`, `audio/` — assets, referenced as `res://sprites/x.png`
-- `design/` — design notes and references
+- `design/` — `GDD.md`, the design record the agent keeps (pitch, decisions, scope), plus notes and references
 - `src/main.ts` — boots the entry scene (`startGame` from `@pix3/vite-plugin/player`)
 - `pix3project.yaml` — the project manifest (viewport, quality, entry scene)
 - `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`, `design/tests/bots/` — the agent kit: rules, skills

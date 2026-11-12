@@ -25,6 +25,24 @@ feedback, hierarchy, control sizes and asset requirements. Treat a reference's
 visual inventory slots as a requirement for visual selection, not merely a color
 palette. Do not substitute numeric controls or prose for recognizable content.
 
+**The play screen speaks in pictograms, never in prose.** While the game runs, the screen
+carries icons, numbers and feedback in place: a resource is icon + number, an object's state is
+icons beside it (needs met / missing, level pips), a cost is coin icon + number, a refused action
+is a reason pictogram where it happened, a drag previews its outcome before release. No title,
+mode banner, instruction, hint sentence, description panel or sentence-long error: no `Label2D`
+on the play screen holds more than a number or a name of at most two words. Teach by showing —
+highlight what can be done next. Words belong only in menus, the result card, a tutorial
+overlay the player closes, and hover tooltips (`core:Tooltip`) that say what a button does or
+what a pictogram means — give every icon and button one. Draw the pictograms as SVG sprites (rule 5), one set, one style.
+
+Write that translation (or the brief, when there are no references) to `design/GDD.md` with
+the first playable change; an existing game keeps its own design doc instead. Sections:
+**Pitch** (2 lines), **Loop** (3–5 lines), **Unlike the references**, **Not in this prototype**,
+**Decisions** (`X, because Y`, one line each), **Open questions**. It holds the intent the code
+cannot show: do not restate controls, numbers or anything the scenes and scripts already say.
+At most 60 lines; replace a superseded line, never append history. What is not decided yet is
+an open question — do not invent a design.
+
 Build and review a reusable UI kit using runtime UI nodes and skin textures:
 panels, slots, tabs, buttons, bars, icons, selected/pressed/disabled states.
 Use native InputService actions and control signals, including Joystick2D for
@@ -53,7 +71,9 @@ a debug command or a screenshot alone is not enough.
 ## Read first
 
 1. `README.md` — file layout of this project.
-2. The one scene or script you are about to change. Nothing else. Do not survey the repo.
+2. `design/GDD.md`, if it exists (an existing game: its own design doc) — what was decided and
+   why. Do not undo a choice listed there without asking.
+3. The one scene or script you are about to change. Nothing else. Do not survey the repo.
    To find it, and to find your way inside it, use `pix3 tree` (every scene and prefab with
    node counts, types and components) and `pix3 tree <scene>` (one line per node: id, type,
    position, size, layout, components, prefab instances) — not a read of whole scene files.
@@ -89,7 +109,7 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
 | `scenes/prefabs/*.pix3scene` | Prefabs: a scene file with exactly ONE root node (a top-level `prefabs/` works too) |
 | `scripts/*.ts` | Script components |
 | `sprites/`, `audio/`, `fonts/`, `models/` … | Assets, referenced as `res://sprites/x.png` |
-| `design/` | Design notes, GDD, references |
+| `design/GDD.md` | The design record (see "New-game architecture and UX gate"); notes and references beside it |
 | `src/main.ts`, `index.html`, `vite.config.ts` | The Vite entry: `startGame('#app')` boots the entry scene; `pix3()` serves the editor at `/__pix3/` |
 
 ## The five rules
@@ -98,6 +118,9 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    smallest form that plays, before asking anything. Choose small things yourself (a shade, a
    speed, a count) and say so in one line. At most ONE question per turn, and only about a
    fork that changes structure ("win by score or by time?"). Never open with a question.
+   A structural choice you made, and anything the human decided or rejected, goes into
+   `design/GDD.md` in the same turn; shades, positions and numbers do not. If the game and the
+   GDD disagree, say so and fix neither silently. Lines the human wrote are theirs to change.
 2. **Sync, then re-read a scene before you edit it.** The human may have moved things in the
    editor a minute ago; a successful `pix3_sync` puts their unsaved edits on disk. Edit the lines
    you mean to change (search/replace), never regenerate a whole scene from memory. After
@@ -246,4 +269,5 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 ## Finish every turn with
 
 What changed (files), what `pix3 check` said, whether you ran the game (and what `pix3_game_run`
-answered) or what the human should press and see, placeholders left, and 2–3 concrete next steps.
+answered) or what the human should press and see, placeholders left, decisions recorded in
+`design/GDD.md` (or "none"), and 2–3 concrete next steps.

@@ -114,6 +114,7 @@ export * from './behaviors/RadialProgressBehavior';
 export * from './behaviors/PinToNodeBehavior';
 export * from './behaviors/CharacterVisual2DBehavior';
 export * from './behaviors/FadeBehavior';
+export * from './behaviors/TooltipBehavior';
 export * from './behaviors/PlaySoundBehavior';
 export * from './behaviors/SfxOnSignalBehavior';
 export * from './behaviors/BurstOnSignalBehavior';

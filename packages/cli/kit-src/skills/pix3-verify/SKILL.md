@@ -126,8 +126,8 @@ played there with real DOM pointer and key events (the same bot API as `pix3_gam
 engine's input reads them like a finger, but code that branches on touch needs
 `npx pix3 bridge tap --touch` in the editor). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
 the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
-nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot or a page that never
-booted. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
+nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot, a page that never
+booted or one whose loop ran no frame. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
 machine) and stops on the frame of `done()`; the budget is `--frames` game frames (default 7200,
 two minutes of game time, however slowly the headless page paints — a whole round fits), so `--screenshot` shows what was judged; mid-run
 pictures come from the policy: `bot.screenshot('result-card')` freezes the game on that frame,

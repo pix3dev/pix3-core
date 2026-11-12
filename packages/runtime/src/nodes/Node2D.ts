@@ -133,6 +133,8 @@ export const Z_INDEX_LIMIT = 4096;
 export class Node2D extends NodeBase {
   /** Shared scratch for pointer unprojection (single-threaded, reused per call). */
   private static readonly scratchUnproject = new Vector3();
+  private static readonly scratchContains = new Vector2();
+  private static readonly scratchLocal = new Vector3();
   /**
    * Marks this node as a CanvasLayer2D boundary — its subtree renders in the
    * fixed overlay band (LAYER_2D_OVERLAY) through the identity overlay camera,
@@ -654,7 +656,7 @@ export class Node2D extends NodeBase {
    * This exists because multi-touch made "the pointer position" ambiguous: a control owning finger
    * #2 has to unproject #2's coordinates, not whatever the shared primary position happens to hold.
    */
-  protected screenPointToWorld(
+  screenPointToWorld(
     screenX: number,
     screenY: number,
     target: Vector2 = this.tmpPointerWorld
@@ -920,6 +922,24 @@ export class Node2D extends NodeBase {
         child.applyAnchoredLayoutRecursive(currentSize, authoredSize);
       }
     }
+  }
+
+  /**
+   * Whether a point in **input/screen units** (`InputService.pointerPosition`, a `pointerEvents`
+   * entry) lies inside this node's box: its current `width` × `height` centred on its origin,
+   * through its whole transform, the overlay band or a Camera2D alike — the test a UI control
+   * makes, for any 2D node (a tooltip's icon, a sprite you drag). False while hidden in the tree
+   * or without a size.
+   */
+  containsScreenPoint(screenX: number, screenY: number): boolean {
+    if (!this.isVisibleInTree()) return false;
+    const { width, height } = this.getCurrentLayoutSize();
+    if (!(width > 0) || !(height > 0)) return false;
+    const point = this.screenPointToWorld(screenX, screenY, Node2D.scratchContains);
+    if (!point) return false;
+    this.updateWorldMatrix(true, false);
+    const local = this.worldToLocal(Node2D.scratchLocal.set(point.x, point.y, 0));
+    return Math.abs(local.x) <= width / 2 && Math.abs(local.y) <= height / 2;
   }
 
   getCurrentLayoutSize(): Node2DLayoutSize {

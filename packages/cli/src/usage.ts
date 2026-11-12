@@ -331,8 +331,8 @@ Reference it from a scene or script as res://<path inside the project>.
                  .pix3/screenshots/play-<time>/)
   --json         machine-readable report
 
-  Exit 0 = the page ran, nothing threw, the bot passed; 1 = errors, a failed or crashed bot, or a
-  page that never booted; 2 = could not run (no Chrome, nothing to play, no such policy).
+  Exit 0 = the page ran frames, nothing threw, the bot passed; 1 = errors, a failed or crashed
+  bot, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome, nothing to play, no such policy).
 `,
   bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
        pix3 bridge screenshot [--target game|viewport] [--aspect free|16:9|9:16|4:3] [--out <file.png>]
