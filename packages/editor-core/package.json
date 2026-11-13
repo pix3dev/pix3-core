@@ -1,6 +1,6 @@
 {
   "name": "@pix3/editor-core",
-  "version": "2.0.0-alpha.4",
+  "version": "2.0.0-alpha.5",
   "description": "Prebuilt Pix3 editor (Lit), mounted by @pix3/vite-plugin through EditorHost.",
   "type": "module",
   "repository": {
@@ -38,7 +38,7 @@
     "yaml": "^2.6.0"
   },
   "peerDependencies": {
-    "@pix3/runtime": "2.0.0-alpha.4",
+    "@pix3/runtime": "2.0.0-alpha.5",
     "postprocessing": ">=6.39.0",
     "three": "~0.183.0"
   },
