@@ -62,6 +62,7 @@ export interface SceneServiceDelegate {
   getInputService(): InputService;
   getUICamera(): import('three').Camera | null;
   getLogicalCameraSize(): { width: number; height: number };
+  setDesignFit?(fit: { orientation?: 'fixed' | 'adaptive'; minScale?: number }): void;
   setActiveCameraNode(camera: Camera3D | null): void;
   findNodeById(id: string): NodeBase | null;
   getRootNodes(): NodeBase[];
@@ -1000,6 +1001,19 @@ export class SceneService {
 
   getLogicalCameraSize(): { width: number; height: number } {
     return this.delegate?.getLogicalCameraSize() ?? this.getViewportSize();
+  }
+
+  /**
+   * How the design size (`viewportBaseSize`) meets a small or turned screen — for a HUD anchored
+   * to the screen's edges over a 3D (or camera-driven) world. `orientation: 'adaptive'` lays the
+   * 2D layer out against the design with its sides swapped on a screen of the other orientation
+   * (a landscape 1920×1080 HUD on a portrait phone: width / 1080 instead of width / 1920).
+   * `minScale` is the least CSS px a design pixel is drawn at: `0.45` keeps a 100 px button at
+   * 45 CSS px on any phone, and the layer then shows less of the design instead of shrinking it.
+   * A 2D world laid out in design pixels keeps the defaults. Call once, from `onStart`.
+   */
+  setDesignFit(fit: { orientation?: 'fixed' | 'adaptive'; minScale?: number }): void {
+    this.delegate?.setDesignFit?.(fit);
   }
 
   getOrientation(): ViewportOrientation {

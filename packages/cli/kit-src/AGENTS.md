@@ -1,6 +1,8 @@
 {{# Template of the kit's AGENTS.md. Generated into projects by `pix3 kit` / `pix3 new`; see }}
 {{# packages/cli/src/kit/generate.ts for the directive syntax. }}
+
 <!-- Pix3 agent kit {{version}} — written by `pix3 kit`. You may edit it: `pix3 kit --update` never overwrites a kit file you changed. -->
+
 # AGENTS.md — Pix3 game project
 
 This folder is a **Pix3 game**: a 2D/3D browser game. You edit it by writing files. A human
@@ -61,7 +63,13 @@ width, screen height / design height): a 1080×1920 design on a 390×844 phone i
 16 px text needs `labelFontSize` ≥ 45 and a 44 px button ≥ 122 design px. On a phone taller than
 the design the extra height is screen, not design: keep the HUD and the game together in the
 starter's `design-area` (centred in the safe area, below the notch), not anchored to the screen's
-edges (`pix3-scene-format` → "Tall phones and the notch"). A board of cells (an
+edges (`pix3-scene-format` → "Tall phones and the notch"). **A landscape design on a portrait
+phone** is the worst case — 1920×1080 on a 375 px wide screen is ×0.2, a 56 px icon is 11 px:
+when the 2D layer is a HUD anchored to the screen's edges over a 3D (or camera-driven) world,
+call `this.scene.setDesignFit({ orientation: 'adaptive', minScale: 0.45 })` once in the game
+script's `onStart` (a design pixel is then never under 0.45 CSS px; the HUD must fit the
+narrower layer — `pix3-scene-format` → "A HUD over a 3D world on a phone"), and look at
+`npx pix3 play dev --size 375x667 --screenshot shot.png` before you say the HUD is done. A board of cells (an
 8×8 match-3 on a 360 px phone is ~42 px a cell) cannot always reach 44 px: give the board the full
 width, take the whole cell (no dead gaps) as the hit area, and say in the report that a cell is
 below the guideline and why. On touch devices, also verify
@@ -102,15 +110,15 @@ a prefab, a new flipbook, a locale added or removed, project settings, build opt
 
 Example — the layout `npm create pix3` sets up (`pix3 new`); other projects differ:
 
-| Path | What |
-| --- | --- |
-| `scenes/*.pix3scene` | Scenes |
-| `scenes/ui/*.pix3scene` | Full-screen overlays (result card, modal), one file each, a `CanvasLayer2D` root, instanced hidden as the last child |
-| `scenes/prefabs/*.pix3scene` | Prefabs: a scene file with exactly ONE root node (a top-level `prefabs/` works too) |
-| `scripts/*.ts` | Script components |
-| `sprites/`, `audio/`, `fonts/`, `models/` … | Assets, referenced as `res://sprites/x.png` |
-| `design/GDD.md` | The design record (see "New-game architecture and UX gate"); notes and references beside it |
-| `src/main.ts`, `index.html`, `vite.config.ts` | The Vite entry: `startGame('#app')` boots the entry scene; `pix3()` serves the editor at `/__pix3/` |
+| Path                                          | What                                                                                                                 |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `scenes/*.pix3scene`                          | Scenes                                                                                                               |
+| `scenes/ui/*.pix3scene`                       | Full-screen overlays (result card, modal), one file each, a `CanvasLayer2D` root, instanced hidden as the last child |
+| `scenes/prefabs/*.pix3scene`                  | Prefabs: a scene file with exactly ONE root node (a top-level `prefabs/` works too)                                  |
+| `scripts/*.ts`                                | Script components                                                                                                    |
+| `sprites/`, `audio/`, `fonts/`, `models/` …   | Assets, referenced as `res://sprites/x.png`                                                                          |
+| `design/GDD.md`                               | The design record (see "New-game architecture and UX gate"); notes and references beside it                          |
+| `src/main.ts`, `index.html`, `vite.config.ts` | The Vite entry: `startGame('#app')` boots the entry scene; `pix3()` serves the editor at `/__pix3/`                  |
 
 ## The five rules
 
@@ -150,20 +158,20 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
 version: 1.0.0
 metadata: { description: 'what this scene is' }
 root:
-  - id: game-root                  # unique in the scene; never rename an existing id
-    type: Group2D                  # exact node type name; a typo loads as an inert node
+  - id: game-root # unique in the scene; never rename an existing id
+    type: Group2D # exact node type name; a typo loads as an inert node
     name: Game Root
     properties:
       width: 1080
       height: 1920
-      transform: { position: [0, 0], scale: [1, 1], rotation: 0 }   # 2D, rotation in degrees
+      transform: { position: [0, 0], scale: [1, 1], rotation: 0 } # 2D, rotation in degrees
     components:
       - id: game-rules
-        type: user:GameRules       # user:<ExportedClassName> or core:<Builtin>
+        type: user:GameRules # user:<ExportedClassName> or core:<Builtin>
         enabled: true
         config: { targetScore: 18 } # keys = the script's schema names
     children:
-      - id: result-overlay         # prefab/overlay instance: NO type, NO components
+      - id: result-overlay # prefab/overlay instance: NO type, NO components
         name: Result Overlay
         instance: res://scenes/ui/result.pix3scene
         properties: { visible: false }
@@ -190,13 +198,20 @@ import { Script, type PropertySchema } from '@pix3/runtime';
 export class Combo extends Script {
   constructor(id: string, type: string) {
     super(id, type);
-    this.config = { windowSec: 1 };            // defaults; scene `config` merges over them
+    this.config = { windowSec: 1 }; // defaults; scene `config` merges over them
   }
-  static getPropertySchema(): PropertySchema {  // REQUIRED, or the class is not registered
-    return { nodeType: 'Combo', properties: [/* one entry per config key */], groups: {} };
+  static getPropertySchema(): PropertySchema {
+    // REQUIRED, or the class is not registered
+    return {
+      nodeType: 'Combo',
+      properties: [
+        /* one entry per config key */
+      ],
+      groups: {},
+    };
   }
-  onStart(): void {}                           // scene is loaded
-  onUpdate(dt: number): void {}                // dt in seconds
+  onStart(): void {} // scene is loaded
+  onUpdate(dt: number): void {} // dt in seconds
 }
 ```
 
@@ -237,7 +252,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
 - `pix3 grid <scene> --parent <id> --prefab <res://…> --rows R --cols C [--step W[xH]]
-  [--checker '<json>'] [--replace]` — write a board's backing cells (rows × cols prefab instances,
+[--checker '<json>'] [--replace]` — write a board's backing cells (rows × cols prefab instances,
   centred on the parent, row 0 on top) into the scene once, as plain YAML; never type them by hand.
 - `pix3 font add <family>` — copy a bundled display font (Nunito, Rubik — both with Cyrillic —
   Baloo 2, Fredoka, Lilita One, Luckiest Guy; `pix3 font` lists them) into `fonts/` and register

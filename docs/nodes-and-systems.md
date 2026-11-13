@@ -534,6 +534,12 @@ button raised on the first finger down and dropped by the last one up.
 `scene.getPointer2DWorldPosition(pointerId)` is the addressed form of the world
 conversion (null when that pointer is not down — a tap that went down and up in
 one frame is already gone). A frame event carries its own position:
+`scene.setDesignFit({ orientation: 'adaptive', minScale: 0.45 })` keeps a HUD over a 3D world
+readable on a phone (a landscape design on a portrait screen otherwise fits by its long side);
+`scene.getLogicalCameraSize()` is the 2D layer's current size in design units — use it, not the
+authored design size, to keep a floating panel on screen. Spec → "2D transform and anchor layout"
+(the "Design fit" paragraph).
+
 `scene.screenToWorld2D(event)` converts any `{ x, y }` in input units (a
 `pointerEvents` entry, a `getActivePointers()` snapshot) and never loses a tap.
 `GestureTracker` (`core/gestures.ts`) turns `pointerEvents` into taps and

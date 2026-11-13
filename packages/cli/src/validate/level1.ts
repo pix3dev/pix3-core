@@ -1152,6 +1152,22 @@ export const checkSceneLevel1 = (
   }
   const checker = new SceneChecker(env, file, parsed);
   checker.run();
+  const expanded = parsed.expandedArrays;
+  if (expanded.length > 0) {
+    // One per file, not per array: an expanded file has hundreds of them (Skyways' main scene was
+    // 7741 lines, 4908 in the one-line form).
+    const first = expanded[0];
+    checker.diagnostics.push(
+      diagnostic({
+        code: 'W_EXPANDED_ARRAY',
+        file,
+        path: formatPath(first.path),
+        line: first.line,
+        message: `${expanded.length} array(s) / vector(s) written one item per line (first: ${formatPath(first.path)}); the editor writes them on one line, [x, y, z].`,
+        fix: 'write them on one line, as the editor saves them: position: [0, 1, 0]. A script that generates the scene: skill pix3-scene-format → "Generating a scene from a script"',
+      })
+    );
+  }
   return {
     diagnostics: checker.diagnostics,
     references: checker.references,

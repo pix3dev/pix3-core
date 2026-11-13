@@ -4,6 +4,7 @@ description: The .pix3scene YAML format — file header, node shape (id/type/nam
 ---
 
 <!-- Pix3 agent kit {{version}} -->
+
 # `.pix3scene` format
 
 Scenes, prefabs and overlays are the same file type: YAML with a `.pix3scene` extension.
@@ -34,28 +35,60 @@ root:                          # list of root nodes; at least one
 `#` lines are comments and may appear anywhere. Top-level keys are exactly `version`,
 `description`, `metadata`, `root`.
 
+### Generating a scene from a script
+
+Many nodes at once (a board, a level from data) are easier to emit from a script than to type.
+`yaml`'s default `stringify` writes every array one item per line — `position:` then three
+`- n` lines — which triples the file and earns `W_EXPANDED_ARRAY`. Write it the way the editor
+does (`yaml` is installed with `@pix3/runtime`):
+
+```js
+import { writeFileSync } from 'node:fs';
+import { Document, isScalar, visit } from 'yaml';
+
+const doc = new Document(scene); // parseDocument(text) to reformat a file and keep its comments
+visit(doc, {
+  Seq(_, n) {
+    if (n.items.length > 0 && n.items.every(i => isScalar(i))) n.flow = true;
+  },
+  Map(_, n) {
+    const xyz =
+      n.items.length >= 2 &&
+      n.items.length <= 3 &&
+      n.items.every(
+        p => ['x', 'y', 'z'].includes(String(p.key?.value)) && typeof p.value?.value === 'number'
+      );
+    if (xyz) n.flow = true;
+  },
+});
+writeFileSync(
+  'scenes/level.pix3scene',
+  doc.toString({ indent: 2, flowCollectionPadding: false, lineWidth: 0 })
+);
+```
+
 ## Node
 
 ```yaml
-- id: spawner-targets          # REQUIRED. Unique across the scene incl. instanced prefabs.
-  type: Group2D                # REQUIRED for a plain node. Exact class name (see pix3-nodes).
-  name: Spawner Targets        # display name; free to change
-  groups: [spawners]           # optional runtime groups
-  properties:                  # node properties — names from pix3-nodes
+- id: spawner-targets # REQUIRED. Unique across the scene incl. instanced prefabs.
+  type: Group2D # REQUIRED for a plain node. Exact class name (see pix3-nodes).
+  name: Spawner Targets # display name; free to change
+  groups: [spawners] # optional runtime groups
+  properties: # node properties — names from pix3-nodes
     width: 900
     height: 60
     transform:
       position: [0, 690]
       scale: [1, 1]
       rotation: 0
-  components:                  # optional; script components
+  components: # optional; script components
     - id: target-spawner
       type: user:Spawner
       enabled: true
       config:
         prefab: res://scenes/prefabs/target.pix3scene
         intervalSec: 0.85
-  children: []                 # optional; child nodes, same shape, recursive
+  children: [] # optional; child nodes, same shape, recursive
 ```
 
 Rules:
@@ -75,9 +108,9 @@ Rules:
 
 ```yaml
 transform:
-  position: [x, y]      # design pixels; the node's CENTRE, relative to its parent
+  position: [x, y] # design pixels; the node's CENTRE, relative to its parent
   scale: [1, 1]
-  rotation: 0           # DEGREES in YAML; positive = counter-clockwise (Y is up)
+  rotation: 0 # DEGREES in YAML; positive = counter-clockwise (Y is up)
 ```
 
 2D space: origin at the centre of the screen/parent, **X right, Y up**. A portrait game uses e.g. a
@@ -97,10 +130,10 @@ rotation in degrees.
 ```yaml
 layout:
   enabled: true
-  horizontalAlign: left      # left | center | right | stretch
-  verticalAlign: top         # top | center | bottom | stretch
-  left: 40                   # margins, px from the parent's edge to the node's same edge:
-  top: 30                    # `left` keeps `left`, `right` keeps `right`, `stretch` keeps both
+  horizontalAlign: left # left | center | right | stretch
+  verticalAlign: top # top | center | bottom | stretch
+  left: 40 # margins, px from the parent's edge to the node's same edge:
+  top: 30 # `left` keeps `left`, `right` keeps `right`, `stretch` keeps both
 ```
 
 An anchored axis is placed by its margin, and keeps it when the parent resizes (a different
@@ -129,6 +162,19 @@ without `design-area`: add one as the last child of the 2D root and move the HUD
 it. Check it with `npx pix3 play --size 390x844 --safe-area 47,0,34,0 --screenshot shot.png`: the
 notch and the home indicator are the magenta bands on the picture, and nothing may sit in them.
 
+**A HUD over a 3D world on a phone.** The 3D camera scales the world by itself; the HUD is scaled
+by the design fit, and a landscape design on a portrait phone fits by its long side (1920 → 375 px:
+×0.2). In the game script's `onStart`:
+`this.scene.setDesignFit({ orientation: 'adaptive', minScale: 0.45 })`. `adaptive` lays the HUD out
+against the design turned the screen's way (1080×1920 on a portrait screen); `minScale` is the least
+CSS px a design pixel is drawn at — below it the layer shows **less of the design** instead of
+shrinking (a 375 px phone at 0.45 is 833 design px across). So: anchor every HUD block to an edge or
+the centre (`layout:`), keep each block narrower than the narrowest layer you target (833 px here),
+never position HUD by absolute design coordinates (`±960`): ask
+`this.scene.getLogicalCameraSize()` for the layer's current size. Check with
+`npx pix3 play dev --size 375x667 --screenshot shot.png` and `--size 667x375`. Not for a 2D game
+whose world is laid out in design pixels: it would crop the board.
+
 **A new HUD node must not overlap the HUD that is already there.** Before you place it, read
 the `position`, `width`/`height` and anchoring of its siblings and pick a free spot (a combo
 label placed "top-right" once landed under the game's Shop button). With the editor open,
@@ -155,6 +201,9 @@ are ignored — `pix3 validate` says so); on an **instance** node they are the o
   `textureNormal`, `textureFill`, …). The saver always writes this form; a bare
   `texturePath: 'res://…'` string is only read for compatibility.
 - **Strings** with `:` `#` `{` or leading spaces: quote them (`label: "SCORE 0"`).
+- **Vectors and arrays** of numbers or strings go on one line: `position: [0, 1, 0]`,
+  `groups: [enemy, boss]` — never a key followed by one `- n` line per item (`W_EXPANDED_ARRAY`).
+  A list of nodes or of arrays stays one item per line.
 - **Flipbook**: an `AnimatedSprite2D` points at a `.pix3anim` (`animationResourcePath`) — a JSON
   file of named clips; its fields and defaults are in `pix3anim.md` beside this file. A character
   with variants and states is compiled, not hand-written: `pix3 character-compile`.
@@ -164,7 +213,7 @@ are ignored — `pix3 validate` says so); on an **instance** node they are the o
 ```yaml
 effects:
   - type: core:tint
-    params: { color: "#7ee787", amount: 1 }
+    params: { color: '#7ee787', amount: 1 }
 ```
 
 `core:tint` multiplies a near-white placeholder PNG to the colour — this is how
@@ -175,10 +224,10 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
 ## Component
 
 ```yaml
-- id: combo                    # readable id; keep it unique in the scene
-  type: user:Combo             # user:<ExportedClassName> (scripts/*.ts) or core:<Name>
+- id: combo # readable id; keep it unique in the scene
+  type: user:Combo # user:<ExportedClassName> (scripts/*.ts) or core:<Name>
   enabled: true
-  config:                      # keys = names in the component's getPropertySchema()
+  config: # keys = names in the component's getPropertySchema()
     windowSec: 1.2
 ```
 
@@ -219,14 +268,25 @@ its colour from `color`). On a `GeometryMesh` the stack lives at `material.effec
   ```yaml
   overrides:
     byLocalId:
-      retry-button:            # an id below the prefab root; nested: parent-id/child-id
-        properties: { label: "AGAIN" }   # schema names, as on the instance itself
+      retry-button: # an id below the prefab root; nested: parent-id/child-id
+        properties: { label: 'AGAIN' } # schema names, as on the instance itself
   ```
 
 - Nodes inside an instance keep their authored ids when those are unique, so scripts can find
   them by id (`retry-button` inside `scenes/ui/result.pix3scene` is found as `retry-button`).
 - A prefab carries fixed defaults only (e.g. its `core:Hitbox2D` group). Tunables live on
   plain nodes in the host scene.
+- **A prefab with states** (a building abandoned / working, a chest closed / open): one child
+  group per state under the root, named for the state (`abandoned`, `active`), all but the
+  default one `visible: false` in the file. A script shows one: `root.findByName('active')` —
+  by **name**, because inner ids are renamed in every instance but the first — and sets
+  `.visible`. A host scene that needs a fixed state overrides it:
+  `overrides: { byLocalId: { hut-abandoned: { properties: { visible: false } }, hut-active: { properties: { visible: true } } } }`;
+  a node deeper than the root's children is keyed by its path of ids, `hut-active/hut-active-farm`.
+- **A model sheet** for a set of prefabs: a scene outside `scenes/prefabs/` (so it is playable,
+  never the entry scene) with the game's camera and lights and one instance per prefab and state,
+  placed in a grid with the overrides above. Open it as `/?clean&scene=scenes/<sheet>.pix3scene`
+  and judge the whole set at game scale in one screenshot.
 - Where prefabs live: `scenes/prefabs/` or a top-level `prefabs/` — the export
   treats both (and `scenes/ui/`) as prefabs, never as a boot scene.
 - Spawned at runtime with `await this.scene.instantiate('res://scenes/prefabs/x.pix3scene', { parent })`.
@@ -258,26 +318,44 @@ root:
     type: CanvasLayer2D
     name: Result
     properties:
-      width: 1080            # viewportBaseSize; the layout stretches it over the real screen
+      width: 1080 # viewportBaseSize; the layout stretches it over the real screen
       height: 1920
       initiallyVisible: false
-      layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
+      layout:
+        {
+          enabled: true,
+          horizontalAlign: stretch,
+          verticalAlign: stretch,
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }
     children:
-      - id: dimmer           # stretched too: the whole screen, a tall phone's top and bottom included
+      - id: dimmer # stretched too: the whole screen, a tall phone's top and bottom included
         type: ColorRect2D
         name: Dimmer
         properties:
-          color: "#000000"
+          color: '#000000'
           opacity: 0.6
-          layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
-      - id: card             # the card, its title and PLAY AGAIN: centred in the safe area
+          layout:
+            {
+              enabled: true,
+              horizontalAlign: stretch,
+              verticalAlign: stretch,
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+            }
+      - id: card # the card, its title and PLAY AGAIN: centred in the safe area
         type: Group2D
         name: Card
         properties:
           width: 900
           height: 1100
           layout: { enabled: false, safeArea: true }
-        children: [ … ]
+        children: […]
 ```
 
 A root of the design size (no `layout`) dims only the design: on a phone taller than the design the
@@ -293,7 +371,7 @@ text:
 // in the script that reveals the card
 result.visible = true;
 this.scene.juice.burst({ x: 0, y: 420, in: 'card' }, { count: 48, colors: ['#ffcf33', '#ff4d6d'] });
-this.scene.juice.burst('result-title', { count: 24 });          // or on a node of the card
+this.scene.juice.burst('result-title', { count: 24 }); // or on a node of the card
 this.scene.juice.floatText('+500', { at: 'result-score', color: '#ffcf33' });
 ```
 

@@ -18,6 +18,11 @@ export interface ParsedYaml {
   readonly data: unknown;
   /** 1-based line of the value (or, for a mapping key, of the key) at `path`. */
   lineOf(path: DocPath): number | undefined;
+  /**
+   * Arrays of scalars (and `{x, y[, z]}` number maps) written one item per line instead of on one
+   * line — the form `SceneSaver` never writes (`W_EXPANDED_ARRAY`). In document order.
+   */
+  readonly expandedArrays: readonly { readonly path: DocPath; readonly line?: number }[];
 }
 
 export interface YamlParseError {
@@ -50,7 +55,37 @@ export const parseYamlWithLines = (text: string): ParsedYaml | { errors: YamlPar
   }
   const lineOfOffset = (offset: number | undefined): number | undefined =>
     offset === undefined ? undefined : lineCounter.linePos(offset).line;
+  const expandedArrays: { path: DocPath; line?: number }[] = [];
+  const walk = (node: unknown, path: DocPath): void => {
+    if (isSeq(node)) {
+      if (!node.flow && node.items.length > 1 && node.items.every(item => isScalar(item))) {
+        expandedArrays.push({ path, line: lineOfOffset(node.range?.[0]) });
+        return;
+      }
+      node.items.forEach((item, index) => walk(item, [...path, index]));
+    } else if (isMap(node)) {
+      const vector =
+        !node.flow &&
+        (node.items.length === 2 || node.items.length === 3) &&
+        node.items.every(
+          pair =>
+            isScalar(pair.key) &&
+            ['x', 'y', 'z'].includes(String(pair.key.value)) &&
+            isScalar(pair.value) &&
+            typeof pair.value.value === 'number'
+        );
+      if (vector) {
+        expandedArrays.push({ path, line: lineOfOffset(node.range?.[0]) });
+        return;
+      }
+      for (const pair of node.items) {
+        if (isScalar(pair.key)) walk(pair.value, [...path, String(pair.key.value)]);
+      }
+    }
+  };
+  walk(document.contents, []);
   return {
+    expandedArrays,
     data: document.toJS({ maxAliasCount: 1000 }),
     lineOf(path: DocPath): number | undefined {
       let current: unknown = document.contents;

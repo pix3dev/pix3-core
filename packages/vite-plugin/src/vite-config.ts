@@ -1,5 +1,5 @@
-import { readFileSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 
 import { searchForWorkspaceRoot, type UserConfig } from 'vite';
 
@@ -15,6 +15,39 @@ const editorOptimizeDeps = (editorCoreDir: string | null): string[] => {
     return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
   } catch {
     return [];
+  }
+};
+
+const newestMtimeMs = (dir: string): number => {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue;
+    const path = join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? newestMtimeMs(path) : statSync(path).mtimeMs);
+  }
+  return newest;
+};
+
+/**
+ * Whether the prebundled runtime is older than the runtime's sources. Only a **linked** runtime
+ * (`file:../pix3-core/packages/runtime`, a workspace) can be: Vite keys its dependency cache on
+ * the lockfile and the config, neither of which changes when a linked checkout is edited, so the
+ * dev server went on serving `node_modules/.vite/deps/@pix3_runtime.js` from days before (Skyways,
+ * 2026-11-13: an engine fix invisible after every reload). An installed copy never is.
+ */
+export const linkedRuntimeOutdatesCache = (
+  runtimeDir: string | null,
+  cacheDir: string
+): boolean => {
+  if (!runtimeDir) return false;
+  try {
+    const real = realpathSync.native(runtimeDir);
+    if (real.split(sep).includes('node_modules')) return false;
+    const cached = statSync(join(cacheDir, 'deps', '_metadata.json')).mtimeMs;
+    return newestMtimeMs(join(real, 'src')) > cached;
+  } catch {
+    // No cache yet (Vite builds it anyway) or no `src/`: nothing to force.
+    return false;
   }
 };
 
@@ -45,9 +78,17 @@ export const pix3ViteConfig = (options: {
   const singleChunk = options.rolldown ? { codeSplitting: false } : { inlineDynamicImports: true };
   // A compressed build is injected as script text: `iife`, so it declares nothing global.
   const outputFormat = options.compress && format === 'html' ? { format: 'iife' as const } : {};
+  const staleRuntime =
+    !format &&
+    linkedRuntimeOutdatesCache(
+      findPackageDir(projectRoot, '@pix3/runtime'),
+      resolve(projectRoot, user.cacheDir ?? 'node_modules/.vite')
+    );
   return {
     resolve: { dedupe: ['three', '@pix3/runtime'] },
     optimizeDeps: {
+      // A linked runtime edited since the last prebundle: rebuild the cache on this start.
+      ...(staleRuntime ? { force: true } : {}),
       // One runtime and one three for the game and the editor (plan §B.2, S1), plus the bare
       // subpaths the prebuilt editor imports (`dist/optimize-deps.json`).
       include: ['@pix3/runtime', 'three', ...editorOptimizeDeps(editorCoreDir)],

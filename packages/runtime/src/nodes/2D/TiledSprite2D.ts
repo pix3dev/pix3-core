@@ -1,5 +1,7 @@
 import { BufferGeometry, Mesh, MeshBasicMaterial, Texture, Vector2 } from 'three';
 import { Node2D, type Node2DProps } from '../Node2D';
+import type { AssetLoader } from '../../core/AssetLoader';
+import type { SceneService } from '../../core/SceneService';
 import type { PropertySchema } from '../../fw/property-schema';
 import { installReactiveSchemaProperties } from '../../fw/reactive-schema-properties';
 import { coerceTextureResource, type TextureResourceRef } from '../../core/TextureResource';
@@ -71,6 +73,8 @@ export class TiledSprite2D extends Node2D {
   textureHeight: number;
 
   private mesh: Mesh;
+  /** The path `loadTexture` last asked for — so a node re-attached to a scene loads once. */
+  private requestedTexturePath: string | null = null;
   private geometry: BufferGeometry;
   private material: MeshBasicMaterial;
 
@@ -194,11 +198,55 @@ export class TiledSprite2D extends Node2D {
   }
 
   set texturePath(value: string | null) {
-    this.texture = coerceTextureResource(value);
+    this.setTextureResource(value);
   }
 
   setTextureResource(value: unknown): void {
     this.texture = coerceTextureResource(value);
+    // In a running scene a new path loads at once, like `Sprite2D`'s.
+    const path = this.texturePath;
+    if (this.scene && path && path !== this.requestedTexturePath) {
+      void this.loadTexture();
+    }
+  }
+
+  /**
+   * Load `texturePath` through `loader` (default: the running scene's) and show it. A panel a
+   * script builds with `new TiledSprite2D({ texturePath })` calls it when `adoptChild` puts it
+   * into the running scene — without it a 9-slice plate made in code stayed a flat white rect
+   * (Skyways' HUD plates). The `SceneLoader` loads authored ones itself.
+   */
+  async loadTexture(loader?: AssetLoader | null): Promise<void> {
+    const path = this.texturePath;
+    const assets = loader ?? this.scene?.getAssetLoader() ?? null;
+    if (!path || !assets) {
+      return;
+    }
+    this.requestedTexturePath = path;
+    // Draw nothing rather than a white rect for the frames the first image takes.
+    const firstLoad = !this.material.map;
+    if (firstLoad) this.mesh.visible = false;
+    try {
+      // Never atlased: the 9-slice geometry assumes full-[0,1] UVs (as in the SceneLoader).
+      const texture = await assets.loadTexture(path, { atlas: false });
+      if (this.requestedTexturePath === path) {
+        this.setTexture(texture);
+      }
+    } catch (error) {
+      console.warn(
+        `[TiledSprite2D] Error loading texture for TiledSprite2D "${this.nodeId}" from "${path}":`,
+        error
+      );
+    } finally {
+      this.mesh.visible = true;
+    }
+  }
+
+  protected override onSceneAttached(scene: SceneService): void {
+    const path = this.texturePath;
+    if (path && path !== this.requestedTexturePath && !this.material.map) {
+      void this.loadTexture(scene.getAssetLoader());
+    }
   }
 
   /**

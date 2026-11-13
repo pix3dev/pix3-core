@@ -41,6 +41,11 @@ export const DIAGNOSTIC_CODES = {
     level: 1,
     summary: '`children:` has no value — an indentation slip that made the children siblings',
   },
+  W_EXPANDED_ARRAY: {
+    severity: 'warning',
+    level: 1,
+    summary: 'vectors / arrays of numbers written one item per line instead of `[x, y, z]`',
+  },
   W_TYPE_CASE: {
     severity: 'warning',
     level: 1,

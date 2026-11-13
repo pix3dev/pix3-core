@@ -15,6 +15,7 @@ export * from './core/emoji-as-art';
 export * from './core/project-script-registration';
 export { autoloadComponentType, normalizeAutoloads } from './core/autoloads';
 export * from './core/SceneSaver';
+export { stringifySceneYaml } from './core/scene-yaml';
 export * from './core/SceneManager';
 export * from './core/SceneRunner';
 export * from './core/runtime-time';

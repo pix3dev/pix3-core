@@ -1,5 +1,5 @@
+import { stringifySceneYaml } from '@pix3/runtime';
 import {
-  Document,
   isMap,
   isScalar,
   isSeq,
@@ -12,7 +12,6 @@ import {
 } from 'yaml';
 import {
   isLeafOp,
-  isVectorObject,
   type LeafOp,
   type LeafPath,
   type SceneOp,
@@ -145,20 +144,7 @@ const pairEnd = (src: string, pair: YPair): number =>
 
 // --- rendering of NEW content only --------------------------------------------------------------
 
-const toYaml = (value: unknown): string => {
-  const doc = new Document(value);
-  visit(doc, {
-    Seq(_, node) {
-      if (node.items.length > 0 && node.items.every(item => isScalar(item))) node.flow = true;
-    },
-    Map(_, node) {
-      if (isVectorObject(node.toJSON())) node.flow = true;
-    },
-  });
-  return doc
-    .toString({ indent: 2, indentSeq: true, flowCollectionPadding: false, lineWidth: 0 })
-    .trimEnd();
-};
+const toYaml = (value: unknown): string => stringifySceneYaml(value).trimEnd();
 
 const renderScalarLike = (value: unknown, existing: Scalar | null): string => {
   if (typeof value === 'string' && existing) {

@@ -116,6 +116,42 @@ describe('level 1: structure', () => {
     expect(find(report, 'W_EMPTY_CHILDREN')).toHaveLength(1); // `children: []` is fine
   });
 
+  it('W_EXPANDED_ARRAY: one warning per file for arrays / vectors written one item per line', async () => {
+    const report = await run({
+      'scenes/a.pix3scene': [
+        'version: 1.0.0',
+        'root:',
+        '  - id: a',
+        '    type: Node3D',
+        '    groups:',
+        '      - enemy',
+        '      - boss',
+        '    properties:',
+        '      transform:',
+        '        position:',
+        '          - 0',
+        '          - 1',
+        '          - 0',
+        '        scale: [1, 1, 1]',
+        '    children: []',
+        '',
+      ].join('\n'),
+      'scenes/b.pix3scene': scene(
+        '  - id: b\n    type: Node3D\n    properties:\n      transform:\n        position: [0, 1, 0]\n'
+      ),
+    });
+    const warnings = find(report, 'W_EXPANDED_ARRAY');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      file: 'scenes/a.pix3scene',
+      path: 'root[0].groups',
+      line: 6,
+    });
+    expect(warnings[0].message).toMatch(/^2 array/);
+    expect(warnings[0].fix).toContain('[0, 1, 0]');
+    expect(report.errorCount).toBe(0);
+  });
+
   it('E_SHAPE: the shapes the loader accepts silently or crashes on', async () => {
     const report = await run({
       'scenes/object-root.pix3scene': 'version: 1.0.0\nroot: { a: 1 }\n',

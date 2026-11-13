@@ -1,5 +1,6 @@
 import {
   AdditiveBlending,
+  NormalBlending,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -27,6 +28,8 @@ import { Node3D, type Node3DProps } from '../Node3D';
 
 export type ParticleEmitterShape = 'point' | 'sphere' | 'box';
 export type ParticleRenderShape = 'plane' | 'sphere' | 'cube';
+/** `additive` glows (fire, sparks) and vanishes on a light background; `normal` covers (smoke, dust). */
+export type ParticleBlending = 'additive' | 'normal';
 
 export interface Particles3DProps extends Omit<Node3DProps, 'type'> {
   texture?: TextureResourceRef | null;
@@ -53,6 +56,7 @@ export interface Particles3DProps extends Omit<Node3DProps, 'type'> {
   prewarm?: boolean;
   preview?: boolean;
   disableRotation?: boolean;
+  blending?: ParticleBlending;
   simulationSpace?: 'local' | 'world';
   trailEnabled?: boolean;
   trailLifetime?: number;
@@ -125,6 +129,7 @@ export class Particles3D extends Node3D {
 
   private readonly renderRoot: Mesh;
   private instancedMesh: InstancedMesh | null = null;
+  private _blending: ParticleBlending;
   private readonly material: MeshBasicMaterial;
   private instanceColorAttr: InstancedBufferAttribute;
   private instanceAlphaAttr: InstancedBufferAttribute;
@@ -193,6 +198,7 @@ export class Particles3D extends Node3D {
     this.prewarm = props.prewarm ?? false;
     this.preview = props.preview ?? false;
     this.disableRotation = props.disableRotation ?? false;
+    this._blending = props.blending === 'normal' ? 'normal' : 'additive';
     this.simulationSpace = props.simulationSpace ?? 'local';
     this.trailEnabled = props.trailEnabled ?? false;
     this.trailLifetime = Math.max(0.05, props.trailLifetime ?? 0.3);
@@ -215,7 +221,7 @@ export class Particles3D extends Node3D {
       color: '#ffffff',
       transparent: true,
       depthWrite: false,
-      blending: AdditiveBlending,
+      blending: this._blending === 'normal' ? NormalBlending : AdditiveBlending,
       vertexColors: false,
       side: DoubleSide,
     });
@@ -252,6 +258,23 @@ export class Particles3D extends Node3D {
     // Last: script writes to particleShape / maxParticles now swap the instanced geometry and
     // reallocate the instance buffers instead of silently desyncing from the allocated attributes.
     installReactiveSchemaProperties(this, Particles3D.getPropertySchema);
+  }
+
+  /** How particles (and their trails) mix with what is behind them. */
+  get blending(): ParticleBlending {
+    return this._blending;
+  }
+
+  set blending(value: ParticleBlending) {
+    const next: ParticleBlending = value === 'normal' ? 'normal' : 'additive';
+    this._blending = next;
+    const mode = next === 'normal' ? NormalBlending : AdditiveBlending;
+    for (const material of [this.material, this.trailMaterial]) {
+      if (material && material.blending !== mode) {
+        material.blending = mode;
+        material.needsUpdate = true;
+      }
+    }
   }
 
   get texturePath(): string | null {
@@ -897,7 +920,7 @@ export class Particles3D extends Node3D {
     this.trailMaterial = new MeshBasicMaterial({
       transparent: true,
       depthWrite: false,
-      blending: AdditiveBlending,
+      blending: this._blending === 'normal' ? NormalBlending : AdditiveBlending,
       side: DoubleSide,
       vertexColors: true, // itemSize-4 color attribute → USE_COLOR_ALPHA (per-vertex alpha)
     });
@@ -1363,6 +1386,20 @@ export class Particles3D extends Node3D {
           setValue: (node: unknown, value: unknown) => {
             const v = value as { x: number; y: number; z: number };
             (node as Particles3D).gravity = { x: Number(v.x), y: Number(v.y), z: Number(v.z) };
+          },
+        },
+        {
+          name: 'blending',
+          type: 'enum',
+          ui: {
+            label: 'Blending',
+            description: 'additive glows and is lost on a light background; normal covers (smoke)',
+            group: 'Rendering',
+            options: ['additive', 'normal'],
+          },
+          getValue: (node: unknown) => (node as Particles3D).blending,
+          setValue: (node: unknown, value: unknown) => {
+            (node as Particles3D).blending = value === 'normal' ? 'normal' : 'additive';
           },
         },
         {

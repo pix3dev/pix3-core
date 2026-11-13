@@ -234,6 +234,10 @@ export class SceneRunner {
   /** Adaptive logical camera dimensions computed from viewportBaseSize + viewport aspect. */
   private logicalCameraSize = { width: 1, height: 1 };
   private readonly rootLayoutAuthoredSize: { width: number; height: number };
+  /** `adaptive`: the design size is read with its sides swapped when the screen is the other way up. */
+  private designOrientation: 'fixed' | 'adaptive' = 'fixed';
+  /** The least CSS px a design pixel may be drawn at; 0 = no floor. */
+  private designMinScale = 0;
   private readonly frameListeners = new Set<SceneRunnerFrameListener>();
   /**
    * How late the browser delivered the animation frame currently being run —
@@ -1519,8 +1523,14 @@ export class SceneRunner {
     this.viewportSize.width = cssWidth;
     this.viewportSize.height = cssHeight;
 
-    const baseW = this.rootLayoutAuthoredSize.width;
-    const baseH = this.rootLayoutAuthoredSize.height;
+    let baseW = this.rootLayoutAuthoredSize.width;
+    let baseH = this.rootLayoutAuthoredSize.height;
+    // A landscape design on a portrait screen (or the reverse) fits by its long side: 1920×1080 on
+    // a 375 px wide phone draws a design pixel at 0.2 CSS px and the HUD is unreadable. `adaptive`
+    // lays the 2D layer out against the design turned the screen's way (1080×1920 → 0.35).
+    if (this.designOrientation === 'adaptive' && baseW > baseH !== cssWidth > cssHeight) {
+      [baseW, baseH] = [baseH, baseW];
+    }
 
     const baseAspect = baseW / baseH;
     const viewportAspect = cssWidth / cssHeight;
@@ -1534,8 +1544,32 @@ export class SceneRunner {
       cameraHeight = cameraWidth / viewportAspect;
     }
 
+    // The floor: on a screen too small to show the whole design at `designMinScale`, show less of
+    // it at that scale instead — edge-anchored HUD stays where it is and stays readable.
+    const floor = this.designMinScale;
+    if (floor > 0 && cssWidth / cameraWidth < floor) {
+      cameraWidth = cssWidth / floor;
+      cameraHeight = cssHeight / floor;
+    }
+
     this.logicalCameraSize = { width: cameraWidth, height: cameraHeight };
     return true;
+  }
+
+  /**
+   * How the design size (`viewportBaseSize`) meets the screen. `orientation: 'adaptive'` swaps its
+   * sides on a screen of the other orientation (default `fixed`: always the authored size);
+   * `minScale` is the least CSS px one design pixel is drawn at — below it the 2D layer shows less
+   * of the design rather than shrinking further. Both are for a HUD anchored to the screen's edges
+   * over a 3D (or camera-driven) world; a 2D game laid out in design pixels needs neither.
+   */
+  setDesignFit(fit: { orientation?: 'fixed' | 'adaptive'; minScale?: number }): void {
+    if (fit.orientation) this.designOrientation = fit.orientation;
+    if (typeof fit.minScale === 'number' && Number.isFinite(fit.minScale)) {
+      this.designMinScale = Math.max(0, fit.minScale);
+    }
+    // Force the next frame to recompute the logical camera and re-run the anchored layout.
+    this.viewportSize.width = -1;
   }
 
   private render(): void {
@@ -1995,6 +2029,9 @@ export class SceneRunner {
       },
       getLogicalCameraSize(): { width: number; height: number } {
         return { ...runner.logicalCameraSize };
+      },
+      setDesignFit(fit: { orientation?: 'fixed' | 'adaptive'; minScale?: number }): void {
+        runner.setDesignFit(fit);
       },
       setActiveCameraNode(camera: Camera3D | null): void {
         runner.activeCamera = camera;

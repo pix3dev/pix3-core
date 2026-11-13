@@ -221,6 +221,7 @@ export interface Particles3DProperties {
   endAlpha?: number;
   billboard?: boolean;
   disableRotation?: boolean;
+  blending?: string;
   playing?: boolean;
   loop?: boolean;
   prewarm?: boolean;
@@ -755,9 +756,26 @@ export class SceneLoader {
    * blocks. The schema spells those as flat inspector keys (`layoutEnabled`, `horizontalAlign`,
    * `marginLeft`, …) that `createNodeFromDefinition` does not read, so without the blocks every
    * node of an instance lost its anchors — a stretched dimmer in an overlay stayed 100×100.
+   *
+   * A mesh's `material:` block is the same case in 3D: the schema spells it `materialType`,
+   * `color`, `roughness`, …, the loader reads the nested block, so every `GeometryMesh` of an
+   * instance came out in the default blue PBR material (Skyways' island prefabs).
    */
   private captureCloneProperties(node: NodeBase, isInstanceRoot: boolean): Record<string, unknown> {
     const properties = this.captureNodeComparableProperties(node);
+    // The schema reads an unauthored `initiallyVisible` as the node's `visible`; kept, the clone
+    // would carry it as authored and play would undo an instance's `visible` override.
+    if (typeof node.properties.initiallyVisible !== 'boolean') {
+      delete properties.initiallyVisible;
+    }
+    if (node instanceof GeometryMesh) {
+      Object.assign(properties, node.serializeConfig());
+    } else if (node instanceof InstancedMesh3D) {
+      const material = node.serializeMaterialConfig();
+      if (material) {
+        properties.material = { ...material };
+      }
+    }
     if (node instanceof Node2D) {
       const layout: Node2DLayoutConfig = { ...node.getLayoutConfig() };
       // A legacy prefab root without margins was anchored against the viewport of its own file,
@@ -1993,6 +2011,7 @@ export class SceneLoader {
           billboard: typeof props.billboard === 'boolean' ? props.billboard : true,
           disableRotation:
             typeof props.disableRotation === 'boolean' ? props.disableRotation : false,
+          blending: props.blending === 'normal' ? 'normal' : 'additive',
           playing: typeof props.playing === 'boolean' ? props.playing : true,
           loop: typeof props.loop === 'boolean' ? props.loop : true,
           prewarm: typeof props.prewarm === 'boolean' ? props.prewarm : false,

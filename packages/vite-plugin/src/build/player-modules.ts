@@ -167,7 +167,8 @@ export const sceneAsJson = (text: string): string => JSON.stringify(parseYaml(te
 
 /**
  * What `yaml` resolves to **for the runtime's own importers** (`SceneLoader`, `SceneSaver`) when
- * every scene ships as JSON: `parse` is `JSON.parse`, `stringify` throws (a player never writes a
+ * every scene ships as JSON: `parse` is `JSON.parse`, `stringify` and the names
+ * `stringifySceneYaml` uses (`Document`, `visit`, `isScalar`, `isMap`) throw (a player never writes a
  * scene — `SceneSaver` is not even constructed, so this tree-shakes out). A project module that
  * imports `yaml` itself keeps the real parser; this stub is decided per importer.
  */
@@ -175,8 +176,14 @@ export const yamlStubSource = (): string =>
   [
     '// Scenes and prefabs ship as JSON in this build: the YAML parser is not bundled.',
     'export const parse = text => JSON.parse(text);',
-    "export const stringify = () => { throw new Error('[Pix3] yaml.stringify was stripped from this build: a player never writes scenes.'); };",
-    'export default { parse, stringify };',
+    'const stripped = name => () => { throw new Error(`[Pix3] yaml.${name} was stripped from this build: a player never writes scenes.`); };',
+    "export const stringify = stripped('stringify');",
+    "// `stringifySceneYaml` (runtime `core/scene-yaml.ts`, the saver's writer) imports these.",
+    "export const Document = stripped('Document');",
+    "export const visit = stripped('visit');",
+    "export const isScalar = stripped('isScalar');",
+    "export const isMap = stripped('isMap');",
+    'export default { parse, stringify, Document, visit, isScalar, isMap };',
     '',
   ].join('\n');
 

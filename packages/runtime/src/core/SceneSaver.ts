@@ -1,4 +1,3 @@
-import { stringify } from 'yaml';
 import { MathUtils, PerspectiveCamera, OrthographicCamera } from 'three';
 
 import { NodeBase } from '../nodes/NodeBase';
@@ -40,6 +39,7 @@ import type { SceneGraph } from './SceneManager';
 import type { SceneNodeDefinition, InstanceOverrides } from './SceneLoader';
 import { getNodePropertySchema } from '../fw/property-schema-utils';
 import { collectComponentDefinitions } from './component-hydration';
+import { stringifySceneYaml } from './scene-yaml';
 
 /** The plain document `serializeScene` stringifies (see {@link SceneSaver.serializeSceneDocument}). */
 export interface SavedSceneDocument {
@@ -84,63 +84,7 @@ export class SceneSaver {
   serializeScene(graph: SceneGraph): string {
     const document = this.serializeSceneDocument(graph);
 
-    // Custom YAML stringification to keep vectors as inline arrays
-    let yaml = stringify(document, { indent: 2 });
-
-    // Replace expanded position arrays with inline format
-    yaml = yaml.replace(
-      /position:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'position: [$1, $2, $3]'
-    );
-    yaml = yaml.replace(
-      /position:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)(?!\s*-)/g,
-      'position: [$1, $2]'
-    );
-
-    // Replace expanded rotationEuler arrays with inline format
-    yaml = yaml.replace(
-      /rotationEuler:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'rotationEuler: [$1, $2, $3]'
-    );
-
-    // Replace expanded scale arrays with inline format
-    yaml = yaml.replace(
-      /scale:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'scale: [$1, $2, $3]'
-    );
-    yaml = yaml.replace(/scale:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)(?!\s*-)/g, 'scale: [$1, $2]');
-
-    // Replace expanded rotation arrays with inline format (2D)
-    yaml = yaml.replace(
-      /rotation:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- (\w+)/g,
-      'rotation: [$1, $2, $3, $4]'
-    );
-    yaml = yaml.replace(
-      /rotation:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)(?!\s*-)/g,
-      'rotation: [$1, $2]'
-    );
-
-    // Replace expanded size arrays with inline format
-    yaml = yaml.replace(
-      /size:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'size: [$1, $2, $3]'
-    );
-    yaml = yaml.replace(/size:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)(?!\s*-)/g, 'size: [$1, $2]');
-
-    // Replace expanded pivot arrays with inline format
-    yaml = yaml.replace(/pivot:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g, 'pivot: [$1, $2]');
-
-    // Replace expanded particle vectors with inline format
-    yaml = yaml.replace(
-      /emitterBoxSize:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'emitterBoxSize: [$1, $2, $3]'
-    );
-    yaml = yaml.replace(
-      /gravity:\s*\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)\n\s*- ([\d.-]+)/g,
-      'gravity: [$1, $2, $3]'
-    );
-
-    return yaml;
+    return stringifySceneYaml(document);
   }
 
   private serializeNode(node: NodeBase): SceneNodeDefinition {
@@ -837,6 +781,10 @@ export class SceneSaver {
       props.endAlpha = node.endAlpha;
       props.billboard = node.billboard;
       props.disableRotation = node.disableRotation;
+      // Written only when it differs: `additive` is what every existing scene means by omission.
+      if (node.blending !== 'additive') {
+        props.blending = node.blending;
+      }
       props.playing = node.playing;
       props.loop = node.loop;
       props.prewarm = node.prewarm;

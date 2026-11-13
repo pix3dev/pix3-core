@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import type { BufferGeometry, Mesh } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { Texture, type BufferGeometry, type Mesh, type MeshBasicMaterial } from 'three';
 
 import { TiledSprite2D } from './TiledSprite2D';
 import { reactiveSchemaPropertyNames } from '../../fw/reactive-schema-properties';
+import { NodeBase } from '../NodeBase';
+import type { SceneService } from '../../core/SceneService';
 
 const meshOf = (node: TiledSprite2D): Mesh => (node as unknown as { mesh: Mesh }).mesh;
 const geometryOf = (node: TiledSprite2D): BufferGeometry => meshOf(node).geometry;
@@ -97,5 +99,38 @@ describe('TiledSprite2D schema-property reactivity (direct script assignment)', 
     node.anchor = { x: 0, y: 1 };
     expect(meshOf(node).position.x).toBe(50);
     expect(meshOf(node).position.y).toBe(-50);
+  });
+});
+
+describe('TiledSprite2D built by a script loads its own texture', () => {
+  const sceneWith = (loadTexture: (path: string, options?: unknown) => Promise<Texture>) =>
+    ({ getAssetLoader: () => ({ loadTexture }) }) as unknown as SceneService;
+  const mapOf = (node: TiledSprite2D) =>
+    (node as unknown as { material: MeshBasicMaterial }).material.map;
+
+  it('adoptChild into a running scene loads texturePath, unatlased (was a white rect)', async () => {
+    const texture = new Texture();
+    const loadTexture = vi.fn(async () => texture);
+    const parent = new NodeBase({ id: 'p' });
+    parent.scene = sceneWith(loadTexture);
+    const plate = new TiledSprite2D({
+      id: 'plate',
+      texturePath: 'res://sprites/chip.svg',
+      patchMode: 'nine-slice',
+      width: 200,
+      height: 70,
+    });
+    parent.adoptChild(plate);
+
+    await vi.waitFor(() => expect(mapOf(plate)).toBe(texture));
+    expect(loadTexture).toHaveBeenCalledTimes(1);
+    expect(loadTexture).toHaveBeenCalledWith('res://sprites/chip.svg', { atlas: false });
+    expect(meshOf(plate).visible).toBe(true);
+  });
+
+  it('without a scene nothing loads (the editor and the SceneLoader load it themselves)', () => {
+    const plate = new TiledSprite2D({ id: 'plate', texturePath: 'res://sprites/chip.svg' });
+    plate.texturePath = 'res://sprites/other.svg';
+    expect(mapOf(plate)).toBeNull();
   });
 });

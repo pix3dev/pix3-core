@@ -238,6 +238,8 @@ the corners. This is the engine's nine-slice.
 - `three-slice-h` is the right mode for a horizontal bar (left cap · middle · right cap); only the
   left/right borders matter.
 
+- Built by a script (`new TiledSprite2D({ texturePath, patchMode: 'nine-slice', sliceBorder, width, height })`), the node loads its texture when `adoptChild` puts it into the running scene, as `Sprite2D` does — a plate behind HUD content made in code. A new `texturePath` in a running scene loads at once.
+
 ---
 
 ### AnimatedSprite2D
@@ -978,6 +980,21 @@ field works for every primitive:
   props so they remain keyframe-animatable.
 - A dissolving mesh still casts an intact shadow (the depth/shadow pass has no
   `discard`); accepted for now.
+- **A model from primitives** (a building, a tree, a vehicle) is a `Node3D` with `GeometryMesh`
+  children; these shapes cover most of it:
+  - a **gable roof** is a square bar turned 45° — `box` `[a, a, length]`, `rotationEuler: [0, 0, 45]`,
+    `a` = wall width / 1.41, centred on the wall top so its lower half hides in the walls; put it
+    in a `Node3D` with `scale: [1, 0.7, 1]` for a flatter pitch;
+  - a **dome** is a `sphere` sunk halfway into a `cylinder`; an **ellipsoid** (a hull, a bush, a
+    boulder) is a `sphere` with a non-uniform `scale`; a **spire / crystal / pine** is a `cone`;
+  - a **roofless ruin** is a wall `box` with a slightly smaller dark `box` 2 mm above its top;
+  - **something that glows** (a lit window, lava, a lamp) is `material.type: basic` in a bright colour;
+  - **spinning about a horizontal axis** (mill sails, a wheel on a wall): `core:Rotate` turns a node
+    about its own Y, so nest it — a `Node3D` with `rotationEuler: [90, 0, 0]` (its Y now points
+    along the parent's Z), inside it the spinning `Node3D` with the component, the parts laid out
+    in that node's XZ plane; a yaw on an outer `Node3D` aims the whole assembly;
+  - under an orthographic camera yawed 45°, leave boxes axis-aligned (two faces show, the isometric
+    look), put tall parts on the far side of the model and flat ones (fields, water) in front.
 - `castShadow`/`receiveShadow` (Inspector → **Rendering**) are authored on the
   node and mirrored onto the child render mesh; both default to **true**, which is
   what this node hardcoded before they were exposed, so existing scenes are
@@ -1241,6 +1258,7 @@ that burst a second emitter on particle death.
 | `lifetime`                  | number  | 2           | Base particle lifetime (s), jittered ±15%                                                             |
 | `speed` / `speedSpread`     | number  | 2 / 0.5     | Initial speed and its random spread                                                                   |
 | `gravity`                   | vector3 | (0,0,0)     | Constant acceleration (sim-space vector)                                                              |
+| `blending`                  | enum    | `additive`  | `additive` glows (fire, sparks) and is invisible on a light background; `normal` covers (smoke, dust) |
 | `startColor`/`endColor`     | color   | white/amber | Color ramp over life                                                                                  |
 | `startAlpha`/`endAlpha`     | number  | 1 / 0       | Alpha ramp over life                                                                                  |
 | `simulationSpace`           | enum    | `local`     | `local` = particles follow the emitter; `world` = particles are emitted into world space and stay put |

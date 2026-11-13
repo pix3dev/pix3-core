@@ -1,3 +1,4 @@
+import { AdditiveBlending, NormalBlending } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -87,6 +88,26 @@ describe('Particles3D persistence', () => {
 
     expect(particle.rotation).toBe(0);
     expect(particle.angularVelocity).toBe(0);
+  });
+
+  it('round-trips blending: normal, and writes nothing for the additive default', async () => {
+    const saver = new SceneSaver();
+    const smoke = new Particles3D({ id: 'smoke', name: 'Smoke', blending: 'normal' });
+    const yaml = saver.serializeScene(createGraph(smoke));
+    expect(yaml).toContain('blending: normal');
+
+    const graph = await createLoader().parseScene(yaml, {
+      filePath: 'res://scenes/main.pix3scene',
+    });
+    const loaded = graph.rootNodes[0] as Particles3D;
+    expect(loaded.blending).toBe('normal');
+    const material = (loaded as unknown as { material: { blending: number } }).material;
+    expect(material.blending).toBe(NormalBlending);
+    loaded.blending = 'additive';
+    expect(material.blending).toBe(AdditiveBlending);
+
+    const sparks = new Particles3D({ id: 'sparks', name: 'Sparks' });
+    expect(saver.serializeScene(createGraph(sparks))).not.toContain('blending');
   });
 
   it('keeps backward-compatible default when disableRotation is absent', async () => {
