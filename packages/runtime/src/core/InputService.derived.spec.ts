@@ -26,7 +26,15 @@ describe('InputService derived pointer state', () => {
   // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
+    return input.pointerEvents.map(
+      ({
+        unitsPerCssPx: _scale,
+        pointerType: _type,
+        button: _button,
+        buttons: _buttons,
+        ...event
+      }) => event
+    );
   };
 
   beforeEach(() => {
@@ -134,7 +142,9 @@ describe('InputService derived pointer state', () => {
     expect(input.pointerDownCount).toBe(1);
     expect(input.isPointerDown).toBe(true);
     expect(input.activePointerId).toBe(3);
-    expect(input.getActivePointers()).toEqual([{ pointerId: 3, x: 90, y: 100, isPrimary: true }]);
+    expect(input.getActivePointers()).toMatchObject([
+      { pointerId: 3, x: 90, y: 100, isPrimary: true },
+    ]);
     expect(input.getButton('Action_Primary')).toBe(true);
     expect(frameEvents()).toEqual([{ type: 'down', pointerId: 3, x: 90, y: 100 }]);
   });

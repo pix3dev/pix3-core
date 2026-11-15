@@ -9,6 +9,7 @@ import { COMMAND_USAGE } from '../usage.ts';
 import { findChrome, needsNoSandbox, describeChromeNotFound } from '../editor/chrome.ts';
 import { readDevInfo } from '../editor/dev-server.ts';
 import { PipeChrome, type CdpEvent } from './chrome-pipe.ts';
+import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 
 /**
  * `pix3 play` — the game's own page (the dev server, or a built `dist/index.html` as it ships) in
@@ -38,6 +39,8 @@ interface PlayArgs {
   /** Where `bot.screenshot(name)` pictures go (default beside --screenshot, else .pix3/screenshots). */
   readonly shots?: string;
   readonly json: boolean;
+  /** Measure the run: frame / logic / render times, FrameProfiler activities, renderer counters. */
+  readonly profile: boolean;
   readonly project?: string;
 }
 
@@ -64,6 +67,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let screenshot: string | undefined;
   let shots: string | undefined;
   let json = false;
+  let profile = false;
   let project: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -71,6 +75,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     const value = (): string | undefined => inline ?? argv[++i];
     if (flag === '--help' || flag === '-h') return 'help';
     if (flag === '--json') json = true;
+    else if (flag === '--profile') profile = true;
     else if (flag === '--size') {
       const match = /^(\d+)x(\d+)$/.exec(value() ?? '');
       if (!match) return { error: '--size takes WIDTHxHEIGHT in CSS px, e.g. --size 390x844' };
@@ -156,6 +161,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     screenshot,
     shots,
     json,
+    profile,
     project,
   };
 };
@@ -238,6 +244,8 @@ interface PlayReport {
   readonly sounds?: { requested: number; last: { sound: string; frame: number }[] };
   /** The pictures the policy took with `bot.screenshot(name)`, in order. */
   readonly screenshots?: readonly { name: string; frame: number; path: string }[];
+  /** `--profile`: the measured window (`packages/vite-plugin/player/debug/profile.ts`). */
+  readonly profile?: PlayProfile | { error: string };
 }
 
 /** How often the CLI asks the page whether the policy is done or wants a picture. */
@@ -369,20 +377,55 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     }
 
     let botReport: Record<string, unknown> | undefined;
+    let profile: PlayReport['profile'];
     const shots: { name: string; frame: number; path: string }[] = [];
-    if (status === 'running' && policyScript !== null && args.bot) {
-      const host = await withCommandBundle(
-        'play',
-        'page-bot-host.js',
-        async outdir => (await import('./bundle.ts')).buildPlayBundle(outdir),
-        async dir => (await import('./bundle.ts')).readPlayHost(dir)
-      );
-      await chrome.evaluate(session, host);
+    const pageScripts =
+      status === 'running' && (args.profile || (policyScript !== null && args.bot))
+        ? await withCommandBundle(
+            'play',
+            'page-profile.js',
+            async outdir => (await import('./bundle.ts')).buildPlayBundle(outdir),
+            async dir => {
+              const bundle = await import('./bundle.ts');
+              return { host: bundle.readPlayHost(dir), profile: bundle.readPlayProfile(dir) };
+            }
+          )
+        : null;
+    /**
+     * The profile starts once the game runs as it will for the whole window: after the bot set
+     * its fixed-tick time mode. Its warm-up second is excluded inside the page.
+     */
+    const startProfile = async (): Promise<void> => {
+      if (!args.profile || !pageScripts) return;
+      try {
+        await chrome.evaluate(session, pageScripts.profile);
+        await chrome.evaluate(
+          session,
+          'window.__PIX3_PAGE_PROFILE_HOST__.startPageProfile(), true'
+        );
+      } catch (error) {
+        profile = { error: (error as Error).message };
+      }
+    };
+    const stopProfile = async (): Promise<void> => {
+      if (!args.profile || profile) return;
+      profile = (await chrome
+        .evaluate(
+          session,
+          'window.__PIX3_PAGE_PROFILE__ ? JSON.parse(JSON.stringify(window.__PIX3_PAGE_PROFILE__.stop())) : null'
+        )
+        .catch((error: Error) => ({ error: error.message }))) as PlayReport['profile'];
+      // The page reloaded under the run (Vite's full reload): the profile went with it.
+      profile ??= { error: 'the page reloaded during the run and took the profile with it' };
+    };
+    if (status === 'running' && policyScript !== null && args.bot && pageScripts) {
+      await chrome.evaluate(session, pageScripts.host);
       await chrome.evaluate(session, policyScript);
       await chrome.evaluate(
         session,
         `window.__PIX3_PAGE_BOT_HOST__.startPageBot(${JSON.stringify(args.bot)}, window.__PIX3_BOT_POLICY__, ${JSON.stringify(args.botArgs)}), true`
       );
+      await startProfile();
       // One evaluate per poll: whether the policy is done, and the next picture it asked for
       // (`bot.screenshot`) — the page holds the game paused on that frame until `resume()`.
       const shotDir = resolve(
@@ -433,6 +476,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         }
         if (poll?.finished || (poll?.frame ?? 0) >= args.frames) break;
       }
+      if (!gone) await stopProfile();
       botReport = gone
         ? {
             name: args.bot,
@@ -446,7 +490,14 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
             unknown
           >);
     } else if (status === 'running') {
+      await startProfile();
       await sleep(args.seconds * 1000);
+      await stopProfile();
+    }
+    if (args.profile && status === 'running') {
+      profile ??= { error: 'the page reloaded during the run and took the profile with it' };
+    } else if (args.profile) {
+      profile = { error: `nothing measured: the game is ${status}` };
     }
 
     const frames = Number(
@@ -500,6 +551,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
       ...(shots.length > 0 ? { screenshots: shots } : {}),
       ...(sounds ? { sounds } : {}),
+      ...(profile ? { profile } : {}),
     };
     const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
     const botFailed =
@@ -546,5 +598,6 @@ const formatPlayHuman = (report: PlayReport): string => {
   if (report.screenshot) lines.push(`screenshot: ${report.screenshot}`);
   for (const shot of report.screenshots ?? [])
     lines.push(`screenshot ${shot.name} (frame ${shot.frame}): ${shot.path}`);
+  if (report.profile) lines.push(...formatProfileHuman(report.profile));
   return `${lines.join('\n')}\n`;
 };

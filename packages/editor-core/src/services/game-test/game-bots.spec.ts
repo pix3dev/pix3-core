@@ -59,7 +59,10 @@ function makeWorld(
     },
     setAxisValue: (name, value) => gate(`axis:${name}=${value}`),
     pointAt: point => gate(`pointAt:${point.x},${point.y}`),
-    pointerAt: (phase, point) => gate(`pointer:${phase}:${point.x},${point.y}`),
+    pointerAt: (phase, point, pointer) =>
+      gate(
+        `pointer:${phase}:${point.x},${point.y}${pointer ? `:${pointer.pointerType ?? ''}/${pointer.button ?? ''}` : ''}`
+      ),
     tapAtDown: point => gate(`tapAt:down:${point.x},${point.y}`),
     tapAtUp: point => {
       calls.push(`tapAt:up:${point.x},${point.y}`);
@@ -373,6 +376,31 @@ describe('BotSession actuators', () => {
       'pointer:up:40,0',
     ]);
     expect(session.report().sent).toBe(1);
+    expect(session.report().refused).toBe(1);
+  });
+
+  it('swipe: carries the device (a finger, the right mouse button) on every phase; refuses a bad one', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.swipe({ x: 0, y: 0 }, { x: 20, y: 0 }, 2, { button: 2 });
+        if (bot.frame === 5)
+          bot.swipe({ x: 0, y: 0 }, { x: 20, y: 0 }, 1, { pointerType: 'touch' });
+        if (bot.frame === 8) bot.swipe({ x: 0, y: 0 }, { x: 20, y: 0 }, 1, { button: 3 } as never);
+      }),
+      world
+    );
+    run(session, 10);
+    expect(world.calls).toEqual([
+      'pointer:down:0,0:/2',
+      'pointer:move:10,0:/2',
+      'pointer:move:20,0:/2',
+      'pointer:up:20,0:/2',
+      'pointer:down:0,0:touch/',
+      'pointer:move:20,0:touch/',
+      'pointer:up:20,0:touch/',
+    ]);
     expect(session.report().refused).toBe(1);
   });
 

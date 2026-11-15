@@ -281,8 +281,11 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 
 ## `this.input`
 
-- Per frame: `input.pointerEvents` → `{ type: 'down' | 'move' | 'up' | 'cancel', pointerId, x, y }[]`
-  (`cancel` is not a tap; `x, y` in canvas units — `scene.screenToWorld2D(event)` for world);
+- Per frame: `input.pointerEvents` → `{ type: 'down' | 'move' | 'up' | 'cancel', pointerId, x, y, pointerType, button }[]`
+  (`cancel` is not a tap; `x, y` in canvas units — `scene.screenToWorld2D(event)` for world;
+  `pointerType` `'mouse' | 'touch' | 'pen'`, `button` the one that started the press: 0 left/finger,
+  2 right — for mouse-only bindings such as right-drag to pan; `buttons` the held mask now, 1 left
+  2 right 4 middle: a right press during a left drag is only a `move` whose mask gained 2);
   `input.keyEvents`.
 - Taps and swipes without the bookkeeping: `private readonly gestures = new GestureTracker()`
   (from `@pix3/runtime`; `{ swipeMinPx: 24, tapSlopPx: 12, maxTapMs: 500, maxTapFrames: 3 }` — a

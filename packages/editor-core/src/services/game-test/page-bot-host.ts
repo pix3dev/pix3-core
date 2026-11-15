@@ -142,28 +142,28 @@ const buildPageWorld = (
       sink.pointer('move', at.nx, at.ny, BOT_POINTER_ID);
       return null;
     },
-    pointerAt: (phase, point) => {
+    pointerAt: (phase, point, pointer) => {
       const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y);
       if (!at)
         return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
       const startedAt = swipeDown;
       if (phase === 'down') swipeDown = at;
       if (phase === 'up') swipeDown = null;
-      sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
+      sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID, pointer);
       return phase === 'up' && startedAt ? shortSwipeNote(canvasHandle, startedAt, at) : null;
     },
-    tapAtDown: point => {
+    tapAtDown: (point, pointer) => {
       const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y);
       if (!at)
         return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
       swipeDown = at;
-      sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID);
+      sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID, pointer);
       return null;
     },
-    tapAtUp: point => {
+    tapAtUp: (point, pointer) => {
       const at = projectToCanvasFraction(scene, canvasHandle, point.x, point.y) ?? swipeDown;
       swipeDown = null;
-      if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
+      if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID, pointer);
     },
     dispatchCommand: (name, args) => {
       const commands = commandsOf(runner);

@@ -155,6 +155,37 @@ for a clean picture. The report also lists the sounds the game asked to play
 `sfx:<preset>`) — nobody listens to a headless page, so this is how a run proves a match clicks.
 No editor, no MCP: it works from a subagent and in CI.
 
+### Profiling a game — `pix3 play --profile`
+
+To find what is slow and to confirm a fix, measure the same run before and after:
+
+```bash
+npm run build
+npx pix3 play dist --profile --size 390x844 --scale 1 --seconds 8   # the page as it idles / animates
+npx pix3 play dist --profile --bot <name> --scale 1                  # the same round every time
+```
+
+(`--json` gives the same numbers as `profile`.) The first second is warm-up and is not counted.
+What the lines mean:
+
+- `logic / tick` — your scripts, tweens, ECS and physics for one 1/60 s tick: **the number to
+  optimise and compare**. With `--bot` a frame carries 4 ticks (`logic / frame`).
+- `activities` — sections your own code reports with `scene.reportFrameProfilerActivities(...)`
+  (self ms per tick); "none reported" means the game reports none — add a few around the
+  suspected systems to see which one costs.
+- `render / painted frame` — submitting the paint; `renderer` — draw calls, triangles, geometries,
+  textures, programs. Fewer draw calls (shared materials, atlases, `InstancedMesh3D`) and no
+  `programs ... linked while measured` (a new material mid-game is a stall) are real wins.
+- `frame interval (wall)`, `fps`, `long (>33.4 ms)`, `outside the runner` — what a player would
+  feel, **on this machine**.
+- `note: SOFTWARE GPU` — headless Chrome renders on SwiftShader (the CPU): render ms, the frame
+  interval and fps are then NOT what a phone does. Trust logic ms, activities and the renderer
+  counters; ask the human to open `/?debug` on a real device for frame rate. The box's load moves
+  the frame rate too: compare runs made one after another.
+
+Report a change as before → after of `logic / tick` (mean and p95), draw calls and the activity
+you targeted, from the same command.
+
 ### Logic tests in Node
 
 Engine-free rules (matching, scoring, a level generator — a plain module beside the scripts, no

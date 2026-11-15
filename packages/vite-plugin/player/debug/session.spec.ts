@@ -58,6 +58,7 @@ const context = (runner: ReturnType<typeof fakeRunner>['runner']) => {
     errors: [],
     scene: 'scenes/main.pix3scene',
     runner: null,
+    renderer: null,
   };
   return {
     programs,

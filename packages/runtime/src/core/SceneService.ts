@@ -838,11 +838,33 @@ export class SceneService {
     if (query.includes('/')) {
       return this.findNodeByPath(query);
     }
-    return (
-      this.findNodeById(query) ??
-      this.findNodeByName(query) ??
-      this.findPrefabRootByAuthoredId(query)
-    );
+    const remembered = this.idLookups.get(query);
+    if (remembered && remembered.nodeId === query && this.isInRunningGraph(remembered)) {
+      return remembered;
+    }
+    const byId = this.findNodeById(query);
+    if (byId) {
+      this.idLookups.set(query, byId);
+      return byId;
+    }
+    this.idLookups.delete(query);
+    return this.findNodeByName(query) ?? this.findPrefabRootByAuthoredId(query);
+  }
+
+  /**
+   * Nodes found by id, remembered: `findNodeById` walks the whole tree, and a HUD script asking
+   * for its few dozen labels and buttons every tick spent most of its time there (Skyways: ~0.5 ms
+   * a tick). A remembered node is returned while it is still in the running graph (a freed or
+   * detached node, or the previous scene's, is looked up again). Ids are unique
+   * in a scene, so the answer is the one the walk would give. Name and prefab-id queries are not
+   * remembered: a later node could be the first match.
+   */
+  private readonly idLookups = new Map<string, NodeBase>();
+
+  private isInRunningGraph(node: NodeBase): boolean {
+    let top = node;
+    while (top.parentNode) top = top.parentNode;
+    return this.getRootNodes().includes(top);
   }
 
   /**

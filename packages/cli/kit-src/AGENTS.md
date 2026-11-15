@@ -30,9 +30,10 @@ palette. Do not substitute numeric controls or prose for recognizable content.
 **The play screen speaks in pictograms, never in prose.** While the game runs, the screen
 carries icons, numbers and feedback in place: a resource is icon + number, an object's state is
 icons beside it (needs met / missing, level pips), a cost is coin icon + number, a refused action
-is a reason pictogram where it happened, a drag previews its outcome before release. No title,
+is a reason pictogram where it happened with a caption of at most four words under it (a drag
+has no hover, so a tooltip cannot say why), a drag previews its outcome before release. No title,
 mode banner, instruction, hint sentence, description panel or sentence-long error: no `Label2D`
-on the play screen holds more than a number or a name of at most two words. Teach by showing —
+on the play screen holds more than a number, a name of at most two words or that refusal caption. Teach by showing —
 highlight what can be done next. Words belong only in menus, the result card, a tutorial
 overlay the player closes, and hover tooltips (`core:Tooltip`) that say what a button does or
 what a pictogram means — give every icon and button one. Draw the pictograms as SVG sprites (rule 5), one set, one style.

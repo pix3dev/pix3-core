@@ -51,6 +51,8 @@ export interface Pix3PlayerState {
   /** The scene the player booted into. */
   scene: string | null;
   runner: SceneRunner | null;
+  /** The runner's renderer (draw-call counters for `pix3 play --profile`). */
+  renderer: RuntimeRenderer | null;
   /** Debug mode only (`/?debug` in dev): the overlay's numbers, for an agent over CDP. */
   debug?: { snapshot(): unknown };
 }
@@ -78,6 +80,7 @@ const installState = (): Pix3PlayerState => {
     errors: [],
     scene: null,
     runner: null,
+    renderer: null,
   };
   window.__PIX3_PLAYER__ = state;
   window.addEventListener('error', event => {
@@ -168,6 +171,7 @@ export async function startGame(
       runtimeViewportBaseSize
     );
     state.runner = runner;
+    state.renderer = renderer;
     // Project autoloads: built once when the first scene starts, kept across `changeScene` —
     // the same runtime code the editor's play mode runs.
     runner.setAutoloads(runtimeAutoloads, scriptRegistry);

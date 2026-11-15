@@ -159,7 +159,7 @@ effect. Registered in
 
 | Component id               | Does                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core:Rotate`              | Continuous rotation of a 3D node                                                                                                            |
+| `core:Rotate`              | Continuous rotation of a 3D node about its own `axis` (`y` default; `x`/`z` for a wheel on edge)                                            |
 | `core:SimpleMove`          | Simple test movement                                                                                                                        |
 | `core:Sine`                | Oscillate a node along an axis                                                                                                              |
 | `core:Follow`              | Smoothly follow a target node's position/rotation                                                                                           |
@@ -512,6 +512,16 @@ count as a completed tap). Anything that follows one contact — a stick, a drag
 tap resolver — names its finger and reads only that one; UI controls do this for
 you (each control owns at most one pointer).
 
+**Mouse-only bindings.** Every `pointerEvents` entry (and every `PointerSnapshot`)
+also carries `pointerType` (`'mouse'` / `'touch'` / `'pen'`) and `button` — the
+button that _started_ the press (0 left / finger / pen tip, 1 middle, 2 right),
+repeated on every later event of that `pointerId`. Classify a gesture on `'down'`:
+e.g. `e.pointerType === 'mouse' && e.button === 2` pans, a left click acts at
+once, while a finger keeps its tap / drag / long-press. The canvas already
+suppresses the browser context menu. `buttons` is the held-buttons mask now
+(1 left, 2 right, 4 middle): a right button pressed during a left drag arrives
+only as a `'move'` whose mask gained 2 — check it to cancel the drag.
+
 Each physical gesture also belongs to only one control: the uppermost enabled,
 visible control under the pointer wins (overlay band, effective `zIndex`, then
 tree paint order). Labels and bars do not intercept input. That target keeps the
@@ -728,7 +738,7 @@ Inside any `Script` subclass:
 - `this.scene.random` — the run's seeded random stream (`SeededRandom`, sfc32: `next()`, `int(min, max)`, `range`, `pick`, `shuffle`, `fork(name)`); seeded per run by `SceneRunner.setRunOverrides({seed})`, else from a random seed. Game logic draws from it so a seeded test run replays; `Math.random` is never patched.
 - `this.scene` — the `SceneService` (all of §4's `scene.*` APIs, plus `getActiveCamera()`, `getActiveCamera2D()`, `findNode(query)`, `getRootNodes()`, `getNodesInGroup(group)` / `callGroup(group, method, ...args)` for node groups (spec §6.19), `getViewportInfo()`/`onViewportChanged()`/`isPortrait()`, `raycastViewport(nx,ny)`, `getAudioService`/`getAssetLoader`/`getResourceManager`/`getECSService`, plus `network` and `netNodes` for multiplayer, `commands` for named game intents, and `getAutoload(nameOrClass)` for the project's autoload singletons, §6.17 of the spec). May be `undefined` in some editor previews — guard it.
 - `this.input` — the `InputService` (§4 Input).
-- `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`). The authored id of a prefab / overlay instance (`- id: result, instance: …`) also finds that instance's root (`metadata.__pix3Prefab`); a query that finds nothing in a loaded scene warns once per query. Engine resolvers (juice, tween, cutscene targets) use the quiet `scene.lookupNode` (internal). `scene.frame` is the runner's frame number.
+- `this.findNode(query)` — resolve another node by id / name / slash-path, or `null` if absent (`get_node_or_null`). The authored id of a prefab / overlay instance (`- id: result, instance: …`) also finds that instance's root (`metadata.__pix3Prefab`); a query that finds nothing in a loaded scene warns once per query. A node found by id is remembered while it stays in the running graph, so asking for the same id every tick costs a lookup, not a tree walk (name and path queries walk each time). Engine resolvers (juice, tween, cutscene targets) use the quiet `scene.lookupNode` (internal). `scene.frame` is the runner's frame number.
 - `this.getNode(query)` — same lookup but **throws** if the node is missing (`get_node`); `getNode<T>(query)` types the result.
 
 **Lifecycle:** `onAttach(node)` → `onStart()` (first frame) → `onUpdate(dt)` (every

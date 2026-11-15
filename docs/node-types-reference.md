@@ -989,10 +989,10 @@ field works for every primitive:
     boulder) is a `sphere` with a non-uniform `scale`; a **spire / crystal / pine** is a `cone`;
   - a **roofless ruin** is a wall `box` with a slightly smaller dark `box` 2 mm above its top;
   - **something that glows** (a lit window, lava, a lamp) is `material.type: basic` in a bright colour;
-  - **spinning about a horizontal axis** (mill sails, a wheel on a wall): `core:Rotate` turns a node
-    about its own Y, so nest it — a `Node3D` with `rotationEuler: [90, 0, 0]` (its Y now points
-    along the parent's Z), inside it the spinning `Node3D` with the component, the parts laid out
-    in that node's XZ plane; a yaw on an outer `Node3D` aims the whole assembly;
+  - **spinning about a horizontal axis** (mill sails, a pulley wheel, a gear on a wall): give the
+    spinning `Node3D` `core:Rotate` with `axis: z` (or `x`) — it turns about its own axis, so a yaw
+    on the node or an outer `Node3D` aims the wheel; lay the parts out in the node's XY plane (a
+    `torus` already lies there, a `cylinder` disc needs `rotationEuler: [90, 0, 0]`);
   - under an orthographic camera yawed 45°, leave boxes axis-aligned (two faces show, the isometric
     look), put tall parts on the far side of the model and flat ones (fields, water) in front.
 - `castShadow`/`receiveShadow` (Inspector → **Rendering**) are authored on the

@@ -12,10 +12,19 @@ describe('InputService pointer ownership', () => {
     element.dispatchEvent(new PointerEvent(type, { pointerId, clientX, clientY }));
   };
   /** Frame events queued since the last frame. */
-  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
+  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts,
+  // the device and button (`pointerType` / `button`) in the test below that reads them.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
+    return input.pointerEvents.map(
+      ({
+        unitsPerCssPx: _scale,
+        pointerType: _type,
+        button: _button,
+        buttons: _buttons,
+        ...event
+      }) => event
+    );
   };
 
   beforeEach(() => {
@@ -131,6 +140,96 @@ describe('InputService pointer ownership', () => {
     expect(input.getButton('Action_Primary')).toBe(false);
   });
 
+  it('tags every event of a press with the device and the button that started it', () => {
+    element.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        pointerId: 1,
+        clientX: 40,
+        clientY: 60,
+        pointerType: 'mouse',
+        button: 2,
+      })
+    );
+    element.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        pointerId: 2,
+        clientX: 90,
+        clientY: 90,
+        pointerType: 'touch',
+        button: 0,
+      })
+    );
+    // A move's DOM `button` is -1 (and another button may be pressed mid-drag): the press keeps its own.
+    element.dispatchEvent(
+      new PointerEvent('pointermove', {
+        pointerId: 1,
+        clientX: 50,
+        clientY: 70,
+        pointerType: 'mouse',
+        button: -1,
+      })
+    );
+    element.dispatchEvent(
+      new PointerEvent('pointerup', {
+        pointerId: 1,
+        clientX: 50,
+        clientY: 70,
+        pointerType: 'mouse',
+        button: 0,
+      })
+    );
+    element.dispatchEvent(
+      new PointerEvent('pointercancel', {
+        pointerId: 2,
+        clientX: 90,
+        clientY: 90,
+        pointerType: 'touch',
+      })
+    );
+    input.beginFrame();
+    expect(
+      input.pointerEvents.map(({ type, pointerId, pointerType, button }) => ({
+        type,
+        pointerId,
+        pointerType,
+        button,
+      }))
+    ).toEqual([
+      { type: 'down', pointerId: 1, pointerType: 'mouse', button: 2 },
+      { type: 'down', pointerId: 2, pointerType: 'touch', button: 0 },
+      { type: 'move', pointerId: 1, pointerType: 'mouse', button: 2 },
+      { type: 'up', pointerId: 1, pointerType: 'mouse', button: 2 },
+      { type: 'cancel', pointerId: 2, pointerType: 'touch', button: 0 },
+    ]);
+  });
+
+  it('reports the held-buttons mask as it changes: a right press during a left drag is a move', () => {
+    const mouse = (type: string, button: number, buttons: number) =>
+      element.dispatchEvent(
+        new PointerEvent(type, {
+          pointerId: 1,
+          clientX: 40,
+          clientY: 60,
+          pointerType: 'mouse',
+          button,
+          buttons,
+        })
+      );
+    mouse('pointerdown', 0, 1);
+    mouse('pointermove', 2, 3); // the chord: no pointerdown for the right button
+    mouse('pointermove', 0, 2); // the left lifts first: still one press
+    mouse('pointerup', 2, 0);
+    input.beginFrame();
+    expect(
+      input.pointerEvents.map(({ type, button, buttons }) => ({ type, button, buttons }))
+    ).toEqual([
+      { type: 'down', button: 0, buttons: 1 },
+      { type: 'move', button: 0, buttons: 3 },
+      { type: 'move', button: 0, buttons: 2 },
+      { type: 'up', button: 0, buttons: 0 },
+    ]);
+  });
+
   it('raises Action_Primary once for the whole gesture and drops it on the last release', () => {
     dispatch('pointerdown', 1, 40, 60);
     expect(input.getButton('Action_Primary')).toBe(true);
@@ -186,10 +285,19 @@ describe('InputService pointer cancellation', () => {
   const dispatch = (type: string, pointerId: number, clientX = 40, clientY = 60): void => {
     element.dispatchEvent(new PointerEvent(type, { pointerId, clientX, clientY }));
   };
-  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts.
+  // Positions and order only: the units scale (`unitsPerCssPx`) is pinned in InputService.spec.ts,
+  // the device and button (`pointerType` / `button`) in the test below that reads them.
   const frameEvents = () => {
     input.beginFrame();
-    return input.pointerEvents.map(({ unitsPerCssPx: _scale, ...event }) => event);
+    return input.pointerEvents.map(
+      ({
+        unitsPerCssPx: _scale,
+        pointerType: _type,
+        button: _button,
+        buttons: _buttons,
+        ...event
+      }) => event
+    );
   };
 
   beforeEach(() => {

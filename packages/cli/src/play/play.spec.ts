@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { runPlayCli, safeAreaOverlayScript } from './command.ts';
+import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 
 /**
  * `pix3 play`'s refusals, which happen before a browser starts. The run itself (a private headless
@@ -38,6 +39,7 @@ describe('pix3 play', () => {
     const result = await run(['--help']);
     expect(result.code).toBe(0);
     expect(result.out).toContain('Usage: pix3 play');
+    expect(result.out).toContain('--profile');
   });
 
   it('refuses when there is nothing to play, a bad size, or no such policy', async () => {
@@ -87,5 +89,67 @@ describe('pix3 play', () => {
     evaluate(safeAreaOverlayScript(insets, false));
     expect(window.document.getElementById('__pix3_safe_area__')).toBeNull();
     await window.happyDOM.close();
+  });
+
+  it('prints a profile: per tick and per frame apart, the software GPU called out', () => {
+    const stats = (mean: number) => ({
+      count: 10,
+      mean,
+      p50: mean,
+      p95: mean,
+      p99: mean,
+      max: mean,
+    });
+    const profile: PlayProfile = {
+      window: {
+        warmup: { seconds: 1, frames: 5, ticks: 20 },
+        seconds: 5,
+        frames: 30,
+        painted: 30,
+        ticks: 120,
+        ticksPerFrame: 4,
+        fps: 6,
+        timeMode: { mode: 'fixed', fixedDeltaSec: 1 / 60, ticksPerFrame: 4, renderEveryNTicks: 4 },
+        gaps: 2,
+      },
+      frame: { ...stats(160), long: 30, longPercent: 100 },
+      work: stats(18),
+      logicPerTick: stats(1.5),
+      logicPerFrame: stats(6),
+      render: stats(12),
+      activities: [
+        { label: 'Islands', perTick: { mean: 0.4, max: 2 }, perFrameMean: 1.6, ticks: 120 },
+      ],
+      renderer: {
+        sampled: 30,
+        calls: { mean: 140, max: 290 },
+        triangles: { mean: 26_700, max: 48_100 },
+        last: { calls: 140, triangles: 26_700, geometries: 267, textures: 46, programs: 11 },
+        programsLinked: 2,
+      },
+      heapMb: { start: 35, end: 36, peak: 40 },
+      longAnimationFrames: {
+        supported: true,
+        count: 3,
+        worst: [{ durationMs: 700, blockingMs: 650, script: null }],
+      },
+      device: {
+        gpu: 'ANGLE (SwiftShader Device)',
+        devicePixelRatio: 1,
+        viewport: '1280×748',
+        cores: 4,
+      },
+      softwareGpu: true,
+    };
+    const text = formatProfileHuman(profile).join('\n');
+    expect(text).toContain('logic / tick');
+    expect(text).toContain('logic / frame (4.0 ticks)');
+    expect(text).toContain('2 interval(s) across a pause dropped');
+    expect(text).toContain('Islands');
+    expect(text).toContain('draw calls 140.0 mean / 290 max');
+    expect(text).toContain('2 linked while measured');
+    expect(text).toContain('SOFTWARE GPU');
+    expect(text).toContain('outside the runner: 142.0 ms');
+    expect(formatProfileHuman({ error: 'x' })).toEqual(['profile: not measured — x']);
   });
 });

@@ -19,6 +19,29 @@ export interface InputPointerFrameEvent {
    * CSS px (what a finger travels). Absent on an event a test builds by hand: read it as 1.
    */
   unitsPerCssPx?: number;
+  /**
+   * The device behind this pointer: `'mouse'`, `'touch'` or `'pen'` (the DOM `pointerType`). Lets a
+   * game give the mouse its own bindings (right-drag pans, left-click acts) while a finger keeps
+   * its tap/drag gestures. Absent on an event a test builds by hand: read it as `'mouse'` or
+   * `'touch'` as the test means.
+   */
+  pointerType?: string;
+  /**
+   * Which button **started** this press (the DOM `button` of its `pointerdown`): 0 the primary
+   * (left mouse button, a finger, a pen tip), 1 the middle, 2 the secondary (right). Every later
+   * `'move'` / `'up'` / `'cancel'` of the same `pointerId` repeats it, so a gesture is classified
+   * once, on `'down'`. A second mouse button pressed during a held one is not a new pointer (the
+   * DOM sends no `pointerdown` for it) and does not change this. Absent on a hand-built event: 0.
+   */
+  button?: number;
+  /**
+   * Every mouse button held at this event, as the DOM `buttons` bitmask: 1 left, 2 right, 4
+   * middle. Unlike {@link button} it changes during a press — a second button pressed while the
+   * first is held arrives only as a `'move'` with a new mask (the DOM sends no `pointerdown` for
+   * it), which is how a game lets the right button cancel a left-button drag. 0 on `'up'` /
+   * `'cancel'` when nothing is held; absent on a hand-built event.
+   */
+  buttons?: number;
 }
 
 /**
@@ -35,6 +58,10 @@ export interface PointerSnapshot {
   readonly x: number;
   readonly y: number;
   readonly isPrimary: boolean;
+  /** The device: `'mouse'`, `'touch'` or `'pen'` (see {@link InputPointerFrameEvent.pointerType}). */
+  readonly pointerType: string;
+  /** The button that started the press (see {@link InputPointerFrameEvent.button}). */
+  readonly button: number;
 }
 
 /** Internal, mutable counterpart of {@link PointerSnapshot}. */
@@ -43,6 +70,8 @@ interface TrackedPointer {
   x: number;
   y: number;
   isPrimary: boolean;
+  readonly pointerType: string;
+  readonly button: number;
 }
 
 export interface InputKeyFrameEvent {
@@ -399,6 +428,9 @@ export class InputService {
           x: pointer.x,
           y: pointer.y,
           unitsPerCssPx: this.unitsPerCssPx,
+          pointerType: pointer.pointerType,
+          button: pointer.button,
+          buttons: 0,
         });
       }
     }
@@ -634,6 +666,8 @@ export class InputService {
       x: position.x,
       y: position.y,
       isPrimary: wasIdle,
+      pointerType: event.pointerType,
+      button: event.button,
     });
     this.syncDerivedPointerState();
     this.pendingPointerEvents.push({
@@ -642,6 +676,9 @@ export class InputService {
       x: position.x,
       y: position.y,
       unitsPerCssPx: this.unitsPerCssPx,
+      pointerType: event.pointerType,
+      button: event.button,
+      buttons: event.buttons,
     });
     this.capturePointer(event.pointerId);
 
@@ -681,6 +718,9 @@ export class InputService {
       x: position.x,
       y: position.y,
       unitsPerCssPx: this.unitsPerCssPx,
+      pointerType: tracked.pointerType,
+      button: tracked.button,
+      buttons: event.buttons,
     });
   };
 
@@ -733,6 +773,9 @@ export class InputService {
       x: position.x,
       y: position.y,
       unitsPerCssPx: this.unitsPerCssPx,
+      pointerType: tracked.pointerType,
+      button: tracked.button,
+      buttons: event.buttons,
     });
     this.releasePointer(event.pointerId);
 

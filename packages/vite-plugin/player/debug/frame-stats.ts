@@ -13,6 +13,8 @@ const HISTOGRAM_MAX_MS = 100;
 
 export interface FrameStability {
   readonly sampleCount: number;
+  /** Arithmetic mean of every recorded value (exact, not bucketed). */
+  readonly meanMs: number | null;
   readonly p50Ms: number | null;
   readonly p95Ms: number | null;
   readonly p99Ms: number | null;
@@ -23,27 +25,41 @@ export interface FrameStability {
 }
 
 /**
- * 1 ms buckets up to 100 ms plus an overflow bucket (the 1.x Profiler's `FrameIntervalHistogram`):
- * a session can run for hours, so nothing keeps every frame. Percentiles are nearest-rank and
- * report the bucket's upper edge clamped to the worst frame, so they are never optimistic.
+ * Fixed buckets (1 ms up to 100 ms by default) plus an overflow bucket (the 1.x Profiler's
+ * `FrameIntervalHistogram`): a session can run for hours, so nothing keeps every frame.
+ * Percentiles are nearest-rank and report the bucket's upper edge clamped to the worst frame, so
+ * they are never optimistic. `pix3 play --profile` (`profile.ts`) uses finer buckets for
+ * sub-millisecond logic and paint times.
  */
 export class FrameIntervalHistogram {
-  private readonly buckets = new Uint32Array(HISTOGRAM_MAX_MS + 1);
+  private readonly buckets: Uint32Array;
+  private readonly overflow: number;
   private count = 0;
+  private sum = 0;
   private long = 0;
   private worst = 0;
+
+  constructor(
+    private readonly bucketMs: number = 1,
+    maxMs: number = HISTOGRAM_MAX_MS
+  ) {
+    this.overflow = Math.ceil(maxMs / bucketMs);
+    this.buckets = new Uint32Array(this.overflow + 1);
+  }
 
   reset(): void {
     this.buckets.fill(0);
     this.count = 0;
+    this.sum = 0;
     this.long = 0;
     this.worst = 0;
   }
 
   record(intervalMs: number): void {
     if (!Number.isFinite(intervalMs) || intervalMs < 0) return;
-    this.buckets[Math.min(Math.floor(intervalMs), HISTOGRAM_MAX_MS)] += 1;
+    this.buckets[Math.min(Math.floor(intervalMs / this.bucketMs), this.overflow)] += 1;
     this.count += 1;
+    this.sum += intervalMs;
     if (intervalMs > this.worst) this.worst = intervalMs;
     if (intervalMs > LONG_FRAME_MS) this.long += 1;
   }
@@ -52,6 +68,7 @@ export class FrameIntervalHistogram {
     const empty = this.count === 0;
     return {
       sampleCount: this.count,
+      meanMs: empty ? null : this.sum / this.count,
       p50Ms: this.percentile(50),
       p95Ms: this.percentile(95),
       p99Ms: this.percentile(99),
@@ -69,7 +86,9 @@ export class FrameIntervalHistogram {
       cumulative += this.buckets[bucket];
       if (cumulative >= rank) {
         // The overflow bucket has no upper edge: the worst frame is the only honest answer.
-        return bucket === HISTOGRAM_MAX_MS ? this.worst : Math.min(bucket + 1, this.worst);
+        if (bucket === this.overflow) return this.worst;
+        // Rounded so 0.05 ms buckets do not print as 0.30000000000000004.
+        return Math.min(Math.round((bucket + 1) * this.bucketMs * 1e6) / 1e6, this.worst);
       }
     }
     return this.worst;

@@ -72,6 +72,8 @@ export class PipeChrome {
         // A built game is opened from file://; its single file loads nothing else.
         '--allow-file-access-from-files',
         '--autoplay-policy=no-user-gesture-required',
+        // `performance.memory` in 1 B steps rather than coarse buckets (`pix3 play --profile`).
+        '--enable-precise-memory-info',
         ...(options.noSandbox ? ['--no-sandbox'] : []),
         'about:blank',
       ],

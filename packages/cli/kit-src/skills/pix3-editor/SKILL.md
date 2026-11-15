@@ -144,7 +144,9 @@ one; it starts on the run's first frame (`bot.frame` is 1 there), never during `
 `bot.tap(node)` refuses a node that is hidden or inside a hidden parent (an overlay instance not
 shown yet) with a bot error naming it — show the overlay first. Besides `tap(node)` / `press` / `axis` / `moveTo`, `bot.swipe(from, to, frames?)` drags
 between two world points (a match-3 swap, a drag-and-drop), `bot.tapAt(point)` taps a world point
-(both `physical-input` only, one finger — not while the other is still down). **A board cell is a
+(both `physical-input` only, one finger — not while the other is still down; both press the left
+mouse button unless a last argument says otherwise: `{ pointerType: 'touch' }` is a finger,
+`{ button: 2 }` the right mouse button). **A board cell is a
 point, not a node:** `bot.pointIn('board', x, y)` turns a position in the board node's own space
 (the space its cells are laid out in) into the world point `tapAt` / `swipe` take —
 `bot.swipe(bot.pointIn('board', x, y), bot.pointIn('board', x + cell, y))` — no need for the game

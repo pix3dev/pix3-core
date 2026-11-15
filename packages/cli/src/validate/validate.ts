@@ -13,7 +13,13 @@ import {
   loadUserScripts,
   type ScriptImportMap,
 } from './level2.ts';
-import { ProjectFiles, readManifestInfo, sha256OfFile, toProjectPath } from './project.ts';
+import {
+  isPrefabPath,
+  ProjectFiles,
+  readManifestInfo,
+  sha256OfFile,
+  toProjectPath,
+} from './project.ts';
 import {
   ANIMATION_EXTENSION,
   checkAnimationFile,
@@ -335,8 +341,9 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
           text: texts.get(file) ?? '',
           parsed: result.parsed,
           targetPlatform,
-          // A `.prefab` is only ever instanced (or spawned): no camera of its own to want.
-          isPrefab: prefabTargets.has(file) || file.toLowerCase().endsWith('.prefab'),
+          // A prefab is only ever instanced (or spawned): no camera or light of its own to want.
+          // Instanced by a scene, or in a prefab folder (spawned from a script only).
+          isPrefab: prefabTargets.has(file) || isPrefabPath(file),
           checkUserConfig: userSchemasAvailable,
         }))
       );

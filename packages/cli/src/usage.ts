@@ -61,6 +61,7 @@ Usage:
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
+        [--profile]                --profile: frame/logic/render ms, activities, draw calls
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
                                    tap, swipe); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
@@ -293,7 +294,7 @@ Reference it from a scene or script as res://<path inside the project>.
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay]
-                 [--screenshot <file.png>] [--shots <dir>] [--json]
+                 [--screenshot <file.png>] [--shots <dir>] [--profile] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -329,6 +330,16 @@ Reference it from a scene or script as res://<path inside the project>.
   --shots dir    where bot.screenshot(name) saves <name>.png — the game is frozen on the frame the
                  policy asked on, photographed, then runs on (default: beside --screenshot, else
                  .pix3/screenshots/play-<time>/)
+  --profile      measure the run (dev and dist alike; the CLI injects the debug overlay's collector):
+                 the wall-clock frame interval (mean, p50/p95/p99, worst, frames >33.4 ms), the
+                 game's work per frame, logic per tick and per frame, render per painted frame,
+                 the FrameProfiler activities the game reports (scene.reportFrameProfilerActivities),
+                 draw calls / triangles / geometries / textures / programs (and programs linked
+                 while measured), JS heap, Long Animation Frames, the GPU string. The first second
+                 is warm-up and excluded. With --bot the game ticks 4 fixed 1/60 s ticks per
+                 painted frame: compare logic per tick; frame interval is the page's throughput.
+                 Headless Chrome renders on SwiftShader (said in the report): render ms there are
+                 not a device's — logic ms and the counters are. Give it --seconds 6 or more
   --json         machine-readable report
 
   Exit 0 = the page ran frames, nothing threw, the bot passed; 1 = errors, a failed or crashed

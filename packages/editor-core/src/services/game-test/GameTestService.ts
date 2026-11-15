@@ -1095,7 +1095,7 @@ export class GameTestService {
         return null;
       },
 
-      pointerAt: (phase, point) => {
+      pointerAt: (phase, point, pointer) => {
         if (channel !== 'physical-input') {
           return 'swipe() is a physical gesture; on `direct-action` there is nothing to call. Run the policy on `physical-input`, or drive the intent with command().';
         }
@@ -1106,11 +1106,11 @@ export class GameTestService {
         const startedAt = swipeDown;
         if (phase === 'down') swipeDown = at;
         if (phase === 'up') swipeDown = null;
-        sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID);
+        sink.pointer(phase, at.nx, at.ny, BOT_POINTER_ID, pointer);
         return phase === 'up' && startedAt ? shortSwipeNote(runtime.canvas, startedAt, at) : null;
       },
 
-      tapAtDown: point => {
+      tapAtDown: (point, pointer) => {
         if (channel !== 'physical-input') {
           return 'tapAt() is a physical gesture; on `direct-action` there is nothing to call. Tap a control by name with tap(), run on `physical-input`, or drive the intent with command().';
         }
@@ -1119,14 +1119,14 @@ export class GameTestService {
           return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
         }
         swipeDown = at;
-        sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID);
+        sink.pointer('down', at.nx, at.ny, BOT_POINTER_ID, pointer);
         return null;
       },
 
-      tapAtUp: point => {
+      tapAtUp: (point, pointer) => {
         const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y) ?? swipeDown;
         swipeDown = null;
-        if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
+        if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID, pointer);
       },
 
       dispatchCommand: (name, args) => {

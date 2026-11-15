@@ -825,6 +825,9 @@ describe('level 2: hydration with compiled user scripts', () => {
       // Instanced prefabs are not whole scenes: no renderability lint for them.
       'scenes/prefab.pix3scene': scene('  - id: box2\n    type: GeometryMesh\n'),
       'scenes/b.pix3scene': scene('  - id: i\n    instance: res://scenes/prefab.pix3scene\n'),
+      // Spawned from a script only (instanced by no scene): its prefab folder says what it is.
+      'scenes/prefabs/spawned.pix3scene': scene('  - id: box3\n    type: GeometryMesh\n'),
+      'scenes/ui/overlay.pix3scene': scene('  - id: box4\n    type: GeometryMesh\n'),
     });
     const codes = report.diagnostics.filter(d => d.code.startsWith('W_RENDERABILITY_'));
     covered.add('W_RENDERABILITY');
@@ -832,6 +835,8 @@ describe('level 2: hydration with compiled user scripts', () => {
       expect.arrayContaining(['W_RENDERABILITY_NO_CAMERA_3D'])
     );
     expect(codes.filter(d => d.file === 'scenes/prefab.pix3scene')).toEqual([]);
+    expect(codes.filter(d => d.file === 'scenes/prefabs/spawned.pix3scene')).toEqual([]);
+    expect(codes.filter(d => d.file === 'scenes/ui/overlay.pix3scene')).toEqual([]);
   });
 });
 

@@ -22,6 +22,16 @@ declare interface BotPoint {
   z?: number;
 }
 
+/**
+ * The device of a tapAt / swipe. Absent = the left mouse button. `{ pointerType: 'touch' }` is a
+ * finger, `{ button: 2 }` the right mouse button — for a game that binds the mouse its own way
+ * (right-drag pans) while a finger keeps tap-and-drag.
+ */
+declare interface BotPointer {
+  pointerType?: 'mouse' | 'touch' | 'pen';
+  button?: 0 | 1 | 2;
+}
+
 /** What a policy sees of one live node. */
 declare interface BotNodeView {
   nodeId: string;
@@ -81,7 +91,7 @@ declare interface Pix3TestBot {
    * Tap a world point (a board cell): down now, up a few ticks later, on the same finger as
    * swipe() — not while a swipe or another tapAt is still down. physical-input only.
    */
-  tapAt(point: BotPoint): void;
+  tapAt(point: BotPoint, pointer?: BotPointer): void;
   /** Steer an input axis to -1..1. On physical-input this deflects the live joystick. */
   axis(name: string, value: number): void;
   /** Point the pointer at a world position (aim, hover, click-to-move). */
@@ -90,7 +100,7 @@ declare interface Pix3TestBot {
    * Drag a finger from one world point to another over `frames` ticks (default 8): down, a move
    * per tick, up — a swipe, a drag-and-drop, a slingshot pull. physical-input only.
    */
-  swipe(from: BotPoint, to: BotPoint, frames?: number): void;
+  swipe(from: BotPoint, to: BotPoint, frames?: number, pointer?: BotPointer): void;
   /**
    * Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button.
    * true when it ran and did not decline (a handler returns false to decline, e.g. a dead swap).

@@ -40,6 +40,19 @@ export interface FramePointerEvent {
 export type FrameInputEvent = FrameKeyEvent | FramePointerEvent;
 
 /**
+ * Which device a synthetic press comes from: `pointerType` (default `'mouse'`) and the button that
+ * started it (default 0, the left one / a finger). A game may bind the mouse differently from a
+ * finger (right-drag pans, left-click acts), so a bot has to be able to be either.
+ */
+export interface PointerDevice {
+  pointerType?: 'mouse' | 'touch' | 'pen';
+  button?: 0 | 1 | 2;
+}
+
+/** `PointerEvent.buttons` bit of a `button` (0 → 1, 1 → 4 (middle), 2 → 2 (right)). */
+const BUTTONS_BIT = [1, 4, 2] as const;
+
+/**
  * Where synthetic events go. The live implementation dispatches the same DOM events
  * `GameInputService` does — keys on the editor window (the runtime's `InputService`
  * registers there even when the game renders in a popout), pointers on the game canvas —
@@ -48,7 +61,13 @@ export type FrameInputEvent = FrameKeyEvent | FramePointerEvent;
  */
 export interface InputSink {
   key(phase: 'down' | 'up', code: string): void;
-  pointer(phase: 'down' | 'move' | 'up', nx: number, ny: number, pointerId?: number): void;
+  pointer(
+    phase: 'down' | 'move' | 'up',
+    nx: number,
+    ny: number,
+    pointerId?: number,
+    device?: PointerDevice
+  ): void;
 }
 
 /** Pointer id used by synthetic pointers (matches GameInputService's). */
@@ -67,17 +86,24 @@ export class DomInputSink implements InputSink {
     );
   }
 
-  pointer(phase: 'down' | 'move' | 'up', nx: number, ny: number, pointerId?: number): void {
+  pointer(
+    phase: 'down' | 'move' | 'up',
+    nx: number,
+    ny: number,
+    pointerId?: number,
+    device?: PointerDevice
+  ): void {
     const rect = this.canvas.getBoundingClientRect();
     const type = phase === 'down' ? 'pointerdown' : phase === 'up' ? 'pointerup' : 'pointermove';
+    const button = device?.button ?? 0;
     const init = {
       pointerId: pointerId ?? SYNTHETIC_POINTER_ID,
-      pointerType: 'mouse',
+      pointerType: device?.pointerType ?? 'mouse',
       isPrimary: true,
       clientX: rect.left + nx * rect.width,
       clientY: rect.top + ny * rect.height,
-      button: 0,
-      buttons: phase === 'up' ? 0 : 1,
+      button,
+      buttons: phase === 'up' ? 0 : BUTTONS_BIT[button],
       bubbles: true,
       cancelable: true,
     };

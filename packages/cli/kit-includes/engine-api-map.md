@@ -85,7 +85,11 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
   `input.wheelModifiers` (`{ ctrl, meta, shift, alt }`). The canvas already `preventDefault()`s
   every wheel event, so ctrl-wheel never zooms the page.
 - Fingers: `input.getActivePointers()`, `input.getPointer(id)`, `input.pointerDownCount`. Gate
-  gestures on `input.isPointerOverUI(pointerId)`, not on `isHoveringUI`.
+  gestures on `input.isPointerOverUI(pointerId)`, not on `isHoveringUI`. **Trap:** a control
+  registers the hover during its own update, so on the frame of a `'down'` the answer is still
+  `false` for a script that updates before the control (a game script on the 3D root, the HUD
+  later in the tree). Decide on `'up'` (a tap) or after the press has lasted a frame, or hit-test
+  the control's rectangle yourself on `'down'`.
 - Actions: `getButton('Action_Primary')`, the arrows / WASD axes of `getAxis(name)`;
   `lock()` / `unlock()`.
 - A tap-to-place mechanic: on a `'down'` event, `scene.screenToWorld2D(ev)`,

@@ -33,6 +33,15 @@ export const isSceneFile = (path: string): boolean => {
 };
 
 /**
+ * A file the build instantiates rather than boots: anything under a `prefabs/` folder, a
+ * `.prefab`, a `scenes/ui/` overlay — the same rule as `isPrefabPath` in
+ * `vite-plugin/src/build/scan.ts` (the CLI does not depend on the plugin). A prefab spawned only
+ * from a script (`scene.instantiate`) is instanced by no scene, so the folder is what says so.
+ */
+export const isPrefabPath = (path: string): boolean =>
+  /(^|\/)prefabs\//i.test(path) || /\.prefab$/i.test(path) || /(^|\/)scenes\/ui\//i.test(path);
+
+/**
  * A read-only inventory of a project folder: every file, by project-relative path.
  *
  * Existence checks go through this set rather than `fs.existsSync` on purpose: the set is exact

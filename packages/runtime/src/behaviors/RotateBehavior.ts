@@ -1,12 +1,14 @@
 /**
- * RotateBehavior - A simple component for testing the script system
- *
- * Rotates a node continuously based on a configurable speed parameter.
+ * RotateBehavior (`core:Rotate`) — spins a 3D node continuously about one of its own axes:
+ * `y` (the default: a turntable, a weather vane) or `x` / `z` (a mill's sails, a pulley wheel,
+ * a gear on a wall) at `rotationSpeed` radians per second.
  */
 
 import { Script } from '../core/ScriptComponent';
 import type { PropertySchema } from '../fw/property-schema';
 import { Node3D } from '../nodes/Node3D';
+
+type RotateAxis = 'x' | 'y' | 'z';
 
 export class RotateBehavior extends Script {
   private rotationSpeed = 1.0; // radians per second
@@ -15,6 +17,7 @@ export class RotateBehavior extends Script {
     super(id, type);
     this.config = {
       rotationSpeed: this.rotationSpeed,
+      axis: 'y',
     };
   }
 
@@ -43,6 +46,22 @@ export class RotateBehavior extends Script {
             behavior.setRotationSpeed(parsed);
           },
         },
+        {
+          name: 'axis',
+          type: 'select',
+          ui: {
+            label: 'Axis',
+            description:
+              "The node's own axis to spin about (y: a turntable; x or z: a wheel on edge)",
+            group: 'Component',
+            options: ['x', 'y', 'z'],
+          },
+          getValue: (component: unknown) => (component as RotateBehavior).getAxis(),
+          setValue: (component: unknown, value: unknown) => {
+            if (value === 'x' || value === 'y' || value === 'z')
+              (component as RotateBehavior).config.axis = value;
+          },
+        },
       ],
       groups: {
         Component: {
@@ -63,7 +82,18 @@ export class RotateBehavior extends Script {
       return;
     }
 
-    this.node.rotation.y += this.rotationSpeed * dt;
+    const angle = this.rotationSpeed * dt;
+    const axis = this.getAxis();
+    // y keeps the Euler step it always had; x and z turn about the node's own axis, so a wheel
+    // yawed to face any way still spins on edge.
+    if (axis === 'y') this.node.rotation.y += angle;
+    else if (axis === 'x') this.node.rotateX(angle);
+    else this.node.rotateZ(angle);
+  }
+
+  private getAxis(): RotateAxis {
+    const axis = this.config.axis;
+    return axis === 'x' || axis === 'z' ? axis : 'y';
   }
 
   private getRotationSpeed(): number {
