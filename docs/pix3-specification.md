@@ -346,6 +346,8 @@ The Object Inspector displays a "Components" section for each node:
 - Remove components via delete buttons
 - Components expose their parameter schemas for inline editing
 
+**Model contents (Asset Inspector).** A selected `.glb` / `.gltf` asset gets a "Contents" block with an **Inspect model** button (`<pix3-model-asset-report>`, `ui/object-inspector/model-asset-report.ts`). Nothing is read until it is pressed; then the file (and, for `.gltf`, every external buffer/image it references) is parsed at the container level by `inspectGltf` (`services/assets/gltf-inspect.ts`) — no decode, no GPU — and the report lists the total size with a share bar (textures / geometry / animation / JSON / other), then tables of textures (format and pixel size read from the image header, bytes, % of the file, which material slots use it), meshes (vertices, triangles, Draco/meshopt, bytes, %), materials (shading, texture slots, texture bytes) and animations (channels, length, bytes), plus node/skin counts, `extensionsUsed`, the generator and warnings. Every bufferView is charged to one owner (textures → meshes → animations → skins), so shared views are never counted twice; unclaimed bytes show as "Other".
+
 ### 6.9 Node Integration
 
 Nodes store components in the `components: ScriptComponent[]` property.

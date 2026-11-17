@@ -1,0 +1,175 @@
+pix3-model-asset-report {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+pix3-model-asset-report .model-report-status,
+pix3-model-asset-report .model-report-meta {
+  font-size: 0.74rem;
+  color: var(--fg-2);
+}
+
+pix3-model-asset-report .model-report-error,
+pix3-model-asset-report .model-report-warning {
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--danger);
+}
+
+pix3-model-asset-report .model-report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+pix3-model-asset-report .model-report-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+pix3-model-asset-report .model-report-total {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg-0);
+  white-space: nowrap;
+}
+
+pix3-model-asset-report .model-report-counts {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: var(--fg-2);
+}
+
+pix3-model-asset-report .model-report-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-2);
+  gap: 1px;
+}
+
+pix3-model-asset-report .model-report-bar-part {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+pix3-model-asset-report .model-report-bar-part--textures {
+  background: var(--accent);
+}
+
+pix3-model-asset-report .model-report-bar-part--geometry {
+  background: var(--ok);
+}
+
+pix3-model-asset-report .model-report-bar-part--animation {
+  background: var(--warn);
+}
+
+pix3-model-asset-report .model-report-bar-part--json {
+  background: var(--fg-2);
+}
+
+pix3-model-asset-report .model-report-bar-part--other {
+  background: var(--line-2);
+}
+
+pix3-model-asset-report .model-report-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--fg-1);
+}
+
+pix3-model-asset-report .model-report-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+pix3-model-asset-report .model-report-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+pix3-model-asset-report .model-report-section > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg-0);
+  padding: 0.15rem 0;
+}
+
+pix3-model-asset-report .model-report-section-count {
+  font-weight: 400;
+  color: var(--fg-3);
+}
+
+pix3-model-asset-report .model-report-table-wrap {
+  overflow-x: auto;
+}
+
+pix3-model-asset-report .model-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+pix3-model-asset-report .model-report-table th {
+  text-align: right;
+  font-weight: 500;
+  color: var(--fg-3);
+  padding: 0.15rem 0.3rem;
+  border-bottom: 1px solid var(--line-1);
+  white-space: nowrap;
+}
+
+pix3-model-asset-report .model-report-table td {
+  position: relative;
+  text-align: right;
+  color: var(--fg-1);
+  padding: 0.15rem 0.3rem;
+  white-space: nowrap;
+}
+
+pix3-model-asset-report .model-report-table th:first-child,
+pix3-model-asset-report .model-report-table td.model-report-name {
+  text-align: left;
+}
+
+pix3-model-asset-report .model-report-table td.model-report-name {
+  color: var(--fg-0);
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+pix3-model-asset-report .model-report-table tbody tr:hover td {
+  background: var(--bg-2);
+}
+
+/* The % cell carries a bar of the row's share behind its number. */
+pix3-model-asset-report .model-report-share {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: var(--accent-soft);
+  border-radius: 2px;
+}
+
+pix3-model-asset-report .model-report-share-text {
+  position: relative;
+}
+
+pix3-model-asset-report .model-report-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow-wrap: anywhere;
+}

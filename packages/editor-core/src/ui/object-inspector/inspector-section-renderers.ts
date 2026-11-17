@@ -176,6 +176,14 @@ ${textPreview?.content || 'Empty file'}</pre
             >
           </div>
         </div>
+        ${isModel
+          ? html`
+              <div class="property-group-section asset-section">
+                <h4 class="group-title">Contents</h4>
+                <pix3-model-asset-report .resourcePath=${resourceUrl}></pix3-model-asset-report>
+              </div>
+            `
+          : ''}
       </div>
     `;
   }

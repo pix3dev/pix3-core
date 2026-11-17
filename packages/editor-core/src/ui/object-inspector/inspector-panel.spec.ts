@@ -899,6 +899,14 @@ describe('InspectorPanel asset preview rendering', () => {
     expect((preview as { resourcePath?: string }).resourcePath).toBe(
       'res://assets/models/crate.glb'
     );
+
+    // The contents report is on request: a button, nothing read until it is pressed.
+    const report = panel.querySelector('pix3-model-asset-report');
+    expect((report as { resourcePath?: string } | null)?.resourcePath).toBe(
+      'res://assets/models/crate.glb'
+    );
+    await (report as { updateComplete?: Promise<unknown> } | null)?.updateComplete;
+    expect(report?.querySelector('button')?.textContent).toContain('Inspect model');
   });
 
   it('renders playable audio preview for selected audio assets', async () => {

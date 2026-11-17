@@ -260,6 +260,11 @@ function resolveExtension(blob: Blob, sourcePath?: string): string {
   return match ? match[1] : 'glb';
 }
 
+/** Project path of a file a glTF references by relative `uri` (`textures/a.png` next to `res://m/x.gltf`). */
+export function resolveGltfRelativePath(sourcePath: string, uri: string): string {
+  return joinAssetPath(getParentPath(sourcePath) ?? '.', uri);
+}
+
 function shouldResolveExternalUri(uri: string): boolean {
   return !/^(data:|blob:|https?:)/i.test(uri);
 }

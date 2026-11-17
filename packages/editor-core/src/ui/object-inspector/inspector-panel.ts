@@ -42,6 +42,7 @@ import '../shared/pix3-panel';
 import './inspector-panel.ts.css';
 import './inspector-controls.ts.css';
 import './model-asset-preview';
+import './model-asset-report';
 import './property-editors';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 
