@@ -41,8 +41,9 @@
         // pattern: default mode reaches `src/index.ts` through the `start` script and calls a plain
         // `src/index.ts!` redundant, production mode does not reach it without one.
         "src/{index,usage}.ts!",
-        // esbuild entry points named by path in smoke/bundle.ts and validate/bundle.ts
+        // esbuild entry points named by path in smoke/bundle.ts, validate/bundle.ts, render/bundle.ts
         "src/smoke/worker.ts!",
+        "src/render/page-host.ts!",
         "src/tree/defaults.ts!",
         "src/validate/bundle-main.ts!",
         "src/{smoke,validate}/bundle-entries/*.ts!"

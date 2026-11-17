@@ -36,6 +36,7 @@ import type { SceneGraph } from './SceneManager';
 
 import {
   GeometryMesh,
+  type GeometryModifier,
   type GeometryMeshEffectsConfig,
   type GeometryMeshEffectEntry,
 } from '../nodes/3D/GeometryMesh';
@@ -115,6 +116,10 @@ export interface SceneDocument {
 export interface GeometryMeshProperties {
   geometry?: string;
   size?: [number, number, number];
+  shape?: Record<string, unknown>;
+  modifiers?: Record<string, unknown>[];
+  vertexColors?: Record<string, unknown>;
+  shading?: 'smooth' | 'flat';
   castShadow?: boolean;
   receiveShadow?: boolean;
   material?: {
@@ -1631,6 +1636,12 @@ export class SceneLoader {
           scale: parsed.scale,
           geometry,
           size: [size.x, size.y, size.z],
+          shape: this.asRecord(propsRec.shape) ?? null,
+          modifiers: Array.isArray(propsRec.modifiers)
+            ? (propsRec.modifiers as GeometryModifier[])
+            : null,
+          vertexColors: this.asRecord(propsRec.vertexColors) ?? null,
+          shading: this.asString(propsRec.shading) ?? null,
           castShadow,
           receiveShadow,
           material: materialConfig,

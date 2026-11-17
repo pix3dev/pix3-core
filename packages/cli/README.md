@@ -734,6 +734,135 @@ activities and the renderer counters are representative. `outside the runner` is
 interval minus the game's work — on SwiftShader mostly the GPU process rasterising what the paint
 submitted. The page's frame rate also follows the box's load: compare runs on the same machine.
 
+## `pix3 render` — look at a model from several sides
+
+```bash
+npx pix3 render scenes/prefabs/house.pix3scene                 # iso, front, right, top → one PNG
+npx pix3 render res://scenes/main.pix3scene --node island-3 --views iso,game,below --size 384
+npx pix3 render prefabs/mill.pix3scene --views all --lights studio --json
+npx pix3 render prefabs/ship.pix3scene --views iso --reference design/ship-concept.png
+```
+
+A scene or prefab — or one node of it (`--node`, the rest hidden) — drawn from several sides into
+**one PNG sheet** (two columns, each tile labelled with its view), in a private headless Chrome.
+It exists because an agent that builds a model from `GeometryMesh` parts cannot see it: read the
+sheet, fix the normals, the proportions, the gaps, render again. The scene loads and its
+components start as in play (`core:MergeStatic` merges and bakes in `onReady`; the project's
+scripts are compiled against the page's runtime and registered), `--frames` frames run, then a
+camera framing the visible meshes takes each view. No dev server or editor: the CLI serves the
+project folder itself on 127.0.0.1. It prints the PNG path (default
+`.pix3/renders/<scene>[-<node>].png`), the mesh, draw-call and triangle counts of a view, the
+model's size, which lights were used, and what each `core:MergeStatic` did (parts, vertices, ms).
+
+Views: `iso` (35°/30°), `front` (0°/8°), `right`, `back`, `left`, `top`, `below` (35°/−30°),
+`game` (0°/50°), `all`, or `azimuth:elevation` in degrees (azimuth 0 looks from +Z, 90 from +X).
+Lights: `auto` (the scene's, a studio rig when it has none — a prefab), `studio`, `scene`.
+Exit 1 when the scene fails, nothing is visible or the page logged an error; 2 when it cannot run
+(no Chrome, no such file). Code: `src/render/` — `command.ts` (server, Chrome, report),
+`page-host.ts` (the page: `SceneRunner` in manual time, the framing camera, the sheet; prebuilt
+into `dist/render/prebuilt/` by `scripts/build-render.mjs`), `bundle.ts` (that build and the
+project scripts' compile, `@pix3/runtime` / `three` taken from the host). The views, the
+isolation, the framing camera and the sheet are the runtime's `renderModelSheet`
+(`packages/runtime/src/nodes/3D/model-sheet.ts`), shared with the editor's `pix3_render_model`
+(`pix3 bridge render`), which draws the open scene instead.
+
+**How it reads** (every render; one `look:` line, `look` in `--json` with each view's under
+`look.views`). Measured inside the model's exact mask — each view is drawn a second time against
+another clear colour and a pixel is the model's where both agree — minus its 1-px boundary ring:
+linear-light Rec.709 luminance p10/p50/p90 (mid grey `#808080` ≈ 0.22), the near-black share
+(luminance < 0.01), the median HSV saturation of the sRGB values over the pixels bright enough to
+carry one (luminance ≥ 0.05, and their share), and the flat share (pixels whose right and lower
+neighbours have the same luma — a diagnostic; low-poly faces are flat on purpose). The note says
+`reads dark` (near-black ≥ 10%, the one firm threshold), `reads dim` (p50 < 0.06) or
+`desaturated` (saturation < 0.2) — soft words, no pass/fail, the exit code never changes. Under
+400 interior pixels it says `too few pixels` instead of numbers. Calibration (2026-11-16, Skyways
+prefabs under the studio rig): islands p50 0.02–0.26, saturation 0.06–0.44; build sets p50
+0.05–0.10, saturation 0.26–0.61; the baked airship p50 0.10, saturation 0.64 — what makes it read
+bright is saturation, not luminance.
+
+**`--reference <image>`** (png / jpg / webp): the image is the sheet's first tile, labelled, and is
+compared with the **first** of `--views` — so the reference must show the model from that view.
+Its mask comes from its alpha, else from `--reference-background <hex>`, else from the colour of
+its four corners when they agree; a keyed background is flood-filled from the border (the model's
+own pixels of that colour stay — and so does a hole through the model that shows the background:
+give such a reference alpha) and specks are dropped. A mask it cannot trust is reported (`mask failed: …`), never
+guessed. Both masks are fitted to their own bounding boxes (scale and position drop out), then:
+silhouette IoU, both boxes' aspect, mean luminance by height band (top, upper, lower, bottom) over
+the cells both cover, the saturation ratio render/reference (none for a grey reference), the
+reference's own look, and its palette — up to 6 colours as hex with their shares, background
+excluded (k-means in CIELAB) — to sample colours from instead of guessing. All hints: a high
+silhouette IoU does not prove the form (a lava island against the airship scores 0.75), and the
+in-game look decides. The maths is the runtime's `model-look.ts` (pure, specced on synthetic
+pixels); `pix3_render_model` answers the same `look`.
+
+### `pix3 render --job` — a pass of a model job
+
+```bash
+npx pix3 render --job tower --stage form --note "lathe body, bevelled roof"
+npx pix3 render --job tower --stage material --force "no separate form pass: one lathe"
+```
+
+With `--job <id> --stage <name>` the render is one **pass** of a model job (`pix3 model`, below):
+the scene, node, reference (and its background), views and size come from the job, a flag given
+here wins and is recorded in the pass's `params` (with `lights`, `background`, `frames` and the
+reference's sha256 — two passes are comparable only when those are equal). The positional scene
+is optional; `--out` is refused. The order of stages is checked before Chrome starts and again
+when the pass is recorded: the first pass is the job's first stage, then the same stage (another
+iteration) or the next one; anything else exits 2 with the stage that is missing, unless
+`--force "<reason>"`, which is kept in `passes[].forced`. The sheet and the full report go into
+`.pix3/model-jobs/<id>/passes/NN-<stage>/` (never rewritten), the pass — with metrics copied from
+the report under `model-look.ts`'s names — into `job.json`; every feedback entry delivered to the
+agent and not yet addressed gets `addressedBy: <seq>`. A render that fails or logs a page error
+records nothing. The output ends with `N new feedback — pix3 model feedback <id>` when the human
+said something the agent has not seen.
+
+## `pix3 model` — the journal of a model the agent builds
+
+```bash
+npx pix3 model new tower --target res://scenes/prefabs/tower.prefab --reference design/tower.png
+npx pix3 model feedback tower --wait        # what the human said in the editor, or wait for it
+npx pix3 model next tower                   # stages, passes, what may come next, last verdict
+npx pix3 model done tower                   # or --failed "<reason>", or --force
+npx pix3 model list [--json]; npx pix3 model rm tower
+```
+
+The coding agent is the 3D model generator (as in img2threejs): it writes `GeometryMesh` parts and
+renders them. A **model job** gives that loop an order and a memory — stages it may not skip
+without a reason, every pass's sheet and numbers, and the human's feedback from the editor's
+3D Asset Generator panel, which the agent cannot fail to notice. All of it is files in
+`.pix3/model-jobs/` (local, ignored by git; no dev server needed); the plan is
+`.plans/model-jobs.md`, the format `src/model/types.ts` (v1, validated on every read; the panel
+keeps a copy), the methodology the kit's `pix3-model` skill.
+
+- `new <id>` (`[a-z0-9-]`, ≤ 64; a taken id is refused) — `--target` a scene or prefab that
+  exists (stored as `res://`), `--node`, `--reference` (png / jpg / webp, copied into the job as
+  `reference.<ext>` with its sha256), `--reference-background`, `--title`, `--stages` (default
+  `blockout,structure,form,material,bake`; unique slugs), `--views`, `--size`.
+- `feedback <id>` — the entries of `feedback.jsonl` not yet delivered: pass and stage, verdict,
+  text, each mark in words inside its own tile (`front: rect 20%×15%, top right`, from the
+  pass's sheet layout) and the marked sheet to Read; then `deliveredAt` in `job.json`, only for
+  what it printed. `--wait`: when there is none, writes `wait: { pid, since, expiresAt }`, polls
+  every second up to `--timeout` (default 540 s), removes only its own `wait` (also on SIGINT);
+  a timeout is exit 0, "No feedback yet", `timedOut: true` in `--json`.
+- `next <id>` — the stages with their pass counts, the `--stage` values allowed next, the last
+  verdict, the new-feedback line; `done` once the last stage has a pass and nothing is undelivered.
+- `done <id>` — refused while feedback is undelivered or the last stage has no pass, unless
+  `--force` (what was skipped becomes `result`); `--failed <reason>`. The human's verdict is not
+  required.
+- `list` — status, passes, last stage, "waiting for you" while a `--wait` is alive. `rm <id>` —
+  refused while a `--wait` on the job is alive.
+
+**Files and writes.** The CLI writes `job.json`, `index.json`, `reference.<ext>` and `passes/`;
+the panel only `feedback.jsonl` (one immutable JSON line per entry, appended with `If-Match`) and
+`feedback/<fid>.png`. Every read-modify-write of `job.json` runs under `.pix3/model-jobs/.lock`
+(created with `wx`, holds pid and time, retried for up to 10 s; a lock older than 30 s whose
+process is dead is taken over); Chrome renders outside it. A pass publishes `sheet.png` +
+`report.json`, then `job.json`, then `index.json`, each through a temp file and a rename;
+`index.json` is derived — rebuilt from every `job.json` on each write. Delivery is not reading:
+`deliveredAt` says the agent was shown an entry, `addressedBy` the pass rendered after it. Code:
+`src/model/` (`types.ts`, `store.ts` — lock, writes, stages, pass recording, metrics —
+`command.ts`).
+
 ## `pix3 bridge` — the editor tab without MCP
 
 ```bash
@@ -743,6 +872,8 @@ npx pix3 bridge scene '{"nodeId":"play-button"}'
 npx pix3 bridge screenshot --target game --aspect 9:16 --out shot.png
 npx pix3 bridge tap --node play-button --touch       # or: tap <x> <y> (page CSS px)
 npx pix3 bridge swipe --from gem-2-3 --to gem-2-4    # or: swipe <x1> <y1> <x2> <y2> [--ms 180]
+npx pix3 bridge bake '{"action":"apply"}'             # core:MergeStatic shown in the viewport
+npx pix3 bridge render --node flagship --views iso,front --out ship.png
 ```
 
 The same tab and the same CDP token proxy the `pix3-browser` MCP server uses, from the shell: for
@@ -759,7 +890,9 @@ first, through `pix3_play`'s `aspect`); `tap` / `swipe` dispatch real mouse or
 included, by id or name). Before either, a pause `pix3_game_run` left on its outcome frame
 (`pix3_play status` → `pausedBy: "pix3_game_run"`) is resumed and said on stderr — game18 spent a swipe
 on a frozen game; a pause someone asked for (the Pause button, `pix3_play pause`) is only warned
-about. The token is never printed.
+about. `render` calls `pix3_render_model` with `image: true` and writes the sheet it returns
+(default `.pix3/renders/editor-<node>.png`), then prints the path and the counts. The token is
+never printed.
 Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
@@ -853,7 +986,14 @@ and `find` also reach the nodes only the running game has — `runtimeOnly: true
 (`{action: start|stop|restart|pause|resume|status, scenePath?, force?, aspect?}` — the designer's
 session is refused with `not_owner`, `force` included; `aspect` is the Game tab's preset), `pix3_game_run` (`GameTestService.run`),
 `pix3_screenshot` (`{target: game|viewport}` prepares the view; the picture is
-`take_screenshot`), `pix3_errors` (`{since?, clear?}`). Params are validated on both paths;
+`take_screenshot`), `pix3_render_model` (`{nodeId?, views?, size?, lights?, background?, image?}`
+— the node, or the scene's 3D roots, drawn alone from each view with the viewport's renderer
+through the runtime's `renderModelSheet`, everything it hides restored in the same task; answers
+meshes, draw calls, triangles, size, the baked nodes; the sheet is laid over the tab, removed by
+the next call or a click, or returned as a data URL with `image`), `pix3_bake`
+(`{action?: apply|clear|status, nodeId?}` — `mergeStatic` / `unmergeStatic` from `core:MergeStatic`'s
+config on the editor's nodes, no cache, nothing written; a scene reload drops it; code
+`src/host/bridge-model.ts`), `pix3_errors` (`{since?, clear?}`). Params are validated on both paths;
 every refusal is `{ok:false, reason, detail}`. `pix3 check`, `pix3 smoke` and `vite build`
 flush the editor through `POST /__pix3/api/flush` (the CLI side is `src/editor-sync.ts`),
 without the bridge. The kit's `pix3-editor` skill is held to the table by `src/kit.spec.ts`.

@@ -38,6 +38,7 @@ import { PeekService } from '@/services/viewport/PeekService';
 import { SaveActiveResourceCommand } from '@/features/editor/SaveActiveResourceCommand';
 import { OpenEditorSettingsCommand } from '@/features/editor/OpenEditorSettingsCommand';
 import { OpenGeneratePanelCommand } from '@/features/editor/OpenGeneratePanelCommand';
+import { OpenModelJobsPanelCommand } from '@/features/editor/OpenModelJobsPanelCommand';
 import { DeleteObjectCommand } from '@/features/scene/DeleteObjectCommand';
 import { DuplicateNodesCommand } from '@/features/scene/DuplicateNodesCommand';
 import { GroupSelectedNodesCommand } from '@/features/scene/GroupSelectedNodesCommand';
@@ -294,6 +295,7 @@ export class Pix3EditorShell extends ComponentBase {
       new FocusAnimationTimelineCommand(),
       new OpenLocalizationPanelCommand(),
       new OpenGeneratePanelCommand(),
+      new OpenModelJobsPanelCommand(),
       new AddAnimationPlayerToSelectionCommand(),
       // Searchable fallback for the Create menu, whose rows are grouped by node type.
       new BrowseNodeTypesCommand(),

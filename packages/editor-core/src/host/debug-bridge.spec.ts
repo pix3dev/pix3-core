@@ -98,6 +98,8 @@ describe('agent bridge', () => {
       'pix3_play',
       'pix3_game_run',
       'pix3_screenshot',
+      'pix3_render_model',
+      'pix3_bake',
       'pix3_errors',
     ]);
   });

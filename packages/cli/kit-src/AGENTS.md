@@ -252,6 +252,16 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
   script throw, `console.error` or unhandled rejection. Name the game scene.
 - `pix3 tree [scene] [--types A,B] [--depth N] [--props] [--json]` — scene outline, one line
   per node; no scene = project overview.
+- `pix3 render <scene|prefab> [--node <id>] [--views iso,front,right,top|all|az:el]` — draw a 3D
+  model from several sides into one PNG (headless Chrome, no editor); Read the PNG after every
+  change to a model you build from `GeometryMesh` parts. Its `look:` line says whether the model
+  reads dark, dim or desaturated (numbers, not a verdict); `--reference <image>` puts a concept
+  beside it, compares it with the first view and prints the concept's palette — take colours from
+  it instead of guessing. One change per render; the PNG and the game decide. Before you build
+  one: `pix3-nodes` `reference-3d.md` → "Making a model read well". With the editor open: `pix3_render_model`
+  / `npx pix3 bridge render` (the scene as the editor holds it) and `pix3_bake` (see the
+  `core:MergeStatic` bake in the viewport) — `pix3-editor`. A model built against a reference,
+  stage by stage with the human's feedback: `pix3 model new` + `pix3 render --job` (`pix3-model`).
 - `pix3 grid <scene> --parent <id> --prefab <res://…> --rows R --cols C [--step W[xH]]
 [--checker '<json>'] [--replace]` — write a board's backing cells (rows × cols prefab instances,
   centred on the parent, row 0 on top) into the scene once, as plain YAML; never type them by hand.
@@ -281,6 +291,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
 - `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback
 - `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `smoke`, the diagnostic codes, how to report what was verified
+- `.claude/skills/pix3-model/SKILL.md` — building a 3D model from `GeometryMesh` parts as a model job: stages, `pix3 render --job`, the human's feedback from the 3D Asset Generator panel
 
 ## Finish every turn with
 

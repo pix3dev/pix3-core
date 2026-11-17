@@ -39,6 +39,7 @@ import {
   validateParams,
   type BridgeToolSpec,
 } from './bridge-tools';
+import { bake, hideModelSheet, renderModel } from './bridge-model';
 import type { HookReply } from './EditorHost';
 import { HostService } from './HostService';
 
@@ -605,6 +606,18 @@ const EXECUTES: Record<string, Execute> = {
     return { ok: true, target, next: 'take_screenshot' };
   },
 
+  async pix3_render_model(params) {
+    const found = graphOf(undefined);
+    if (!found) return refuse('no_scene', 'No active scene.');
+    return renderModel(found.graph, service(ViewportRendererService), params);
+  },
+
+  async pix3_bake(params) {
+    const found = graphOf(undefined);
+    if (!found) return refuse('no_scene', 'No active scene.');
+    return bake(found.graph, service(ViewportRendererService), params);
+  },
+
   async pix3_errors(params) {
     const list = errors(typeof params.since === 'number' ? params.since : undefined);
     if (params.clear === true) clearErrors();
@@ -629,6 +642,8 @@ export async function callBridgeTool(
   }
   const problem = validateParams(spec.inputSchema, params ?? {});
   if (problem) return refuse('invalid_params', problem);
+  // A model sheet left over the editor by pix3_render_model goes with the next call.
+  hideModelSheet();
   return asAgentCall(async () => {
     try {
       return await execute((params ?? {}) as Params);

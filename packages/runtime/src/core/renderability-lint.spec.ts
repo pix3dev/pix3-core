@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AmbientLightNode } from '../nodes/3D/AmbientLightNode';
 import { Camera3D } from '../nodes/3D/Camera3D';
 import { GeometryMesh } from '../nodes/3D/GeometryMesh';
+import { MeshInstance } from '../nodes/3D/MeshInstance';
 import { Sprite3D } from '../nodes/3D/Sprite3D';
 import { NodeBase } from '../nodes/NodeBase';
 import { Node2D } from '../nodes/Node2D';
@@ -57,6 +58,42 @@ describe('renderability lint', () => {
     // train everyone to ignore the lint.
     const sprite = new Sprite3D({ id: 'sprite', name: 'Sprite' });
     expect(codes([sprite, camera()])).toEqual([]);
+  });
+
+  it('stays quiet for lit parts under a baking core:MergeStatic, not for a moving one', () => {
+    // A baked group is drawn unlit (light in its vertex colours); a part a component moves is
+    // left out of the merge and still needs a light.
+    const group = new NodeBase({
+      id: 'model',
+      name: 'model',
+      type: 'Node3D',
+      properties: {},
+      metadata: {},
+    });
+    (group.components as unknown[]).push({ type: 'core:MergeStatic', config: { bake: true } });
+    group.add(cube('wall'));
+    expect(codes([group, camera()])).toEqual([]);
+    const spinner = new NodeBase({
+      id: 'spin',
+      name: 'spin',
+      type: 'Node3D',
+      properties: {},
+      metadata: {},
+    });
+    (spinner.components as unknown[]).push({ type: 'core:Rotate', config: {} });
+    spinner.add(cube('sail'));
+    group.add(spinner);
+    expect(codes([group, camera()])).toEqual(['lit-material-no-light']);
+  });
+
+  it('stays quiet for a MeshInstance whose model file is all unlit, though it is not loaded', () => {
+    // The CLI's check never loads a GLB: `isUnlitModel` reads its materials from the file.
+    const ship = new MeshInstance({ id: 'ship', name: 'ship', src: 'res://models/ship.glb' });
+    expect(codes([ship, camera()])).toEqual(['lit-material-no-light']);
+    const issues = collectRenderabilityIssues([ship, camera()], {
+      isUnlitModel: src => src === 'res://models/ship.glb',
+    });
+    expect(issues).toEqual([]);
   });
 
   it('flags 3D content with no camera', () => {

@@ -22,6 +22,10 @@ import {
   type SceneGraph,
 } from '@pix3/runtime';
 import { appState } from '@/state';
+import {
+  containsExplicitLights,
+  createEditorFallbackLights,
+} from '@/services/viewport/editor-fallback-lighting';
 import { toResourcePath } from '@/services/project/disk/project-paths';
 
 /** Long edge of the generated thumbnail, in device-independent pixels. */
@@ -110,6 +114,13 @@ export class SceneThumbnailGenerator {
     const scene = new Scene();
     for (const root of graph.rootNodes) {
       scene.add(root);
+    }
+    // A prefab/scene without its own lights gets the viewport's System
+    // Lighting, so it reads as it does in the editor instead of a black
+    // silhouette (unlit Lambert/Standard materials render pure black).
+    if (!containsExplicitLights(graph.rootNodes)) {
+      const { ambient, directional } = createEditorFallbackLights();
+      scene.add(ambient, directional);
     }
 
     // Anchor 2D content to the project design frame first, so anchored

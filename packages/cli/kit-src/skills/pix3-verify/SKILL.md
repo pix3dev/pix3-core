@@ -17,7 +17,17 @@ pix3 check --json     # the same, machine-readable
 pix3 validate [paths] [--json]   # scenes/prefabs only, no type-check
 pix3 smoke scenes/main.pix3scene # then: run the game headless for 120 frames, report what threw
 pix3 tree [scene]                # outline of a scene (or of the project) instead of reading it
+pix3 render <scene|prefab> [--node <id>]  # a 3D model from 4 sides into one PNG — Read it
+pix3 render <prefab> --views iso --reference concept.png  # + the concept, compared; its palette
 ```
+
+`pix3 render` also prints `look:` — linear luminance p10/p50/p90, near-black share, saturation
+inside the model's mask, and `reads dark` / `reads dim` / `desaturated` when the numbers say so.
+With `--reference`: silhouette IoU, luminance by height band, saturation ratio and the
+reference's palette (hex), or `mask failed: …` (pass `--reference-background <hex>`). All are
+hints: compare before/after one change, and Read the PNG — a high IoU does not prove the form.
+Building a model stage by stage against a reference, with the human's feedback: `pix3-model`
+(`pix3 model new`, `pix3 render --job <id> --stage <name>`).
 
 If `pix3` is not on your PATH: `npx pix3 check` (the project's own `@pix3/cli`), or the pinned `npx -y @pix3/cli@{{version}} check`.
 
@@ -57,6 +67,7 @@ Codes and what they usually mean:
 | `E_MISSING_RESOURCE` | `res://` path typo, or the asset was never written (an `AnimatedSprite3D` `frames` entry too, `res://` or not) |
 | `W_SCRIPT_MISSING_RESOURCE` | A `res://` path in a script names no file — the build ships only files a script names by a literal `res://` path, so it leaves this one out (white quads in `dist`). Fix the path; write each path as its own string (a list in one string `'res://a.svg,res://b.svg'` is read as two paths, but keep them apart) |
 | `E_MISSING_PREFAB`, `E_PREFAB_*`, `E_DUPLICATE_ID` | Fix the `instance:` path; a prefab file needs exactly one root; ids are unique |
+| `E_GEOMETRY_PARAMS` | A `GeometryMesh` `shape` / `modifiers` / `vertexColors` that cannot build: too few `shape.points` for the kind, an unknown modifier `type` — see `GeometryMesh` in `pix3-nodes` `reference-3d.md` |
 | `E_EMOJI_AS_ART` | A `label`/`text` that is only emoji — use a sprite or `ColorRect2D` |
 | `E_SVG_INVALID`, `E_SVG_NO_SIZE`, `W_SVG_VIEWBOX_ONLY` | An `.svg` sprite without `xmlns` or without `width`/`height` in px — see the SVG template in `pix3-nodes` |
 | `W_SVG_EXTERNAL_REF` | An `.svg` that links a file, URL or font — it will draw without it; inline it |

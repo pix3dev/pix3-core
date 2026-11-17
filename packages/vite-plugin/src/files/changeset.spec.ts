@@ -266,6 +266,27 @@ describe('changeset transaction and recovery (ProjectFiles)', () => {
     expect(text(root, 'scenes/a.pix3scene')).toBe(A_OLD);
   });
 
+  it('keeps an own write under .pix3/ out of pix3:fs and out of the own-write table', async () => {
+    const root = makeRoot({ 'scenes/a.pix3scene': A_OLD });
+    const { files: f, frames } = await open(root);
+    const job = '.pix3/model-jobs/tower/feedback.jsonl';
+    await f.performChangeset(
+      parseChangeset({
+        files: [
+          { path: job, text: '{"id":"f-1"}\n', createOnly: true },
+          { path: 'scenes/a.pix3scene', text: A_NEW, ifMatch: sha(A_OLD) },
+        ],
+      }),
+      null
+    );
+    expect(text(root, job)).toBe('{"id":"f-1"}\n');
+    expect(frames.flatMap(frame => frame.events.map(event => event.path))).toEqual([
+      'scenes/a.pix3scene',
+    ]);
+    const ownWrites = (f as unknown as { ownWrites: Map<string, string> }).ownWrites;
+    expect([...ownWrites.keys()]).toEqual(['scenes/a.pix3scene']);
+  });
+
   it('rolls a fully staged changeset forward after a kill between renames', async () => {
     const root = makeRoot({ 'scenes/a.pix3scene': A_OLD, 'prefabs/p.prefab': P_OLD });
     const { files: first } = await open(root, { faults: { afterRename: () => 'kill' } });

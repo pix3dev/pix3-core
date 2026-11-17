@@ -17,6 +17,7 @@ import {
 import { diagnostic, type Diagnostic } from './diagnostics.ts';
 import { checkComponentConfig, type Level1Environment } from './level1.ts';
 import type { ProjectFiles } from './project.ts';
+import { unlitModelReader } from './unlit-model.ts';
 import {
   buildFailures,
   hostImportsPlugin,
@@ -203,6 +204,7 @@ export const hydrateScene = async (options: HydrateOptions): Promise<Diagnostic[
     if (!options.isPrefab) {
       for (const issue of collectRenderabilityIssues(graph.rootNodes, {
         targetPlatform: options.targetPlatform,
+        isUnlitModel: unlitModelReader(env.project.root),
       })) {
         if (issue.code === 'inert-nodes') continue; // level 1 reports E_UNKNOWN_NODE_TYPE
         out.push(

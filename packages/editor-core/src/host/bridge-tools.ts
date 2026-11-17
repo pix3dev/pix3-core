@@ -184,6 +184,64 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     },
   },
   {
+    name: 'pix3_render_model',
+    description:
+      'Look at a model: the node `nodeId` of the active scene (or all its 3D roots) as the editor ' +
+      'holds it, unsaved edits and a pix3_bake included, drawn from each of `views` (iso, front, ' +
+      'right, back, left, top, below, game, all, or azimuth:elevation like 30:20; default ' +
+      'iso,front,right,top) into one sheet, alone on a plain background. Answers what it costs ' +
+      '(meshes, drawCalls, triangles, size, center, lights, the baked nodes under it), how it ' +
+      'reads (`look`: linear-luminance p10/p50/p90, near-black share, saturation, a note such as ' +
+      '"reads dark" — hints, as in pix3 render) and lays the ' +
+      'sheet over the editor until the next pix3_* call or a click: take_screenshot shows it. ' +
+      'From the shell `pix3 bridge render` writes it to a PNG; without the editor, `pix3 render`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string' },
+        views: {
+          type: 'string',
+          description: 'Comma-separated views (default iso,front,right,top).',
+        },
+        size: {
+          type: 'integer',
+          minimum: 64,
+          maximum: 1024,
+          description: 'Tile px (default 384).',
+        },
+        lights: {
+          type: 'string',
+          enum: ['auto', 'studio', 'scene'],
+          description: 'auto (default) = the scene’s lights when it has any, else a studio rig.',
+        },
+        background: { type: 'string', description: 'CSS colour behind the model.' },
+        image: {
+          type: 'boolean',
+          description: 'Return the sheet as a PNG data URL in `image` instead of showing it.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'pix3_bake',
+    description:
+      'Show core:MergeStatic in the viewport: `apply` (default) merges the static parts of every ' +
+      'node carrying core:MergeStatic in the active scene (or `nodeId`, with or without one) into ' +
+      'one mesh and bakes sun, shadows and AO into it with the component’s settings, as play does; ' +
+      '`clear` shows the parts again; `status` lists the baked nodes. Answers per node: parts ' +
+      'merged, meshes, vertices, ms. Writes nothing; the bake stays until cleared or the scene ' +
+      'reloads — apply again after editing the model.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['apply', 'clear', 'status'] },
+        nodeId: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'pix3_errors',
     description:
       'Console and runtime errors the editor captured (script throws during play, load errors), ' +

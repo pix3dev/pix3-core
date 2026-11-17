@@ -39,6 +39,11 @@ export type RenderabilitySeverity = 'blocking' | 'advice';
 export interface RenderabilityLintOptions {
   /** The project's render budget; `desktop` is the only value that buys PBR without comment. */
   readonly targetPlatform?: string;
+  /**
+   * Whether a `MeshInstance`'s model file (`src`) has only unlit materials (`KHR_materials_unlit`)
+   * — asked only for a mesh whose model is not loaded (the CLI's check reads the file instead).
+   */
+  readonly isUnlitModel?: (src: string) => boolean;
 }
 
 export interface RenderabilityIssue {
@@ -92,6 +97,9 @@ const MAX_REPORTED_NODES = 8;
  * consulted: the lint runs against whatever graph it is handed, so a caller checking a running
  * scene already sees the play-mode truth.
  */
+/** What the lint reads of a component: its type and, for `core:MergeStatic`, whether it bakes. */
+type Component = { readonly type?: string; readonly config?: { readonly bake?: unknown } };
+
 export const collectRenderabilityIssues = (
   rootNodes: readonly NodeBase[],
   options: RenderabilityLintOptions = {}
@@ -104,11 +112,18 @@ export const collectRenderabilityIssues = (
   let litMaterialSeen = false;
   let pbrMaterialCount = 0;
 
-  const visit = (object: Object3D): void => {
+  // `baked`: inside a `core:MergeStatic` group that bakes — its still parts end up unlit.
+  const visit = (object: Object3D, baked: boolean): void => {
     if (object.visible === false) {
       return;
     }
     const node = asNode(object);
+    const components = (node as { components?: readonly Component[] } | null)?.components ?? [];
+    if (components.some(c => c.type === 'core:MergeStatic' && c.config?.bake !== false)) {
+      baked = true;
+    } else if (components.length > 0) {
+      baked = false; // a moving part is left out of the merge
+    }
     if (node) {
       if (LIGHT_NODE_TYPES.has(node.type)) {
         lightCount++;
@@ -119,13 +134,13 @@ export const collectRenderabilityIssues = (
       if (CONTENT_3D_NODE_TYPES.has(node.type)) {
         content3D.push(node);
       }
-      if (LIT_CONTENT_NODE_TYPES.has(node.type)) {
+      if (LIT_CONTENT_NODE_TYPES.has(node.type) && !baked) {
         litContent.push(node);
       }
       if (isInertNode(node)) {
         inert.push(node);
       }
-    } else if (hasLitMaterial(object)) {
+    } else if (!baked && hasLitMaterial(object)) {
       // Read the material rather than trusting the node type: it is what makes a
       // `material.type: 'basic'` mesh, or an unlit glTF, stop triggering the light warning.
       litMaterialSeen = true;
@@ -134,20 +149,26 @@ export const collectRenderabilityIssues = (
       }
     }
     for (const child of object.children) {
-      visit(child);
+      visit(child, baked);
     }
   };
 
   for (const root of rootNodes) {
-    visit(root);
+    visit(root, false);
   }
 
   const issues: RenderabilityIssue[] = [];
 
   // A mesh whose asset has not finished loading carries no material yet, so the material read
-  // cannot speak for it — assume lit (glTF materials are PBR by definition). A loaded-and-unlit
-  // mesh still gets the benefit of the doubt, which is what keeps an all-basic scene quiet.
-  const needsLight = litMaterialSeen || litContent.some(node => !hasAnyMaterial(node));
+  // cannot speak for it — assume lit (glTF materials are PBR unless `KHR_materials_unlit`, which
+  // `isUnlitModel` reads from the file). A loaded-and-unlit mesh still gets the benefit of the
+  // doubt, which is what keeps an all-basic scene quiet.
+  const unlitModel = (node: NodeBase): boolean => {
+    const src = (node as { src?: unknown }).src;
+    return typeof src === 'string' && options.isUnlitModel?.(src) === true;
+  };
+  const needsLight =
+    litMaterialSeen || litContent.some(node => !hasAnyMaterial(node) && !unlitModel(node));
   if (needsLight && litContent.length > 0 && lightCount === 0) {
     issues.push({
       code: 'lit-material-no-light',

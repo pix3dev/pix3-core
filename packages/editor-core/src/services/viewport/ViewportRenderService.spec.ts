@@ -1095,24 +1095,6 @@ describe('ViewportRendererService', () => {
     expect(editorDirectionalLight.visible).toBe(false);
   });
 
-  it('detects explicit lights in nested scene nodes', () => {
-    const service = new ViewportRendererService();
-    const nestedLight = new DirectionalLightNode({ id: 'nested-light', name: 'Nested Light' });
-    const root = new Group2D({ id: 'root-group', name: 'Root Group' });
-
-    root.adoptChild(nestedLight);
-
-    const result = (
-      service as unknown as {
-        containsExplicitLights: (
-          nodes: readonly AmbientLightNode[] | readonly Group2D[]
-        ) => boolean;
-      }
-    ).containsExplicitLights([root]);
-
-    expect(result).toBe(true);
-  });
-
   it('resets the 2D camera without touching 3D orbit controls', () => {
     resetAppState();
     appState.ui.navigationMode = '2d';

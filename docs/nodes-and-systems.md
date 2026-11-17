@@ -132,7 +132,7 @@ cost is per skeleton per frame, so budget dozens, not hundreds. Full property ta
 
 **3D content**
 
-- `GeometryMesh` — primitive/standard-material mesh; supports **shader effects** (§4) and baked/realtime AO.
+- `GeometryMesh` — a primitive or a procedural shape (`extrude`, `lathe`, `tube`, `roundedBox`) with modifiers (`mirror`, `array`, `taper`, `twist`, `bend`, `noise`), flat/smooth shading and vertex colours; supports **shader effects** (§4) and baked/realtime AO. A model of many parts: `core:MergeStatic` (one draw call, light/shadow/AO baked into vertex colours); look at it with `pix3 render`.
 - `MeshInstance` — a loaded model (glTF). `InstancedMesh3D` — GPU-instanced copies for crowds.
 - `Sprite3D`, `AnimatedSprite3D` — billboarded sprites in 3D.
 - `Particles3D` — GPU-ish particle system with trails + sub-emitters + world/local sim.
@@ -159,6 +159,7 @@ effect. Registered in
 
 | Component id               | Does                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core:MergeStatic`         | On a model's group: merges its static parts into one mesh at start and (default) bakes sun, shadows and AO into vertex colours; moving parts stay separate. Scripts: `mergeStatic` / `unmergeStatic`; `sunDirectionFromCamera` places the baked sun relative to a fixed-heading camera |
 | `core:Rotate`              | Continuous rotation of a 3D node about its own `axis` (`y` default; `x`/`z` for a wheel on edge)                                            |
 | `core:SimpleMove`          | Simple test movement                                                                                                                        |
 | `core:Sine`                | Oscillate a node along an axis                                                                                                              |

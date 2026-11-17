@@ -194,6 +194,33 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
       io.stdout(`${out}\n`);
       return 0;
     }
+    if (command === 'render') {
+      // pix3_render_model with the sheet as a data URL, written to a PNG.
+      const params: Record<string, unknown> = { image: true };
+      for (const key of ['node', 'views', 'lights', 'background'] as const) {
+        const value = str(parsed, key);
+        if (value !== undefined) params[key === 'node' ? 'nodeId' : key] = value;
+      }
+      if (str(parsed, 'size') !== undefined) params.size = Number(str(parsed, 'size'));
+      const answer = await callTool(page, 'pix3_render_model', params);
+      if (answer.ok === false) {
+        io.stderr(`pix3 bridge render: ${String(answer.detail ?? answer.reason)}\n`);
+        return 1;
+      }
+      const { image, ...info } = answer;
+      const out = resolve(
+        io.cwd,
+        str(parsed, 'out') ??
+          join(root ?? io.cwd, '.pix3', 'renders', `editor-${str(parsed, 'node') ?? 'scene'}.png`)
+      );
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(
+        out,
+        Buffer.from(String(image).replace(/^data:image\/png;base64,/, ''), 'base64')
+      );
+      io.stdout(`${out}\n${JSON.stringify(info, null, 2)}\n`);
+      return 0;
+    }
     if (command === 'tap') {
       const node = str(parsed, 'node');
       const point = node ? await screenOfNode(page, node) : numbers(rest.slice(0, 2));

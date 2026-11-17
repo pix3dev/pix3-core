@@ -22,6 +22,7 @@ export const PANEL_COMPONENT_TYPES = {
   runtime: 'runtime',
   localization: 'localization',
   generate: 'generate',
+  modelJobs: 'model-jobs',
   history: 'history',
 } as const;
 
@@ -38,6 +39,7 @@ const PANEL_TAG_NAMES = {
   [PANEL_COMPONENT_TYPES.runtime]: 'pix3-runtime-panel',
   [PANEL_COMPONENT_TYPES.localization]: 'pix3-localization-panel',
   [PANEL_COMPONENT_TYPES.generate]: 'pix3-generate-panel',
+  [PANEL_COMPONENT_TYPES.modelJobs]: 'pix3-model-jobs-panel',
   [PANEL_COMPONENT_TYPES.history]: 'pix3-history-panel',
 } as const;
 
@@ -52,6 +54,7 @@ export const PANEL_DISPLAY_TITLES: Record<PanelComponentType, string> = {
   [PANEL_COMPONENT_TYPES.runtime]: 'Runtime',
   [PANEL_COMPONENT_TYPES.localization]: 'Localization',
   [PANEL_COMPONENT_TYPES.generate]: 'Asset Generator',
+  [PANEL_COMPONENT_TYPES.modelJobs]: '3D Asset Generator',
   [PANEL_COMPONENT_TYPES.history]: 'History',
 };
 
@@ -65,6 +68,7 @@ const PANEL_MODULE_LOADERS: Partial<Record<PanelComponentType, () => Promise<unk
     import('@/ui/animation-timeline/animation-timeline-panel'),
   [PANEL_COMPONENT_TYPES.localization]: () => import('@/ui/localization-view/localization-panel'),
   [PANEL_COMPONENT_TYPES.generate]: () => import('@/ui/generate/generate-panel'),
+  [PANEL_COMPONENT_TYPES.modelJobs]: () => import('@/ui/model-jobs/model-jobs-panel'),
   [PANEL_COMPONENT_TYPES.assets]: () => import('@/ui/assets/assets-panel'),
   [PANEL_COMPONENT_TYPES.history]: () => import('@/ui/history/history-panel'),
 };
@@ -100,7 +104,7 @@ export const isEditorDocumentPanel = (componentType: string | undefined): boolea
  * stack that already hosts the first neighbour it finds, so a re-opened Logs tab lands back beside
  * Assets instead of in a column of its own. A panel with no entry (or whose neighbours are all
  * closed too) falls back to its own column just before the Inspector — which is why Localization
- * and Asset Generator are deliberately absent from this map.
+ * and the two Asset Generators are deliberately absent from this map.
  *
  * This is data rather than one method per panel: every `Window` row goes through the same code
  * path, and adding a panel type means adding a line here.

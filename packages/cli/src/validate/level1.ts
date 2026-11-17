@@ -2,6 +2,7 @@ import * as runtime from '@pix3/runtime';
 import {
   CURRENT_SCENE_FORMAT_VERSION,
   describeEmojiAsArt,
+  describeGeometryProblems,
   describeUnknownNodeType,
   getSceneNodeDiskFormat,
   INSTANCE_TRANSFORM_KEYS,
@@ -564,6 +565,11 @@ class SceneChecker {
         }
       }
       this.checkStrings(value, keyAt, nodeId);
+    }
+    if (format.type === 'GeometryMesh') {
+      for (const message of describeGeometryProblems(properties)) {
+        this.report({ code: 'E_GEOMETRY_PARAMS', nodeId, message, at });
+      }
     }
   }
 

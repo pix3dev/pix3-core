@@ -390,6 +390,21 @@ describe('level 1: node types and properties', () => {
     });
     expect(find(report, 'E_EMOJI_AS_ART')).toMatchObject([{ nodeId: 'coin' }]);
   });
+
+  it('E_GEOMETRY_PARAMS: a procedural shape or modifier that cannot build; a good one passes', async () => {
+    const report = await run({
+      'scenes/a.pix3scene': scene(
+        '  - id: roof\n    type: GeometryMesh\n    properties:\n      geometry: extrude\n      shape: { points: [[0, 0], [1, 0]] }\n' +
+          '  - id: post\n    type: GeometryMesh\n    properties:\n      geometry: box\n      modifiers: [{ type: wobble }]\n' +
+          '  - id: vase\n    type: GeometryMesh\n    properties:\n      geometry: lathe\n      shape: { points: [[0, 0], [0.3, 0.5], [0, 1]] }\n      modifiers: [{ type: twist, angle: 30 }]\n      shading: flat\n'
+      ),
+    });
+    expect(find(report, 'E_GEOMETRY_PARAMS')).toMatchObject([
+      { nodeId: 'roof' },
+      { nodeId: 'post' },
+    ]);
+    expect(report.diagnostics.filter(d => d.nodeId === 'vase')).toEqual([]);
+  });
 });
 
 describe('level 1: components', () => {
@@ -837,6 +852,28 @@ describe('level 2: hydration with compiled user scripts', () => {
     expect(codes.filter(d => d.file === 'scenes/prefab.pix3scene')).toEqual([]);
     expect(codes.filter(d => d.file === 'scenes/prefabs/spawned.pix3scene')).toEqual([]);
     expect(codes.filter(d => d.file === 'scenes/ui/overlay.pix3scene')).toEqual([]);
+  });
+
+  it('W_RENDERABILITY_LIT_MATERIAL_NO_LIGHT: not for a MeshInstance whose model is all unlit', async () => {
+    const gltf = (unlit: boolean) =>
+      JSON.stringify({
+        asset: { version: '2.0' },
+        meshes: [{ primitives: [{ attributes: {}, material: 0 }] }],
+        materials: [unlit ? { extensions: { KHR_materials_unlit: {} } } : {}],
+      });
+    const ship = (src: string) =>
+      scene(
+        `  - id: cam\n    type: Camera3D\n  - id: ship\n    type: MeshInstance\n    properties:\n      src: ${src}\n`
+      );
+    const report = await run({
+      'models/unlit.gltf': gltf(true),
+      'models/lit.gltf': gltf(false),
+      'scenes/unlit.pix3scene': ship('res://models/unlit.gltf'),
+      'scenes/lit.pix3scene': ship('res://models/lit.gltf'),
+    });
+    expect(find(report, 'W_RENDERABILITY_LIT_MATERIAL_NO_LIGHT').map(d => d.file)).toEqual([
+      'scenes/lit.pix3scene',
+    ]);
   });
 });
 

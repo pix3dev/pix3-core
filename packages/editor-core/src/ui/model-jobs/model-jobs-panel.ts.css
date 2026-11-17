@@ -1,0 +1,601 @@
+pix3-model-jobs-panel {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+pix3-model-jobs-panel .model-jobs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font-size: 0.85rem;
+}
+
+/* Head ------------------------------------------------------------------ */
+pix3-model-jobs-panel .mj-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line-1);
+}
+
+pix3-model-jobs-panel .mj-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: auto;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+pix3-model-jobs-panel .mj-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.6rem;
+}
+
+/* Shared controls -------------------------------------------------------- */
+pix3-model-jobs-panel svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+pix3-model-jobs-panel code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+pix3-model-jobs-panel button {
+  font: inherit;
+}
+
+pix3-model-jobs-panel button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+pix3-model-jobs-panel button:focus-visible,
+pix3-model-jobs-panel textarea:focus-visible {
+  outline: 2px solid rgba(var(--pix3-accent-rgb), 0.6);
+  outline-offset: 1px;
+}
+
+pix3-model-jobs-panel .mj-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--fg-1);
+  cursor: pointer;
+}
+
+pix3-model-jobs-panel .mj-icon-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+pix3-model-jobs-panel .mj-icon-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+pix3-model-jobs-panel .mj-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-1);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--line-2);
+}
+
+pix3-model-jobs-panel .mj-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+pix3-model-jobs-panel .mj-btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+pix3-model-jobs-panel .mj-dim {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 0.8rem;
+}
+
+pix3-model-jobs-panel .mj-empty {
+  margin: 0;
+  color: var(--fg-2);
+  line-height: 1.45;
+}
+
+pix3-model-jobs-panel .mj-error {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-1);
+  background: var(--danger-soft);
+  color: var(--fg-0);
+}
+
+pix3-model-jobs-panel .mj-section {
+  margin: 0.2rem 0 0;
+  color: var(--fg-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Status badges ---------------------------------------------------------- */
+pix3-model-jobs-panel .mj-status,
+pix3-model-jobs-panel .mj-verdict,
+pix3-model-jobs-panel .mj-delivery {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-status--waiting,
+pix3-model-jobs-panel .mj-delivery--pending {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+pix3-model-jobs-panel .mj-status--done,
+pix3-model-jobs-panel .mj-verdict--accept,
+pix3-model-jobs-panel .mj-delivery--addressed {
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+pix3-model-jobs-panel .mj-status--failed,
+pix3-model-jobs-panel .mj-verdict--changes {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+pix3-model-jobs-panel .mj-status--wait-expired {
+  color: var(--fg-2);
+}
+
+/* Job list --------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 9.5rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  flex: 0 0 auto;
+}
+
+pix3-model-jobs-panel .mj-job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.1rem 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-0);
+  text-align: left;
+  cursor: pointer;
+}
+
+pix3-model-jobs-panel .mj-job:hover {
+  background: var(--bg-2);
+}
+
+pix3-model-jobs-panel .mj-job.is-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+pix3-model-jobs-panel .mj-job__title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-job__meta {
+  grid-column: 1 / -1;
+  color: var(--fg-2);
+  font-size: 0.75rem;
+}
+
+/* Job ------------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-job-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line-1);
+}
+
+pix3-model-jobs-panel .mj-job-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+pix3-model-jobs-panel .mj-job-head__text {
+  display: flex;
+  flex: 1 1 10rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
+pix3-model-jobs-panel .mj-job-head__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+pix3-model-jobs-panel .mj-target {
+  overflow: hidden;
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-result {
+  margin: 0;
+  color: var(--fg-1);
+}
+
+/* Pass strip ------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-passes {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0 0 0.25rem;
+  overflow-x: auto;
+  list-style: none;
+  flex: 0 0 auto;
+}
+
+pix3-model-jobs-panel .mj-pass {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 6.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  text-align: left;
+  cursor: pointer;
+}
+
+pix3-model-jobs-panel .mj-pass:hover {
+  border-color: var(--line-2);
+}
+
+pix3-model-jobs-panel .mj-pass.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+pix3-model-jobs-panel .mj-pass__thumb {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: calc(var(--radius-1) - 1px);
+  background: var(--bg-0);
+}
+
+pix3-model-jobs-panel .mj-pass__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+pix3-model-jobs-panel .mj-pass__label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-pass__seq {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+pix3-model-jobs-panel .mj-pass__forced,
+pix3-model-jobs-panel .mj-forced {
+  color: var(--warn);
+}
+
+pix3-model-jobs-panel .mj-pass__metric {
+  min-height: 1em;
+  color: var(--fg-2);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pass details ----------------------------------------------------------- */
+pix3-model-jobs-panel .mj-pass-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+pix3-model-jobs-panel .mj-pass-details__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+pix3-model-jobs-panel .mj-note {
+  margin: 0;
+  color: var(--fg-1);
+  font-style: italic;
+}
+
+pix3-model-jobs-panel .mj-forced {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+pix3-model-jobs-panel .mj-not-compared {
+  margin: 0;
+  color: var(--warn);
+}
+
+pix3-model-jobs-panel .mj-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.15rem 1rem;
+  margin: 0;
+}
+
+pix3-model-jobs-panel .mj-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+pix3-model-jobs-panel .mj-metric dt {
+  overflow: hidden;
+  color: var(--fg-2);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-metric dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+pix3-model-jobs-panel .mj-delta {
+  margin-left: 0.25rem;
+  color: var(--fg-2);
+  font-size: 0.75rem;
+}
+
+pix3-model-jobs-panel .model-jobs:focus {
+  outline: none;
+}
+
+/* Sheet ----------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+pix3-model-jobs-panel .mj-sheet__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+pix3-model-jobs-panel .mj-sheet__spacer {
+  flex: 1 1 auto;
+}
+
+pix3-model-jobs-panel .mj-segment {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+}
+
+pix3-model-jobs-panel .mj-segment__btn {
+  padding: 0.2rem 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--fg-1);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+pix3-model-jobs-panel .mj-segment__btn + .mj-segment__btn {
+  border-left: 1px solid var(--line-1);
+}
+
+pix3-model-jobs-panel .mj-segment__btn[aria-pressed='true'] {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+
+pix3-sheet-annotator {
+  display: block;
+}
+
+pix3-sheet-annotator .sheet-annotator {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  line-height: 0;
+}
+
+pix3-sheet-annotator img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-1);
+  user-select: none;
+}
+
+pix3-sheet-annotator .sheet-annotator__marks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+pix3-sheet-annotator .is-drawing .sheet-annotator__marks {
+  cursor: crosshair;
+}
+
+pix3-sheet-annotator .sheet-annotator__marks g {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+pix3-sheet-annotator .sheet-annotator__outline {
+  stroke: var(--mark-outline);
+  stroke-width: calc(var(--mark-line) + 3);
+}
+
+pix3-sheet-annotator .sheet-annotator__stroke {
+  stroke: var(--mark-color);
+  stroke-width: var(--mark-line);
+}
+
+/* Composer -------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+pix3-model-jobs-panel .mj-readonly {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  line-height: 1.4;
+}
+
+pix3-model-jobs-panel .mj-readonly svg {
+  margin-top: 0.15rem;
+}
+
+pix3-model-jobs-panel .mj-text {
+  min-height: 3.5rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font: inherit;
+  resize: vertical;
+}
+
+pix3-model-jobs-panel .mj-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Feedback -------------------------------------------------------------- */
+pix3-model-jobs-panel .mj-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+pix3-model-jobs-panel .mj-feedback__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-1);
+  background: var(--bg-2);
+}
+
+pix3-model-jobs-panel .mj-feedback__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+pix3-model-jobs-panel .mj-feedback__head .mj-dim {
+  margin-right: auto;
+}
+
+pix3-model-jobs-panel .mj-feedback__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -905,9 +905,10 @@ A lightweight "virtual camera" (Cinemachine-lite). It does **not** render — it
 
 ### GeometryMesh
 
-A 3D mesh node with a built-in primitive geometry and a PBR material. The shape
-is inspector-switchable and animatable via the `geometry`/`size` schema
-properties.
+A 3D mesh node whose geometry is built from what the file says — a primitive, or a
+procedural shape (`extrude`, `lathe`, `tube`, `roundedBox`) from a few authored numbers —
+with optional modifiers, flat/smooth shading and vertex colours, and a material from one of
+three families. Never stored vertices: an agent edits a silhouette by editing 8–20 numbers.
 
 **Type String:** `GeometryMesh`
 
@@ -915,8 +916,12 @@ properties.
 
 | Property                  | Type    | Default   | Description                                                             |
 | ------------------------- | ------- | --------- | ----------------------------------------------------------------------- |
-| `geometry`                | enum    | "box"     | Primitive shape (see below)                                             |
+| `geometry`                | enum    | "box"     | Shape kind (see below)                                                  |
 | `size`                    | Vector3 | (1, 1, 1) | Interpreted per shape (see below)                                       |
+| `shape`                   | map     | —         | Per-kind parameters: contour, profile, path, segments (see below)       |
+| `modifiers`               | list    | —         | `mirror` / `array` / `taper` / `twist` / `bend` / `noise`, in order     |
+| `vertexColors`            | map     | —         | Colour without UVs: `faces`, `gradient`, `groups`, `noise` (see below)  |
+| `shading`                 | enum    | auto      | `smooth` (edges over 50° stay hard), `flat` (low-poly), auto            |
 | `material.color`          | color   | #4e8df5   | Surface color                                                           |
 | `material.roughness`      | number  | 0.35      | Surface roughness (0-1)                                                 |
 | `material.metalness`      | number  | 0.25      | Metallic appearance (0-1)                                               |
@@ -965,7 +970,109 @@ field works for every primitive:
 | `cylinder` | Diameter `x`, height `y`                             |
 | `cone`     | Base diameter `x`, height `y`                        |
 | `torus`    | Outer diameter `x`; tube thickness scales with `y`   |
+| `roundedBox` | Full extents, like `box`; `shape.radius` rounds the edges (default 15% of the smallest side), `shape.segments` (2) |
+| `extrude`  | Unused — `shape` carries real units                  |
+| `lathe`    | Unused                                               |
+| `tube`     | Unused                                               |
 
+`sphere` / `cylinder` / `cone` / `torus` take `shape.segments` (sides around, default 32) — with
+`shading: flat` and a `noise` modifier that is a faceted rock. `cylinder` / `cone` also take
+`shape.capSegments` (default 1): concentric rings across each flat cap, which is otherwise one fan
+from a centre vertex — so `vertexColors` noise or a gradient (or a `noise` modifier) can vary a
+flat top; the face groups stay side, top, bottom.
+
+**Procedural shapes (`shape:`)** — all in the mesh's own units and frame:
+
+| Kind      | `shape` keys                                                                                                                                                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extrude` | `points`: the contour in the XY plane, rows `[x, y]` or `[x, y, r]` (`r` rounds that corner — a barrel roof is a rectangle with two large `r` on top); `holes` (contours); `depth` along Z (1, centred on 0); `bevel` (edge size, kept inside the contour and the depth); `bevelSegments` (2); `curveSegments` (6) |
+| `lathe`   | `points`: the profile as `[radius, y]` rows, revolved about Y (start and end at radius 0 to close the solid; either direction faces outward); `segments` (24); `angle` / `startAngle` in degrees (360 / 0)                                         |
+| `tube`    | `points`: `[x, y, z]` control points of a smooth curve (a pipe, a rail, a cable); `radius` (0.05); `segments` (radial, 8); `tubularSegments` (8 per point); `closed` (a loop); `caps` (true: flat ends)                                        |
+
+```yaml
+- id: roof
+  type: GeometryMesh
+  properties:
+    geometry: extrude
+    shape:
+      points: [[-0.9, 0], [0.9, 0], [0.9, 0.5, 0.6], [-0.9, 0.5, 0.6]]   # rounded top: a barrel
+      depth: 1.4
+      bevel: 0.03
+    shading: smooth
+    vertexColors: { gradient: { axis: y, from: '#7a3b2e', to: '#b0603f' } }
+    material: { type: lambert, color: '#ffffff' }
+```
+
+**Modifiers (`modifiers:`)** — a list applied in order after the shape is built; angles in
+degrees, `axis` is `x`, `y` (default) or `z`:
+
+| `type`   | Keys                          | What it does                                                                                       |
+| -------- | ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `mirror` | `axis` (x)                    | Adds the reflection across the plane through the origin (model one half, mirror it)                |
+| `array`  | `count`, `offset`, `rotate`   | `count` copies, each `offset` further and turned by `rotate` (`rotate: [0, 60, 0]`, `count: 6`: a ring) |
+| `taper`  | `axis`, `amount`              | Scales across the axis from 1 at the low end to `1 + amount` at the high end (−1: a point)         |
+| `twist`  | `axis`, `angle`               | Turns about the axis by `angle` from the low end to the high end                                   |
+| `bend`   | `axis`, `angle`, `toward`     | Curls the length along `axis` by `angle` toward `toward` (x for a y length, else y)                |
+| `noise`  | `amount`, `seed`              | Moves each vertex up to `amount`, hashed from its position (seams stay closed): rocks, wear         |
+
+`twist` and `bend` subdivide the mesh along its length first (a box has no vertices to bend).
+
+**Colour without UVs (`vertexColors:`)** — multiplied into `material.color` (author the material
+`#ffffff` to get these exactly): `faces: { top, side, bottom }` colours each face by which way it
+looks; `gradient: { axis, from, to, range? }` blends along an axis over the mesh's bounds (or
+`range: [low, high]`); `groups: [colour, …]` colours the face groups of the kind in their order,
+before modifiers (`box` +x, −x, +y, −y, +z, −z; `cylinder` / `cone` side, top, bottom; `extrude`
+caps, sides; a kind with one group takes the first colour); `noise: { amount, scale, seed, per }`
+varies brightness only (no hue) by a factor within `1 ± amount` (0..1, default 0.15) from smooth
+seeded value noise at each vertex's position in the mesh's own space after modifiers — `scale` is
+the noise cell in mesh units (1), `seed` an integer (1; the same on every machine), `per: vertex`
+(default, a soft wash) or `per: face` (one value per triangle: shared vertices are split, so an
+indexed primitive becomes 3 vertices a triangle — a sphere of 32 segments goes from ~560 to ~3000).
+They multiply, `noise` last. `pix3 check` reports a shape, modifier or colour block that cannot
+build as `E_GEOMETRY_PARAMS`.
+
+**Look at it:** `pix3 render <scene or prefab> [--node <id>]` draws it from four sides into one
+PNG (CLI README → "`pix3 render`"), with a `look:` line — linear luminance p10/p50/p90,
+near-black share and saturation inside the model's mask, "reads dark / dim / desaturated" as
+hints; `--reference <image>` adds a concept as the first tile, compares it with the first view
+(silhouette IoU, luminance by height band, saturation ratio) and prints its palette as hex. In the
+open editor, the bridge's `pix3_render_model` draws the
+scene as the editor holds it (unsaved edits included; `npx pix3 bridge render` from the shell) and
+`pix3_bake` shows `core:MergeStatic`'s merge and bake in the viewport (CLI README → "The editor
+bridge").
+
+**One draw call and baked light — `core:MergeStatic`.** A model of 10–40 parts is 10–40 draw
+calls. The `core:MergeStatic` component on the model's group merges every static part under it
+(visible, untextured, opaque, no component on it or an ancestor below the group) into one mesh
+when the scene starts (`onReady`), hides the parts and leaves moving parts (`core:Rotate`,
+`core:Sine`, any component) alone. With `bake: true` (default) the merged mesh is unlit
+(`MeshBasicMaterial` + vertex colours) and each vertex carries sun light with a shadow ray, a
+sky/ground ambient term and ambient occlusion, ray-cast against the model itself; large faces the sun reaches
+are split first (`subdivide`, −1 = automatic) so a house can shade its yard. A part with an unlit
+(`basic`) material — a lit window, glowing lava — keeps its own colour in the bake (it still casts
+shadow). Config: `bake`,
+`sunDirection` (world, toward the sun), `shadows`, `aoSamples` (24), `subdivide`, `exposure`,
+`saturation`, `cacheKey` (identical models share one bake). `exposure` (1) and `saturation` (1,
+around Rec.709 luma; 0 = grey) grade each lit vertex's finished colour in linear RGB, after shadows
+and AO, then clip it to 0..1 — a brighter, richer picture without touching the palette; at 1 / 1
+the bake is unchanged. Scripts call the same thing: `mergeStatic(node, { bake: { sunDirection,
+aoSamples, subdivide, sunColor, skyColor, groundColor, ambient, aoDistance, aoStrength,
+aoBackFaces, exposure, saturation }, cacheKey })` and `unmergeStatic(node)` before re-merging a
+model that changed (exported from `@pix3/runtime`, `src/nodes/3D/static-merge.ts`).
+`aoBackFaces: false` lets only front faces occlude AO rays: for models of overlapping parts, where a
+vertex buried in another part goes black and smears dark across its large face (an open shell — a
+`plane`, an open lathe — then stops occluding from behind). With a camera whose heading does not
+change (a map view), `sunDirectionFromCamera(camera, { azimuth, elevation })` gives a
+`sunDirection` placed from the camera's side — `azimuth` in degrees about world up from behind the
+camera (positive = from its left), `elevation` above the horizon — so the faces the camera sees are
+sunlit, not ambient-only; call it once, nothing rebakes when the camera moves. Guidance, not a rule. A scene whose lit parts all sit under a baking `core:MergeStatic`
+needs no light: `pix3 check` does not ask for one (a part a component moves still does). Baking costs ~1 s per 40k vertices on a
+desktop CPU (once per `cacheKey`); the editor viewport shows the unmerged parts. The rays are cast
+once per position + normal (the copies a smooth part repeats round each vertex share them;
+normals 1° or more apart, as at a hard edge, do not), so the cost follows the distinct ones: a flat-shaded bevel (`shading: flat`, or a
+geometry run through `toNonIndexed()` + `computeVertexNormals()`) gives every facet its own normal
+and its own rays — 15 `roundedBox` rim blocks (segments 2) on an island measured ~380 ms faceted,
+~140 ms smooth, ~20 ms as plain boxes.
 **Usage Notes:**
 
 - Changing `geometry` or `size` in the inspector rebuilds the mesh live.
@@ -1000,6 +1107,38 @@ field works for every primitive:
   what this node hardcoded before they were exposed, so existing scenes are
   unchanged. Turn `receiveShadow` off for a mesh that should stay evenly lit
   (unlit-looking floors, UI-ish props) without touching the light itself.
+
+#### Making a model read well
+
+- **Choose the shape kind by the form.** A continuous form (a barrel, a dome, a pipe, a rail, an
+  arch) is a `lathe`, `tube` or `extrude`, never a stack of boxes.
+- **Take colours from the reference** when there is one: `pix3 render --reference <image>` prints
+  its palette as hex. **Vivid colour reads as bright more than luminance does**: a vivid baked
+  model measured saturation 0.64 at luminance p50 0.10; muddy ones 0.06–0.44. Keep the albedo
+  saturated.
+- **Never one flat colour per part.** A `vertexColors` `gradient` by height (walls darker at the
+  foot, crowns darker underneath), its `noise` on large surfaces, a different shade on each copy
+  of a repeated block. A `cylinder` cap has vertices only at its centre and rim, so neither can
+  vary it: a top that needs variation is a `lathe` with extra rings in its `[radius, y]` profile
+  (`[[0, 1], [0.5, 1], [1, 1], [1, 0], [0, 0]]`).
+- **Bevel what catches light at gameplay zoom** (walls, roofs, pillars: `shape.bevel` on an
+  `extrude`, `roundedBox`). Rounding many small repeated blocks showed nothing and made the bake
+  2–3× slower: compare `pix3 render`'s `core:MergeStatic … vertices, … ms` before and after.
+- **Light the faces the camera sees.** With a fixed-heading camera, a sun behind its subjects
+  leaves every visible face on ambient only (about a third of its albedo at the default
+  `ambient`): the model reads dark brown. A script passing `sunDirectionFromCamera(camera,
+  { azimuth: 25, elevation: 50 })` to `mergeStatic` as `sunDirection` fixed it (at azimuth 40 the walls facing the camera were still ambient-only). Guidance for such a
+  camera, not a rule.
+- **Tint the ambient, grade last.** A violet `skyColor` (`#a4aee0`) and a warm `groundColor`
+  (`#a08262`) keep the hue of the shaded side where grey kills it; then `exposure` / `saturation`.
+  The rig that worked: `sunIntensity: 1.15, ambient: 1.05, exposure: 1.15, saturation: 1.2`.
+- **Dark smudges where parts overlap** are vertices buried in a neighbour catching every AO ray:
+  `aoBackFaces: false` (an open shell then stops occluding from behind).
+- **The loop:** render from the game camera's angle (`--views <az>:<el>`), Read the PNG and the
+  `look:` line, change one thing, render again; keep the change only if the picture got better.
+  The numbers are hints (two views of one model score a silhouette IoU of only 0.79). Look at the
+  model in the game at gameplay zoom — colour and form readable, highlights not washed out —
+  before calling it done.
 
 ---
 
@@ -1445,7 +1584,7 @@ filter).
 | CanvasLayer2D        | width, height (fixed HUD overlay; renders after post)                                              |
 | Camera3D             | projection, fov, near, far                                                                         |
 | VirtualCamera3D      | priority, followTargetId, lookAtTargetId, blendDuration, fov                                       |
-| GeometryMesh         | geometry, size, material, castShadow, receiveShadow                                                |
+| GeometryMesh         | geometry, size, shape, modifiers, vertexColors, shading, material, castShadow, receiveShadow       |
 | MeshInstance         | src                                                                                                |
 | Sprite3D             | texture, width, height (world units), billboard, billboardRoll, opacity                            |
 | AnimatedSprite3D     | width, height, fps, playing, loop, freeOnFinish, billboard (default true)                          |

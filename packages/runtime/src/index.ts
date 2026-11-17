@@ -96,6 +96,10 @@ export * from './nodes/3D/Camera3D';
 export * from './nodes/3D/VirtualCamera3D';
 export * from './nodes/3D/DirectionalLightNode';
 export * from './nodes/3D/GeometryMesh';
+export * from './nodes/3D/procedural-geometry';
+export * from './nodes/3D/static-merge';
+export * from './nodes/3D/model-sheet';
+export * from './nodes/3D/model-look';
 export * from './nodes/3D/InstancedMesh3D';
 export * from './nodes/3D/MeshInstance';
 export * from './nodes/3D/Sprite3D';
@@ -109,6 +113,7 @@ export * from './nodes/3D/HemisphereLightNode';
 // Behaviors
 export * from './behaviors/register-behaviors';
 export * from './behaviors/RotateBehavior';
+export * from './behaviors/MergeStaticBehavior';
 export * from './behaviors/SimpleMoveBehavior';
 export * from './behaviors/SineBehavior';
 export * from './behaviors/RadialProgressBehavior';

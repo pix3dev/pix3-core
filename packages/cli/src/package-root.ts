@@ -59,7 +59,7 @@ export const runsFromSources = (): boolean => import.meta.url.endsWith('.ts');
  * source (removed afterwards) — so a checkout never runs a stale `dist/`.
  */
 export const withCommandBundle = async <T>(
-  command: 'validate' | 'smoke' | 'play',
+  command: 'validate' | 'smoke' | 'play' | 'render',
   marker: string,
   build: (outdir: string) => Promise<void>,
   fn: (bundleDir: string) => Promise<T>

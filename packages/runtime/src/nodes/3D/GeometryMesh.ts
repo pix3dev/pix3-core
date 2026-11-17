@@ -1,10 +1,4 @@
 import {
-  BoxGeometry,
-  SphereGeometry,
-  PlaneGeometry,
-  CylinderGeometry,
-  ConeGeometry,
-  TorusGeometry,
   Mesh,
   MeshStandardMaterial,
   Color,
@@ -31,6 +25,18 @@ import {
   type ShaderEffectEntry,
   type ShaderEffectHost,
 } from '../../shader-effects/ShaderEffectStack';
+import {
+  buildMeshGeometry,
+  GEOMETRY_KINDS,
+  GEOMETRY_SHADINGS,
+  normalizeGeometryKind,
+  normalizeShading,
+  type GeometryKind,
+  type GeometryModifier,
+  type GeometryShading,
+  type GeometryShapeSpec,
+  type VertexColorSpec,
+} from './procedural-geometry';
 
 /**
  * Material families a GeometryMesh can wear, cheapest last.
@@ -69,9 +75,16 @@ export {
   type GeometryMaterialType,
 } from './material-family';
 
-/** Supported primitive kinds. `size` is interpreted per-shape (see buildGeometry). */
-export const GEOMETRY_KINDS = ['box', 'sphere', 'plane', 'cylinder', 'cone', 'torus'] as const;
-export type GeometryKind = (typeof GEOMETRY_KINDS)[number];
+/** Geometry kinds, modifiers, shading and vertex colours: `procedural-geometry`. */
+export {
+  GEOMETRY_KINDS,
+  GEOMETRY_SHADINGS,
+  type GeometryKind,
+  type GeometryModifier,
+  type GeometryShading,
+  type GeometryShapeSpec,
+  type VertexColorSpec,
+} from './procedural-geometry';
 
 /**
  * One authored, serialized shader-effect attachment.
@@ -89,6 +102,14 @@ export type GeometryMeshEffectsConfig = ShaderEffectEntry[];
 export interface GeometryMeshProps extends Omit<Node3DProps, 'type'> {
   geometry?: string;
   size?: [number, number, number];
+  /** Per-kind parameters: an extrude's contour, a lathe's profile, a tube's path, segments. */
+  shape?: GeometryShapeSpec | null;
+  /** Mirror / array / taper / twist / bend / noise, applied in order. */
+  modifiers?: GeometryModifier[] | null;
+  /** Colour without UVs, multiplied into the material colour. */
+  vertexColors?: VertexColorSpec | null;
+  /** `smooth` (hard edges above 50° stay hard) or `flat`; unset keeps a primitive's own normals. */
+  shading?: string | null;
   /** Whether the mesh casts shadows. Defaults to true (what every scene authored
    * before this was exposed already renders as). */
   castShadow?: boolean;
@@ -123,6 +144,10 @@ export class GeometryMesh
    * (the three.js BufferGeometry doesn't carry the authored primitive name). */
   private _geometryKind: GeometryKind;
   private _size: [number, number, number];
+  private _shape: GeometryShapeSpec | null;
+  private _modifiers: GeometryModifier[] | null;
+  private _vertexColors: VertexColorSpec | null;
+  private _shading: GeometryShading | null;
   /** res:// path of the baked AO map, kept for serialization (the runtime
    * Texture is loaded async by the loader / assigned by the AO baker). */
   private _aoMapSrc: string;
@@ -154,8 +179,12 @@ export class GeometryMesh
     const size = props.size ?? [1, 1, 1];
     this._geometryKind = geometryKind;
     this._size = [size[0], size[1], size[2]];
+    this._shape = isRecord(props.shape) ? { ...props.shape } : null;
+    this._modifiers = Array.isArray(props.modifiers) ? props.modifiers.filter(isRecord) : null;
+    this._vertexColors = isRecord(props.vertexColors) ? { ...props.vertexColors } : null;
+    this._shading = normalizeShading(props.shading);
 
-    const geometry = GeometryMesh.buildGeometry(geometryKind, this._size);
+    const geometry = this.buildOwnGeometry();
 
     const mat = props.material ?? {};
     const color = new Color(mat.color ?? '#4e8df5');
@@ -181,6 +210,7 @@ export class GeometryMesh
     // their defines pre-compile so the first program is the right variant.
     this.installEffectComposer(material);
 
+    material.vertexColors = geometry.hasAttribute('color');
     const mesh = new Mesh(geometry, material);
     // Shadow flags are authored on the node (an Object3D of its own) and mirrored onto the child
     // mesh that actually renders — the node is an empty group, so only the mesh's copy is read by
@@ -217,40 +247,25 @@ export class GeometryMesh
   }
 
   /**
-   * Build a primitive geometry from a kind + `size`. `size` is a single
-   * `[x, y, z]` vector interpreted per-shape so one editable field works for
-   * every primitive:
-   * - box: full extents (x, y, z)
+   * Build this mesh's geometry from its kind, `size`, `shape`, modifiers, shading and vertex
+   * colours (`procedural-geometry`). `size` is one `[x, y, z]` vector interpreted per kind so one
+   * editable field works for every primitive:
+   * - box / roundedBox: full extents (x, y, z)
    * - sphere: diameter = x
    * - plane: a horizontal floor of x by z (rotated into the XZ plane)
    * - cylinder / cone: diameter = x, height = y
    * - torus: outer diameter = x, tube thickness scales with y
+   * - extrude / lathe / tube: unused — their `shape` carries real units
    */
-  private static buildGeometry(kind: GeometryKind, size: [number, number, number]): BufferGeometry {
-    const x = Math.max(0.0001, size[0]);
-    const y = Math.max(0.0001, size[1]);
-    const z = Math.max(0.0001, size[2]);
-    switch (kind) {
-      case 'sphere':
-        return new SphereGeometry(x / 2, 32, 16);
-      case 'plane': {
-        const plane = new PlaneGeometry(x, z);
-        plane.rotateX(-Math.PI / 2); // lie flat as a floor
-        return plane;
-      }
-      case 'cylinder':
-        return new CylinderGeometry(x / 2, x / 2, y, 32);
-      case 'cone':
-        return new ConeGeometry(x / 2, y, 32);
-      case 'torus': {
-        const radius = x / 2;
-        const tube = Math.max(0.02, Math.min(radius * 0.6, y * 0.25));
-        return new TorusGeometry(radius, tube, 20, 40);
-      }
-      case 'box':
-      default:
-        return new BoxGeometry(x, y, z);
-    }
+  private buildOwnGeometry(): BufferGeometry {
+    return buildMeshGeometry({
+      kind: this._geometryKind,
+      size: this._size,
+      shape: this._shape,
+      modifiers: this._modifiers,
+      vertexColors: this._vertexColors,
+      shading: this._shading,
+    });
   }
 
   /** The authored material family. */
@@ -281,6 +296,7 @@ export class GeometryMesh
       roughness: std?.roughness ?? 0.35,
       metalness: std?.metalness ?? 0.25,
     });
+    material.vertexColors = previous?.vertexColors ?? false;
     this._materialType = next;
     this.effectStack.retarget(effectTargetFor(next));
     if (previous) {
@@ -314,11 +330,17 @@ export class GeometryMesh
 
   /** Swap the child mesh's geometry to match the current kind + size. */
   private rebuildGeometry(): void {
-    const next = GeometryMesh.buildGeometry(this._geometryKind, this._size);
+    const next = this.buildOwnGeometry();
     const old = this._geometry;
     const mesh = this._mesh;
     if (mesh) {
       mesh.geometry = next;
+    }
+    const material = this._material;
+    const colored = next.hasAttribute('color');
+    if (material && material.vertexColors !== colored) {
+      material.vertexColors = colored;
+      material.needsUpdate = true;
     }
     this._geometry = next;
     // The lightmap UV set lives on the geometry, so a rebuilt shape needs it
@@ -545,7 +567,7 @@ export class GeometryMesh
     }
   }
 
-  /** Current `[x, y, z]` size vector (see {@link buildGeometry} for per-shape meaning). */
+  /** Current `[x, y, z]` size vector (see {@link buildOwnGeometry} for per-shape meaning). */
   get size(): [number, number, number] {
     return [this._size[0], this._size[1], this._size[2]];
   }
@@ -555,6 +577,42 @@ export class GeometryMesh
       Number.isFinite(value[1]) ? value[1] : this._size[1],
       Number.isFinite(value[2]) ? value[2] : this._size[2],
     ];
+    this.rebuildGeometry();
+  }
+
+  /** Per-kind parameters (see {@link GeometryShapeSpec}); assigning rebuilds the geometry. */
+  get shape(): GeometryShapeSpec | null {
+    return this._shape ? { ...this._shape } : null;
+  }
+  set shape(value: GeometryShapeSpec | null) {
+    this._shape = isRecord(value) ? { ...value } : null;
+    this.rebuildGeometry();
+  }
+
+  /** The modifier stack (see {@link GeometryModifier}); assigning rebuilds the geometry. */
+  get modifiers(): GeometryModifier[] | null {
+    return this._modifiers ? this._modifiers.map(m => ({ ...m })) : null;
+  }
+  set modifiers(value: GeometryModifier[] | null) {
+    this._modifiers = Array.isArray(value) ? value.filter(isRecord) : null;
+    this.rebuildGeometry();
+  }
+
+  /** Vertex colours (see {@link VertexColorSpec}); assigning rebuilds the geometry. */
+  get vertexColors(): VertexColorSpec | null {
+    return this._vertexColors ? { ...this._vertexColors } : null;
+  }
+  set vertexColors(value: VertexColorSpec | null) {
+    this._vertexColors = isRecord(value) ? { ...value } : null;
+    this.rebuildGeometry();
+  }
+
+  /** `smooth`, `flat`, or null (a primitive keeps its own normals). */
+  get shading(): GeometryShading | null {
+    return this._shading;
+  }
+  set shading(value: string | null) {
+    this._shading = normalizeShading(value);
     this.rebuildGeometry();
   }
 
@@ -591,6 +649,10 @@ export class GeometryMesh
     return {
       geometry: this._geometryKind,
       size: [this._size[0], this._size[1], this._size[2]],
+      ...(this._shape ? { shape: this.shape } : {}),
+      ...(this._modifiers && this._modifiers.length > 0 ? { modifiers: this.modifiers } : {}),
+      ...(this._vertexColors ? { vertexColors: this.vertexColors } : {}),
+      ...(this._shading ? { shading: this._shading } : {}),
       castShadow: this.castShadow,
       receiveShadow: this.receiveShadow,
       material,
@@ -653,6 +715,19 @@ export class GeometryMesh
           setValue: (n: unknown, v: unknown) => {
             const vec = v as { x?: unknown; y?: unknown; z?: unknown };
             (n as GeometryMesh).size = [Number(vec?.x), Number(vec?.y), Number(vec?.z)];
+          },
+        }),
+        defineProperty('shading', 'enum', {
+          ui: {
+            label: 'Shading',
+            description:
+              'smooth: edges sharper than 50° stay hard; flat: one normal per face (low-poly); auto: a primitive keeps its own normals',
+            group: 'Geometry',
+            options: ['auto', ...GEOMETRY_SHADINGS],
+          },
+          getValue: (n: unknown) => (n as GeometryMesh).shading ?? 'auto',
+          setValue: (n: unknown, v: unknown) => {
+            (n as GeometryMesh).shading = v === 'auto' ? null : String(v);
           },
         }),
         defineProperty('materialType', 'enum', {
@@ -786,9 +861,8 @@ export class GeometryMesh
   }
 }
 
-function normalizeGeometryKind(value: unknown): GeometryKind {
-  const kind = typeof value === 'string' ? value.toLowerCase() : '';
-  return (GEOMETRY_KINDS as readonly string[]).includes(kind) ? (kind as GeometryKind) : 'box';
+function isRecord<T>(value: T): value is T & object {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function clamp01Number(value: unknown): number {

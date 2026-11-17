@@ -103,6 +103,12 @@ export const DIAGNOSTIC_CODES = {
     summary: '`overrides.byLocalId` names a node the prefab does not have',
   },
   E_DUPLICATE_ID: { severity: 'error', level: 1, summary: 'two nodes share an id' },
+  E_GEOMETRY_PARAMS: {
+    severity: 'error',
+    level: 1,
+    summary:
+      "a GeometryMesh's shape / modifiers / vertexColors cannot build what they say (the mesh falls back to a box or ignores the step)",
+  },
   E_EMOJI_AS_ART: {
     severity: 'error',
     level: 1,

@@ -8,7 +8,7 @@
   // `src/smoke/**` (plus `tree/defaults.ts`) are bundled separately (they pull in `@pix3/runtime`
   // from source); only their Node-runnable files reached from `index.ts` (`validate/entry.ts`,
   // `smoke/command.ts` → `entry.ts` / `report.ts`) are checked here.
-  "exclude": ["src/**/*.spec.ts", "src/validate/**", "src/smoke/**", "src/tree/defaults.ts"],
+  "exclude": ["src/**/*.spec.ts", "src/validate/**", "src/smoke/**", "src/tree/defaults.ts", "src/render/page-host.ts"],
   "compilerOptions": {
     "noEmit": true,
     "rootDir": "src",

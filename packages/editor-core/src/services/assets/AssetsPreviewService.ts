@@ -20,6 +20,11 @@ const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 's
 const AUDIO_EXTENSIONS = new Set(['wav', 'mp3', 'ogg']);
 const MODEL_EXTENSIONS = new Set(['glb', 'gltf']);
 const SCENE_EXTENSIONS = new Set(['pix3scene']);
+/**
+ * Bump when a thumbnail generator's output changes so cached thumbnails
+ * re-render (v2: scene/prefab thumbnails lit by System Lighting).
+ */
+const THUMBNAIL_RENDER_VERSION = 'v2';
 const ANIMATION_EXTENSIONS = new Set(['pix3anim']);
 // Script/source files render as a plain file-type icon instead of a code
 // preview: a shrunk-down slice of source is unreadable and reads as visual
@@ -965,7 +970,7 @@ export class AssetsPreviewService {
       return null;
     }
 
-    return `${toFolderPath(path)}::${lastModified}::${sizeBytes}`;
+    return `${THUMBNAIL_RENDER_VERSION}::${toFolderPath(path)}::${lastModified}::${sizeBytes}`;
   }
 
   private async getImageDimensions(

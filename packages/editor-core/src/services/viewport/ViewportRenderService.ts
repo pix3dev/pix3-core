@@ -8,6 +8,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import {
+  containsExplicitLights,
+  createEditorFallbackLights,
+  isExplicitLightNode,
+} from '@/services/viewport/editor-fallback-lighting';
 import { ViewportGpuTimer, type ViewportPerfSample } from '@/services/viewport/ViewportGpuTimer';
 import { ViewportScreenshotter } from '@/services/viewport/ViewportScreenshotter';
 import { ViewportSelection2DOverlayHud } from '@/services/viewport/ViewportSelection2DOverlayHud';
@@ -48,7 +53,6 @@ import { SpineSkeleton2D } from '@pix3/runtime';
 import { UIControl2D } from '@pix3/runtime';
 import { Label2D } from '@pix3/runtime';
 import { DirectionalLightNode } from '@pix3/runtime';
-import { PointLightNode } from '@pix3/runtime';
 import { SpotLightNode } from '@pix3/runtime';
 import { Camera3D } from '@pix3/runtime';
 import { VirtualCamera3D } from '@pix3/runtime';
@@ -59,11 +63,10 @@ import { MeshInstance } from '@pix3/runtime';
 import { Sprite3D } from '@pix3/runtime';
 import { AnimatedSprite3D } from '@pix3/runtime';
 import { Particles3D } from '@pix3/runtime';
-import { AmbientLightNode } from '@pix3/runtime';
-import { HemisphereLightNode } from '@pix3/runtime';
 import { AssetLoader } from '@pix3/runtime';
 import type { SceneGraph } from '@pix3/runtime';
 import { applyTextureRegionToTexture } from '@pix3/runtime';
+import { renderModelSheet, type ModelSheetOptions } from '@pix3/runtime';
 import { injectable, inject } from '@/fw/di';
 import { SceneManager, InputService } from '@pix3/runtime';
 import { OperationService } from '@/services/core/OperationService';
@@ -599,12 +602,12 @@ export class ViewportRendererService {
     this.orthographicCamera.layers.disableAll();
     this.orthographicCamera.layers.enable(LAYER_2D);
 
-    // Add lights
-    this.editorAmbientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    // System Lighting (shared with the scene/prefab thumbnail generator)
+    const fallbackLights = createEditorFallbackLights();
+    this.editorAmbientLight = fallbackLights.ambient;
     this.scene.add(this.editorAmbientLight);
 
-    this.editorDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    this.editorDirectionalLight.position.set(5, 10, 7);
+    this.editorDirectionalLight = fallbackLights.directional;
     this.editorDirectionalLight.castShadow = true;
     this.scene.add(this.editorDirectionalLight);
 
@@ -771,6 +774,23 @@ export class ViewportRendererService {
   /** Delegates to {@link ViewportScreenshotter.captureScreenshot}. */
   captureScreenshot(options: CanvasScreenshotOptions = {}): CanvasScreenshot | null {
     return this.screenshotter.captureScreenshot(options);
+  }
+
+  /**
+   * The model sheet of `pix3_render_model`: `targets` drawn from each view with the viewport's own
+   * renderer (gizmos, grid and everything else hidden), then the viewport repainted as it was.
+   * Null when the viewport is not initialized.
+   */
+  renderModelSheet(
+    targets: readonly THREE.Object3D[],
+    options: ModelSheetOptions
+  ): ReturnType<typeof renderModelSheet> | null {
+    if (!this.renderer || !this.scene) return null;
+    try {
+      return renderModelSheet(this.renderer, this.scene, targets, options);
+    } finally {
+      this.renderFrame();
+    }
   }
 
   /** Delegates to {@link ViewportScreenshotter.captureFramedScreenshot}. */
@@ -1203,38 +1223,7 @@ export class ViewportRendererService {
       return false;
     }
 
-    return this.containsExplicitLights(sceneGraph.rootNodes);
-  }
-
-  private containsExplicitLights(nodes: readonly NodeBase[]): boolean {
-    for (const node of nodes) {
-      if (this.isExplicitLightNode(node)) {
-        return true;
-      }
-
-      if (node.children.length > 0 && this.containsExplicitLights(node.children)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private isExplicitLightNode(
-    node: NodeBase
-  ): node is
-    | DirectionalLightNode
-    | PointLightNode
-    | SpotLightNode
-    | AmbientLightNode
-    | HemisphereLightNode {
-    return (
-      node instanceof DirectionalLightNode ||
-      node instanceof PointLightNode ||
-      node instanceof SpotLightNode ||
-      node instanceof AmbientLightNode ||
-      node instanceof HemisphereLightNode
-    );
+    return containsExplicitLights(sceneGraph.rootNodes);
   }
 
   zoomDefault(): void {
@@ -1747,15 +1736,11 @@ export class ViewportRendererService {
   }
 
   private shouldSkipSelectionBounds(node: Node3D): boolean {
-    return (
-      node instanceof Camera3D || node instanceof VirtualCamera3D || this.isExplicitLightNode(node)
-    );
+    return node instanceof Camera3D || node instanceof VirtualCamera3D || isExplicitLightNode(node);
   }
 
   private shouldKeepSelectedNodeIcon(node: Node3D): boolean {
-    return (
-      node instanceof Camera3D || node instanceof VirtualCamera3D || this.isExplicitLightNode(node)
-    );
+    return node instanceof Camera3D || node instanceof VirtualCamera3D || isExplicitLightNode(node);
   }
 
   resize(width: number, height: number): void {

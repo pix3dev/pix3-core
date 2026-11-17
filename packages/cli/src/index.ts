@@ -153,8 +153,12 @@ const dispatch = async (
       return (await import('./character/command.ts')).runCharacterCompileCli(argv, io);
     case 'play': // a private headless Chrome on the game's page (dev or dist)
       return (await import('./play/command.ts')).runPlayCli(argv, io);
+    case 'render': // a private headless Chrome draws a scene / prefab from several sides
+      return (await import('./render/command.ts')).runRenderCli(argv, io);
     case 'bridge': // CDP to the editor tab through the token proxy
       return (await import('./bridge/command.ts')).runBridgeCli(argv, io);
+    case 'model': // the model-job journal in .pix3/model-jobs/ (plain Node)
+      return (await import('./model/command.ts')).runModelCli(argv, io);
     case 'gap': // appends to .pix3/gaps.jsonl
       return (await import('./gap/command.ts')).runGapCli(argv, io);
     case 'font': // copies a bundled face into fonts/, edits pix3project.yaml

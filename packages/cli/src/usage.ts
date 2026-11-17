@@ -62,8 +62,23 @@ Usage:
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
         [--profile]                --profile: frame/logic/render ms, activities, draw calls
+  pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless
+        [--node <id>] [--views iso,front,right,top|all|az:el] Chrome; the scene starts, so
+        [--size 512] [--out <f.png>] core:MergeStatic bakes); mesh, draw-call, triangle counts,
+        [--lights auto|studio|scene] how it reads (luminance, near-black, saturation);
+        [--reference <img>] [--json] --reference: compared with it, its palette;
+        [--job <id> --stage <name>]  --job: a pass of a model job (its scene, views, reference),
+        [--note <text>] [--force <reason>] stages in order unless --force says why
+  pix3 model <subcommand> [<id>]   A model job in .pix3/model-jobs/: stages, passes (pix3
+        new <id> --target <scene|prefab> render --job), the human's feedback from the editor's
+        [--node <id>] [--title <text>] 3D Asset Generator panel; next: where it stands
+        [--reference <img>] [--reference-background <hex>]
+        [--stages a,b,c] [--views <list>] [--size N]
+        feedback <id> [--wait] [--timeout <s>] [--json]
+        next <id> [--json] | done <id> [--failed <reason>] [--force]
+        list [--json] | rm <id>    (each takes --project <dir>)
   pix3 bridge <tool> ['<json>']    The editor tab's pix3_* tools without MCP (also screenshot,
-                                   tap, swipe); the CDP token proxy of pix3 editor
+                                   tap, swipe, render); the CDP token proxy of pix3 editor
   pix3 gap "<what was missing>"    Record a gap Pix3 had (you worked around it) in
         [--kind capability|tool|node|doc|other] .pix3/gaps.jsonl;
         [--detail <text>] [--context <text>] --list prints them
@@ -345,10 +360,58 @@ Reference it from a scene or script as res://<path inside the project>.
   Exit 0 = the page ran frames, nothing threw, the bot passed; 1 = errors, a failed or crashed
   bot, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome, nothing to play, no such policy).
 `,
+  render: `Usage: pix3 render <scene.pix3scene|res://…> [--node <id>] [--views <list>] [--size 512]
+                   [--out <file.png>] [--lights auto|studio|scene] [--background '#8f9aa6']
+                   [--frames N] [--reference <image> [--reference-background <hex>]] [--json]
+                   [--project <dir>]
+       pix3 render --job <id> --stage <name> [--note "<text>"] [--force "<reason>"] [flags above]
+
+  A scene or prefab — or one node of it — drawn from several sides into ONE PNG sheet (two
+  columns, each tile labelled), in a private headless Chrome: look at a model you built (Read
+  the PNG) before you call it done. The scene loads and its components start as in play
+  (core:MergeStatic merges and bakes in onReady), --frames frames run (default 2), then a camera
+  framing the visible meshes takes each view. No dev server or editor needed. Prints the PNG
+  path and what was drawn: meshes, draw calls, triangles, size; then how it reads, inside the
+  model's mask: linear luminance p10/p50/p90, near-black share, saturation, flat share, and a
+  note (reads dark / reads dim / desaturated) — hints, never a failure.
+
+  --node id      only that node's subtree (the rest is hidden; the camera frames it)
+  --views list   comma list of iso, front, right, back, left, top, below, game, or az:el in
+                 degrees (azimuth 0 = from +Z, 90 = from +X; elevation above the horizon);
+                 all = every named view. Default iso,front,right,top
+  --size px      one tile's side, 64–2048 (default 512)
+  --out file     where the PNG goes (default .pix3/renders/<scene>[-<node>].png)
+  --lights m     auto (default: the scene's lights, a studio rig when it has none), studio
+                 (always the rig; the scene's are switched off), scene (only the scene's)
+  --background c the clear colour (default #8f9aa6)
+  --frames N     frames to run before drawing (default 2)
+  --reference f  an image of the model as it should look, from the FIRST view: drawn as the first
+                 tile and compared — silhouette IoU, luminance by height band, saturation ratio —
+                 and its palette (hex colours, background excluded) printed; all hints
+  --reference-background hex   the reference's background colour, when it has no alpha and its
+                 corners do not show it (otherwise a failed mask is reported)
+  --json         machine-readable report (look, reference)
+
+  A pass of a model job (pix3 model new): --job id --stage name. The scene, node, reference (and
+  its background), views and size come from the job; a flag given here wins and is recorded in
+  the pass's params. The sheet and the report go into .pix3/model-jobs/<id>/passes/NN-<stage>/
+  (--out is refused), the pass into job.json, with its metrics; feedback already delivered is
+  marked addressed by it. Stages go in order: the first pass is the first stage, then the same
+  stage again or the next one; anything else is refused (exit 2) unless --force "<reason>"
+  (kept in the pass). A render that fails or logs a page error records nothing.
+  --job id       the job        --stage name   the pass's stage
+  --note text    what this pass changes (kept in the pass)
+  --force reason why this pass skips the stage order
+
+  Exit 0 = drawn, no page error; 1 = the scene failed, nothing visible, or the page logged an
+  error; 2 = could not run (no Chrome, no such file, no project) or a refused pass.
+`,
   bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
        pix3 bridge screenshot [--target game|viewport] [--aspect free|16:9|9:16|4:3] [--out <file.png>]
        pix3 bridge tap <x> <y> | --node <id> [--touch]
        pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
+       pix3 bridge render [--node <id>] [--views <list>] [--size 384] [--lights auto|studio|scene]
+                          [--background <colour>] [--out <file.png>]
 
   The open editor tab's pix3_* tools, its screenshot and real pointer input, from the command line —
   the same tab and CDP token proxy the pix3-browser MCP server uses ('pix3 editor' started them),
@@ -365,7 +428,47 @@ Reference it from a scene or script as res://<path inside the project>.
   tap            a press and release at page CSS px, or at a node's origin (pix3_scene's screen —
                  during play, where the running node is on the Game tab)
   swipe          a drag between two page points or two nodes, over --ms milliseconds
+  render         pix3_render_model to a PNG: the node (default: the scene's 3D roots) of the
+                 active scene as the editor holds it — unsaved edits and a pix3_bake included —
+                 from each view (as pix3 render's --views), alone on a plain background; prints
+                 the path (default .pix3/renders/editor-<node>.png) and meshes, draw calls,
+                 triangles, size, the baked nodes. pix3 bridge bake '{"action":"apply"}' first to
+                 see core:MergeStatic's bake (pix3_bake: apply | clear | status, nodeId?)
   --touch        touch events (a phone finger) instead of the mouse
+`,
+  model: `Usage: pix3 model new <id> --target <scene|prefab|res://…> [--node <id>] [--title <text>]
+                       [--reference <image> [--reference-background <hex>]]
+                       [--stages blockout,structure,form,material,bake] [--views <list>] [--size N]
+       pix3 model feedback <id> [--wait] [--timeout <s>] [--json]
+       pix3 model next <id> [--json]
+       pix3 model done <id> [--failed <reason>] [--force]
+       pix3 model list [--json]
+       pix3 model rm <id>
+       (each takes --project <dir>)
+
+  The journal of one model you build, in .pix3/model-jobs/<id>/ (local, not in git): its stages,
+  every pass pix3 render --job draws (sheet, report, metrics), and what the human says about them
+  in the editor's 3D Asset Generator panel (Window menu): text, marks drawn on a pass's sheet, a
+  verdict (accept / needs changes).
+
+  new        opens a job on a scene or prefab (it must exist; stored as res://); the reference is
+             copied into the job and its sha256 kept; --stages (default blockout, structure,
+             form, material, bake), --views and --size are what each pass renders by default
+  feedback   prints what the human sent and you have not seen yet — pass, verdict, text, marks
+             in words (front: rect 30%×20%, top right) and the marked sheet to Read — and marks
+             it delivered; your next render --job marks it addressed. --wait: when there is
+             none, wait for it (the panel shows "waiting for you"), polling every second, up to
+             --timeout seconds (default 540; then exit 0 with "No feedback yet")
+  next       the stages and their passes, what --stage may come next, the last verdict, new
+             feedback
+  done       closes the job; refused while there is undelivered feedback or no pass of the last
+             stage, unless --force (what was skipped is kept as the result). --failed <reason>
+             closes it as failed
+  list       every job: status, passes, last stage, waiting
+  rm         deletes a job (refused while a feedback --wait on it is alive)
+
+  Exit 0 = done; 1 = refused (no such job, a taken id, open feedback); 2 = bad
+  arguments or no project.
 `,
   gap: `Usage: pix3 gap "<what was missing>" [--kind capability|tool|node|doc|other] [--detail <text>]
                 [--context <text>] [--agent <name>] [--json] [--project <dir>]

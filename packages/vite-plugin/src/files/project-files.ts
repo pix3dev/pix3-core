@@ -722,7 +722,8 @@ export class ProjectFiles {
    * a later batch must not attribute them to the editor either.
    */
   private recordOwnFile(wirePath: string, stats: BigIntStats, sha256: string, own = true): void {
-    if (own) this.ownWrites.set(wirePath, sha256);
+    // Outside the revision set (`.pix3/model-jobs/…`): no watch event ever needs attributing.
+    if (own && !isExcludedPath(wirePath)) this.ownWrites.set(wirePath, sha256);
     else this.ownWrites.delete(wirePath);
     if (isExcludedPath(wirePath)) return;
     const entry: FileEntry = {
@@ -817,9 +818,11 @@ export class ProjectFiles {
         const existed = this.table.has(wirePath);
         const unchanged = existed && this.table.get(wirePath)?.sha256 === sha256;
         this.recordOwnFile(wirePath, stats, sha256);
+        // An excluded path (`.pix3/…`) is not in the table, so it would always read as `create`;
+        // it is outside the revision set and never reaches pix3:fs.
         const events: FsEvent[] = [
           ...dirs.map(event => ({ ...event, author: 'editor' as const })),
-          ...(unchanged
+          ...(unchanged || isExcludedPath(wirePath)
             ? []
             : [
                 {
@@ -1081,7 +1084,7 @@ export class ProjectFiles {
         const unchanged = existed && this.table.get(file.entry.path)?.sha256 === file.entry.sha256;
         this.recordOwnFile(file.entry.path, stats, file.entry.sha256);
         events.push(...dirs.map(event => ({ ...event, author: 'editor' as const })));
-        if (!unchanged) {
+        if (!unchanged && !isExcludedPath(file.entry.path)) {
           events.push({
             op: existed ? 'modify' : 'create',
             path: file.entry.path,

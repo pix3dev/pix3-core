@@ -7,6 +7,7 @@
 
 import { ScriptRegistry } from '../core/ScriptRegistry';
 import { RotateBehavior } from './RotateBehavior';
+import { MergeStaticBehavior } from './MergeStaticBehavior';
 import { SimpleMoveBehavior } from './SimpleMoveBehavior';
 import { SineBehavior } from './SineBehavior';
 import { PinToNodeBehavior } from './PinToNodeBehavior';
@@ -45,6 +46,16 @@ export function registerBuiltInScripts(registry: ScriptRegistry): void {
     category: 'Transform',
     componentClass: RotateBehavior,
     keywords: ['rotate', 'animation'],
+  });
+
+  registry.registerComponent({
+    id: 'core:MergeStatic',
+    displayName: 'Merge Static',
+    description:
+      "Merges a model's static parts into one mesh at start, optionally baking light, shadows and AO into vertex colours",
+    category: 'Rendering',
+    componentClass: MergeStaticBehavior,
+    keywords: ['merge', 'bake', 'ambient occlusion', 'shadow', 'draw calls', 'static'],
   });
 
   registry.registerComponent({

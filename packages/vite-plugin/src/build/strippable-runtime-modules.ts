@@ -73,6 +73,10 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
   // --- script components (`core:` behaviours) ---
   { modulePath: 'behaviors/RotateBehavior', keepWhenMentioned: ['RotateBehavior', 'core:Rotate'] },
   {
+    modulePath: 'behaviors/MergeStaticBehavior',
+    keepWhenMentioned: ['MergeStaticBehavior', 'core:MergeStatic'],
+  },
+  {
     modulePath: 'behaviors/SimpleMoveBehavior',
     keepWhenMentioned: ['SimpleMoveBehavior', 'core:SimpleMove'],
   },

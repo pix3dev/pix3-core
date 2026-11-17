@@ -260,6 +260,10 @@ const TYPE_SPECS: Readonly<Record<string, TypeSpec>> = {
   GeometryMesh: {
     family: '3d',
     extras: {
+      // Procedural geometry (`nodes/3D/procedural-geometry.ts`): checked by `describeGeometryProblems`.
+      shape: { kind: 'record' },
+      modifiers: { kind: 'array' },
+      vertexColors: { kind: 'record' },
       material: {
         kind: 'record',
         nested: {

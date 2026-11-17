@@ -4,6 +4,9 @@
  * first asks over a `BroadcastChannel` whether an editor of this dev server is open: if one
  * answers, the page says so and tries to bring its opener forward; if none does, this tab becomes
  * the editor. The editor answers in `packages/editor-core/src/host/editor-presence.ts`.
+ *
+ * Its chevron opens a menu (upward: the link sits in the bottom corner) of other ways in —
+ * {@link MENU_ITEMS}, today the profiler (this page again with `?debug`).
  */
 
 /** Keep in step with `editor-presence.ts` in editor-core. */
@@ -50,6 +53,23 @@ export const openEditor = async (editorUrl: string): Promise<OpenEditorOutcome> 
   return 'navigated';
 };
 
+/** This page's URL with the debug overlay on (`?debug`, bare like the editor's Play with Profiler). */
+export const profilerUrl = (href: string): string => {
+  const url = new URL(href);
+  url.searchParams.delete('debug');
+  const rest = url.searchParams.toString();
+  url.search = rest ? `?debug&${rest}` : '?debug';
+  return url.href;
+};
+
+interface MenuItem {
+  readonly id: string;
+  readonly label: string;
+  readonly title: string;
+  readonly icon: string;
+  readonly run: () => void;
+}
+
 const STYLE = `
 :host { all: initial; }
 .link {
@@ -67,6 +87,16 @@ button:focus-visible { outline: 2px solid rgba(255,207,51,0.6); }
 .close { padding: 4px; }
 svg { display: block; width: 12px; height: 12px; }
 .note { padding: 4px 8px 4px 4px; color: #ffcf33; font-weight: 500; }
+.more { padding: 4px 5px; }
+.more[aria-expanded="true"] { background: rgba(255,255,255,0.14); }
+.more[aria-expanded="true"] svg { transform: rotate(180deg); }
+.menu {
+  position: absolute; left: 0; bottom: calc(100% + 4px); min-width: 100%;
+  display: flex; flex-direction: column; gap: 1px; padding: 3px;
+  background: rgba(18, 18, 20, 0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px;
+}
+.menu[hidden] { display: none; }
+.menu button { border-radius: 7px; padding: 6px 8px; white-space: nowrap; }
 `;
 
 // Feather `edit-3` and `x`, inline: the player has no IconService.
@@ -74,6 +104,23 @@ const EDIT_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
 const CLOSE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+// Feather `chevron-up` and `activity`.
+const CHEVRON_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>';
+const PROFILER_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+
+/** The chevron menu, bottom-up as listed. Editor modes and "send a node to the agent" go here. */
+const MENU_ITEMS: readonly MenuItem[] = [
+  {
+    id: 'profiler',
+    label: 'Profiler',
+    title: 'Reload this page with the debug overlay: profiler, pause and step',
+    icon: PROFILER_ICON,
+    run: () => window.location.assign(profilerUrl(window.location.href)),
+  },
+];
 
 const isHidden = (): boolean => {
   try {
@@ -91,29 +138,67 @@ export function mountEditorLink(editorUrl: string): () => void {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `<style>${STYLE}</style>
 <div class="link" part="link">
+  <div class="menu" role="menu" hidden>${[...MENU_ITEMS]
+    .reverse()
+    .map(
+      item =>
+        `<button type="button" role="menuitem" data-item="${item.id}" title="${item.title}">${item.icon}<span>${item.label}</span></button>`
+    )
+    .join('')}</div>
   <button type="button" data-action="open" title="Open this project in the Pix3 editor">${EDIT_ICON}<span>Pix3 editor</span></button>
+  <button type="button" class="more" data-action="menu" aria-haspopup="menu" aria-expanded="false" title="More" aria-label="More ways to open">${CHEVRON_ICON}</button>
   <span class="note" hidden>Already open in another tab</span>
   <button type="button" class="close" data-action="hide" title="Hide" aria-label="Hide the editor link">${CLOSE_ICON}</button>
 </div>`;
   const link = root.querySelector('.link') as HTMLElement;
   const note = root.querySelector('.note') as HTMLElement;
+  const menu = root.querySelector('.menu') as HTMLElement;
+  const more = root.querySelector('.more') as HTMLButtonElement;
+  const setMenu = (open: boolean): void => {
+    menu.hidden = !open;
+    more.setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector<HTMLButtonElement>('button')?.focus();
+  };
+  // A press anywhere else closes the menu (presses inside the link stop at it, below).
+  const closeOutside = (): void => setMenu(false);
+  document.addEventListener('pointerdown', closeOutside);
+  link.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !menu.hidden) {
+      setMenu(false);
+      more.focus();
+    }
+  });
   // Keep the game's own listeners out of the link's clicks.
   for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown']) {
     link.addEventListener(type, event => event.stopPropagation());
   }
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
+  const teardown = (): void => {
+    clearTimeout(noteTimer);
+    document.removeEventListener('pointerdown', closeOutside);
+    host.remove();
+  };
   root.addEventListener('click', event => {
-    const action = (event.target as Element | null)
-      ?.closest('[data-action]')
-      ?.getAttribute('data-action');
-    if (action === 'hide') {
+    const target = event.target as Element | null;
+    const itemId = target?.closest('[data-item]')?.getAttribute('data-item');
+    const item = MENU_ITEMS.find(candidate => candidate.id === itemId);
+    if (item) {
+      setMenu(false);
+      item.run();
+      return;
+    }
+    const action = target?.closest('[data-action]')?.getAttribute('data-action');
+    if (action === 'menu') {
+      setMenu(menu.hidden);
+    } else if (action === 'hide') {
       try {
         sessionStorage.setItem(HIDDEN_KEY, '1');
       } catch {
         // Hidden for this page only.
       }
-      host.remove();
+      teardown();
     } else if (action === 'open') {
+      setMenu(false);
       void openEditor(editorUrl).then(outcome => {
         if (outcome !== 'already-open') return;
         note.hidden = false;
@@ -123,8 +208,5 @@ export function mountEditorLink(editorUrl: string): () => void {
     }
   });
   document.body.appendChild(host);
-  return () => {
-    clearTimeout(noteTimer);
-    host.remove();
-  };
+  return teardown;
 }

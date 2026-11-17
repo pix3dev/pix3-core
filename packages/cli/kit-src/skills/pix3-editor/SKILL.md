@@ -48,7 +48,7 @@ Do not write your own CDP or MCP client.
    again: it checks the tab through the proxy and opens it when missing; or open it yourself with
    chrome-devtools-mcp's `new_page` on that URL. Then `list_pages` again. Open one tab only: a
    second editor tab on the same project competes for the writer.
-3. `list_3p_developer_tools {pageId}` → the `pix3` group with the seven `pix3_*` tools below. **Call it
+3. `list_3p_developer_tools {pageId}` → the `pix3` group with the nine `pix3_*` tools below. **Call it
    again after every `select_page` and after any page reload** — the registration lives in the
    page, and `execute_3p_developer_tool` answers `Tool … not found` until it is listed again in
    the same MCP process.
@@ -70,6 +70,8 @@ error: pageId: expected number" means it was left out.
 | `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?`, `aspect?` | play mode; `start` records you as the owner; `restart` = stop → apply held file changes → start (just a start when nothing plays); `pause` / `resume` set that state (no-op when already in it); `run` `{seed?, config?}` with `start` / `restart` sets up a test run (`scene.random` seed, component config by node id → component id → keys, before the first `onStart`; kept for the session's restarts, cleared on stop); `aspect` `free\|16:9\|9:16\|4:3` frames the Game tab with any action (it stays; the answer says the current one) — `9:16` for a phone-shaped run and screenshot; exact phone sizes: `npx pix3 play --size` |
 | `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
 | `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
+| `pix3_render_model` | `nodeId?`, `views?`, `size?`, `lights?`, `background?`, `image?` | a node of the active scene (default: its 3D roots) as the editor holds it — unsaved edits and a `pix3_bake` included — alone on a plain background, from each view (`iso,front,right,top` by default; `all`, or `az:el`), in one labelled sheet laid over the editor until your next `pix3_*` call or a click: `take_screenshot` shows it. Answers `meshes`, `drawCalls`, `triangles`, `size`, `center`, `lights`, `baked` (merged nodes under it), `look` (as `pix3 render`'s: luminance, near-black, saturation, a `note` like "reads dark"). `image: true` returns the PNG data URL instead (the shell's `bridge render` uses it) |
+| `pix3_bake` | `action?` `apply\|clear\|status`, `nodeId?` | `apply` (default) runs `core:MergeStatic`'s merge and light bake on every node that carries it (or on `nodeId`, with its settings or the defaults) so the viewport shows what play shows; `clear` shows the parts again; per node `merged` parts, `meshes`, `vertices`, `ms`. Writes nothing; a scene reload drops it — apply again after editing the model |
 | `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
 
 Scenes and scripts are changed as **files** (`pix3-scene-format`, `pix3-scripts`). There is no
@@ -240,7 +242,8 @@ works; a run with a stated success condition does:
 - **A black 3D screen** is usually a scene with no light or no camera, and the run's `notes` say
   so (`SCENE NOT RENDERABLE — …`); when they do not, suspect a camera that looks away from the
   content. The editor viewport lights the scene with fallback lights the running game does not
-  have, so the viewport is no evidence either way.
+  have (so do the scene/prefab thumbnails in the assets panel), so neither is evidence either
+  way.
 
 ## 6. Before a build
 
@@ -287,6 +290,8 @@ quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
 | `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart` — a plain start when nothing plays — `stop`, `resume`, `status`) |
 | `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":10800,"maxWallMs":180000}'` |
 | `pix3_errors` | `npx pix3 bridge errors` |
+| `pix3_render_model` + `take_screenshot` | `npx pix3 bridge render [--node <id>] [--views iso,front,right,top\|all\|az:el] [--size 384] [--out f.png]` — prints the PNG path and the counts; open the PNG |
+| `pix3_bake {action}` | `npx pix3 bridge bake '{"action":"apply"}'` (`clear`, `status`, `nodeId`) |
 | `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--target game\|viewport] [--aspect 9:16] [--out f.png]` — then open the PNG |
 | `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) |
 | a drag | `npx pix3 bridge swipe --from <id> --to <id> [--touch] [--ms 180]` or four page CSS px |

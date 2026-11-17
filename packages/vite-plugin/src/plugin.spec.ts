@@ -420,6 +420,46 @@ describe('events and the writer', () => {
     expect((outside.events as { author: string }[])[0].author).toBe('external');
   });
 
+  it('sends no pix3:fs event for an own write under .pix3/ (outside the revision set)', async () => {
+    const p = await start();
+    const tab = await p.connectTab('tab-a');
+    await p.mutate('/__pix3/api/handover/claim', {
+      method: 'POST',
+      body: JSON.stringify({ writerId: 'tab-a' }),
+    });
+    const path = '.pix3/model-jobs/tower/feedback.jsonl';
+    const first = await p.mutate(`/__pix3/api/file?path=${path}`, {
+      method: 'PUT',
+      body: '{"id":"f-1"}\n',
+      headers: { 'If-None-Match': '*' },
+      writer: 'tab-a',
+    });
+    expect(first.status).toBe(200);
+    const second = await p.mutate(`/__pix3/api/file?path=${path}`, {
+      method: 'PUT',
+      body: '{"id":"f-1"}\n{"id":"f-2"}\n',
+      headers: { 'If-Match': `"${sha('{"id":"f-1"}\n')}"` },
+      writer: 'tab-a',
+    });
+    expect(second.status).toBe(200);
+    // A write in the revision set after them: its frame is the fence for anything sent before.
+    await p.mutate('/__pix3/api/file?path=scenes/a.pix3scene', {
+      method: 'PUT',
+      body: SCENE,
+      writer: 'tab-a',
+    });
+    await tab.waitFor(
+      frame =>
+        frame.type === 'pix3:fs' &&
+        (frame.events as { path: string }[]).some(e => e.path === 'scenes/a.pix3scene')
+    );
+    await sleep(700); // and the watcher's echo of the .pix3/ writes, which it ignores
+    const paths = tab.frames
+      .filter(frame => frame.type === 'pix3:fs')
+      .flatMap(frame => (frame.events as { path: string }[]).map(e => e.path));
+    expect(paths.filter(e => e.startsWith('.pix3'))).toEqual([]);
+  });
+
   it('takes writes only from the current writer, and hands over under the write mutex', async () => {
     const p = await start({ 'a.txt': 'a' });
     const a = await p.connectTab('tab-a');
