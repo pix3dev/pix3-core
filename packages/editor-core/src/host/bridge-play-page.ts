@@ -244,7 +244,7 @@ const startAgentPage = async (params: Params, restart: boolean): Promise<PageAns
     if (!ready || !next) {
       return refuse(
         'no_game_page',
-        `The agent's page (${url}) did not report ready within ${LOAD_WAIT_MS / 1000} s.`
+        `The agent's page (${url}) did not report ready within ${LOAD_WAIT_MS / 1000} s. A page that never boots the game (an index.html without the player's startGame) never does: open the URL to see it.`
       );
     }
     if (next.url === url) page = next;

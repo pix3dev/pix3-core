@@ -13,9 +13,9 @@ import { appState } from '@/state';
  * page's end is `@pix3/vite-plugin`'s `player/dev/editor-rpc.ts`; keep the frames in step.
  *
  * The editor holds no play state (D4): what it knows of a page is the last `hello` it said. A page
- * says `hello {page}` when it is ready (and to `who`), `bye {reloading?}` on `pagehide`; a call carries the
- * `loadId` it was meant for, and a call whose page went away (or reloaded) is answered
- * `page_reloaded`, never by another document.
+ * says `hello {page}` when it is ready (and to `who`), `bye {reloading?}` on `pagehide`; a call
+ * carries the `loadId` it was meant for, and a call whose page went away (or reloaded) is
+ * answered `page_reloaded`, never by another document.
  */
 
 /** Keep in step with `PLAY_PAGES_CHANNEL` in the plugin's `player/dev/editor-rpc.ts`. */

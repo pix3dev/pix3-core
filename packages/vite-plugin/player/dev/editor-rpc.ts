@@ -6,9 +6,9 @@
  * is `packages/editor-core/src/services/play/PlayPageLink.ts` — keep the frames in step.
  *
  * - `hello {page}` once the game has booted (or failed) and the test tools are loaded, and again
- *   in answer to the editor's `who`; `bye {reloading?}` on `pagehide`. `page` carries `loadId` (new on every
- *   load) and `rev` (the file revision the server stamped into this page): the editor's readiness
- *   barrier (D6).
+ *   in answer to the editor's `who`; `bye {reloading?}` on `pagehide`. `page` carries `loadId`
+ *   (new on every load) and `rev` (the file revision the server stamped into this page): the
+ *   editor's readiness barrier (D6).
  * - `call {id, role, loadId, tool, params}` → `result {id, loadId, value}`. A call for this role
  *   but another `loadId` answers `page_reloaded`: the page it was meant for is gone.
  * - `log` — a runtime error on this page, for the editor's Logs; `select` — "Show in editor".
