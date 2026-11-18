@@ -426,7 +426,8 @@ Reference it from a scene or script as res://<path inside the project>.
   error; 2 = could not run (no Chrome, no such file, no project) or a refused pass.
 `,
   bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
-       pix3 bridge screenshot [--target game|viewport] [--aspect free|16:9|9:16|4:3] [--out <file.png>]
+       pix3 bridge screenshot [--target game|viewport] [--page designer|agent]
+                              [--aspect free|16:9|9:16|4:3] [--out <file.png>]
        pix3 bridge tap <x> <y> | --node <id> [--touch]
        pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
        pix3 bridge render [--node <id>] [--views <list>] [--size 384] [--lights auto|studio|scene]
@@ -454,6 +455,13 @@ Reference it from a scene or script as res://<path inside the project>.
                  triangles, size, the baked nodes. pix3 bridge bake '{"action":"apply"}' first to
                  see core:MergeStatic's bake (pix3_bake: apply | clear | status, nodeId?)
   --touch        touch events (a phone finger) instead of the mouse
+
+  When the editor plays on the game's own page (Editor Settings → "Play on the game's page",
+  a preview): screenshot captures the game page pix3_screenshot names — --page designer (the
+  human's Play window) or agent (yours; the default when the human's is closed); tap and swipe
+  go to your page only and refuse coordinates read from an older load of it (page_reloaded);
+  --aspect does not apply (exact sizes: pix3 play --size). A pix3_play start the browser's popup
+  blocker refuses is opened as a new tab in the Chrome 'pix3 editor' started.
 `,
   model: `Usage: pix3 model new <id> --target <scene|prefab|res://…> [--node <id>] [--title <text>]
                        [--reference <image> [--reference-background <hex>]]

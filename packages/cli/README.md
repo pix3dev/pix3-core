@@ -569,7 +569,9 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    proxy answers; the owner launches Chrome with `--app=<editorUrl>
    --user-data-dir=~/.pix3/chrome --remote-debugging-pipe` — **no debugging port** — no first run,
    no default-browser check, background throttling off (`--disable-background-timer-throttling
-   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`). The owner lives
+   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`) and the popup
+   blocker off (`--disable-popup-blocking`: the editor opens the agent's game page with
+   `window.open` from a bridge call, which carries no click — spec §6.24). The owner lives
    exactly as long as Chrome: Chrome gone → the owner closes every client, removes
    `~/.pix3/chrome.json` and exits; the owner gone (killed) → the pipe closes and Chrome exits
    with it. `--stop-chrome` asks the owner to close Chrome. Then, launched or reused, the editor
@@ -927,6 +929,20 @@ on a frozen game; a pause someone asked for (the Pause button, `pix3_play pause`
 about. `render` calls `pix3_render_model` with `image: true` and writes the sheet it returns
 (default `.pix3/renders/editor-<node>.png`), then prints the path and the counts. The token is
 never printed.
+
+**The game on its own page** (the editor setting "Play on the game's page", `playHost: 'page'`, a
+preview until it becomes the default; spec §6.24): the game is a CDP target of its own, so
+`pix3 bridge` picks the target per command. `screenshot --target game [--page designer|agent]`
+captures the page `pix3_screenshot` names (the human's Play window by default while it is open,
+else the agent's page), after `Page.bringToFront` — a background target paints nothing to capture;
+`--aspect` does not apply (exact sizes: `pix3 play --size`). `tap` / `swipe` go to the agent's page
+only (`--page designer` is `not_your_page`; no agent page, `no_game_page`), a node's position is
+read with `pix3_scene {nodeId, page: "agent"}`, and the input is refused with `page_reloaded` when
+the page's `__PIX3_PLAYER__.loadId` is no longer the load the position came from. A
+`pix3_play start|restart` the browser refused with `popup_blocked` is opened as a new target with
+`Target.createTarget` in the Chrome `pix3 editor` owns (it waits up to 90 s for the page to tell the
+editor it is ready and answers `opened: "Target.createTarget"`); over a Remote SSH forward the
+refusal stands, with its `url`.
 Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine

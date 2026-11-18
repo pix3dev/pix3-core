@@ -265,8 +265,8 @@ export const ensureEditorTab = async (
       };
 };
 
-/** One CDP command through the proxy (browser level), for `pix3 editor` itself. */
-const proxyCall = (
+/** One CDP command through the proxy (browser level): `pix3 editor` itself, `pix3 bridge`. */
+export const proxyCall = (
   port: number,
   token: string,
   method: string,

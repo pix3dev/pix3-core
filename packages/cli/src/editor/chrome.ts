@@ -8,7 +8,7 @@ import { chromeProfileDir, chromeProfileFallbackDir } from './paths.ts';
  * own profile, remote debugging over `--remote-debugging-pipe` only (no debugging port: the
  * owner process holds the pipe and serves it behind the token proxy, `chrome-owner.ts`), and the
  * flags that stop Chrome from throttling a background tab (the agent's tab is in the background
- * almost all the time). A second project never launches the profile again (a headless Chrome
+ * almost all the time) or blocking the game window the editor opens for the agent. A second project never launches the profile again (a headless Chrome
  * would start a second process nobody owns): its tab is opened through the proxy
  * (`ensureEditorTab` in `chrome-owner.ts`).
  */
@@ -19,6 +19,9 @@ export const CHROME_FLAGS: readonly string[] = [
   '--disable-background-timer-throttling',
   '--disable-renderer-backgrounding',
   '--disable-backgrounding-occluded-windows',
+  // The agent's game page (plan play-in-page D9): the editor opens it with `window.open` from a
+  // bridge call, which carries no click.
+  '--disable-popup-blocking',
 ];
 
 const isExecutable = (path: string): boolean => {

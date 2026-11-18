@@ -273,6 +273,7 @@ describe('Chrome', () => {
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
+      '--disable-popup-blocking',
       '--app=http://localhost:5173/__pix3/',
     ]);
     expect(args.some(a => a.startsWith('--remote-debugging-port'))).toBe(false);
