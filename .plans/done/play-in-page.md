@@ -1,6 +1,6 @@
 # Play на странице игры: один путь запуска, отладка в оверлее, редактор без play-режима
 
-Дата: 2026-11-18. Статус: ревизия 4; S0–S5 выполнены (§7), путь по умолчанию — страница игры; дальше S6.
+Дата: 2026-11-18. Статус: ревизия 4; S0–S6 выполнены (§7): игра идёт только на своей странице, запуск в редакторе удалён. План закрыт; остатки — `.plans/TODO.md`.
 Утверждения о коде проверены по исходникам (`2.0.0-alpha.8`, `dae25f9`), рядом указан путь.
 Ревью Codex шло по тексту плана: его песочница здесь не читает файлы.
 
@@ -948,3 +948,98 @@ CPU все WebGL-контексты по очереди, и редактор и 
   безвредно.
 - `navigate` на закрывшееся окно Play после flush открывает новое вне клика — в оконном Chrome с
   блокировщиком это `null` и предупреждение в консоли.
+
+### S6 (2026-11-18)
+
+Ветка `play-in-page-s6` от `557519a` (удаление отделимо от переключения). Сделано по списку §3 S6 и
+добавкам S4, S5:
+
+- **Удалено из `editor-core`:** вкладка Game (`ui/viewport/game-tab.ts`), панель Runtime (`ui/runtime/`),
+  `GamePlaySessionService` и его спеки, popout; `SetPlayTargetOperation`, `SetPlayModeOperation`,
+  `SetPlayPausedOperation`, `SetGamePopoutWindowOpenOperation`, `Start*GameCommand`, `PauseGameCommand`,
+  `RestartGameCommand`, `OpenGamePopoutWindowCommand`, прежний `StopGameCommand`, `play-workspace.ts`;
+  `PlayTarget`/`playPageUrl`/`PLAY_WINDOW_NAMES`/`PLAY_TARGET_INFO` и «Play in …»; поля `AppState`
+  `isPlaying`, `playModeStatus`, `playModeError`, `playOwner`, `playStartedAt`, `isGamePopoutOpen`,
+  `gameAspectRatio`, `playTarget`, `playHost` и все читатели (ветки play в `ExternalChangeService`,
+  `SyncApplyService` с `pendingDuringPlay`, `ProjectScriptLoaderService.queueRoots`/`applyQueuedRoots`,
+  `LiveComponentService`, `AgentKeepaliveService`, `ViewportPreviewTicker`, LIVE-режим инспектора с его
+  CSS, предусловия `ResizeGroup2D`/`FitGroup2DToContents`/`UnlinkPrefabInstance`, статус-бар, раскладка);
+  настройка `playHost` и её переключатель; вызов sink в `UpdateObjectPropertyOperation`;
+  `EditorGameTestService`, `GameBotHost` (+ спека), блок клея в `GameTestService.spec.ts`; старая таблица
+  `BRIDGE_TOOLS` (осталась одна — прежняя `PAGE_BRIDGE_TOOLS` под именем `BRIDGE_TOOLS`), ветки `onPage()`,
+  `editorLive`, `play`, `aspect` в `debug-bridge.ts`; причины `not_owner`/`already_playing`/`not_playing`;
+  `liveObjectToDTO`/`flattenLive` в `core/agent-introspection.ts`; записи `game`/`runtime` в
+  `LayoutManager` и переключение на Runtime при старте игры; строки Window → Runtime / Game.
+- **Удалено сверх списка (проверено по использованию, knip + grep):** `services/atlas/` целиком
+  (`TextureAtlasService`, `MaxRectsPacker`, `AtlasCacheStore`, `rendering-2d-flags`) — предстартовый атлас
+  был только у игры в редакторе (плеер атлас не пакует, батчинг включает сам); View → Physics Wireframe и
+  Direction Axes (рисовали только в игре редактора) и поля `showPhysicsColliders`/`showDirectionAxes`;
+  `PeekService.setRuntimeSink`; `LocalizationEditorService.getRuntimeConfig`; иконка `collapse-all`;
+  `core/log-argument.ts`; в `RuntimeErrorBridgeService` — баннер ошибки игры, перехват консоли игры и
+  `isGameOriginatedStack` (остались: ошибки скриптов и окна страницы редактора → Logs, сигналы);
+  `copy-for-agent` для ошибки игры; три id play-операций в списке read-only `OperationService`; тип
+  вкладки `game` (`EditorTabType` = `scene`).
+- **Плагин:** редакторный корень `virtual:pix3/bot-policies` убран из `editor-host` и клиента
+  (`ScriptRoots` = `{editorScripts}`); `ScriptGraph.isEditorModule` считает только корень скриптов —
+  политика и её помощник штампа от вкладки редактора не требуют; `policyOnlyModules` и `policyOnly` в
+  барьере и клиенте удалены. `virtual:pix3/bot-policies` по-прежнему отдаётся и инвалидируется для
+  страницы. `hotUpdate` для созданного/удалённого скрипта (S13) остаётся: редактор так получает новые
+  классы.
+- **CLI:** `pix3 bridge screenshot --aspect` и редакторная ветка `releaseRunPause`/`screenOfNode`; `tap`/`swipe`
+  только на страницу агента; `pix3_status.play` = `{pages}` (без `playHost`). `pix3 check` (контракт B)
+  больше не сканирует `design/tests/bots/` — редактор политик не исполняет; `BOT_POLICY_DIRECTORIES` удалён.
+- **Добавлено:** Run → **Play Game** (`game.play-entry`, F5), **Play Scene** (`game.play`, F6, кнопка
+  тулбара), **Stop** (`game.stop`, F8) — прежние `game.start`/`game.start-main` ушли вместе с игрой в
+  редакторе; кнопка тулбара «Play again», пока окно Play открыто; в статус-баре **Game open** и
+  **Agent's game** (`PlayPageLink.onPagesChanged`). Миграция раскладки не понадобилась: раскладка Golden
+  Layout не сохраняется (каждый раз `DEFAULT_LAYOUT_CONFIG`), а сохранённая сессия вкладок с вкладкой
+  `game` и старые `gameAspectRatio`/`playHost` в `pix3.editorSettings:v1` отбрасываются при чтении
+  (спеки и живая проверка ниже).
+- **Найдено живой проверкой и исправлено:** окно, закрытое по `close` (F8, `stop`), в headless Chrome не
+  успевает отправить `bye` — страница оставалась в `pix3_status` и в индикаторе. `PlayPageLink.close`
+  забывает страницу, согласившуюся закрыться (страница, что всё же осталась, ответит на следующий `who`);
+  спека.
+
+Строки `packages/editor-core/src` (ts + css): 147 468 → 138 177 (−9 291); без спеков ts 100 811 → 94 435,
+css 10 612 → 10 177. Весь дифф этапа — около −10 тыс. строк, +0,6 тыс.
+
+Оставлено и почему: `core/canvas-screenshot.ts` (скриншоты вьюпорта); `ScriptExecutionService`
+(`onAttach` скриптов в сцене редактора; его цикл `start()` никто не вызывает — дальний долг, не play в
+редакторе); `GameTestHost.restartScene` (крючок решения владельца про негативный контроль на странице);
+экспорты рантайма `getRuntimeSceneRoot`, `registerRuntimeLivePropertySink`/`getRuntimeLivePropertySink`,
+`SceneRunner.setEditorPeekMask`, `setPhysicsDebugEnabled`/`setDirectionAxesEnabled` — совместимость,
+вопрос не этого плана; `page-activity`/`background-ticker` (keepalive вьюпорта, фоновые тики страницы);
+жёсткая инвалидация корня `bot-policies` в барьере (для страницы).
+
+Проверено: `npm run lint`, `type-check`, `npm run verify` (347 файлов, 3 658 тестов, `release:check --pack-only`),
+`knip`, `knip:prod` — чисто. Живьём (копия Skyways `/tmp/claude-1001/play-in-page-s0/sky`, ссылки
+`@pix3/*` на этот checkout проверены; Vite 8.3.8 на 5191, `pix3 editor --headless --chrome-only`,
+`PIX3_HOME` во временном каталоге, chrome-headless-shell 155, SwiftShader; скриншоты просмотрены):
+
+| Сценарий | Результат |
+|---|---|
+| загрузка редактора (`Page.reload`, 25 с консоли) | ни одной ошибки; только прежние предупреждения Lit |
+| раскладка, меню | Scene Tree без Runtime, документы без Game; Run = Play Game F5 / Play Scene F6 / Stop F8; Window без Runtime/Game; View без Physics Wireframe/Direction Axes |
+| старая сессия вкладок с `game:game-view-instance` (активной) и `pix3.editorSettings:v1` с `gameAspectRatio`, `playHost: 'editor'` | загрузка без ошибок, вкладки Game нет |
+| Play / Play again / F8 | окно `role=designer`, «Game open», кнопка «Play again»; второй Play — та же цель, новый `loadId`; F8 — цель закрыта, `pages: []`, индикатор погас (после фикса) |
+| `start {run: {seed: 8}}` → `pix3_game_run` бот `ship-mark` | 1,6 с; BOT PASS кадр 237, 11 действий (как S3/S5) |
+| `pix3_scene {nodeId: flagship, page: agent}`, `pix3 bridge screenshot --page agent` | `live`, `screen`, `page`; снимок без оверлея (первые две попытки сразу после прогона — таймаут `Page.captureScreenshot` 30 с, третья — ок) |
+| чтение страницы человека | `pix3_scene` по умолчанию с неё, `find`, `pix3_errors {page}`; `restart`/`pix3_game_run {page: designer}` → `not_your_page`, `tap --page designer` → exit 2 |
+| правка скрипта + `pix3_sync` между прогонами (две страницы открыты) | sync `ok` за 0,5 с, без `playing`/`stale`; маркер в редакторе сразу, обе страницы перезагрузились с новым `rev` |
+| правка скрипта + `pix3_sync` во время прогона на 3000 кадров | sync `ok`, редактор взял новый класс сразу; прогон — `page_reloaded`; новая загрузка с новым маркером, следующий `pix3_game_run` на ней |
+| внешняя правка сцены при двух открытых страницах | редактор применил за ~2 с, `pendingExternal: []` |
+| `pix3 play dev --bot ship-mark --seed 8` | done(pass) кадр 237 |
+| `pix3 play dist --run '{bot ship-mark}' --seed 8` (свежий `vite build`) | BOT PASS кадр 237, 11 действий |
+
+Не проверено: оконный Chrome с настоящим GPU (как и в S5, S5b); настоящий клик человека и блокировщик
+попапов; `pix3-e2e` (`bridge-e2e`, `debug-e2e` проверяют старые режимы — долг S5, репозиторий не
+правился); `release:check --keep` целиком (только `--pack-only` в `verify`). Ревью Codex не запускалось
+(песочница не читает файлы, S0).
+
+Долги (в `.plans/TODO.md`): живая правка свойств (D11); `pix3-e2e` под страницу; читающий инструмент
+снимка и дерева страницы человека для shell-агента; краткий ответ `pix3_game_run`; таймаут
+`popup_blocked`; негативный контроль на странице (решение владельца S3); перезагрузка окна человека
+правкой агента (решение владельца S0); передача управления окном человека агенту; судьба
+`getRuntimeSceneRoot` и прочих экспортов рантайма для игры в редакторе; таймаут скриншота сразу после
+длинного прогона в SwiftShader.
+
