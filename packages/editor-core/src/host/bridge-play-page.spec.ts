@@ -156,8 +156,8 @@ describe('the bridge on the game page (playHost: page)', () => {
     );
     expect(started).toMatchObject({ ok: true, page: { role: 'agent', loadId: 'agent-load-0' } });
     // A restart navigates the open page (no new window) with the same run.
-    agent!.answer = tool => {
-      if (tool === 'navigate') setTimeout(() => agent!.reload(), 0);
+    agent!.answer = (tool, params) => {
+      if (tool === 'navigate') setTimeout(() => agent!.reload({ url: String(params.url) }), 0);
       return { ok: true };
     };
     const restarted = await callBridgeTool('pix3_play', { action: 'restart' });
@@ -173,6 +173,32 @@ describe('the bridge on the game page (playHost: page)', () => {
       reason: 'popup_blocked',
       url: expect.stringContaining('role=agent'),
     });
+  });
+
+  it('a start whose navigation a full reload overtook navigates that load again', async () => {
+    appState.ui.playHost = 'page';
+    const agent = page('agent');
+    await service(PlayPageLink).discover(50);
+    const open = vi.spyOn(window, 'open');
+    let navigations = 0;
+    agent.answer = (tool, params) => {
+      if (tool !== 'navigate') return { ok: true };
+      navigations += 1;
+      // The first time Vite's full reload of the old page wins: the old URL loads again.
+      const url = navigations === 1 ? agent.info.url : String(params.url);
+      setTimeout(() => agent.reload({ url }), 0);
+      return { ok: true };
+    };
+    const started = await callBridgeTool('pix3_play', { action: 'start' });
+    expect(started).toMatchObject({
+      ok: true,
+      page: { loadId: 'agent-load-2', url: expect.stringContaining('&start=') },
+    });
+    expect(agent.calls.map(call => [call.tool, call.loadId])).toEqual([
+      ['navigate', 'agent-load-0'],
+      ['navigate', 'agent-load-1'],
+    ]);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('runs pix3_game_run on the agent page of the right load; a reload under it is page_reloaded', async () => {

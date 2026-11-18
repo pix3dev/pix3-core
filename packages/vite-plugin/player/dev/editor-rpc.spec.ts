@@ -175,4 +175,30 @@ describe('editor-rpc (the game page end of the editor link)', () => {
       loadId: 'load-1',
     });
   });
+
+  it("bye says whether the page reloads or its window closes (the Navigation API's navigate)", async () => {
+    const byes = async (navigate: { sameDocument: boolean } | null): Promise<unknown> => {
+      frames.length = 0;
+      const channel = listen();
+      const win = Object.assign(new EventTarget(), {
+        location: window.location,
+        navigation: new EventTarget(),
+      });
+      const rpc = installEditorRpc(fakePage().page, 'agent', win as unknown as Window);
+      await waitFrame(frame => frame.type === 'hello');
+      if (navigate) {
+        win.navigation.dispatchEvent(
+          Object.assign(new Event('navigate'), { destination: navigate })
+        );
+      }
+      win.dispatchEvent(new Event('pagehide'));
+      const bye = await waitFrame(frame => frame.type === 'bye');
+      rpc?.dispose();
+      channel.close();
+      return bye.reloading;
+    };
+    expect(await byes({ sameDocument: false })).toBe(true); // Vite's location.reload(), navigate
+    expect(await byes({ sameDocument: true })).toBe(false); // a hash change, then the window closed
+    expect(await byes(null)).toBe(false); // the window closed
+  });
 });

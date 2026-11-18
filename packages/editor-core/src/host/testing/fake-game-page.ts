@@ -13,7 +13,8 @@ export interface FakeGamePage {
   reload(changes?: Partial<PageInfo>): void;
   log(message: string): void;
   select(nodeId: string): void;
-  close(): void;
+  /** The page goes: `reloading` as its `bye` says it (left out = a page that cannot tell). */
+  close(reloading?: boolean): void;
 }
 
 export function fakeGamePage(role: PageRole, info: Partial<PageInfo> = {}): FakeGamePage {
@@ -45,10 +46,15 @@ export function fakeGamePage(role: PageRole, info: Partial<PageInfo> = {}): Fake
       channel.postMessage({ type: 'log', role, loadId: page.info.loadId, at: Date.now(), message }),
     select: nodeId =>
       channel.postMessage({ type: 'select', role, loadId: page.info.loadId, nodeId }),
-    close() {
+    close(reloading) {
       if (closed) return;
       closed = true;
-      channel.postMessage({ type: 'bye', role, loadId: page.info.loadId });
+      channel.postMessage({
+        type: 'bye',
+        role,
+        loadId: page.info.loadId,
+        ...(reloading === undefined ? {} : { reloading }),
+      });
       channel.close();
     },
   };

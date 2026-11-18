@@ -162,6 +162,7 @@ export const pageLiveSource = (requested: unknown): LiveSource => {
 
 /** The agent's last start: a restart loads the same scene with the same test run. */
 let lastStart: { scene: string | null; run: RunOverrides | null } | null = null;
+let startCount = 0;
 
 const activeScene = (): string | null => {
   const id = appState.scenes.activeSceneId;
@@ -223,20 +224,31 @@ const startAgentPage = async (params: Params, restart: boolean): Promise<PageAns
   }
   lastStart = start;
   const pages = link();
-  const current = pages.page('agent');
-  const url = gamePageUrl(service(HostService).info.base, 'agent', start.scene, start.run);
-  const blocked = await loadAgentPage(url, current);
-  if (blocked) return blocked;
-  const ready = await pages.until(() => {
-    const page = pages.page('agent');
-    return !!page && page.loadId !== current?.loadId && pages.isFresh(page);
-  }, LOAD_WAIT_MS);
-  const page = pages.page('agent');
-  if (!ready || !page) {
-    return refuse(
-      'no_game_page',
-      `The agent's page (${url}) did not report ready within ${LOAD_WAIT_MS / 1000} s.`
-    );
+  // The load this start asked for is told apart by `start=` in its URL. A full reload of the old
+  // page (Vite's, after a script change) can overtake the navigation and say hello with the old
+  // URL — the old scene and run: that load is navigated again.
+  startCount += 1;
+  const url = `${gamePageUrl(service(HostService).info.base, 'agent', start.scene, start.run)}&start=${startCount}`;
+  const deadline = Date.now() + LOAD_WAIT_MS;
+  let asked = pages.page('agent');
+  let page: PageInfo | null = null;
+  while (!page) {
+    const blocked = await loadAgentPage(url, asked);
+    if (blocked) return blocked;
+    const before = asked?.loadId;
+    const ready = await pages.until(() => {
+      const next = pages.page('agent');
+      return !!next && next.loadId !== before && (next.url !== url || pages.isFresh(next));
+    }, deadline - Date.now());
+    const next = pages.page('agent');
+    if (!ready || !next) {
+      return refuse(
+        'no_game_page',
+        `The agent's page (${url}) did not report ready within ${LOAD_WAIT_MS / 1000} s.`
+      );
+    }
+    if (next.url === url) page = next;
+    else asked = next;
   }
   if (page.status === 'failed') {
     return refuse(

@@ -13,7 +13,7 @@ import { appState } from '@/state';
  * page's end is `@pix3/vite-plugin`'s `player/dev/editor-rpc.ts`; keep the frames in step.
  *
  * The editor holds no play state (D4): what it knows of a page is the last `hello` it said. A page
- * says `hello {page}` when it is ready (and to `who`), `bye` on `pagehide`; a call carries the
+ * says `hello {page}` when it is ready (and to `who`), `bye {reloading?}` on `pagehide`; a call carries the
  * `loadId` it was meant for, and a call whose page went away (or reloaded) is answered
  * `page_reloaded`, never by another document.
  */
@@ -288,7 +288,10 @@ export class PlayPageLink {
       case 'bye': {
         if (!isRole(frame.role) || this.pages.get(frame.role)?.loadId !== frame.loadId) return;
         this.pages.delete(frame.role);
-        if (!this.closing.delete(String(frame.loadId))) this.left.set(frame.role, Date.now());
+        const closedHere = this.closing.delete(String(frame.loadId));
+        // `reloading: false` = its window closed (the page knows; a page that cannot tell says
+        // nothing): nothing will say hello again, so nobody waits for it.
+        if (!closedHere && frame.reloading !== false) this.left.set(frame.role, Date.now());
         this.dropCalls(frame.role, String(frame.loadId));
         break;
       }

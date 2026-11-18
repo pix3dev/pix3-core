@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceContainer } from '@/fw/di';
 import { fakeGamePage, type FakeGamePage } from '@/host/testing/fake-game-page';
-import { resetAppState } from '@/state';
+import { appState, resetAppState } from '@/state';
 
 import { gamePageUrl, PlayPageLink } from './PlayPageLink';
 
@@ -43,6 +43,14 @@ describe('PlayPageLink', () => {
     agent.close();
     await vi.waitFor(() => expect(link.page('agent')).toBeNull());
     expect(link.isReloading('agent', 1_000)).toBe(true);
+  });
+
+  it('a page whose window closed is gone at once, not reloading', async () => {
+    const agent = page('agent');
+    await link.discover(50);
+    agent.close(false);
+    await vi.waitFor(() => expect(link.page('agent')).toBeNull());
+    expect(link.isReloading('agent', 1_000)).toBe(false);
   });
 
   it('addresses a call by role and load, and matches answers by id', async () => {
@@ -108,6 +116,49 @@ describe('PlayPageLink', () => {
     await link.close('agent');
     await vi.waitFor(() => expect(link.page('agent')).toBeNull());
     expect(link.isReloading('agent', 1_000)).toBe(false);
+  });
+
+  it('closes the agent page after 10 idle minutes, never during a call (D7)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const agent = page('agent'); // its hello starts the idle clock
+      const designer = page('designer');
+      let finish: () => void = () => undefined;
+      agent.answer = tool =>
+        tool === 'game_run'
+          ? new Promise(resolve => (finish = () => resolve({ ok: true })))
+          : { ok: true };
+      await vi.waitFor(() => expect(link.page('agent')).not.toBeNull());
+      const tools = () => agent.calls.map(call => call.tool);
+      // A run longer than the timeout holds the page.
+      const run = link.call('agent', 'game_run', {}, 60 * 60_000);
+      await vi.waitFor(() => expect(tools()).toEqual(['game_run']));
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(tools()).toEqual(['game_run']);
+      finish();
+      await run;
+      // The clock starts again when the last call ends.
+      await vi.advanceTimersByTimeAsync(10 * 60_000 - 1_000);
+      expect(tools()).toEqual(['game_run']);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.waitFor(() => expect(tools()).toEqual(['game_run', 'close']));
+      expect(designer.calls).toEqual([]); // the human's page is never closed for idling
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a read-only editor tab does not close the agent page for idling', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      appState.project.host.writer = 'other';
+      const agent = page('agent');
+      await vi.waitFor(() => expect(link.page('agent')).not.toBeNull());
+      await vi.advanceTimersByTimeAsync(11 * 60_000);
+      expect(agent.calls).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the pages' errors, tagged with their page and load", async () => {

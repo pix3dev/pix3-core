@@ -186,6 +186,20 @@ describe('editor page and discovery', () => {
     expect(await (await p.fetch('/__pix3/')).text()).not.toContain('pix3-rev');
   });
 
+  it('stamps a change the watcher is still settling (Vite reloads the page on the same event)', async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE });
+    const before = Number((await json(await p.fetch('/__pix3/api/hello'))).seq);
+    const file = join(p.root, 'scenes/main.pix3scene');
+    writeFileSync(file, `${SCENE}    name: changed\n`);
+    // The watch event a full reload follows; the batch's quiet time has not begun to run out.
+    p.server.watcher.emit('change', file);
+    const stamped = Number(
+      /<meta name="pix3-rev" content="(\d+)"/.exec(await (await p.fetch('/')).text())?.[1]
+    );
+    expect(stamped).toBeGreaterThan(before);
+    expect(stamped).toBe(Number((await json(await p.fetch('/__pix3/api/hello'))).seq));
+  });
+
   it('stamps no revision without the editor', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE }, { editor: false });
     expect(await (await p.fetch('/')).text()).not.toContain('pix3-rev');

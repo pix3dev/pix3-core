@@ -6,7 +6,7 @@
  * is `packages/editor-core/src/services/play/PlayPageLink.ts` — keep the frames in step.
  *
  * - `hello {page}` once the game has booted (or failed) and the test tools are loaded, and again
- *   in answer to the editor's `who`; `bye` on `pagehide`. `page` carries `loadId` (new on every
+ *   in answer to the editor's `who`; `bye {reloading?}` on `pagehide`. `page` carries `loadId` (new on every
  *   load) and `rev` (the file revision the server stamped into this page): the editor's readiness
  *   barrier (D6).
  * - `call {id, role, loadId, tool, params}` → `result {id, loadId, value}`. A call for this role
@@ -177,7 +177,19 @@ export function installEditorRpc(
       where: error.where,
     })
   );
-  const onPageHide = (): void => post({ type: 'bye', role, loadId: state.loadId });
+  // `bye {reloading}`: whether this document leaves for another load (a reload, `navigate`) or its
+  // window closes — the Navigation API's `navigate` event fires for the first only. The editor
+  // waits for a reloading page to come back and gives up on a closed one at once. Without the
+  // API `reloading` is left out, and the editor takes the page for reloading.
+  const navigation = (win as { navigation?: EventTarget }).navigation;
+  let reloading = false;
+  const onNavigate = (event: Event): void => {
+    const destination = (event as Event & { destination?: { sameDocument?: boolean } }).destination;
+    if (!destination?.sameDocument) reloading = true;
+  };
+  navigation?.addEventListener('navigate', onNavigate);
+  const onPageHide = (): void =>
+    post({ type: 'bye', role, loadId: state.loadId, ...(navigation ? { reloading } : {}) });
   win.addEventListener('pagehide', onPageHide);
 
   // Ready once the game booted (or failed) and the test tools are in: then a call never races
@@ -207,6 +219,7 @@ export function installEditorRpc(
       disposed = true;
       disposeErrors();
       win.removeEventListener('pagehide', onPageHide);
+      navigation?.removeEventListener('navigate', onNavigate);
       channel.close();
     },
   };

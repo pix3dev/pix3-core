@@ -393,6 +393,26 @@ export class ProjectFiles {
     this.batchTimer = setTimeout(() => void this.flushDirty(), delay);
   }
 
+  /**
+   * Resolves once no watcher batch is waiting or running, so {@link currentSeq} covers every
+   * change the watcher has seen. A waiting batch is scanned now, without its quiet time. The game
+   * page's revision is stamped after this (plan play-in-page D6): Vite reloads a page on the same
+   * watch event, well before the batch's quiet time is over, and the page would otherwise carry
+   * the revision from before the change it loads.
+   */
+  async settled(timeoutMs = 5_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.closed && Date.now() < deadline) {
+      if (this.batchTimer) {
+        clearTimeout(this.batchTimer);
+        await this.flushDirty();
+        continue;
+      }
+      await this.serialTail;
+      if (!this.batchTimer) return;
+    }
+  }
+
   private async flushDirty(): Promise<void> {
     this.batchTimer = null;
     const prefixes = outermost(this.dirty);

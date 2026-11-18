@@ -408,10 +408,12 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
     /**
      * Dev, with the editor: stamp the file revision into the game's page (`devPageRev`, plan
      * play-in-page D6) — the files it reads are at least this new. The editor page is raw HTML
-     * served by the plugin, so this reaches only the game's pages.
+     * served by the plugin, so this reaches only the game's pages. A change the watcher is still
+     * settling counts: Vite reloads the page on the same watch event.
      */
-    transformIndexHtml(_html, context) {
+    async transformIndexHtml(_html, context) {
       if (!context.server || !editor) return;
+      await editor.files.settled();
       return [
         {
           tag: 'meta',
