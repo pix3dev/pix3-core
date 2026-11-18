@@ -313,7 +313,12 @@
   `inspector-panel.ts`, вызов sink в `UpdateObjectPropertyOperation.ts:207`, статус-бар, меню Run;
 - редакторный корень `virtual:pix3/bot-policies`, `policyOnly` в барьере (S11) и очередь корней
   S13 в плагине и редакторе; `GameBotHost` остаётся только в страничном виде;
-- редакторная реализация `GameRuntimeHandle`, копии обхода живого дерева в редакторе
+- редакторная реализация `GameRuntimeHandle` — `services/game-test/EditorGameTestService.ts`
+  (с `ProjectFileReachabilityStore`), вызов в `host/debug-bridge.ts` (`pix3_game_run` идёт на
+  страницу), `GameBotHost.ts` и `GameBotHost.spec.ts` (`ModuleBotStore` над `HostService`;
+  загрузка политики — `bot-loader.ts` — остаётся); спеки клея с `GamePlaySessionService`:
+  блок «GameTestService.run — the pause survives the focus rule» в `GameTestService.spec.ts`;
+  копии обхода живого дерева в редакторе
   (`liveObjectToDTO` / `flattenLive` в `core/agent-introspection.ts` и `buildDetail` в
   `ui/runtime/runtime-panel.ts`; на странице — `player/debug/tree.ts` и `inspect.ts`),
   `core/canvas-screenshot.ts`, если не осталось читателей.
@@ -516,3 +521,74 @@ call (61 → 63); `highlight()` — 0,02 мс; Refresh (обход + DOM 304 с�
 предками) с выбранной 2D-кнопкой (рамка вокруг кнопки дока, детали с `core:Tooltip` и свойствами),
 фильтр `flagship` с 3D-рамкой вокруг корабля. Не проверено: телефон по LAN, оконный Chrome, очень
 большая сцена (5000-объектный предел — только в спеке).
+
+### S3 (2026-11-18)
+
+Сделано: `services/game-test/game-runtime-handle.ts` — `GameRuntimeHandle` (`runner, renderer,
+canvas, windowRef, setPauseRequested, setFocusPauseSuppressed`, без `restart`) и `GameTestHost`
+(всё прочее, что тест-код брал из редактора: `isPlaying`, `runtime`, `sceneId`, `targetPlatform`,
+`errors`, `sleep`, `yieldToHost`, `reachabilityStore`, `loadBot`, необязательный `restartScene`).
+`GameTestService` и `GameInputService` — обычные классы с хостом в конструкторе, без DI, `@/state`
+и `GamePlaySessionService`; `renderability-note` берёт платформу параметром; загрузка политики
+вынесена в `bot-loader.ts` (`loadBotPolicy`, `ModuleBotStore`), `GameBotHost` её вызывает.
+Редакторная реализация — `EditorGameTestService` (DI; держит `input`/`test`, хост над
+`GamePlaySessionService`, `appState`, `keepaliveSleep`, `ProjectFileReachabilityStore`,
+`restartScene` = `playSession.restart()`); `pix3_game_run` зовёт её, поведение прежнее.
+`page-bot-host.ts` → `page-test-host.ts`: `installPageTools({botPolicies})` ставит
+`__PIX3_PLAYER__.tools.call(name, params)` — `game_run` (параметры и отказы как у моста, схема
+`pix3_game_run` из `bridge-tools.ts`), `game_controls`, `game_cancel`, `bot_start` (бывший
+`startPageBot`, реальное время, снимки). Контракт прогона: один на страницу (`run_active`, общий
+для `game_run` и `bot_start`); `game_cancel` и `pagehide` отменяют прогон, шлют `pointercancel`
+(не `pointerup`: ничего не нажимается на выходе), возвращают паузу, какой она была до прогона.
+Фоновые тики: `setFocusPauseSuppressed(true)` на странице ставит планировщик кадров на
+`BackgroundTicker` (тот же код, что у редактора, с keepalive) и считает `__PIX3_PLAYER__.frames`;
+`yieldToHost` = `keepaliveSleep(0)`. Вход: `editor-core/dist/page-test-host.js`
+(`vite.page-test-host.config.ts`, `@pix3/runtime`/`three` external, 171 КБ); `check-dist`
+отказывает по импортам кроме этих двух и по source map, если граф выходит за `game-test`,
+`core/{background-ticker,page-activity}`, `core/agent-introspection`, `host/bridge-tools`
+(проверено подстановкой `src/state` — отказ). `virtual:pix3/dev`: `state.loadTools()` импортирует
+файл по пути вместе с `virtual:pix3/bot-policies`; `?debug` вызывает его сам; без editor-core —
+отказ с причиной. `dist`: CLI собирает IIFE из исходника с шимом рантайма (`NodeBase` по форме,
+настоящие `game-debug.ts` и `renderability-lint.ts` с перенаправленным `NodeBase`,
+`isInteractive`, `DEFAULT_FIXED_DELTA_SEC`) и вкалывает политику, скомпилированную сам.
+`pix3 play --run '<json>'` (dev и dist), отчёт `run`; `--bot` идёт через `bot_start`. `three` —
+в `peerDependencies` плагина. Спеки: `GameTestService`/`GameInputService` на фейковом хосте
+(`game-test.spec-helper.ts`), `page-test-host.spec.ts` (инструменты, политика из корня, контракт,
+`pagehide`, возврат на rAF), `player-modules.spec.ts` (ленивая загрузка), `play.spec.ts` (`--run`).
+
+Паритет (Skyways, копия S0, ссылки на этот checkout проверены; Vite 8.3.8, headless Chrome,
+SwiftShader; seed 8; страница 312×556@1 = канва вкладки Game «9:16» в редакторе; редактор
+перезагружается перед каждым сценарием, как страница; сравнение — исход, кадр, лог бота,
+лог обезьяны, timeline, `game.snapshot`/`changed`, без времени):
+
+| Сценарий | Редактор | dev | dist | Совпало |
+|---|---|---|---|---|
+| бот `ship-mark` (physical) | bot-pass, кадр 237, 11 действий | то же | то же | да |
+| `until` revealed+1, бот `flight` | until, кадр 280 | то же | то же | да |
+| `fail` pending+1 срабатывает | fail, кадр 42 | то же | то же | да |
+| `watch` [flagship, probe-button], 120 кадров | until 120 | то же | то же | да (у dist лишняя заметка «~6× real time» — от скорости) |
+| обезьяна seed 42, 400 кадров | 20 действий, лог совпал | то же | то же | да |
+| `second` на `direct-action` | bot-fail, кадр 185, 1 отказ `tapAt` | то же | то же | да |
+| негативный контроль, бот `flight` | passed, `scene-restart` | inconclusive, `none` | inconclusive, `none` | нет — по D5 |
+| одна политика: Vite-модуль (dev) и IIFE CLI (dist) | — | все бот-сценарии выше | | да |
+
+Расхождение контроля — следствие D5: на странице нет перезапуска сцены в документе, а у
+Skyways нет `reset(seed)`; главный прогон, кадры и состояние совпали. Записано в README, usage,
+`pix3-verify`. Решение владельца: принять (контроль на странице только через `reset(seed)`) или
+дать странице `restartScene` = `runner.loadAndStartScene(state.scene)` (autoload-ы при этом не
+пересоздаются, в отличие от редактора).
+
+Отклонения: `--bot` не стал буквальным сокращением `--run {bot}` — он остаётся прогоном в реальном
+времени со снимками `bot.screenshot` (под `--run`, как в редакторе, снимок — метка), но идёт через
+тот же хост (`bot_start`). Доказательства досягаемости на странице живут до её перезагрузки
+(`InMemoryReachabilityStore`; файл проекта страница не пишет). `game_run` на странице проверяет
+схему моста (`maxWallMs` ≤ 180000 и т. п.) — иначе страница принимала то, что мост отвергает.
+Тест-хост тянет `host/bridge-tools.ts` (данные без импортов) — разрешено в `check-dist`.
+
+Попутно: прогон редактора длиннее 240 с обрывается клиентом `pix3 bridge` (`Runtime.evaluate: no
+answer within 240000 ms`) — на SwiftShader редактор шагает ~5–7 кадров/с против 35–300 у страницы;
+сценарий контроля укорочен. Политика-IIFE (`ship-mark`) хранит состояние модуля между прогонами в
+одном документе редактора — поэтому перезагрузка перед сценарием.
+
+Не проверено: фоновые тики на действительно скрытой странице (в headless страница не
+скрывается, S0.2) — только спека; оконный Chrome; `release:check --keep` с новым входом.
