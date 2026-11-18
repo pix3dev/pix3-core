@@ -28,19 +28,17 @@ From `.plans/done/play-in-page.md` (S6, 2026-11-18):
   with chrome-devtools-mcp.
 - **Brief `pix3_game_run` answers**: a mode with the verdict, `changed` and the notes only (a
   full answer is ~60 KB for a shell agent).
-- **`popup_blocked` timing**: the 10 s first-hello wait is a guess; tune it on a windowed Chrome
-  with a real popup blocker (and the 90 s load wait on a real GPU).
-- **Negative control on the page** (owner's call, S3): accept `reset(seed)` only, or give the
-  page a `restartScene` (`runner.loadAndStartScene(state.scene)`; autoloads not rebuilt) —
-  `GameTestHost.restartScene` is the hook.
-- **Agent edits reload the human's window** (owner's call, S0): a script or policy sync makes
-  Vite full-reload every game page, wiping what the human "showed the agent"; accept, or stop
-  the full reload for changes the page does not import (policies).
+- **Negative control on the page** (owner's call, after S6): no scene restart on the page;
+  `reset(seed)` is the only in-page reset. A possible future: a real page reload with the run
+  resumed from URL params.
+- **Agent page left behind / popup blocker** (owner's windowed Chrome): once an agent page stayed
+  listed after `stop`, and the popup blocker behaved differently between runs. Confirm in a
+  windowed Chrome that a `noopener` page can always `window.close()` itself; consider one
+  reusable agent window so repeated starts never pile up windows.
 - **Hand the human's window to the agent** ("continue from here"), out of scope of D7.
-- **Runtime exports only the in-editor play used**: `getRuntimeSceneRoot` /
-  `registerRuntimeSceneRoot` (the page's tree still reads it), `registerRuntimeLivePropertySink`,
-  `SceneRunner.setEditorPeekMask`, `setPhysicsDebugEnabled` / `setDirectionAxesEnabled` (no
-  host turns them on now) — keep, rewire to the page's overlay, or drop with a version note.
 - **Screenshot right after a long run**: `pix3 bridge screenshot` timed out twice (30 s
   `Page.captureScreenshot`) on the agent page just after a 237-frame `pix3_game_run` in
   SwiftShader, then worked; not seen on a real GPU.
+
+Known behaviour (owner's call): an agent's script or policy edit makes Vite full-reload every game
+page, the human's included. `three` stays a peer dependency of `@pix3/vite-plugin`.
