@@ -6,7 +6,6 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
-  BOT_POLICY_DIRECTORIES,
   isScriptEntry,
   NOT_A_SCRIPT_ENTRY,
   scanExportNames,
@@ -26,7 +25,8 @@ describe('the project-script rule of the Node-runnable commands', () => {
   });
 
   it('isScriptEntry agrees with isProjectScriptEntry on every kind of path', () => {
-    const dirs = [...SCRIPT_DIRECTORIES, ...BOT_POLICY_DIRECTORIES];
+    // The bot-policy root (`virtual:pix3/bot-policies`) applies the same rule to its folder.
+    const dirs = [...SCRIPT_DIRECTORIES, 'design/tests/bots'];
     for (const path of [
       'scripts/Mover.ts',
       'scripts/deep/Mover.ts',

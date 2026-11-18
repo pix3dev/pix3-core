@@ -418,34 +418,32 @@ describe('exit codes and coverage', () => {
     const root = newRecipe();
     writeFileSync(
       join(root, 'scripts', 'Hud.ts'),
-      "import './hud.css';\nexport const load = (name: string) => import(`./levels/${name}.ts`);\n"
+      "import './hud.css';\nimport { aim } from '../src/game/aim';\nexport const load = (name: string) => import(`./levels/${name}.ts`);\nexport const hudAim = aim;\n"
     );
     writeFileSync(join(root, 'scripts', 'hud.css'), 'body { color: red; }\n');
+    mkdirSync(join(root, 'src', 'game'), { recursive: true });
+    writeFileSync(
+      join(root, 'src', 'game', 'aim.ts'),
+      'export const aim = 1;\n// import.meta.hot in a comment is fine\nif (import.meta.hot) {}\n'
+    );
+    // A bot policy runs on the game's page only (plan play-in-page D10): not the editor's chain.
     mkdirSync(join(root, 'design', 'tests', 'bots'), { recursive: true });
-    mkdirSync(join(root, 'design', 'tests', 'lib'), { recursive: true });
     writeFileSync(
       join(root, 'design', 'tests', 'bots', 'dodge.ts'),
-      "import { aim } from '../lib/aim';\nexport default { name: 'dodge', tick: () => aim };\n"
-    );
-    writeFileSync(
-      join(root, 'design', 'tests', 'lib', 'aim.ts'),
-      'export const aim = 1;\n// import.meta.hot in a comment is fine\nif (import.meta.hot) {}\n'
+      "if (import.meta.hot) {}\nexport default { name: 'dodge', tick: () => 1 };\n"
     );
     const report = await check(root, false);
     const contract = report.diagnostics
       .filter(d => d.code.startsWith('W_EDITOR_'))
       .map(d => [d.code, d.file, d.line, d.severity]);
     expect(contract).toEqual([
-      ['W_EDITOR_HMR_API', 'design/tests/lib/aim.ts', 3, 'warning'],
       ['W_EDITOR_CSS_IMPORT', 'scripts/Hud.ts', 1, 'warning'],
-      ['W_EDITOR_DYNAMIC_IMPORT', 'scripts/Hud.ts', 2, 'warning'],
+      ['W_EDITOR_DYNAMIC_IMPORT', 'scripts/Hud.ts', 3, 'warning'],
+      ['W_EDITOR_HMR_API', 'src/game/aim.ts', 3, 'warning'],
     ]);
     const hot = report.diagnostics.find(d => d.code === 'W_EDITOR_HMR_API');
-    expect(hot?.message).toContain('imported from design/tests/bots/dodge.ts');
+    expect(hot?.message).toContain('imported from scripts/Hud.ts');
     expect(hot?.fix).toBeTruthy();
-    expect(report.files.find(f => f.file === 'design/tests/lib/aim.ts')?.sha256).toBe(
-      sha256(join(root, 'design/tests/lib/aim.ts'))
-    );
     // A clean recipe has none.
     const clean = await check(newRecipe(), false);
     expect(clean.diagnostics.filter(d => d.code.startsWith('W_EDITOR_'))).toEqual([]);

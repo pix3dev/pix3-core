@@ -1,13 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { BOT_POLICY_DIRECTORIES, NOT_A_SCRIPT_ENTRY, SCRIPT_DIRECTORIES } from '../script-rule.ts';
+import { NOT_A_SCRIPT_ENTRY, SCRIPT_DIRECTORIES } from '../script-rule.ts';
 
 /**
  * Contract B of the editor page (plan §B.2): the modules the editor executes — the project's
- * scripts (`scripts/`, `src/scripts/`), its bot policies (`design/tests/bots/`) and every local
- * module they import, transitively — must not make Vite inject `/@vite/client`. Three constructs
- * do (S1, finding 3):
+ * scripts (`scripts/`, `src/scripts/`) and every local module they import, transitively (bot
+ * policies are not among them: only the game's page imports them, plan play-in-page D10) — must
+ * not make Vite inject `/@vite/client`. Three constructs do (S1, finding 3):
  *
  * - `import.meta.hot` (Vite adds the HMR client to any module that mentions it);
  * - a CSS import (a stylesheet module in dev imports `updateStyle` from the client);
@@ -23,8 +23,8 @@ import { BOT_POLICY_DIRECTORIES, NOT_A_SCRIPT_ENTRY, SCRIPT_DIRECTORIES } from '
  * and relative / root-absolute specifiers are followed. Bare packages are not scanned.
  */
 
-/** Same roots as the plugin's `virtual:pix3/editor-scripts` and `virtual:pix3/bot-policies`. */
-const EDITOR_CHAIN_DIRS = [...SCRIPT_DIRECTORIES, ...BOT_POLICY_DIRECTORIES];
+/** Same root as the plugin's `virtual:pix3/editor-scripts`. */
+const EDITOR_CHAIN_DIRS = SCRIPT_DIRECTORIES;
 
 export type EditorChainIssueKind = 'import-meta-hot' | 'css-import' | 'dynamic-import';
 

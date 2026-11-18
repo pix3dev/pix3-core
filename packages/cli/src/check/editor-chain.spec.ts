@@ -72,7 +72,7 @@ describe('the editor chain of a project', () => {
     writeFileSync(join(root, path), text);
   };
 
-  it('walks the script and bot roots and their local imports, not packages or specs', () => {
+  it('walks the script root and its local imports, not bot policies, packages or specs', () => {
     write('scripts/Player.ts', "import { speed } from '../lib/tuning.js';\nimport 'three';\n");
     write('lib/tuning.ts', "export const speed = 1;\nimport('./x.ts');\nexport * from './deep';\n");
     write('lib/deep/index.ts', 'if (import.meta.hot) {}\n');
@@ -82,15 +82,9 @@ describe('the editor chain of a project', () => {
     write('src/main.ts', 'import.meta.hot;\n'); // the game's entry is not in the editor chain
 
     const scan = scanEditorChain(root);
-    expect(scan.files).toEqual([
-      'scripts/Player.ts',
-      'design/tests/bots/dodge.ts',
-      'lib/tuning.ts',
-      'design/tests/lib/aim.ts',
-      'lib/deep/index.ts',
-    ]);
+    // A policy runs on the game's page only (plan play-in-page D10): not the editor's chain.
+    expect(scan.files).toEqual(['scripts/Player.ts', 'lib/tuning.ts', 'lib/deep/index.ts']);
     expect(scan.issues.map(i => [i.kind, i.file, i.line, i.via])).toEqual([
-      ['css-import', 'design/tests/lib/aim.ts', 1, 'design/tests/bots/dodge.ts'],
       ['import-meta-hot', 'lib/deep/index.ts', 1, 'scripts/Player.ts'],
     ]);
   });

@@ -9,8 +9,6 @@
 
 /** Folders whose `.ts` files are script entries (the editor's and the player's glob root). */
 export const SCRIPT_DIRECTORIES = ['scripts', 'src/scripts'] as const;
-/** Folders of the bot-policy root (`virtual:pix3/bot-policies`). */
-export const BOT_POLICY_DIRECTORIES = ['design/tests/bots'] as const;
 /** A `.ts` under a script folder that is not an entry: a spec, a test, a declaration. */
 export const NOT_A_SCRIPT_ENTRY = /\.(?:spec|test)\.ts$|\.d\.ts$/;
 

@@ -81,7 +81,7 @@ export const CHECK_CODES = {
   W_EDITOR_HMR_API: {
     severity: 'warning',
     summary:
-      'import.meta.hot in a module the editor runs (a script, a bot policy or what they import): Vite puts its HMR client on the editor page, and a full-reload of the game reloads the editor',
+      'import.meta.hot in a module the editor runs (a script or what it imports): Vite puts its HMR client on the editor page, and a full-reload of the game reloads the editor',
   },
   W_EDITOR_CSS_IMPORT: {
     severity: 'warning',

@@ -83,8 +83,8 @@ server is ignored). Diagnostics are one list, validate's plus:
 | `W_EDITOR_DYNAMIC_IMPORT` | warning | an `import()` whose argument is not one plain string, in a module the editor runs |
 
 "A module the editor runs" = the editor's script chain (plugin contract B): `scripts/**`,
-`src/scripts/**`, `design/tests/bots/**` (`.ts`, minus specs/tests/`.d.ts`) and every local module
-they import, transitively; `message` names the root that reaches it. Each of the three makes Vite
+`src/scripts/**` (`.ts`, minus specs/tests/`.d.ts`) and every local module they import,
+transitively — bot policies are not in it (only the game's page imports them); `message` names the root that reaches it. Each of the three makes Vite
 put `/@vite/client` on the editor page, and then the game's `full-reload` reloads the editor too.
 The scan is lexical (`src/check/editor-chain.ts`), bare packages are not followed.
 
