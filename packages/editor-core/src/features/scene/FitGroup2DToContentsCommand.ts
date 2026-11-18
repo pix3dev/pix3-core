@@ -49,11 +49,8 @@ export class FitGroup2DToContentsCommand extends CommandBase<void, void> {
       return activeSceneCheck;
     }
 
-    if (context.state.ui.isPlaying || context.state.project.host.writer === 'other') {
-      return {
-        canExecute: false,
-        reason: 'Cannot edit the scene while playing or in read-only mode',
-      };
+    if (context.state.project.host.writer === 'other') {
+      return { canExecute: false, reason: 'Cannot edit the scene in read-only mode' };
     }
 
     const group = this.resolveGroup(context);

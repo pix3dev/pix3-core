@@ -347,24 +347,4 @@ describe('PeekService', () => {
       expect(service.getSnapshot().hiddenCount).toBe(1);
     });
   });
-
-  describe('runtime sink', () => {
-    it('pushes the current mask on registration and on every change', () => {
-      const world = new Group2D({ id: 'world', name: 'World' });
-      const hud = new Group2D({ id: 'hud', name: 'HUD' });
-      activeGraph = graphOf([world, hud]);
-      activateScene('s', 'res://scenes/main.pix3scene');
-      const service = makeService();
-      service.setHiddenNodeIds(['hud']);
-
-      const pushed: string[][] = [];
-      // Registration pushes immediately: a game started while a mask was already up must honour it
-      // on its FIRST frame, and the clone cannot carry the flags itself.
-      service.setRuntimeSink(ids => pushed.push([...ids]));
-      expect(pushed).toEqual([['hud']]);
-
-      service.setHiddenNodeIds([]);
-      expect(pushed[pushed.length - 1]).toEqual([]);
-    });
-  });
 });

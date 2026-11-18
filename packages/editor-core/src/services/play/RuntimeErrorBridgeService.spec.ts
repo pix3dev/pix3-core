@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TEST_COMPONENT_TYPE_PREFIX, type ScriptErrorInfo } from '@pix3/runtime';
-import {
-  isGameOriginatedStack,
-  RuntimeErrorBridgeService,
-} from '@/services/play/RuntimeErrorBridgeService';
-import { appState } from '@/state';
+import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
 
 /**
  * The split between "the game threw" and "the test harness threw".
@@ -41,11 +37,9 @@ describe('RuntimeErrorBridgeService — harness errors vs game errors', () => {
 
   beforeEach(() => {
     logs.length = 0;
-    appState.ui.isPlaying = true;
-    appState.ui.playModeError = null;
   });
 
-  it('logs a game script error as an error and raises the Game-tab banner', () => {
+  it('logs a game script error as an error', () => {
     const service = build();
     report(service, {
       phase: 'update',
@@ -57,7 +51,6 @@ describe('RuntimeErrorBridgeService — harness errors vs game errors', () => {
     expect(logs).toHaveLength(1);
     expect(logs[0].level).toBe('error');
     expect(logs[0].message).toContain('Script error [update] in "Player" (user:PlayerController)');
-    expect(appState.ui.playModeError?.message).toBe('TypeError: cannot read x');
   });
 
   it('logs a test-harness error as a WARNING, so it never enters the error ring', () => {
@@ -74,18 +67,6 @@ describe('RuntimeErrorBridgeService — harness errors vs game errors', () => {
     expect(logs[0].level).toBe('warn');
     expect(logs[0].message).toContain('Test harness error [update]');
     expect(logs[0].message).toContain('hero is undefined');
-  });
-
-  it('raises no play-mode banner for a harness error', () => {
-    const service = build();
-    report(service, {
-      phase: 'update',
-      message: 'TypeError: hero is undefined',
-      componentType: `${TEST_COMPONENT_TYPE_PREFIX}bot`,
-    });
-
-    // A banner announcing that the game failed would be the same lie in the UI.
-    expect(appState.ui.playModeError).toBeNull();
   });
 
   it('says out loud that the harness failure is not counted as a runtime error', () => {
@@ -106,18 +87,6 @@ describe('RuntimeErrorBridgeService — harness errors vs game errors', () => {
     expect(logs[0].level).toBe('error');
   });
 
-  it('still logs a late harness error after play stopped, without a banner', () => {
-    const service = build();
-    appState.ui.isPlaying = false;
-    report(service, {
-      phase: 'detach',
-      message: 'boom',
-      componentType: `${TEST_COMPONENT_TYPE_PREFIX}bot`,
-    });
-    expect(logs[0].level).toBe('warn');
-    expect(appState.ui.playModeError).toBeNull();
-  });
-
   it('mocks nothing about the prefix — it comes from the runtime contract', () => {
     // A local copy of `'test:'` here would let the two sides drift apart silently.
     expect(TEST_COMPONENT_TYPE_PREFIX).toBe('test:');
@@ -125,12 +94,8 @@ describe('RuntimeErrorBridgeService — harness errors vs game errors', () => {
   });
 });
 
-/**
- * Mirroring a running game's own output into the Logs panel. Before this, `console.log` from a
- * game and every signal it fired existed only in devtools — the panel could show you a game that
- * had crashed but never one that was quietly doing the wrong thing.
- */
-describe('RuntimeErrorBridgeService — game console and signals', () => {
+/** Signals fired in the editor's page reach the Logs panel at `debug`. */
+describe('RuntimeErrorBridgeService — signals', () => {
   const logs: Array<{ source: string; level: string; message: string; data?: unknown }> = [];
 
   const build = (): RuntimeErrorBridgeService => {
@@ -160,27 +125,8 @@ describe('RuntimeErrorBridgeService — game console and signals', () => {
     (service as unknown as { handleSignalEmit: (i: typeof info) => void }).handleSignalEmit(info);
   };
 
-  const syncConsole = (service: RuntimeErrorBridgeService): void => {
-    (
-      service as unknown as { syncGameConsoleInterception: () => void }
-    ).syncGameConsoleInterception();
-  };
-
-  /**
-   * Stand in for the stack sniffing. The bridge decides whether a console call came from the game
-   * by looking for a `blob:` frame (where in-editor user scripts are imported from); V8 installs
-   * `stack` as an own property at construction, so it cannot be faked from `Error.prototype`.
-   */
-  const setOrigin = (service: RuntimeErrorBridgeService, fromGame: boolean): void => {
-    Object.defineProperty(service, 'isGameOriginatedLog', {
-      value: () => fromGame,
-      configurable: true,
-    });
-  };
-
   beforeEach(() => {
     logs.length = 0;
-    appState.ui.isPlaying = false;
   });
 
   it('logs an emitted signal with its listener count', () => {
@@ -215,133 +161,5 @@ describe('RuntimeErrorBridgeService — game console and signals', () => {
 
     expect(logs[0].message).toContain('0 listener(s)');
     expect(logs[0].data).toBeUndefined();
-  });
-
-  it('mirrors the game console only while play mode is running', () => {
-    const service = build();
-    const pristineLog = console.log;
-
-    // Not playing: the console is untouched and nothing is mirrored.
-    syncConsole(service);
-    expect(console.log).toBe(pristineLog);
-    console.log('before play');
-    expect(logs).toHaveLength(0);
-
-    setOrigin(service, true);
-    appState.ui.isPlaying = true;
-    syncConsole(service);
-    console.log('score is', 3);
-    console.warn('low on lives');
-
-    expect(logs).toEqual([
-      { source: 'game', level: 'info', message: 'score is 3', data: undefined },
-      { source: 'game', level: 'warn', message: 'low on lives', data: undefined },
-    ]);
-
-    // Stopping play puts the original methods back.
-    appState.ui.isPlaying = false;
-    syncConsole(service);
-    expect(console.log).toBe(pristineLog);
-    console.log('after play');
-    expect(logs).toHaveLength(2);
-  });
-
-  it('drops editor chatter when the stack says the call did not come from a game script', () => {
-    // The failure this prevents: `[LayoutManager]` / `[Atlas]` / `[InputService]` lines filed under
-    // "game" — observed live before the filter existed. A label that lies is worse than no bridge.
-    const service = build();
-    setOrigin(service, false);
-    appState.ui.isPlaying = true;
-    syncConsole(service);
-
-    console.log('[LayoutManager] Attempting async focus');
-
-    appState.ui.isPlaying = false;
-    syncConsole(service);
-    expect(logs).toHaveLength(0);
-  });
-
-  it('keeps a log whose stack points at a user script bundle', () => {
-    const service = build();
-    setOrigin(service, true);
-    appState.ui.isPlaying = true;
-    syncConsole(service);
-
-    console.log('board reset');
-
-    appState.ui.isPlaying = false;
-    syncConsole(service);
-    expect(logs).toEqual([
-      { source: 'game', level: 'info', message: 'board reset', data: undefined },
-    ]);
-  });
-
-  it('does not loop when the logging service echoes back to the console', () => {
-    const service = build();
-    Object.defineProperty(service, 'loggingService', {
-      value: {
-        warn: () => undefined,
-        error: () => undefined,
-        // LoggingService writes to the console itself in DEV — straight back into the patch.
-        logFrom: (source: string, level: string, message: string) => {
-          logs.push({ source, level, message });
-          console.log(`[Pix3 ${level.toUpperCase()}] ${message}`);
-        },
-      },
-      configurable: true,
-    });
-
-    setOrigin(service, true);
-    appState.ui.isPlaying = true;
-    syncConsole(service);
-    console.log('one line');
-    appState.ui.isPlaying = false;
-    syncConsole(service);
-
-    // Exactly one entry: the echo is swallowed rather than re-forwarded forever.
-    expect(logs).toHaveLength(1);
-    expect(logs[0].message).toBe('one line');
-  });
-});
-
-describe('isGameOriginatedStack', () => {
-  it('accepts a frame from the user-script blob bundle', () => {
-    expect(
-      isGameOriginatedStack('Error\n    at GameRules.onUpdate (blob:http://localhost:8123/x:1:1)')
-    ).toBe(true);
-  });
-
-  it('accepts a frame from a project script served by Vite', () => {
-    expect(
-      isGameOriginatedStack(
-        'Error\n    at Spin.onUpdate (http://localhost:5173/scripts/Spin.ts?t=1700000000:4:9)'
-      )
-    ).toBe(true);
-    expect(
-      isGameOriginatedStack(
-        'Error\n    at Hud.onStart (http://localhost:5173/game/src/scripts/ui/Hud.ts:1:1)'
-      )
-    ).toBe(true);
-  });
-
-  it('rejects editor and dependency frames even when their path names scripts', () => {
-    expect(
-      isGameOriginatedStack(
-        'Error\n    at x (http://localhost:5173/node_modules/.vite/deps/scripts/chunk.js:1:1)\n' +
-          '    at y (http://localhost:5173/__pix3/scripts/z.js:1:1)'
-      )
-    ).toBe(false);
-  });
-
-  it('rejects a frame from the editor bundle', () => {
-    expect(
-      isGameOriginatedStack(
-        'Error\n    at LayoutManager.focus (http://localhost:8123/src/x.ts:1:1)'
-      )
-    ).toBe(false);
-  });
-
-  it('fails open when there is no stack — losing the game log is the worse failure', () => {
-    expect(isGameOriginatedStack(undefined)).toBe(true);
   });
 });

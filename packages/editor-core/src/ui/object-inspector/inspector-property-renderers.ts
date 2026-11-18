@@ -2,7 +2,6 @@ import { html } from '@/fw';
 import { nothing } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { PropertyDefinition } from '@/fw';
-import { appState } from '@/state';
 import {
   Group2D,
   NODE2D_MARGIN_SIDES,
@@ -151,7 +150,7 @@ type InspectorSubsectionOptions = {
   /** Sub-block title, also its `data-subsection` handle. */
   title: string;
   enabled: boolean;
-  /** Play mode / a read-only tab: the switch and the body are both gated. */
+  /** A read-only tab: the switch and the body are both gated. */
   readOnly: boolean;
   /** The single muted line shown instead of the body while off; clicking it turns it on. */
   hint: string;
@@ -554,9 +553,8 @@ export class InspectorPropertyRenderers {
         NODE2D_MARGIN_SIDES.some(side => Node2D.marginPropertyName(side) === prop.name) &&
         !this.isPropertyReadOnly(prop.ui?.readOnly, node)
     );
-    // Play mode is a read-only live mirror — gate the switch and every control
-    // in the body so they can't silently mutate the authored node during play.
-    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
+    // A read-only tab: gate the switch and every control in the body.
+    const readOnly = isReadOnlyTab();
     const horizontal = this.host.propertyValues['horizontalAlign']?.value ?? node.horizontalAlign;
     const vertical = this.host.propertyValues['verticalAlign']?.value ?? node.verticalAlign;
     const previewClass = `anchor-preview anchor-preview--h-${horizontal} anchor-preview--v-${vertical}`;
@@ -635,7 +633,7 @@ export class InspectorPropertyRenderers {
     }
 
     const enabled = this.isFlowEnabled();
-    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
+    const readOnly = isReadOnlyTab();
     const bodyProps = props.filter(prop => prop.name !== 'flowEnabled');
 
     return this.renderSubsection({
@@ -1062,9 +1060,7 @@ export class InspectorPropertyRenderers {
     readOnly: ReadOnlyValue,
     target: NodeBase | ScriptComponent | null | undefined
   ): boolean {
-    // Play mode shows a read-only LIVE mirror of the running game; editing the
-    // authored node mid-play (two-way edit) is out of scope for Phase 0.
-    if (isReadOnlyTab() || appState.ui.isPlaying) {
+    if (isReadOnlyTab()) {
       return true;
     }
 

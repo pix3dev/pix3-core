@@ -3,35 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { MemoryStorage, wire } from '@/services/project/disk/memory-storage.spec-helper';
-import { appState, resetAppState } from '@/state';
+import { resetAppState } from '@/state';
 
 import type { SyncInfo } from './EditorHost';
-import { pendingDuringPlay, SyncApplyService } from './SyncApplyService';
-
-describe('pendingDuringPlay', () => {
-  it('holds game files for play to stop, but not bot policies (the next run reads them)', () => {
-    expect(
-      pendingDuringPlay(
-        ['scripts/Player.ts', 'design/tests/bots/dodge.ts', 'design/tests/bots/lib/aim.ts'],
-        ['scenes/main.pix3scene', 'scripts/Player.ts']
-      )
-    ).toEqual(['scripts/Player.ts', 'scenes/main.pix3scene']);
-    // The page's own frame queue holds the policy too (a pix3:fs frame arrived during play).
-    expect(
-      pendingDuringPlay(['design/tests/bots/dodge.ts'], ['design/tests/bots/dodge.ts'])
-    ).toEqual([]);
-    // A helper outside the policy folder may be the game's too: it waits…
-    expect(pendingDuringPlay(['design/tests/lib/aim.ts'], [])).toEqual(['design/tests/lib/aim.ts']);
-    // …unless the plugin's graph says only policies import it (S11), whichever queue holds it.
-    expect(
-      pendingDuringPlay(
-        ['design/tests/lib/aim.ts', 'src/game/rules.ts'],
-        ['design/tests/lib/aim.ts'],
-        ['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts']
-      )
-    ).toEqual(['src/game/rules.ts']);
-  });
-});
+import { SyncApplyService } from './SyncApplyService';
 
 function createSync() {
   const storage = new MemoryStorage();
@@ -48,7 +23,6 @@ function createSync() {
   const reloaded: string[][] = [];
   const scripts = {
     registerRoots: vi.fn(),
-    queueRoots: vi.fn(),
     componentsSettled: async () => undefined,
   };
   const sync = wire(new SyncApplyService(), {
@@ -68,33 +42,6 @@ function createSync() {
 describe('SyncApplyService', () => {
   beforeEach(() => resetAppState());
 
-  it('during play, queues the roots the page re-imported for the sync (S13): the restart runs them', async () => {
-    const h = createSync();
-    appState.ui.isPlaying = true;
-    appState.ui.playOwner = 'agent';
-    // The agent added scripts/Jumper.ts and placed user:Jumper in the scene, then synced: the
-    // plugin re-ran the roots' globs and the page re-imported them with the new class. The
-    // answer is stale (the game runs without it) — and the roots must not be thrown away with it.
-    const jumper = { revision: 2 } as unknown as SyncInfo['roots'];
-    const stale = await h.sync.apply({
-      rev: 2,
-      changed: { 'scripts/Jumper.ts': 'a'.repeat(64), 'scenes/main.pix3scene': 'b'.repeat(64) },
-      roots: jumper,
-    });
-    expect(stale).toMatchObject({ ok: false, reason: 'stale', playing: 'agent' });
-    expect(h.scripts.queueRoots).toHaveBeenCalledWith(jumper);
-    expect(h.scripts.registerRoots).not.toHaveBeenCalled();
-    // An ok answer during play (only a policy changed) queues them too: the latest roots win.
-    const policy = { revision: 3 } as unknown as SyncInfo['roots'];
-    await h.sync.apply({
-      rev: 3,
-      changed: { 'design/tests/bots/rush.ts': 'c'.repeat(64) },
-      roots: policy,
-    });
-    expect(h.scripts.queueRoots).toHaveBeenLastCalledWith(policy);
-    h.externalChanges.dispose();
-  });
-
   it("applies what a frame reported before the sync, though the sync's rescan found nothing", async () => {
     const h = createSync();
     // The agent edited a script; the plugin's watcher settled it and broadcast a pix3:fs frame
@@ -108,52 +55,20 @@ describe('SyncApplyService', () => {
     expect(await h.sync.apply({ rev: 5, changed: {}, roots: h.roots })).toMatchObject({ ok: true });
     expect(h.reloaded).toEqual([['scripts/Mover.ts']]);
     expect(h.externalChanges.getPendingPaths()).toEqual([]);
-
-    // Play starts at once (before the frame's entry would have settled), then a bot policy is
-    // added: the sync applies it without a restart — the script was applied by the sync above.
-    appState.ui.isPlaying = true;
-    appState.ui.playOwner = 'agent';
-    await h.externalChanges.tick();
-    await h.externalChanges.tick();
-    const during = await h.sync.apply({
-      rev: 6,
-      changed: { 'design/tests/bots/rush.ts': 'a'.repeat(64) },
-      roots: h.roots,
-    });
-    expect(during).toMatchObject({ ok: true, playing: 'agent' });
     h.externalChanges.dispose();
   });
 
-  it('during play, a helper only policies import is applied; a game module still waits (S11)', async () => {
+  it('applies a sync whatever game page is open: registers the roots, reloads what changed', async () => {
     const h = createSync();
-    appState.ui.isPlaying = true;
-    appState.ui.playOwner = 'agent';
-    // The watcher's frame got there first: the helper sits in the page's queue as well.
-    h.storage.files.set('design/tests/lib/aim.ts', 'v2');
-    h.externalChanges.reportFrame({
-      seq: 2,
-      revision: '2',
-      events: [{ op: 'modify', path: 'design/tests/lib/aim.ts', kind: 'file', author: 'external' }],
+    const roots = { revision: 2 } as unknown as SyncInfo['roots'];
+    const answer = await h.sync.apply({
+      rev: 2,
+      changed: { 'scripts/Jumper.ts': 'a'.repeat(64), 'scenes/main.pix3scene': 'b'.repeat(64) },
+      roots,
     });
-    const helper = { 'design/tests/lib/aim.ts': 'b'.repeat(64) };
-    const policyOnly = ['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts'];
-    expect(
-      await h.sync.apply({ rev: 3, changed: helper, roots: h.roots, policyOnly })
-    ).toMatchObject({ ok: true, playing: 'agent' });
-    // An older plugin sends no list: the helper waits for play to stop, as before.
-    expect(await h.sync.apply({ rev: 3, changed: helper, roots: h.roots })).toMatchObject({
-      ok: false,
-      reason: 'stale',
-      pending: ['design/tests/lib/aim.ts'],
-    });
-    expect(
-      await h.sync.apply({
-        rev: 4,
-        changed: { 'src/game/rules.ts': 'c'.repeat(64) },
-        roots: h.roots,
-        policyOnly,
-      })
-    ).toMatchObject({ ok: false, reason: 'stale', pending: ['src/game/rules.ts'] });
+    expect(answer).toMatchObject({ ok: true });
+    expect(h.scripts.registerRoots).toHaveBeenCalledWith(roots);
+    expect(h.reloaded).toEqual([['scripts/Jumper.ts', 'scenes/main.pix3scene']]);
     h.externalChanges.dispose();
   });
 

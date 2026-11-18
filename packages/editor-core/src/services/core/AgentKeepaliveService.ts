@@ -4,13 +4,15 @@ import { appState } from '@/state';
 import { setEditorKeepAlive } from '@/services/core/page-activity';
 
 /**
- * **Agent keepalive** (plan §D.4): the editor pauses its play and viewport loops while the tab is
- * hidden or unfocused, to save battery — and in the agent loop the tab is in the background almost
- * all the time. So while an agent is working the pauses are off:
+ * **Agent keepalive** (plan §D.4): the editor pauses its viewport loop while the tab is hidden or
+ * unfocused, to save battery — and in the agent loop the tab is in the background almost all the
+ * time. So while an agent is working the pauses are off:
  *
  *   keepalive = setting on AND ( a bridge call is in flight, or the last one finished less than
- *                                {@link RECENT_CALL_MS} ago
- *                             OR play the agent started is still running )
+ *                                {@link RECENT_CALL_MS} ago )
+ *
+ * The game never runs in the editor (plan play-in-page D4): the agent's game page keeps its own
+ * frames going while hidden (the page test host's background ticks).
  *
  * The result goes to `page-activity`'s {@link setEditorKeepAlive}, which every battery gate reads
  * (`isEditorActive`, `BackgroundTicker`). The setting is "Keep the editor running while an agent
@@ -24,7 +26,6 @@ export const RECENT_CALL_MS = 60_000;
 export class AgentKeepaliveService {
   private readonly inflight = new Set<string>();
   private lastCallEndedAt: number | null = null;
-  private agentPlay = false;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private dispose_: (() => void) | null = null;
   private current = false;
@@ -33,10 +34,7 @@ export class AgentKeepaliveService {
 
   initialize(): void {
     if (this.dispose_) return;
-    this.dispose_ = subscribe(appState.ui, () => {
-      if (!appState.ui.isPlaying) this.agentPlay = false;
-      this.recompute();
-    });
+    this.dispose_ = subscribe(appState.ui, () => this.recompute());
     this.recompute();
   }
 
@@ -48,13 +46,6 @@ export class AgentKeepaliveService {
   noteCallFinished(id: string): void {
     if (!this.inflight.delete(id)) return;
     this.lastCallEndedAt = this.now();
-    this.recompute();
-  }
-
-  /** The agent started play; it keeps the editor alive until play stops. */
-  notePlayStartedByAgent(): void {
-    if (!appState.ui.isPlaying) return;
-    this.agentPlay = true;
     this.recompute();
   }
 
@@ -77,8 +68,7 @@ export class AgentKeepaliveService {
     const calls =
       this.inflight.size > 0 ||
       (this.lastCallEndedAt !== null && now - this.lastCallEndedAt < RECENT_CALL_MS);
-    const play = this.agentPlay && appState.ui.isPlaying;
-    this.apply(appState.ui.keepEditorRunningForAgent && (calls || play));
+    this.apply(appState.ui.keepEditorRunningForAgent && calls);
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
     if (this.inflight.size === 0 && this.lastCallEndedAt !== null) {

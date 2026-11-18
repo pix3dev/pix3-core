@@ -1864,9 +1864,8 @@ export class GameInputService {
   // -- event dispatch ------------------------------------------------------------
 
   /**
-   * Keyboard events go to the main editor window: the runtime's `InputService`
-   * registers its key listeners on its module-global `window`, which is the
-   * editor window even when the game renders in the popout. Synthetic
+   * Keyboard events go to the page's window: the runtime's `InputService`
+   * registers its key listeners on its module-global `window`. Synthetic
    * dispatchEvent reaches listeners regardless of OS focus.
    */
   private dispatchKey(type: 'keydown' | 'keyup', code: string): void {

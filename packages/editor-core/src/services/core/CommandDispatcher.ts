@@ -12,7 +12,7 @@ import {
 /**
  * A tab that is not the writer (another tab claimed the project, plan §C.3) is view-only until it
  * takes over: every command that could change a scene or write a file is refused here.
- * Navigation, selection, view toggles, panels and play mode stay available; so do `scene.reload` /
+ * Navigation, selection, view toggles, panels and Play stay available; so do `scene.reload` /
  * `scene.refresh-prefab-instances` (a non-owner still follows the disk). Undo/redo are NOT
  * allowed: they mutate the graph like any edit. `OperationService` keeps the matching list of
  * operations.

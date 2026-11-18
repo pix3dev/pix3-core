@@ -46,52 +46,12 @@ describe('UpdateEditorSettingsOperation', () => {
     });
   });
 
-  it('persists gameAspectRatio changes and supports undo/redo', async () => {
-    const state = createInitialAppState();
-    const context = {
-      state,
-      snapshot: structuredClone(state),
-      container: {} as OperationContext['container'],
-      requestedAt: Date.now(),
-    } as OperationContext;
-
-    const operation = new UpdateEditorSettingsOperation({
-      gameAspectRatio: '16:9-landscape',
-    });
-
-    const result = await operation.perform(context);
-
-    expect(result.didMutate).toBe(true);
-    expect(state.ui.gameAspectRatio).toBe('16:9-landscape');
-
-    const stored = JSON.parse(localStorage.getItem(EDITOR_SETTINGS_STORAGE_KEY) ?? '{}') as {
-      gameAspectRatio?: string;
-    };
-    expect(stored.gameAspectRatio).toBe('16:9-landscape');
-
-    await result.commit?.undo();
-    expect(state.ui.gameAspectRatio).toBe('free');
-
-    await result.commit?.redo();
-    expect(state.ui.gameAspectRatio).toBe('16:9-landscape');
-  });
-
-  it('loads persisted gameAspectRatio from storage', () => {
+  it('ignores settings an older editor stored (gameAspectRatio, playHost — plan play-in-page S6)', () => {
     localStorage.setItem(
       EDITOR_SETTINGS_STORAGE_KEY,
-      JSON.stringify({
-        pauseRenderingOnUnfocus: true,
-        navigation2D: {
-          panSensitivity: 1,
-          zoomSensitivity: 1,
-        },
-        gameAspectRatio: '4:3',
-      })
+      JSON.stringify({ pauseRenderingOnUnfocus: false, gameAspectRatio: '4:3', playHost: 'editor' })
     );
-
-    const settings = loadEditorSettings();
-
-    expect(settings?.gameAspectRatio).toBe('4:3');
+    expect(loadEditorSettings()).toEqual({ pauseRenderingOnUnfocus: false });
   });
 
   it('persists the agent keepalive switch (default on) and supports undo', async () => {
@@ -114,24 +74,5 @@ describe('UpdateEditorSettingsOperation', () => {
     if (!result.didMutate || !result.commit) throw new Error('expected a mutation');
     await result.commit.undo();
     expect(state.ui.keepEditorRunningForAgent).toBe(true);
-  });
-
-  it('persists playHost (default page: the game on its own page, plan play-in-page S5) and supports undo', async () => {
-    const state = createInitialAppState();
-    expect(state.ui.playHost).toBe('page');
-    const context = {
-      state,
-      snapshot: structuredClone(state),
-      container: {} as OperationContext['container'],
-      requestedAt: Date.now(),
-    } as OperationContext;
-    const result = await operationWith(context, { playHost: 'editor' });
-    expect(state.ui.playHost).toBe('editor');
-    expect(loadEditorSettings()?.playHost).toBe('editor');
-    localStorage.setItem(EDITOR_SETTINGS_STORAGE_KEY, JSON.stringify({ playHost: 'tab' }));
-    expect(loadEditorSettings()?.playHost).toBeUndefined();
-    if (!result.didMutate || !result.commit) throw new Error('expected a mutation');
-    await result.commit.undo();
-    expect(state.ui.playHost).toBe('page');
   });
 });

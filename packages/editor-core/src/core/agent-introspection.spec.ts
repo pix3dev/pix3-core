@@ -5,10 +5,8 @@ import {
   componentToDTO,
   errors,
   installErrorCapture,
-  liveObjectToDTO,
   nodeToDTO,
   safeSerialize,
-  type Object3DLike,
 } from './agent-introspection';
 
 describe('agent-introspection', () => {
@@ -49,30 +47,6 @@ describe('agent-introspection', () => {
     // state carries the component's own data fields, but never framework refs
     // (node/input/scene/constructor) or underscore-prefixed internals.
     expect(dto.state).toEqual({ id: 'box-core:spin-1', type: 'core:spin', speed: 2 });
-  });
-
-  it('liveObjectToDTO reads three-object shape and flags', () => {
-    const obj: Object3DLike = {
-      type: 'Mesh',
-      name: 'crate',
-      uuid: 'u1',
-      visible: true,
-      renderOrder: 5,
-      position: { x: 1.23456, y: 0, z: 0 },
-      children: [],
-      userData: { droppableItemRef: {} },
-    };
-    const dto = liveObjectToDTO(obj, 1);
-    expect(dto).toMatchObject({
-      threeType: 'Mesh',
-      name: 'crate',
-      uuid: 'u1',
-      isNodeBase: false,
-      nodeId: null,
-      renderOrder: 5,
-    });
-    expect(dto.flags.droppable).toBe(true);
-    expect(dto.worldPos).toEqual({ x: 1.235, y: 0, z: 0 });
   });
 
   it('nodeToDTO serialises a NodeBase-shaped fixture', () => {

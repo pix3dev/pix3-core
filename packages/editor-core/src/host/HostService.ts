@@ -7,7 +7,7 @@ let installed: EditorHost | null = null;
 
 /**
  * Root-relative wire paths that stay root-relative whatever `resRoot` is: the project manifest,
- * the script and bot-policy roots of `virtual:pix3/editor-scripts` / `bot-policies`. Everything
+ * the script folders of `virtual:pix3/editor-scripts`, `design/` and `.pix3/`. Everything
  * else the editor names is a `res://` path under `resRoot`.
  */
 const ROOT_RELATIVE = ['pix3project.yaml', 'scripts/', 'src/scripts/', 'design/', '.pix3/'];

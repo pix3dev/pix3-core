@@ -6,7 +6,7 @@ import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OPEN_WAIT_MS, PlayPageLink } from '@/services/play/PlayPageLink';
 import { appState, resetAppState } from '@/state';
 
-import { BRIDGE_TOOLS, PAGE_BRIDGE_TOOLS } from './bridge-tools';
+import { BRIDGE_TOOLS } from './bridge-tools';
 import { callBridgeTool, thirdPartyToolGroup } from './debug-bridge';
 import { HostService } from './HostService';
 import { mountEditorWith, type EditorHandle } from './mount';
@@ -14,11 +14,9 @@ import { FakeHost } from './testing/fake-host';
 import { fakeGamePage, type FakeGamePage } from './testing/fake-game-page';
 
 /**
- * The bridge with the editor setting `playHost: 'page'` (plan play-in-page S4, §2.2): the same
- * tool names, the play ones aimed at the game's own pages — control at the agent's page only
- * (`not_your_page` on the human's), reads with `page`, `start` as a fresh load answered when the
- * page says hello, `pix3_game_run` on the page of the right load. With the setting off nothing of
- * it is reachable.
+ * The bridge's play tools on the game's own pages (plan play-in-page S4, §2.2): control at the
+ * agent's page only (`not_your_page` on the human's), reads with `page`, `start` as a fresh load
+ * answered when the page says hello, `pix3_game_run` on the page of the right load.
  */
 
 const SCENE = `version: 1.0.0
@@ -69,42 +67,27 @@ afterEach(async () => {
   resetAppState();
 });
 
-describe('the bridge on the game page (playHost: page)', () => {
-  it('is on by default; off, the editor tools, no page param', async () => {
-    expect(appState.ui.playHost).toBe('page');
-    appState.ui.playHost = 'editor';
-    expect(schemaOf('pix3_play')).toEqual(
-      BRIDGE_TOOLS.find(t => t.name === 'pix3_play')?.inputSchema
-    );
-    expect(await callBridgeTool('pix3_play', { action: 'status', page: 'agent' })).toMatchObject({
-      ok: false,
-      reason: 'invalid_params',
-    });
-    expect(await callBridgeTool('pix3_status')).toMatchObject({ play: { playing: false } });
-  });
-
-  it('switches the table and the play tools with the setting', async () => {
-    appState.ui.playHost = 'page';
+describe('the bridge on the game page', () => {
+  it('one tool table: the play tools aimed at the game pages', async () => {
     expect(thirdPartyToolGroup().tools.map(tool => tool.name)).toEqual(
-      PAGE_BRIDGE_TOOLS.map(tool => tool.name)
+      BRIDGE_TOOLS.map(tool => tool.name)
     );
     expect(schemaOf('pix3_play')?.properties).not.toHaveProperty('aspect');
     expect(schemaOf('pix3_scene')?.properties).toHaveProperty('page');
-    expect(PAGE_BRIDGE_TOOLS.find(t => t.name === 'pix3_game_run')?.description).toContain(
-      'page_stale'
-    );
+    expect(BRIDGE_TOOLS.find(t => t.name === 'pix3_game_run')?.description).toContain('page_stale');
     expect(await callBridgeTool('pix3_play', { action: 'status' })).toEqual({
       ok: true,
-      playHost: 'page',
       pages: [],
     });
-    expect(await callBridgeTool('pix3_status')).toMatchObject({
-      play: { playHost: 'page', pages: [] },
+    expect(await callBridgeTool('pix3_status')).toMatchObject({ play: { pages: [] } });
+    // The old in-editor play's params are gone.
+    expect(await callBridgeTool('pix3_play', { action: 'start', aspect: '9:16' })).toMatchObject({
+      ok: false,
+      reason: 'invalid_params',
     });
   });
 
   it("refuses control of the human's page: not_your_page; reads it", async () => {
-    appState.ui.playHost = 'page';
     const designer = page('designer');
     designer.answer = (tool, params) =>
       tool === 'live_node'
@@ -144,7 +127,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('starts the agent page as a fresh load and answers once it has booted', async () => {
-    appState.ui.playHost = 'page';
     let agent: FakeGamePage | null = null;
     // `noopener`: no handle ever; the page speaks while booting, then once ready.
     const open = vi.spyOn(window, 'open').mockImplementation(url => {
@@ -195,7 +177,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('a page still loading is not read, and game_run waits for it to boot', async () => {
-    appState.ui.playHost = 'page';
     const agent = page('agent', { status: 'booting' });
     await service(PlayPageLink).discover(50);
     expect(await callBridgeTool('pix3_scene', { nodeId: 'hero', page: 'agent' })).toMatchObject({
@@ -215,7 +196,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('a start whose navigation a full reload overtook navigates that load again', async () => {
-    appState.ui.playHost = 'page';
     const agent = page('agent');
     await service(PlayPageLink).discover(50);
     const open = vi.spyOn(window, 'open');
@@ -241,7 +221,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('runs pix3_game_run on the agent page of the right load; a reload under it is page_reloaded', async () => {
-    appState.ui.playHost = 'page';
     expect(await callBridgeTool('pix3_game_run', { until: [] })).toMatchObject({
       reason: 'no_game_page',
     });
@@ -262,7 +241,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('waits for the reload a sync caused before it runs', async () => {
-    appState.ui.playHost = 'page';
     const agent = page('agent', { rev: 1 });
     const link = service(PlayPageLink);
     await link.discover(50);
@@ -274,7 +252,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it("status asks each page: its last hello may predate a run's pause", async () => {
-    appState.ui.playHost = 'page';
     const agent = page('agent'); // said hello unpaused
     await service(PlayPageLink).discover(50);
     agent.answer = tool =>
@@ -287,7 +264,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it("tags the pages' errors and the editor's in pix3_errors", async () => {
-    appState.ui.playHost = 'page';
     const agent = page('agent');
     agent.log('agent boom');
     await vi.waitFor(() => expect(service(PlayPageLink).errors()).toHaveLength(1));
@@ -301,7 +277,6 @@ describe('the bridge on the game page (playHost: page)', () => {
   });
 
   it('a read-only editor tab does not drive the agent page', async () => {
-    appState.ui.playHost = 'page';
     appState.project.host.writer = 'other';
     expect(await callBridgeTool('pix3_play', { action: 'start' })).toMatchObject({
       reason: 'not_your_page',

@@ -13,7 +13,7 @@ export interface FakeRuntime {
 
 /**
  * A {@link GameRuntimeHandle} over a spec's fake runtime. The pause levers are spies; pass
- * `levers` to route them somewhere real (the editor's play session, in the glue specs).
+ * `levers` to route them somewhere real.
  */
 export const fakeRuntimeHandle = (
   runtime: FakeRuntime,

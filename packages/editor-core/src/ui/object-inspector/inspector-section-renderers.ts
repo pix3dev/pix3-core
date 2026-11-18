@@ -1,6 +1,5 @@
 import { html } from '@/fw';
 import type { PropertyDefinition } from '@/fw';
-import { appState } from '@/state';
 import { MeshInstance, getPropertiesByGroup, isShaderEffectHost } from '@pix3/runtime';
 import type { ScriptComponent } from '@pix3/runtime';
 import { IconSize } from '@/services/editor/IconService';
@@ -248,20 +247,6 @@ ${textPreview?.content || 'Empty file'}</pre
               <span class="inspector-summary-type">${this.host.primaryNode.type}</span>
               <span class="inspector-summary-meta-separator"></span>
               <span class="inspector-summary-id">${this.host.primaryNode.nodeId}</span>
-              ${this.host.isPlaying
-                ? html`
-                    <span class="inspector-summary-meta-separator"></span>
-                    <span
-                      class="inspector-live-badge ${this.host.isLivePlayMode
-                        ? ''
-                        : 'inspector-live-badge--static'}"
-                      title=${this.host.isLivePlayMode
-                        ? 'Read-only live values from the running game (play mode)'
-                        : 'Read-only during play mode — no live runtime counterpart for this node'}
-                      >${this.host.isLivePlayMode ? 'PLAY · LIVE' : 'PLAY · READ-ONLY'}</span
-                    >
-                  `
-                : ''}
               ${this.host.selectedNodes.length > 1
                 ? html`
                     <span class="inspector-summary-meta-separator"></span>
@@ -373,9 +358,9 @@ ${textPreview?.content || 'Empty file'}</pre
 
     const visible = this.host.propertyValues['visible']?.value === 'true';
     const locked = this.host.propertyValues['locked']?.value === 'true';
-    // Play mode is a read-only live mirror — gate these flags like every other
+    // A read-only tab edits nothing — gate these flags like every other
     // property editor so they can't silently mutate the authored node.
-    const readOnly = isReadOnlyTab() || appState.ui.isPlaying;
+    const readOnly = isReadOnlyTab();
 
     return html`
       <div class="property-group-section property-group-section--flags">

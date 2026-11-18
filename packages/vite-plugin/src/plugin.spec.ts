@@ -52,11 +52,12 @@ describe('editor page and discovery', () => {
     expect(html.indexOf('__PIX3_VITE_CLIENT__')).toBeLessThan(html.indexOf('type="module"'));
   });
 
-  it('generates the host module importing both script roots and the page client by /@fs/', async () => {
+  it('generates the host module importing the editor script root and the page client by /@fs/', async () => {
     const p = await start();
     const code = await (await p.fetch('/@id/__x00__virtual:pix3/editor-host')).text();
     expect(code).toContain('virtual:pix3/editor-scripts');
-    expect(code).toContain('virtual:pix3/bot-policies');
+    // Bot policies run on the game's page only (plan play-in-page D10).
+    expect(code).not.toContain('virtual:pix3/bot-policies');
     expect(code).toMatch(/\/@fs\/.*client\/index\.ts/);
     expect(code).not.toMatch(/import[^;\n]*@vite\/client/);
   });
@@ -733,18 +734,17 @@ describe('sync barrier', () => {
     expect(result.attempts).toBeUndefined();
   });
 
-  it('passes the page’s play refusal through with whose session it is', async () => {
+  it('passes the page’s refusal through', async () => {
     const p = await start({ 'scenes/a.pix3scene': SCENE });
     const tab = await p.connectTab('tab-a');
     tab.onRequest('sync', () => ({
       ok: false,
-      reason: 'stale',
-      playing: 'designer',
-      pending: ['scenes/a.pix3scene'],
+      reason: 'reload_failed',
+      paths: ['scenes/a.pix3scene'],
       executed: { 'scripts/Foo.ts': sha('x') },
     }));
     const result = await sync(p, { tabId: 'tab-a' });
-    expect(result).toMatchObject({ ok: false, reason: 'stale', playing: 'designer' });
+    expect(result).toMatchObject({ ok: false, reason: 'reload_failed' });
     expect(result.executed).toBeUndefined(); // the stamps are the judge's, not the agent's
   });
 
@@ -809,7 +809,7 @@ describe('sync barrier', () => {
     expect(result).toMatchObject({ ok: false, reason: 'gesture_in_progress', step: 'flush' });
   });
 
-  it('takes a bot policy added, its helper changed and a policy deleted (plan §B.2)', async () => {
+  it('takes a bot policy added, its helper changed and a policy deleted without the editor (plan play-in-page D10)', async () => {
     const BOTS = '/@id/__x00__virtual:pix3/bot-policies';
     const p = await start({
       'design/tests/bots/dodge.ts':
@@ -824,16 +824,11 @@ describe('sync barrier', () => {
     await p.fetch('/design/tests/bots/dodge.ts');
     await p.fetch('/design/tests/lib/aim.ts');
     const tab = await p.connectTab('tab-a');
-    let executed: Record<string, string> = {};
-    tab.onRequest('sync', request => ({ ok: true, rev: request.rev, executed }));
+    tab.onRequest('sync', request => ({ ok: true, rev: request.rev, executed: {} }));
 
-    // A new policy: the barrier wants its executed stamp, and the root globs it.
+    // A new policy: the page's root globs it; the editor runs no policy, so no stamp is wanted.
     const rush = "export default { name: 'rush', tick: () => 2 };\n";
     writeFileSync(join(p.root, 'design/tests/bots/rush.ts'), rush);
-    const added = await sync(p, { tabId: 'tab-a' });
-    expect(added).toMatchObject({ ok: false, reason: 'stale_modules' });
-    expect(added.paths).toEqual(['design/tests/bots/rush.ts']);
-    executed = { 'design/tests/bots/rush.ts': sha(rush) };
     expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
     const withRush = await (await p.fetch(BOTS)).text();
     expect(withRush).toContain('/design/tests/bots/rush.ts');
@@ -843,12 +838,8 @@ describe('sync barrier', () => {
       `(globalThis.__pix3Executed ??= {})["design/tests/bots/rush.ts"] = "${sha(rush)}"`
     );
 
-    // A helper only a policy imports is part of the chain the editor runs.
-    const aim2 = 'export const aim = 2;\n';
-    writeFileSync(join(p.root, 'design/tests/lib/aim.ts'), aim2);
-    const helper = await sync(p, { tabId: 'tab-a' });
-    expect(helper.paths).toEqual(['design/tests/lib/aim.ts']);
-    executed = { ...executed, 'design/tests/lib/aim.ts': sha(aim2) };
+    // A helper only a policy imports is not in the chain the editor runs either.
+    writeFileSync(join(p.root, 'design/tests/lib/aim.ts'), 'export const aim = 2;\n');
     expect((await sync(p, { tabId: 'tab-a' })).ok).toBe(true);
 
     // Deleted: reported as null, nothing to stamp, and the root no longer globs it.
@@ -857,39 +848,6 @@ describe('sync barrier', () => {
     expect(deleted.ok).toBe(true);
     expect((deleted.changed as Record<string, unknown>)['design/tests/bots/rush.ts']).toBeNull();
     expect(await (await p.fetch(BOTS)).text()).not.toContain('rush.ts');
-  });
-
-  it('tells the page which modules only the bot policies import (S11: applied during play)', async () => {
-    const p = await start({
-      'scripts/Uses.ts':
-        "import { shared } from '../design/tests/lib/shared.ts';\nexport const uses = shared;\n",
-      'design/tests/bots/dodge.ts':
-        "import { aim } from '../lib/aim.ts';\nimport { shared } from '../lib/shared.ts';\nexport default { name: 'dodge', tick: () => aim + shared };\n",
-      'design/tests/lib/aim.ts': 'export const aim = 1;\n',
-      'design/tests/lib/shared.ts': 'export const shared = 1;\n',
-    });
-    const tab = await p.connectTab('tab-a');
-    let policyOnly: unknown = null;
-    tab.onRequest('sync', request => {
-      policyOnly = request.policyOnly;
-      return { ok: true, rev: request.rev, executed: {} };
-    });
-    // Before the editor root is in the graph nothing can be proven policy-only.
-    await p.fetch('/@id/__x00__virtual:pix3/bot-policies');
-    for (const file of [
-      'design/tests/bots/dodge.ts',
-      'design/tests/lib/aim.ts',
-      'design/tests/lib/shared.ts',
-    ]) {
-      await p.fetch(`/${file}`);
-    }
-    await sync(p, { tabId: 'tab-a' });
-    expect(policyOnly).toEqual([]);
-    // The page imports both roots: the helper the game's script shares is not policy-only.
-    await p.fetch('/@id/__x00__virtual:pix3/editor-scripts');
-    await p.fetch('/scripts/Uses.ts');
-    await sync(p, { tabId: 'tab-a' });
-    expect(policyOnly).toEqual(['design/tests/bots/dodge.ts', 'design/tests/lib/aim.ts']);
   });
 
   it('passes the page’s contract-B alarm through (/@vite/client on the editor page)', async () => {
@@ -917,7 +875,7 @@ describe('sync barrier', () => {
     expect(frame.path).toBe('scripts/Foo.ts');
   });
 
-  it('tells the editor to re-import its scripts when one is added or deleted outside a sync (S13)', async () => {
+  it('tells the editor to re-import its scripts when one is added or deleted outside a sync', async () => {
     const ROOT = '/@id/__x00__virtual:pix3/editor-scripts';
     const p = await start({ 'scripts/Foo.ts': 'export const foo = 1;\n' });
     expect(await (await p.fetch(ROOT)).text()).not.toContain('/scripts/Bar.ts');

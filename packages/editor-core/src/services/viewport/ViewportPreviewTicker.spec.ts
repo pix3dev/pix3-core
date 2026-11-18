@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Node3D, Script } from '@pix3/runtime';
 import type { AssetLoader, EditorPreviewContext, NodeBase, SceneGraph } from '@pix3/runtime';
 import { ViewportPreviewTicker } from '@/services/viewport/ViewportPreviewTicker';
-import { appState, resetAppState } from '@/state';
+import { resetAppState } from '@/state';
 
 /**
  * Render-on-demand contract for script editor previews: implementing `tickEditorPreview` is not a
@@ -56,7 +56,6 @@ describe('ViewportPreviewTicker — component previews render on demand', () => 
   });
 
   it('ticks a component that only implements tickEditorPreview but keeps the loop idle', () => {
-    appState.ui.isPlaying = false;
     const component = new StaticPreview('static', 'user:StaticPreview');
     const { ticker } = makeTicker([nodeWith(component, 'static-node')]);
 
@@ -68,7 +67,6 @@ describe('ViewportPreviewTicker — component previews render on demand', () => 
   });
 
   it('keeps painting while a component asks for the next frame, and stops when it stops asking', () => {
-    appState.ui.isPlaying = false;
     const component = new AnimatedPreview('anim', 'user:AnimatedPreview');
     const { ticker, requestRender } = makeTicker([nodeWith(component, 'anim-node')]);
 
@@ -85,7 +83,6 @@ describe('ViewportPreviewTicker — component previews render on demand', () => 
   });
 
   it('treats a request made after the tick (async asset load) as an ordinary dirty mark', async () => {
-    appState.ui.isPlaying = false;
     const component = new DeferredPreview('deferred', 'user:DeferredPreview');
     const { ticker, requestRender } = makeTicker([nodeWith(component, 'deferred-node')]);
 
@@ -96,19 +93,6 @@ describe('ViewportPreviewTicker — component previews render on demand', () => 
     await Promise.resolve();
 
     expect(requestRender).toHaveBeenCalledTimes(1);
-    expect(ticker.hasActivePreview()).toBe(false);
-  });
-
-  it('drops pending frame requests when play mode starts', () => {
-    appState.ui.isPlaying = false;
-    const component = new AnimatedPreview('anim-play', 'user:AnimatedPreview');
-    const { ticker } = makeTicker([nodeWith(component, 'anim-play-node')]);
-
-    ticker.tickComponents(1 / 60);
-    expect(ticker.hasActivePreview()).toBe(true);
-
-    appState.ui.isPlaying = true;
-    ticker.tickComponents(1 / 60);
     expect(ticker.hasActivePreview()).toBe(false);
   });
 });

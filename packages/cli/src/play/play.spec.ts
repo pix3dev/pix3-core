@@ -12,7 +12,7 @@ import { formatTreeHuman } from './tree-report.ts';
  * `pix3 play`'s refusals, which happen before a browser starts. The run itself (a private headless
  * Chrome, the page booted, a policy ticked by the runner, the report) needs a Chrome and is checked
  * by hand against a starter: `pix3 play dist --bot <name>`, `pix3 play --bot <name>` and the same
- * with `--run '<pix3_game_run params>'` (the S3 parity runs of `.plans/play-in-page.md`).
+ * with `--run '<pix3_game_run params>'` (the S3 parity runs of `.plans/done/play-in-page.md`).
  */
 
 let root: string;

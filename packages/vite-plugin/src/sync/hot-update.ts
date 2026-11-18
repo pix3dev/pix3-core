@@ -10,8 +10,8 @@ import { isGlobbedScript, resolvedId, sha256Hex, type ScriptGraph } from './scri
 /**
  * The plugin's `hotUpdate` — not the legacy `handleHotUpdate`: Vite (6+, the environment API)
  * calls the legacy hook for `update` only, so a script file created or deleted outside a sync
- * never reached the editor — its roots kept the old glob until the next sync, and a play restart
- * ran without the new class (`.plans/done/scripts-vite.md` S13). This hook sees every kind.
+ * never reached the editor — its roots kept the old glob until the next sync
+ * (`.plans/done/scripts-vite.md` S13). This hook sees every kind.
  *
  * `undefined` leaves Vite's default propagation alone; `[]` means this hook did it.
  */
@@ -36,7 +36,7 @@ export const scriptHotUpdate = async (
   // a sync reports that); a created one is not in the graph yet and Vite's default retries
   // the importers that failed to resolve it.
   if (!globbed && (type !== 'update' || !scripts.isEditorModule(wirePath))) return undefined;
-  // The work is done once, on the client graph (the editor's and the game tab's environment);
+  // The work is done once, on the client graph (the editor's and the game pages' environment);
   // every environment returns [] so Vite does not propagate a second time.
   if (environment.name !== 'client') return [];
   let sha: string | null;

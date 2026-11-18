@@ -11,8 +11,8 @@ import { newCdpToken } from '../editor/cdp-token.ts';
 import { runBridgeCli } from './command.ts';
 
 /**
- * `pix3 bridge` when the editor plays on the game's own page (plan play-in-page S4, D9): the game
- * is another CDP target. Pinned: the screenshot is taken of the page `pix3_screenshot` names (after
+ * `pix3 bridge` with the game on its own page (plan play-in-page S4, D9): the game is another CDP
+ * target. Pinned: the screenshot is taken of the page `pix3_screenshot` names (after
  * bringing it to the front), tap / swipe go to the agent's page and never the human's
  * (`not_your_page`), coordinates read from an older load are refused (`page_reloaded`), and a
  * `pix3_play start` the popup blocker refused is opened with `Target.createTarget` in the owned
@@ -32,6 +32,8 @@ let sent: Record<string, string[]>;
 let targets: { id: string; type: string; url: string }[];
 let agentLoadId: string;
 let createdUrl: string | null;
+/** The agent page's pause as `pix3_status` reports it. */
+let agentPause: { paused: boolean; pausedBy?: string };
 /** The editor's answer per tool. */
 let tools: Record<string, (params: Record<string, unknown>) => Record<string, unknown>>;
 
@@ -62,6 +64,7 @@ beforeEach(async () => {
   sent = {};
   createdUrl = null;
   agentLoadId = 'load-a';
+  agentPause = { paused: false };
   targets = [
     { id: 'editor', type: 'page', url: `${ORIGIN}/__pix3/` },
     { id: 'designer', type: 'page', url: DESIGNER_URL },
@@ -71,11 +74,12 @@ beforeEach(async () => {
     pix3_status: () => ({
       ok: true,
       play: {
-        playHost: 'page',
         pages: targets
           .filter(target => target.id !== 'editor')
           .map(target =>
-            pageInfo(target.id, target.url, target.id === 'agent' ? agentLoadId : 'load-d')
+            target.id === 'agent'
+              ? { ...pageInfo(target.id, target.url, agentLoadId), ...agentPause }
+              : pageInfo(target.id, target.url, 'load-d')
           ),
       },
     }),
@@ -84,6 +88,10 @@ beforeEach(async () => {
       screen: { x: 12, y: 34 },
       page: { role: params.page ?? 'designer', loadId: 'load-a' },
     }),
+    pix3_play: params => {
+      if (params.action === 'resume') agentPause = { paused: false };
+      return { ok: true };
+    },
     pix3_screenshot: params => ({
       ok: true,
       page: {
@@ -156,7 +164,7 @@ afterEach(async () => {
   rmSync(home, { recursive: true, force: true });
 });
 
-describe('pix3 bridge on the game page (playHost: page)', () => {
+describe('pix3 bridge on the game page', () => {
   it('screenshots the page pix3_screenshot names, brought to the front', async () => {
     const run = io();
     expect(
@@ -190,6 +198,28 @@ describe('pix3 bridge on the game page (playHost: page)', () => {
     const refused = io();
     expect(await runBridgeCli(['tap', '1', '2', '--page', 'designer'], refused.io)).toBe(2);
     expect(refused.err.join('')).toContain('not_your_page');
+  });
+
+  it('tap into a paused game says so; the pause pix3_game_run left is lifted (core-tests/game8, game18)', async () => {
+    agentPause = { paused: true };
+    const paused = io();
+    expect(await runBridgeCli(['tap', '10', '20'], paused.io)).toBe(0);
+    expect(paused.err.join('')).toContain(`play '{"action":"resume"}'`);
+    expect(agentPause.paused).toBe(true);
+
+    agentPause = { paused: true, pausedBy: 'pix3_game_run' };
+    const run = io();
+    expect(await runBridgeCli(['tap', '10', '20'], run.io)).toBe(0);
+    expect(run.err.join('')).toContain('resumed the game pix3_game_run had left paused');
+    expect(agentPause.paused).toBe(false);
+
+    // Running: nothing is said; both gestures say how they were sent (core-tests/game13).
+    const swipe = io();
+    expect(
+      await runBridgeCli(['swipe', '1', '2', '30', '2', '--touch', '--ms', '20'], swipe.io)
+    ).toBe(0);
+    expect(swipe.err).toEqual([]);
+    expect(swipe.out.join('')).toContain('with a touch');
   });
 
   it('refuses coordinates read from another load of the page: page_reloaded', async () => {

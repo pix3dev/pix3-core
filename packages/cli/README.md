@@ -183,8 +183,8 @@ has no tables or the default one does not load (that is its own error).
 ### Autoloads
 
 `pix3project.yaml` `autoloads:` is checked on every run, against the rule every host builds them
-by (the runtime's `normalizeAutoloads` / `autoloadComponentType`; the player, the editor's play
-mode and `pix3 smoke` run them): each entry needs a `singleton` and a `scriptPath`, the file must
+by (the runtime's `normalizeAutoloads` / `autoloadComponentType`; the player — what the editor's
+Play opens — and `pix3 smoke` run them): each entry needs a `singleton` and a `scriptPath`, the file must
 be a script entry under `scripts/` or `src/scripts/` exporting a `Script` class named like the
 file. A disabled entry is not checked.
 
@@ -571,7 +571,7 @@ Plan §D.3 / §D.4 / §D.5. Idempotent; run it from the project (or `--project <
    no default-browser check, background throttling off (`--disable-background-timer-throttling
    --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`) and the popup
    blocker off (`--disable-popup-blocking`: the editor opens the agent's game page with
-   `window.open` from a bridge call, which carries no click — spec §6.24). The owner lives
+   `window.open` from a bridge call, which carries no click — spec "Play and Debug Mode"). The owner lives
    exactly as long as Chrome: Chrome gone → the owner closes every client, removes
    `~/.pix3/chrome.json` and exits; the owner gone (killed) → the pipe closes and Chrome exits
    with it. `--stop-chrome` asks the owner to close Chrome. Then, launched or reused, the editor
@@ -701,8 +701,8 @@ hidden (a hidden page gets no rAF).
 `--run '<json>'` is one `pix3_game_run` on the page, with the bridge tool's params (`until`/`fail`
 predicates, `watch`, `monkey`, `bot` on `physical-input` or `direct-action`, `control`,
 `maxFrames`, `maxWallMs`, `pauseOnOutcome`, …) and its report (`run` in `--json`, a verdict line
-in the human one); it passes when an `until` is met or the policy's `done(true)` ends it. Two
-differences from the editor: the negative control restores the starting state only through the
+in the human one); it passes when an `until` is met or the policy's `done(true)` ends it. As on
+the agent's game page: the negative control restores the starting state only through the
 game's `reset(seed)` — the page does not restart a scene in place (a fresh game is a fresh page
 load), so a game without one gets `isolation: none` and an `inconclusive` control — and reach
 proofs last as long as the page (it does not write `design/tests/reachability.json`). `--bot` is
@@ -930,8 +930,8 @@ about. `render` calls `pix3_render_model` with `image: true` and writes the shee
 (default `.pix3/renders/editor-<node>.png`), then prints the path and the counts. The token is
 never printed.
 
-**The game on its own page** (the default — the editor setting "Play on the game's page",
-`playHost: 'page'`; spec §6.24): the game is a CDP target of its own, so
+**The game on its own page** (the only play — spec "Play and Debug Mode"): the game is a CDP
+target of its own, so
 `pix3 bridge` picks the target per command. `screenshot --target game [--page designer|agent]`
 captures the page `pix3_screenshot` names (the human's Play window by default while it is open,
 else the agent's page), after `Page.bringToFront` — a background target paints nothing to capture —
@@ -946,10 +946,7 @@ stall the editor or the human's page), so the editor sees a blocked window only 
 opened as a new target with `Target.createTarget` in the Chrome `pix3 editor` owns — unless a target
 with that URL is there after all, only late (it waits up to 90 s for the page to boot and answers
 `opened: "Target.createTarget"` or `"window.open"`); over a Remote SSH forward the refusal stands,
-with its `url`. With the setting off (the Game tab, until plan
-`.plans/play-in-page.md` S6) `screenshot` and `tap` use the editor tab, and `--aspect` sets the
-Game tab's frame through `pix3_play`'s `aspect`.
-Code: `src/bridge/`.
+with its `url`. Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
 
@@ -1051,9 +1048,8 @@ the next call or a click, or returned as a data URL with `image`), `pix3_bake`
 (`{action?: apply|clear|status, nodeId?}` — `mergeStatic` / `unmergeStatic` from `core:MergeStatic`'s
 config on the editor's nodes, no cache, nothing written; a scene reload drops it; code
 `src/host/bridge-model.ts`), `pix3_errors` (`{since?, clear?, page?}`). The game runs on its own
-page by default — the tools' page table is `PAGE_BRIDGE_TOOLS` (executed in `src/host/bridge-play-page.ts`,
-spec §6.24 "Play on the game's page"); with the editor setting off, `BRIDGE_TOOLS` — the Game
-tab, play ownership (`not_owner`) and `aspect` — until plan `.plans/play-in-page.md` S6 removes it. Params are validated on both paths;
+page — the play tools are executed in `src/host/bridge-play-page.ts` (spec "Play and Debug
+Mode"), one table, `BRIDGE_TOOLS`. Params are validated on both paths;
 every refusal is `{ok:false, reason, detail}`. `pix3 check`, `pix3 smoke` and `vite build`
 flush the editor through `POST /__pix3/api/flush` (the CLI side is `src/editor-sync.ts`),
 without the bridge. The kit's `pix3-editor` skill is held to the table by `src/kit.spec.ts`.

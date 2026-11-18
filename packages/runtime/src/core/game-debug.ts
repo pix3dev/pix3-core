@@ -143,8 +143,8 @@ export function getRuntimeSceneRoot(): object | null {
  * so property edits made through the editor's mutation gateway only touch the
  * authored graph. To make edits hot-reload into the running scene without a
  * restart, `SceneRunner` registers a sink here on scene start (and clears it on
- * stop); the editor's `UpdateObjectPropertyOperation` and the debug bridge push
- * edits through it while playing. Stored on `globalThis` so it bridges runtime
+ * stop). No editor pushes through it since the game left the editor's page (plan
+ * play-in-page S6; live editing is a separate task). Stored on `globalThis` so it bridges runtime
  * module copies, matching the other globals in this module.
  */
 export type RuntimeLivePropertySink = (
@@ -285,7 +285,7 @@ export type ScriptErrorPhase =
 /**
  * A runtime script/lifecycle failure, in an editor-agnostic shape. The runtime
  * builds these when a user script (or scene load) throws; the editor's bridge
- * forwards them into the Logs panel and the Game tab. Keep it JSON-serialisable.
+ * forwards them into the Logs panel. Keep it JSON-serialisable.
  */
 export interface ScriptErrorInfo {
   phase: ScriptErrorPhase;
@@ -322,8 +322,8 @@ export type ScriptErrorSink = (error: ScriptErrorInfo) => void;
  * Well-known global key for the **script-error sink**. The runtime catches
  * throws from script lifecycle hooks (`onStart`/`onUpdate`/…) and scene loading
  * so one bad script can no longer kill the game loop; it reports each failure
- * here. The editor registers a sink that surfaces the error in the Logs panel
- * and Game tab; in exported builds/tests no sink is registered and reporting is
+ * here. The editor registers a sink that surfaces the error in the Logs panel;
+ * in exported builds/tests no sink is registered and reporting is
  * a no-op. Stored on `globalThis` so it bridges runtime module copies (in-editor
  * user scripts resolve `@pix3/runtime` through a separate import map).
  */

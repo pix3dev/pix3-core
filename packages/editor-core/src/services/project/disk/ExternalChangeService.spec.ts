@@ -227,23 +227,6 @@ describe('ExternalChangeService — stabilisation window', () => {
     expect(h.diskState.isPendingExternal('scenes/a.pix3scene')).toBe(false);
   });
 
-  it('during play: detects, marks stale, delivers when play stops', async () => {
-    const h = createService();
-    h.service.configureForTests({ stabilityIntervalMs: 1 });
-    appState.ui.isPlaying = true;
-    h.storage.files.set('scenes/a.pix3scene', SCENE('a'));
-    h.service.report('scenes/a.pix3scene');
-    await h.service.tick();
-    await h.service.tick();
-    expect(h.batches).toEqual([]);
-    expect(h.service.isStale()).toBe(true);
-
-    appState.ui.isPlaying = false;
-    await vi.waitFor(() => expect(h.batches).toEqual([['scenes/a.pix3scene']]));
-    expect(h.service.isStale()).toBe(false);
-    h.service.dispose();
-  });
-
   it('drops what a sync applied, but not a path reported again after the sync asked', async () => {
     const h = createService();
     h.storage.files.set('scripts/A.ts', 'a');
@@ -253,11 +236,6 @@ describe('ExternalChangeService — stabilisation window', () => {
     const mark = h.service.reportMark();
     h.service.report('scripts/B.ts'); // a newer write, after the sync's rescan
     h.service.acknowledge(['scripts/A.ts', 'res://scripts/B.ts'], mark);
-    expect(h.service.getPendingPaths()).toEqual(['scripts/B.ts']);
-    // A play started now holds nothing the sync already applied.
-    appState.ui.isPlaying = true;
-    await h.service.tick();
-    await h.service.tick();
     expect(h.service.getPendingPaths()).toEqual(['scripts/B.ts']);
     h.service.dispose();
   });

@@ -18,15 +18,7 @@ describe('Window menu rows', () => {
   const commands = createShowPanelCommands();
 
   it('covers every panel that had no way back after its tab was closed', () => {
-    expect(commands.map(panelOf)).toEqual([
-      'scene-tree',
-      'inspector',
-      'assets',
-      'logs',
-      'history',
-      'runtime',
-      'game',
-    ]);
+    expect(commands.map(panelOf)).toEqual(['scene-tree', 'inspector', 'assets', 'logs', 'history']);
   });
 
   it('labels each row exactly as the tab it opens', () => {
@@ -59,8 +51,6 @@ describe('Window menu rows', () => {
       ['Assets', 120],
       ['Logs', 210],
       ['History', 220],
-      ['Runtime', 230],
-      ['Game', 500],
       ['Reset Layout…', 900],
     ]);
   });

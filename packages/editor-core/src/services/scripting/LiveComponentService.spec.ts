@@ -61,7 +61,6 @@ const moverVersion = (fields: readonly string[], defaults: Record<string, unknow
 
 const rootsOf = (Mover: typeof Script, revision: number): ScriptRoots => ({
   editorScripts: { __pix3Revision: revision, modules: { '/scripts/Mover.ts': { Mover } } },
-  botPolicies: { __pix3Revision: revision, modules: {} },
 });
 
 const service = <T>(ctor: new (...args: never[]) => T): T => {
@@ -134,7 +133,6 @@ describe('LiveComponentService', () => {
     const old = hero()?.components[0];
     const noScripts: ScriptRoots = {
       editorScripts: { __pix3Revision: 2, modules: {} },
-      botPolicies: { __pix3Revision: 2, modules: {} },
     };
     const before = sceneText();
     expect(

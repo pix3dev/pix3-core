@@ -42,7 +42,7 @@ export const isEditorOpen = (timeoutMs: number = ANSWER_MS): Promise<boolean> =>
 export const openEditor = async (editorUrl: string): Promise<OpenEditorOutcome> => {
   if (await isEditorOpen()) {
     try {
-      // The editor opened this page (Play in Browser Tab / with Profiler): it is the opener.
+      // A page with an opener (the editor's Play opens its pages `noopener`, so rarely): focus it.
       window.opener?.focus();
     } catch {
       // A cross-origin or severed opener: nothing to focus.

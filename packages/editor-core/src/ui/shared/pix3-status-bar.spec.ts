@@ -4,6 +4,8 @@ import { ServiceContainer } from '@/fw/di';
 import { LoggingService } from '@/services/core/LoggingService';
 import { LayoutManagerService } from '@/core/LayoutManager';
 import { HostService } from '@/host/HostService';
+import { fakeGamePage } from '@/host/testing/fake-game-page';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { FakeHost } from '@/host/testing/fake-host';
 import { appState, resetAppState } from '@/state';
 
@@ -130,9 +132,22 @@ describe('Pix3StatusBar', () => {
     expect(statusBar.querySelector('.status-diagnostics')).toBeNull();
   });
 
-  it('shows the play indicator while playing', async () => {
-    appState.ui.isPlaying = true;
+  it('shows "Game open" while the Play window is on the link', async () => {
+    const container = ServiceContainer.getInstance();
+    const link = container.getService<PlayPageLink>(container.getOrCreateToken(PlayPageLink));
+    const stop = link.start();
     const statusBar = await mount();
-    expect(statusBar.querySelector('.status-indicator.playing')?.textContent).toContain('Playing');
+    expect(statusBar.querySelector('.status-indicator.playing')).toBeNull();
+    const designer = fakeGamePage('designer');
+    try {
+      await link.until(() => link.page('designer') !== null, 1_000);
+      await statusBar.updateComplete;
+      expect(statusBar.querySelector('.status-indicator.playing')?.textContent).toContain(
+        'Game open'
+      );
+    } finally {
+      designer.close();
+      stop();
+    }
   });
 });

@@ -7,10 +7,10 @@ import { LoggingService } from '@/services/core/LoggingService';
 import { appState } from '@/state';
 
 /**
- * The editor's end of the link to the game's pages (plan play-in-page D6–D8, behind the
- * `playHost: 'page'` setting): a `BroadcastChannel` RPC to the pages the editor opened — the human's
- * Play window (`designer`) and the agent's page (`agent`) — addressed by role and `loadId`. The
- * page's end is `@pix3/vite-plugin`'s `player/dev/editor-rpc.ts`; keep the frames in step.
+ * The editor's end of the link to the game's pages (plan play-in-page D6–D8): a `BroadcastChannel`
+ * RPC to the pages the editor opened — the human's Play window (`designer`) and the agent's page
+ * (`agent`) — addressed by role and `loadId`. The page's end is `@pix3/vite-plugin`'s
+ * `player/dev/editor-rpc.ts`; keep the frames in step.
  *
  * The editor holds no play state (D4): what it knows of a page is the last `hello` it said. A page
  * says `hello {page}` as soon as it starts loading (`status: 'booting'`), again when it is ready
@@ -183,6 +183,12 @@ export class PlayPageLink {
     return (['designer', 'agent'] as const).flatMap(role => this.pages.get(role) ?? []);
   }
 
+  /** Call `listener` on every hello / bye (a page opened, reloaded or went away). */
+  onPagesChanged(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
   /** Resolves true once `condition()` holds (checked now and on every hello / bye), false at `timeoutMs`. */
   until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
     if (condition()) return Promise.resolve(true);
@@ -243,11 +249,17 @@ export class PlayPageLink {
     });
   }
 
-  /** Close the page of `role` (Stop, the agent's `stop`, the idle timeout). */
-  close(role: PageRole): Promise<PageAnswer> {
+  /**
+   * Close the page of `role` (Stop, the agent's `stop`, the idle timeout). A window that closes
+   * may never get its `bye` out (headless Chrome drops it), so a page that agreed to close is
+   * forgotten here; one that stays open after all says hello to the next `who`.
+   */
+  async close(role: PageRole): Promise<PageAnswer> {
     const page = this.pages.get(role);
     if (page) this.closing.add(page.loadId);
-    return this.call(role, 'close');
+    const answer = await this.call(role, 'close');
+    if (answer.ok !== false && page) this.leave(role, page.loadId, false);
+    return answer;
   }
 
   /**
@@ -332,16 +344,11 @@ export class PlayPageLink {
         if (previous && previous.loadId !== page.loadId) this.dropCalls(page.role, previous.loadId);
         break;
       }
-      case 'bye': {
-        if (!isRole(frame.role) || this.pages.get(frame.role)?.loadId !== frame.loadId) return;
-        this.pages.delete(frame.role);
-        const closedHere = this.closing.delete(String(frame.loadId));
-        // `reloading: false` = its window closed (the page knows; a page that cannot tell says
-        // nothing): nothing will say hello again, so nobody waits for it.
-        if (!closedHere && frame.reloading !== false) this.left.set(frame.role, Date.now());
-        this.dropCalls(frame.role, String(frame.loadId));
-        break;
-      }
+      case 'bye':
+        if (isRole(frame.role)) {
+          this.leave(frame.role, String(frame.loadId), frame.reloading as boolean | undefined);
+        }
+        return;
       case 'result': {
         const call = typeof frame.id === 'string' ? this.pending.get(frame.id) : undefined;
         if (!call) return;
@@ -379,6 +386,19 @@ export class PlayPageLink {
       default:
         return;
     }
+    for (const listener of [...this.changeListeners]) listener();
+  }
+
+  /**
+   * The load `loadId` of `role` is gone. `reloading: false` = its window closed (the page knows; a
+   * page that cannot tell says nothing): nothing will say hello again, so nobody waits for it.
+   */
+  private leave(role: PageRole, loadId: string, reloading: boolean | undefined): void {
+    if (this.pages.get(role)?.loadId !== loadId) return;
+    this.pages.delete(role);
+    const closedHere = this.closing.delete(loadId);
+    if (!closedHere && reloading !== false) this.left.set(role, Date.now());
+    this.dropCalls(role, loadId);
     for (const listener of [...this.changeListeners]) listener();
   }
 

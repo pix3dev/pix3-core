@@ -1,6 +1,6 @@
 /**
  * A stored bot policy turned into a live {@link BotPolicy} — the part of loading that needs no
- * editor, shared by the editor's `GameBotHost` and the game page's test host (plan play-in-page S3).
+ * editor: the game page's test host (plan play-in-page S3) and the CLI's `dist` bundle.
  *
  * Policies are not compiled here. The dev server imports `design/tests/bots/` through the plugin's
  * `virtual:pix3/bot-policies` root (same toolchain, externals and errors as a game script), and

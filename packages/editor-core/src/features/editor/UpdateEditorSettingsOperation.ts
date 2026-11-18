@@ -4,29 +4,19 @@ import type {
   OperationInvokeResult,
   OperationMetadata,
 } from '@/core/Operation';
-import type { GameAspectRatio, Navigation2DSettings, PlayHost } from '@/state/AppState';
+import type { Navigation2DSettings } from '@/state/AppState';
 
 export interface UpdateEditorSettingsParams {
   pauseRenderingOnUnfocus?: boolean;
   keepEditorRunningForAgent?: boolean;
   navigation2D?: Partial<Navigation2DSettings>;
-  gameAspectRatio?: GameAspectRatio;
-  playHost?: PlayHost;
 }
 
 export interface EditorSettingsSnapshot {
   pauseRenderingOnUnfocus: boolean;
   keepEditorRunningForAgent: boolean;
   navigation2D: Navigation2DSettings;
-  gameAspectRatio: GameAspectRatio;
-  playHost: PlayHost;
 }
-
-const isGameAspectRatio = (value: unknown): value is GameAspectRatio => {
-  return (
-    value === 'free' || value === '16:9-landscape' || value === '16:9-portrait' || value === '4:3'
-  );
-};
 
 export const EDITOR_SETTINGS_STORAGE_KEY = 'pix3.editorSettings:v1';
 
@@ -54,12 +44,6 @@ export const loadEditorSettings = (): Partial<EditorSettingsSnapshot> | null => 
         if (Object.keys(nav2D).length > 0) {
           result.navigation2D = nav2D as Navigation2DSettings;
         }
-      }
-      if (isGameAspectRatio(parsed.gameAspectRatio)) {
-        result.gameAspectRatio = parsed.gameAspectRatio;
-      }
-      if (parsed.playHost === 'editor' || parsed.playHost === 'page') {
-        result.playHost = parsed.playHost;
       }
       return result;
     }
@@ -93,8 +77,6 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
       pauseRenderingOnUnfocus: snapshot.ui.pauseRenderingOnUnfocus,
       keepEditorRunningForAgent: snapshot.ui.keepEditorRunningForAgent,
       navigation2D: { ...snapshot.ui.navigation2D },
-      gameAspectRatio: snapshot.ui.gameAspectRatio,
-      playHost: snapshot.ui.playHost,
     };
     const next: EditorSettingsSnapshot = {
       pauseRenderingOnUnfocus: this.params.pauseRenderingOnUnfocus ?? prev.pauseRenderingOnUnfocus,
@@ -106,8 +88,6 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
         zoomSensitivity:
           this.params.navigation2D?.zoomSensitivity ?? prev.navigation2D.zoomSensitivity,
       },
-      gameAspectRatio: this.params.gameAspectRatio ?? prev.gameAspectRatio,
-      playHost: this.params.playHost ?? prev.playHost,
     };
 
     if (JSON.stringify(next) === JSON.stringify(prev)) {
@@ -118,8 +98,6 @@ export class UpdateEditorSettingsOperation implements Operation<OperationInvokeR
       state.ui.pauseRenderingOnUnfocus = settings.pauseRenderingOnUnfocus;
       state.ui.keepEditorRunningForAgent = settings.keepEditorRunningForAgent;
       state.ui.navigation2D = { ...settings.navigation2D };
-      state.ui.gameAspectRatio = settings.gameAspectRatio;
-      state.ui.playHost = settings.playHost;
       persistEditorSettings(settings);
     };
     apply(next);

@@ -17,12 +17,8 @@ const scriptClass = (name: string): typeof Script => {
   return ctor;
 };
 
-const roots = (
-  modules: Record<string, Record<string, unknown>>,
-  bots: Record<string, Record<string, unknown>> = {}
-): ScriptRoots => ({
+const roots = (modules: Record<string, Record<string, unknown>>): ScriptRoots => ({
   editorScripts: { __pix3Revision: 1, modules },
-  botPolicies: { __pix3Revision: 1, modules: bots },
 });
 
 const makeLoader = () => {
@@ -111,53 +107,6 @@ describe('ProjectScriptLoaderService.registerRoots', () => {
     ]);
     expect(registry.getComponentType('user:Enemy')?.componentClass).toBe(Enemy);
     expect(logger.warn).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not register bot policies as components', () => {
-    const { loader } = makeLoader();
-    const result = loader.registerRoots(
-      roots({}, { '/design/tests/bots/greedy.ts': { Greedy: scriptClass('Greedy') } })
-    );
-    expect(result.registered).toEqual([]);
-    expect(appState.project.scriptsStatus).toBe('ready');
-  });
-
-  it('defers roots queued during play mode until play stops', () => {
-    const { loader, registry } = makeLoader();
-    appState.ui.isPlaying = true;
-    loader.queueRoots(roots({ '/scripts/A.ts': { A: scriptClass('A') } }));
-    expect(registry.getComponentType('user:A')).toBeUndefined();
-
-    loader.queueRoots(roots({ '/scripts/B.ts': { B: scriptClass('B') } }));
-    appState.ui.isPlaying = false;
-    return Promise.resolve().then(() => {
-      expect(registry.getComponentType('user:A')).toBeUndefined();
-      expect(registry.getComponentType('user:B')).toBeDefined();
-      loader.dispose();
-    });
-  });
-
-  it('applyQueuedRoots registers the queued roots the moment play is off (the restart path)', async () => {
-    const { loader, registry, sceneManager } = makeLoader();
-    appState.ui.isPlaying = true;
-    loader.queueRoots(roots({ '/scripts/Jumper.ts': { Jumper: scriptClass('Jumper') } }));
-    expect(loader.hasQueuedRoots()).toBe(true);
-    // Still playing: nothing registers.
-    expect(loader.applyQueuedRoots()).toBe(false);
-    expect(registry.getComponentType('user:Jumper')).toBeUndefined();
-
-    // The bridge's restart: play off, apply before anything else runs (no microtask has passed,
-    // so the valtio subscription has not fired).
-    appState.ui.isPlaying = false;
-    expect(loader.applyQueuedRoots()).toBe(true);
-    expect(registry.getComponentType('user:Jumper')).toBeDefined();
-    expect(sceneManager.resolvePendingComponents).toHaveBeenCalledTimes(1);
-    expect(loader.hasQueuedRoots()).toBe(false);
-    expect(loader.applyQueuedRoots()).toBe(false);
-    // The subscription that would also have done it finds nothing left.
-    await Promise.resolve();
-    expect(sceneManager.resolvePendingComponents).toHaveBeenCalledTimes(1);
-    loader.dispose();
   });
 });
 

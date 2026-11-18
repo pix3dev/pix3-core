@@ -68,8 +68,8 @@ interface PendingEntry {
  *    (the loader rejected it) is treated the same way. A pending path whose content returns to
  *    the version the editor holds (known hash) is dropped like an own write: pending, the
  *    notice and the autosave hold clear, nothing reloads.
- * 4. **Play mode.** Detected but not delivered while playing ({@link isStale}); the batch goes
- *    out when play stops.
+ *
+ * The game never runs in the editor (plan play-in-page D4), so nothing is held for it.
  *
  * While a path is pending, `SceneBaselineService.isPendingExternal(path)` is true.
  */
@@ -87,8 +87,6 @@ export class ExternalChangeService {
   @inject(HostService)
   private readonly hostService!: HostService;
 
-  /** Detected during play, not applied yet (plan §B.3: a sync answers `stale`). */
-  private stale = false;
   private unreadable: string[] = [];
 
   private projectKey: string | null = null;
@@ -100,7 +98,6 @@ export class ExternalChangeService {
   private ticking = false;
   private tickRequested = false;
   private settleWaiters: Array<() => void> = [];
-  private disposePlaySubscription: (() => void) | null = null;
   private now: () => number = () => Date.now();
   private stabilityIntervalMs = STABILITY_INTERVAL_MS;
 
@@ -163,12 +160,7 @@ export class ExternalChangeService {
     }
   }
 
-  /** True while external changes wait for play to stop. */
-  isStale(): boolean {
-    return this.stale;
-  }
-
-  /** Project paths detected and not delivered yet (settling, or held for play). */
+  /** Project paths detected and not delivered yet (settling, or unreadable). */
   private reports = 0;
 
   getPendingPaths(): string[] {
@@ -200,9 +192,8 @@ export class ExternalChangeService {
   /**
    * The sync barrier applied these paths as they are on disk (plan §B.3): their entries — reported
    * by `pix3:fs` frames up to `mark`, i.e. before the plugin asked this tab to apply — have nothing
-   * left to deliver. Without this, a version still settling would be held for a play started right
-   * after the sync and reported `stale` although the game runs it. A path reported again after
-   * `mark` (a newer write) stays.
+   * left to deliver. Without this, a version still settling would be reloaded again after the
+   * sync. A path reported again after `mark` (a newer write) stays.
    */
   acknowledge(paths: readonly string[], mark: number): void {
     for (const path of paths) {
@@ -267,7 +258,6 @@ export class ExternalChangeService {
     }
     this.entries.clear();
     this.setUnreadable();
-    this.setStale(false);
     this.resolveSettled();
   }
 
@@ -275,8 +265,6 @@ export class ExternalChangeService {
     this.reset();
     this.disposeProjectSubscription?.();
     this.disposeProjectSubscription = null;
-    this.disposePlaySubscription?.();
-    this.disposePlaySubscription = null;
     this.listeners.clear();
   }
 
@@ -416,15 +404,7 @@ export class ExternalChangeService {
       return hasOpenFailure() ? retryDelay() : this.noticedPollDelay();
     }
 
-    // 3. Play mode: detect, do not reload.
-    if (appState.ui.isPlaying) {
-      this.setStale(true);
-      this.waitForPlayToStop();
-      return null;
-    }
-    this.setStale(false);
-
-    // 4. Deliver. Entries leave the map first, so a report during delivery starts a new batch.
+    // 3. Deliver. Entries leave the map first, so a report during delivery starts a new batch.
     const paths = deliverable.map(e => e.path);
     for (const entry of deliverable) {
       this.entries.delete(entry.path);
@@ -492,28 +472,7 @@ export class ExternalChangeService {
     }
   }
 
-  private waitForPlayToStop(): void {
-    if (this.disposePlaySubscription) {
-      return;
-    }
-    this.disposePlaySubscription = subscribe(appState.ui, () => {
-      if (!appState.ui.isPlaying) {
-        this.disposePlaySubscription?.();
-        this.disposePlaySubscription = null;
-        // Re-read everything: the disk may have moved on during play.
-        for (const entry of this.entries.values()) entry.stable = false;
-        this.schedule(0);
-      }
-    });
-  }
-
   private isSettled(): boolean {
-    if (this.disposePlaySubscription) {
-      // Held for play mode: nothing more happens until play stops. Once it has stopped, the
-      // subscription (asynchronous) is about to re-read and deliver — a `whenSettled` asked
-      // between the stop and that delivery (the bridge's restart) must wait for it.
-      return appState.ui.isPlaying;
-    }
     // A noticed entry reported again (`stable` reset) is not settled until it was re-read: the
     // caller of `whenSettled` (syncNow) wants to know whether the file came back.
     return Array.from(this.entries.values()).every(e => e.noticeShown && e.stable);
@@ -523,10 +482,6 @@ export class ExternalChangeService {
     const waiters = this.settleWaiters;
     this.settleWaiters = [];
     for (const resolve of waiters) resolve();
-  }
-
-  private setStale(stale: boolean): void {
-    this.stale = stale;
   }
 
   private setUnreadable(): void {

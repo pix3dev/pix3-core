@@ -191,13 +191,13 @@ describe('LayoutManagerService', () => {
       });
     });
 
-    it('never docks a document type (viewport, game) as a panel', async () => {
+    it('never docks a document type (viewport) as a panel', async () => {
       const { LayoutManagerService } = await import('./LayoutManager');
 
       const service = new LayoutManagerService();
       await service.initialize(document.createElement('div'));
 
-      service.showPanel('game');
+      service.showPanel('viewport');
 
       // Documents need a tab id and a resource, which only EditorTabService can supply.
       expect(stackAddItem).not.toHaveBeenCalled();

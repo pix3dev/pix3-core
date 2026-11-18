@@ -3,9 +3,6 @@ import { appState, resetAppState } from '@/state';
 import { isBlockedForNonOwner } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import { ToggleUIFlagOperation } from '@/features/viewport/ToggleUIFlagOperation';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
-import { SetPlayPausedOperation } from '@/features/scripts/SetPlayPausedOperation';
-import { SetGamePopoutWindowOpenOperation } from '@/features/scripts/SetGamePopoutWindowOpenOperation';
 
 /**
  * A tab that is not the writer keeps navigation, view toggles, panels and play. The allowlists
@@ -28,7 +25,7 @@ describe('read-only tab', () => {
   });
 
   it('runs view, window and play commands, refuses edits', () => {
-    for (const id of ['view.toggle-grid', 'view.zoom-in', 'window.show-logs', 'game.start']) {
+    for (const id of ['view.toggle-grid', 'view.zoom-in', 'window.show-logs', 'game.play']) {
       expect(isBlockedForNonOwner(id), id).toBe(false);
     }
     for (const id of ['scene.delete-objects', 'history.undo', 'editor.save-active-resource']) {
@@ -36,18 +33,10 @@ describe('read-only tab', () => {
     }
   });
 
-  it('performs view-flag and play-mode operations', async () => {
+  it('performs view-flag operations', async () => {
     const before = appState.ui.showGrid;
     await service.invoke(new ToggleUIFlagOperation('showGrid', 'Toggle Grid'));
     expect(appState.ui.showGrid).toBe(!before);
-
-    for (const operation of [
-      new SetPlayModeOperation({ isPlaying: true, status: 'playing' }),
-      new SetPlayPausedOperation({ paused: true }),
-      new SetGamePopoutWindowOpenOperation({ isOpen: true }),
-    ]) {
-      await expect(service.invoke(operation), operation.metadata.id).resolves.toBeDefined();
-    }
   });
 
   it('refuses a document operation', async () => {

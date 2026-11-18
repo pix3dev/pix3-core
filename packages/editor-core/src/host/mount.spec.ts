@@ -55,31 +55,17 @@ describe('mountEditor', () => {
     expect((window as { __PIX3_DEBUG__?: { version: number } }).__PIX3_DEBUG__?.version).toBe(2);
   });
 
-  it('answers a sync during play as stale, naming the owner', async () => {
+  it('applies a sync while a game page is open: the editor runs no game (plan play-in-page D4)', async () => {
     resetAppState();
     const host = new FakeHost({ files: { 'scenes/main.pix3scene': 'version: 1.0.0\nroot: []\n' } });
     await host.whenReady();
     handle = await mountEditorWith(document.createElement('div'), host, { shell: false });
-    appState.ui.isPlaying = true;
-    appState.ui.playOwner = 'designer';
     const reply = await host.handlers.applySync?.({
       rev: 1,
       changed: { 'scripts/A.ts': null },
       roots: host.scripts.current(),
     });
-    expect(reply).toMatchObject({
-      ok: false,
-      reason: 'stale',
-      playing: 'designer',
-      pending: ['scripts/A.ts'],
-    });
-    // Nothing changed and nothing held for play (after a restart took the deferred version in):
-    // the game runs the disk's files, so the sync is a barrier even while playing.
-    const quiet = await host.handlers.applySync?.({
-      rev: 2,
-      changed: {},
-      roots: host.scripts.current(),
-    });
-    expect(quiet).toMatchObject({ ok: true, playing: 'designer' });
+    expect(reply).toMatchObject({ ok: true });
+    expect(reply).not.toHaveProperty('playing');
   });
 });

@@ -110,9 +110,6 @@ export class EditorSettingsDialog extends ComponentBase {
   private keepEditorRunningForAgent = true;
 
   @state()
-  private playOnPage = false;
-
-  @state()
   private navigation2D: Navigation2DSettings = {
     panSensitivity: 0.75,
     zoomSensitivity: 0.001,
@@ -145,7 +142,6 @@ export class EditorSettingsDialog extends ComponentBase {
     this.activeSection = this.editorSettingsService.getInitialTab();
     this.pauseRenderingOnUnfocus = appState.ui.pauseRenderingOnUnfocus;
     this.keepEditorRunningForAgent = appState.ui.keepEditorRunningForAgent;
-    this.playOnPage = appState.ui.playHost === 'page';
     this.navigation2D = { ...appState.ui.navigation2D };
 
     const prefs = this.aiImageSettings.getPreferences();
@@ -334,22 +330,6 @@ export class EditorSettingsDialog extends ComponentBase {
 
   private renderGeneralTab() {
     return html`
-      <div class="settings-field">
-        <div class="field-head">
-          <label class="toggle-row">
-            <input type="checkbox" .checked=${this.playOnPage} @change=${this.onPlayHostToggle} />
-            <span>Play on the game's page</span>
-          </label>
-          ${this.renderInfo('play-host')}
-        </div>
-        ${this.renderNote(
-          'play-host',
-          "Play opens the game's own page (/?debug) in a window, and the agent's pix3_play / " +
-            'pix3_game_run run on a page of its own. Each Play is a fresh load of the files on ' +
-            'disk. Off: the Game tab, until it is removed in the next release.'
-        )}
-      </div>
-
       <div class="settings-field">
         <div class="field-head">
           <label class="toggle-row">
@@ -611,10 +591,6 @@ export class EditorSettingsDialog extends ComponentBase {
     this.keepEditorRunningForAgent = target.checked;
   }
 
-  private onPlayHostToggle(e: Event): void {
-    this.playOnPage = (e.target as HTMLInputElement).checked;
-  }
-
   private onPauseToggle(e: Event): void {
     const target = e.target as HTMLInputElement;
     this.pauseRenderingOnUnfocus = target.checked;
@@ -639,7 +615,6 @@ export class EditorSettingsDialog extends ComponentBase {
       pauseRenderingOnUnfocus: this.pauseRenderingOnUnfocus,
       keepEditorRunningForAgent: this.keepEditorRunningForAgent,
       navigation2D: this.navigation2D,
-      playHost: this.playOnPage ? 'page' : 'editor',
     });
 
     await this.operationService.invoke(operation);

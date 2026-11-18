@@ -7,7 +7,6 @@ import {
   type ComponentItemConfig,
 } from 'golden-layout';
 import { injectable, inject } from '@/fw/di';
-import { subscribe } from 'valtio/vanilla';
 import { appState, type AppState, type EditorTab } from '@/state';
 import { IconService, IconSize } from '@/services/editor/IconService';
 
@@ -18,8 +17,6 @@ export const PANEL_COMPONENT_TYPES = {
   assets: 'assets',
   animationTimeline: 'animation-timeline',
   logs: 'logs',
-  game: 'game',
-  runtime: 'runtime',
   localization: 'localization',
   generate: 'generate',
   modelJobs: 'model-jobs',
@@ -35,8 +32,6 @@ const PANEL_TAG_NAMES = {
   [PANEL_COMPONENT_TYPES.assets]: 'pix3-assets-panel',
   [PANEL_COMPONENT_TYPES.animationTimeline]: 'pix3-animation-timeline-panel',
   [PANEL_COMPONENT_TYPES.logs]: 'pix3-logs-panel',
-  [PANEL_COMPONENT_TYPES.game]: 'pix3-game-tab',
-  [PANEL_COMPONENT_TYPES.runtime]: 'pix3-runtime-panel',
   [PANEL_COMPONENT_TYPES.localization]: 'pix3-localization-panel',
   [PANEL_COMPONENT_TYPES.generate]: 'pix3-generate-panel',
   [PANEL_COMPONENT_TYPES.modelJobs]: 'pix3-model-jobs-panel',
@@ -50,8 +45,6 @@ export const PANEL_DISPLAY_TITLES: Record<PanelComponentType, string> = {
   [PANEL_COMPONENT_TYPES.assets]: 'Assets',
   [PANEL_COMPONENT_TYPES.animationTimeline]: 'Animation',
   [PANEL_COMPONENT_TYPES.logs]: 'Logs',
-  [PANEL_COMPONENT_TYPES.game]: 'Game',
-  [PANEL_COMPONENT_TYPES.runtime]: 'Runtime',
   [PANEL_COMPONENT_TYPES.localization]: 'Localization',
   [PANEL_COMPONENT_TYPES.generate]: 'Asset Generator',
   [PANEL_COMPONENT_TYPES.modelJobs]: '3D Asset Generator',
@@ -63,7 +56,6 @@ export const PANEL_DISPLAY_TITLES: Record<PanelComponentType, string> = {
  * literal `import()` calls are what the dist check requires (plan D12).
  */
 const PANEL_MODULE_LOADERS: Partial<Record<PanelComponentType, () => Promise<unknown>>> = {
-  [PANEL_COMPONENT_TYPES.runtime]: () => import('@/ui/runtime/runtime-panel'),
   [PANEL_COMPONENT_TYPES.animationTimeline]: () =>
     import('@/ui/animation-timeline/animation-timeline-panel'),
   [PANEL_COMPONENT_TYPES.localization]: () => import('@/ui/localization-view/localization-panel'),
@@ -80,7 +72,6 @@ const PANEL_MODULE_LOADERS: Partial<Record<PanelComponentType, () => Promise<unk
  */
 const EDITOR_TAB_ICON_BY_COMPONENT: Partial<Record<PanelComponentType, string>> = {
   [PANEL_COMPONENT_TYPES.viewport]: 'film',
-  [PANEL_COMPONENT_TYPES.game]: 'play',
 };
 
 /**
@@ -90,7 +81,6 @@ const EDITOR_TAB_ICON_BY_COMPONENT: Partial<Record<PanelComponentType, string>> 
  */
 const EDITOR_DOCUMENT_COMPONENT_TYPES: readonly PanelComponentType[] = [
   PANEL_COMPONENT_TYPES.viewport,
-  PANEL_COMPONENT_TYPES.game,
 ];
 
 /** True for a document component type — see {@link EDITOR_DOCUMENT_COMPONENT_TYPES}. */
@@ -110,8 +100,6 @@ export const isEditorDocumentPanel = (componentType: string | undefined): boolea
  * path, and adding a panel type means adding a line here.
  */
 const PANEL_HOME_NEIGHBOURS: Partial<Record<PanelComponentType, readonly PanelComponentType[]>> = {
-  [PANEL_COMPONENT_TYPES.sceneTree]: [PANEL_COMPONENT_TYPES.runtime],
-  [PANEL_COMPONENT_TYPES.runtime]: [PANEL_COMPONENT_TYPES.sceneTree],
   [PANEL_COMPONENT_TYPES.inspector]: [PANEL_COMPONENT_TYPES.history],
   [PANEL_COMPONENT_TYPES.history]: [PANEL_COMPONENT_TYPES.inspector],
   [PANEL_COMPONENT_TYPES.assets]: [
@@ -157,12 +145,6 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
                 title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.sceneTree],
                 isClosable: false,
               },
-              {
-                type: 'component',
-                componentType: PANEL_COMPONENT_TYPES.runtime,
-                title: PANEL_DISPLAY_TITLES[PANEL_COMPONENT_TYPES.runtime],
-                isClosable: true,
-              },
             ],
           },
         ],
@@ -172,7 +154,7 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
         width: 55,
         content: [
           {
-            // The document stack (scene / game tabs). Empty until the shell opens the entry scene;
+            // The document stack (scene tabs). Empty until the shell opens the entry scene;
             // not closable, so closing the last document keeps the drop target in place.
             type: 'stack',
             id: 'editor-stack',
@@ -234,8 +216,6 @@ export class LayoutManagerService {
   private layout: GoldenLayout | null = null;
   private readonly state: AppState;
   private container: HTMLElement | null = null;
-  private disposePlaySubscription?: () => void;
-  private lastIsPlaying = false;
   private editorStack: Stack | null = null;
   private editorTabContainers = new Map<string, ContentItem>();
   private editorTabItems = new Map<string, ContentItem>();
@@ -375,8 +355,7 @@ export class LayoutManagerService {
 
       const itemConfig: ComponentItemConfig & { popoutEnabled?: boolean } = {
         type: 'component',
-        componentType:
-          tab.type === 'game' ? PANEL_COMPONENT_TYPES.game : PANEL_COMPONENT_TYPES.viewport,
+        componentType: PANEL_COMPONENT_TYPES.viewport,
         title: tab.title,
         isClosable: true,
         // PREVENT DRAGGING to enforce Single Document Interface
@@ -600,7 +579,7 @@ export class LayoutManagerService {
       return;
     }
 
-    // Documents (viewport/game) are not dockable panels: they live in the
+    // Documents (scene viewports) are not dockable panels: they live in the
     // editor stack and are created through `EditorTabService`, which needs a tab id and a resource
     // this method has no way to invent. Focusing an existing one is all that is safe here.
     if (isEditorDocumentPanel(componentType)) {
@@ -877,28 +856,10 @@ export class LayoutManagerService {
       // ignore
     }
 
-    // Bring the Runtime panel to the front when play mode starts, so live
-    // runtime instances are immediately visible.
-    this.lastIsPlaying = appState.ui.isPlaying;
-    this.disposePlaySubscription?.();
-    this.disposePlaySubscription = subscribe(appState.ui, () => {
-      const playing = appState.ui.isPlaying;
-      if (playing && !this.lastIsPlaying) {
-        this.focusPanel(PANEL_COMPONENT_TYPES.runtime);
-      } else if (!playing && this.lastIsPlaying) {
-        // Returning from play mode: bring the Scene Tree back to the front of its
-        // stack (play mode swapped it for the Runtime panel).
-        this.focusPanel(PANEL_COMPONENT_TYPES.sceneTree);
-      }
-      this.lastIsPlaying = playing;
-    });
-
     this.state.ui.isLayoutReady = true;
   }
 
   dispose(): void {
-    this.disposePlaySubscription?.();
-    this.disposePlaySubscription = undefined;
     if (this.tabDecorationHandle !== null) {
       clearTimeout(this.tabDecorationHandle);
       this.tabDecorationHandle = null;

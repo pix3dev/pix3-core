@@ -82,7 +82,7 @@ Authoritative code rules for pix3-core (runtime, CLI, editor-core, Vite plugin, 
 ### Features (Commands & Operations)
 
 - `packages/editor-core/src/features/scene/`: Node creation, deletion, reparenting, prefabs.
-- `packages/editor-core/src/features/scripts/`: Script management, play mode control.
+- `packages/editor-core/src/features/scripts/`: Script components, and Play / Stop (the game runs on its own page).
 - `packages/editor-core/src/features/properties/`: Object property updates.
 - `packages/editor-core/src/features/selection/`: Selection logic.
 

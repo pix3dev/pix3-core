@@ -8,7 +8,7 @@ import { FitGroup2DToContentsOperation } from './FitGroup2DToContentsOperation';
 const createContext = (
   nodes: NodeBase[],
   primaryNodeId: string | null,
-  overrides: { isPlaying?: boolean; isReadOnly?: boolean } = {}
+  overrides: { isReadOnly?: boolean } = {}
 ): CommandContext => {
   const nodeMap = new Map<string, NodeBase>();
   const visit = (current: readonly NodeBase[]) => {
@@ -48,7 +48,6 @@ const createContext = (
   return {
     state: {
       selection: { nodeIds: primaryNodeId ? [primaryNodeId] : [], primaryNodeId },
-      ui: { isPlaying: overrides.isPlaying ?? false },
       project: { host: { writer: overrides.isReadOnly ? 'other' : 'self' } },
     } as CommandContext['state'],
     snapshot: { scenes: { activeSceneId: 'scene-1' } } as CommandContext['snapshot'],
@@ -105,7 +104,7 @@ describe('FitGroup2DToContentsCommand', () => {
     );
   });
 
-  it('is unavailable without a Group2D selection, for an empty group, and while playing', () => {
+  it('is unavailable without a Group2D selection, for an empty group, and read-only', () => {
     const { group } = createPopulatedGroup();
     const sprite = new Sprite2D({ id: 'loose-sprite', name: 'Loose', width: 10, height: 10 });
     const emptyGroup = new Group2D({ id: 'empty', name: 'Empty', width: 10, height: 10 });
@@ -120,11 +119,6 @@ describe('FitGroup2DToContentsCommand', () => {
     expect(
       new FitGroup2DToContentsCommand().preconditions(
         createContext([emptyGroup], emptyGroup.nodeId)
-      ).canExecute
-    ).toBe(false);
-    expect(
-      new FitGroup2DToContentsCommand().preconditions(
-        createContext([group], group.nodeId, { isPlaying: true })
       ).canExecute
     ).toBe(false);
     expect(

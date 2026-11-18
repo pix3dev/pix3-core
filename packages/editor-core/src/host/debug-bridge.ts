@@ -1,13 +1,11 @@
-import { NodeBase, SceneManager, type RunOverrides, type SceneNodeDefinition } from '@pix3/runtime';
+import { NodeBase, SceneManager, type SceneNodeDefinition } from '@pix3/runtime';
 
 import {
   clearErrors,
   componentToDTO,
   errors,
-  findLiveNodes,
   installErrorCapture,
   nodeToDTO,
-  readLiveNode,
   safeSerialize,
   type Json,
   type CapturedError,
@@ -16,31 +14,21 @@ import {
   type NodeSummary,
 } from '@/core/agent-introspection';
 import { ServiceContainer } from '@/fw/di';
-import { StartSceneGameCommand } from '@/features/scripts/StartSceneGameCommand';
-import { openGameSurface } from '@/features/scripts/play-workspace';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { PlayPageLink } from '@/services/play/PlayPageLink';
-import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { EditorTabService } from '@/services/editor/EditorTabService';
-import { EditorGameTestService } from '@/services/game-test/EditorGameTestService';
-import { GameTestService } from '@/services/game-test/GameTestService';
-import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
-import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
 import { SceneBaselineService } from '@/services/project/SceneBaselineService';
 import { diffScenes, indexNodes, leafKey } from '@/core/scene-patch/scene-diff';
 import { normOfGraph } from '@/core/scene-patch/scene-norm';
 import { toProjectPath } from '@/services/project/disk/project-paths';
 import { appState } from '@/state';
-import type { GameAspectRatio } from '@/state/AppState';
 
 import {
   BRIDGE_GROUP_DESCRIPTION,
   BRIDGE_GROUP_NAME,
   BRIDGE_TOOLS,
-  PAGE_BRIDGE_TOOLS,
   validateParams,
   type BridgeToolSpec,
 } from './bridge-tools';
@@ -52,7 +40,6 @@ import {
   pagePlayStatus,
   PageRefusal,
   pageScreenshot,
-  runOverridesProblem,
   type LiveSource,
 } from './bridge-play-page';
 import { bake, hideModelSheet, renderModel } from './bridge-model';
@@ -80,19 +67,6 @@ export type BridgeResult<T extends object = object> =
 
 type Params = Record<string, unknown>;
 
-export type PlayAspect = 'free' | '16:9' | '9:16' | '4:3';
-
-export interface PlayStatus {
-  playing: boolean;
-  status: string;
-  playOwner: string | null;
-  startedAt: number | null;
-  /** The Game tab's aspect preset (`free` fills the panel). */
-  aspect: PlayAspect;
-  /** Set while paused on a `pix3_game_run` outcome frame (not a pause someone asked for). */
-  pausedBy?: 'pix3_game_run';
-}
-
 /** `window.__PIX3_DEBUG__`: the tool table, `call`, and short forms over the same calls. */
 export interface Pix3DebugBridge {
   readonly version: 2;
@@ -113,10 +87,11 @@ export interface Pix3DebugBridge {
   selection(): { nodeIds: string[]; primaryNodeId: string | null };
   errors(): CapturedError[];
   clearErrors(): void;
+  /** `pix3_play` on your own game page (plan play-in-page D7). */
   readonly play: {
-    status(): PlayStatus;
+    status(): Promise<Record<string, unknown>>;
     start(scenePath?: string): Promise<BridgeResult>;
-    stop(options?: { force?: boolean }): Promise<BridgeResult>;
+    stop(): Promise<BridgeResult>;
     restart(): Promise<BridgeResult>;
     pause(): Promise<BridgeResult>;
     resume(): Promise<BridgeResult>;
@@ -135,9 +110,6 @@ const refuse = <T extends object = object>(reason: string, detail?: string): Bri
 });
 
 let callCounter = 0;
-
-/** How long a restart waits for the versions held during play to be applied. */
-const RESTART_SETTLE_MS = 15_000;
 
 /** Keep the editor awake for the agent while `work` runs (plan §D.4). */
 const asAgentCall = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -211,22 +183,6 @@ const sceneTree = (
     children: roots.map(root => nodeToDTO(root, maxDepth - 1, propertiesOf)),
     sceneVersion: graph.version,
   };
-};
-
-const editorLive: LiveSource = {
-  async node(nodeId, byName) {
-    const runtime = service(GamePlaySessionService).getActiveRuntime();
-    if (!runtime) return null;
-    // A popped-out game window is another page: its coordinates would not click this one.
-    return readLiveNode(runtime.runner, runtime.canvas, nodeId, {
-      byName,
-      onThisPage: runtime.windowRef === window,
-    });
-  },
-  async find(text) {
-    const runtime = service(GamePlaySessionService).getActiveRuntime();
-    return runtime ? findLiveNodes(runtime.runner, text) : [];
-  },
 };
 
 const nodeRead = async (
@@ -332,113 +288,6 @@ const selection = () => ({
   primaryNodeId: appState.selection.primaryNodeId,
 });
 
-// --- play ----------------------------------------------------------------------------------------
-
-const playStatus = (): PlayStatus => ({
-  playing: appState.ui.isPlaying,
-  status: appState.ui.playModeStatus,
-  playOwner: appState.ui.playOwner,
-  startedAt: appState.ui.playStartedAt,
-  aspect: ASPECT_NAMES[appState.ui.gameAspectRatio],
-  ...(appState.ui.playModeStatus === 'paused' && service(GamePlaySessionService).pauseHeldByGameRun
-    ? { pausedBy: 'pix3_game_run' as const }
-    : {}),
-});
-
-/** The Game tab's presets as the bridge names them (the tab's own button labels). */
-const ASPECT_NAMES: Record<GameAspectRatio, PlayAspect> = {
-  free: 'free',
-  '16:9-landscape': '16:9',
-  '16:9-portrait': '9:16',
-  '4:3': '4:3',
-};
-
-const aspectPreset = (aspect: PlayAspect): GameAspectRatio =>
-  (Object.keys(ASPECT_NAMES) as GameAspectRatio[]).find(key => ASPECT_NAMES[key] === aspect) ??
-  'free';
-
-const setPaused = async (paused: boolean): Promise<BridgeResult> => {
-  const refused = refuseDesignerSession();
-  if (refused) return refused;
-  if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing.');
-  if (service(GamePlaySessionService).runnerPaused === paused) return { ok: true };
-  return ran(await resolveCommandDispatcher().executeById('game.pause'), 'game.pause');
-};
-
-/** The designer's play session is theirs: the agent may not stop or restart it, even with force. */
-const refuseDesignerSession = (): BridgeResult | null =>
-  appState.ui.isPlaying && appState.ui.playOwner === 'designer'
-    ? refuse(
-        'not_owner',
-        'The designer started this play session; wait for them to stop it, or ask. `force` does not override this.'
-      )
-    : null;
-
-const ran = (executed: boolean, action: string): BridgeResult =>
-  executed ? { ok: true } : refuse('refused', `The editor refused "${action}" (see pix3_errors).`);
-
-const play = {
-  async start(scenePath?: string): Promise<BridgeResult> {
-    if (appState.ui.isPlaying) {
-      return refuse(
-        'already_playing',
-        `Play is running (owner: ${appState.ui.playOwner ?? 'unknown'}).`
-      );
-    }
-    const dispatcher = resolveCommandDispatcher();
-    const executed = scenePath
-      ? await dispatcher.execute(new StartSceneGameCommand({ scenePath }))
-      : await dispatcher.executeById('game.start');
-    if (executed && appState.ui.isPlaying) {
-      appState.ui.playOwner = 'agent';
-      service(AgentKeepaliveService).notePlayStartedByAgent();
-    }
-    return ran(executed, 'game.start');
-  },
-  async stop(): Promise<BridgeResult> {
-    const refused = refuseDesignerSession();
-    if (refused) return refused;
-    if (!appState.ui.isPlaying) return refuse('not_playing', 'Nothing is playing.');
-    return ran(await resolveCommandDispatcher().executeById('game.stop'), 'game.stop');
-  },
-  /**
-   * Plan §B.3: stop → apply the file changes held for play → start (just start when stopped). The editor's own
-   * `game.restart` restarts the runtime in place and keeps the hold, so the version an agent
-   * wrote during play would still be waiting after it; this one goes through a real stop.
-   */
-  async restart(): Promise<BridgeResult> {
-    const refused = refuseDesignerSession();
-    if (refused) return refused;
-    // Nothing playing: a restart is a start. The kit's loop is sync → restart → game_run, and a
-    // not_playing refusal after a stop broke it on the first iteration (core-tests/game10).
-    if (!appState.ui.isPlaying) return play.start();
-    const dispatcher = resolveCommandDispatcher();
-    const stopped = await dispatcher.executeById('game.stop');
-    if (!stopped) return ran(false, 'game.stop');
-    // Script roots re-imported during play (a sync's, or a `pix3:scripts` frame's) register now,
-    // before the held scene versions reload — their parked `user:*` components resolve against the
-    // new registry — and before the start builds the game from it. Explicit, not left to the valtio
-    // subscription that also does it: that one fires asynchronously, after this start could.
-    const scripts = service(ProjectScriptLoaderService);
-    if (scripts.applyQueuedRoots()) await scripts.componentsSettled();
-    // Held external versions are re-read and delivered once play is off; the reloads they
-    // trigger complete before `whenSettled` resolves. Bounded: an unreadable file settles too.
-    await Promise.race([
-      service(ExternalChangeService).whenSettled(),
-      new Promise(resolve => setTimeout(resolve, RESTART_SETTLE_MS)),
-    ]);
-    return play.start();
-  },
-  /** Pause (a no-op when already paused). `game.pause` is a toggle; the agent asks for a state. */
-  async pause(): Promise<BridgeResult> {
-    return setPaused(true);
-  },
-  /** Resume (a no-op when running) — e.g. after a `pix3_game_run` left the outcome frame paused. */
-  async resume(): Promise<BridgeResult> {
-    return setPaused(false);
-  },
-};
-
 /**
  * Whether `/@vite/client` reached this page: the plugin's inline probe sets
  * `__PIX3_VITE_CLIENT__`; the resource timeline is the fallback for a page without it.
@@ -479,9 +328,9 @@ const EXECUTES: Record<string, Execute> = {
       flushing: service(FlushService).isFlushing(),
       // A viewport drag is mid-edit: nothing is written until it ends (plan §C.1).
       gestureInProgress: appState.ui.gestureInProgress,
-      // Paths whose external version is seen but not applied yet (settling, unreadable, play).
+      // Paths whose external version is seen but not applied yet (settling, unreadable).
       pendingExternal: service(SceneBaselineService).getPendingExternalPaths(),
-      play: onPage() ? await pagePlayStatus() : playStatus(),
+      play: await pagePlayStatus(),
       selection: selection(),
       errorCount: errors().length,
       keepalive: service(AgentKeepaliveService).isKeepAlive(),
@@ -509,7 +358,7 @@ const EXECUTES: Record<string, Execute> = {
       );
     }
     const path = found.descriptor.filePath;
-    const live = onPage() ? pageLiveSource(params.page) : editorLive;
+    const live = pageLiveSource(params.page);
     if (typeof params.nodeId === 'string') {
       return { ...(await nodeRead(found, params.nodeId, live)), path };
     }
@@ -518,66 +367,6 @@ const EXECUTES: Record<string, Execute> = {
     }
     const maxDepth = typeof params.maxDepth === 'number' ? params.maxDepth : 3;
     return { ok: true, path, scene: sceneTree(found, maxDepth), selection: selection() };
-  },
-
-  async pix3_play(params) {
-    const action = params.action as 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'status';
-    // The Game tab's frame first, so a start already runs at it (any action takes it, `status` too).
-    if (typeof params.aspect === 'string') {
-      await service(GamePlaySessionService).setAspectRatio(
-        aspectPreset(params.aspect as PlayAspect)
-      );
-    }
-    // A test run's seed and component config: armed for this start / restart and the session's
-    // in-place restarts, cleared when play stops (core-tests/game10).
-    if (action === 'start' || action === 'restart') {
-      const run = params.run as RunOverrides | undefined;
-      if (run !== undefined) {
-        const problem = runOverridesProblem(run);
-        if (problem) return refuse('invalid_params', problem);
-      }
-      service(GamePlaySessionService).setRunOverrides(run ?? null);
-    }
-    if (action === 'status') return { ok: true, ...playStatus() };
-    const result =
-      action === 'start'
-        ? await play.start(params.scenePath as string | undefined)
-        : await play[action]();
-    return { ...result, ...playStatus() };
-  },
-
-  async pix3_game_run(params) {
-    if (!appState.ui.isPlaying) {
-      return refuse('not_playing', 'Start play first: pix3_play {action:"start"}.');
-    }
-    // The tool payload is raw model JSON: parse it (defaults included — a `bot` without
-    // `channel` is `physical-input`, a monkey/control spec is normalised) before running. Passing it
-    // straight to `run` left `bot.channel` undefined, and every bot action read as direct-action.
-    const parsed = GameTestService.parseSpec(params);
-    if ('error' in parsed) return refuse('invalid_spec', parsed.error);
-    const result = await service(EditorGameTestService).test.run(parsed.spec);
-    return result.ok
-      ? (result as unknown as Record<string, unknown>)
-      : refuse('refused', result.error ?? 'game run did not start');
-  },
-
-  async pix3_screenshot(params) {
-    const target = params.target as 'game' | 'viewport';
-    if (target === 'game') {
-      if (!appState.ui.isPlaying) {
-        return refuse(
-          'not_playing',
-          'Nothing is playing; start play first, or screenshot the viewport.'
-        );
-      }
-      await openGameSurface(ServiceContainer.getInstance());
-    } else {
-      const descriptor = descriptorFor(undefined);
-      if (!descriptor) return refuse('no_scene', 'No active scene.');
-      await service(EditorTabService).focusOrOpenScene(descriptor.filePath);
-      service(ViewportRendererService).requestRender();
-    }
-    return { ok: true, target, next: 'take_screenshot' };
   },
 
   async pix3_render_model(params) {
@@ -592,42 +381,34 @@ const EXECUTES: Record<string, Execute> = {
     return bake(found.graph, service(ViewportRendererService), params);
   },
 
-  async pix3_errors(params) {
-    const list = errors(typeof params.since === 'number' ? params.since : undefined);
-    if (params.clear === true) clearErrors();
-    return { ok: true, count: list.length, errors: list };
-  },
-};
-
-/** The play tools on the game's own page (`playHost: 'page'`, plan play-in-page S4). */
-const PAGE_EXECUTES: Record<string, Execute> = {
   pix3_play: pagePlay,
   pix3_game_run: pageGameRun,
+
   async pix3_screenshot(params) {
-    return params.target === 'game' ? pageScreenshot(params) : EXECUTES.pix3_screenshot(params);
+    if (params.target === 'game') return pageScreenshot(params);
+    const descriptor = descriptorFor(undefined);
+    if (!descriptor) return refuse('no_scene', 'No active scene.');
+    await service(EditorTabService).focusOrOpenScene(descriptor.filePath);
+    service(ViewportRendererService).requestRender();
+    return { ok: true, target: 'viewport', next: 'take_screenshot' };
   },
+
   async pix3_errors(params) {
     return pageErrors(params);
   },
 };
-
-/** The editor setting `playHost` (plan play-in-page): the game on its own page. */
-const onPage = (): boolean => appState.ui.playHost === 'page';
-
-const activeTools = (): readonly BridgeToolSpec[] => (onPage() ? PAGE_BRIDGE_TOOLS : BRIDGE_TOOLS);
 
 /** One call of the bridge, whichever transport asked: validate, keep alive, never throw. */
 export async function callBridgeTool(
   name: string,
   params: unknown = {}
 ): Promise<Record<string, unknown>> {
-  const tools = activeTools();
-  const spec = tools.find(tool => tool.name === name);
-  const execute = (onPage() ? PAGE_EXECUTES[name] : undefined) ?? EXECUTES[name];
+  const spec = BRIDGE_TOOLS.find(tool => tool.name === name);
+  const execute = EXECUTES[name];
   if (!spec || !execute) {
     return refuse(
       'unknown_tool',
-      `No tool "${name}"; the tools are ${tools.map(tool => tool.name).join(', ')}.`
+      `No tool "${name}"; the tools are ${BRIDGE_TOOLS.map(tool => tool.name).join(', ')}.`
     );
   }
   const problem = validateParams(spec.inputSchema, params ?? {});
@@ -663,7 +444,7 @@ export function thirdPartyToolGroup(): {
   return {
     name: BRIDGE_GROUP_NAME,
     description: BRIDGE_GROUP_DESCRIPTION,
-    tools: activeTools().map(spec => ({
+    tools: BRIDGE_TOOLS.map(spec => ({
       ...spec,
       execute: params => callBridgeTool(spec.name, params),
     })),
@@ -691,7 +472,7 @@ const asResult = (answer: Record<string, unknown>): BridgeResult =>
 export function createDebugBridge(): Pix3DebugBridge {
   return {
     version: 2,
-    tools: () => activeTools().map(tool => ({ ...tool })),
+    tools: () => BRIDGE_TOOLS.map(tool => ({ ...tool })),
     call: (name, params = {}) => callBridgeTool(name, params),
     help() {
       const out: Record<string, string> = {
@@ -700,7 +481,7 @@ export function createDebugBridge(): Pix3DebugBridge {
         'status() / sync({expect?, timeoutMs?}) / scene(maxDepth) / node(id) / find(text) / screen(id) / pending() / selection() / play.* / errors() / clearErrors()':
           'Short forms over call(): status → pix3_status, sync → pix3_sync, scene/node/find/screen → pix3_scene, play.start/stop/restart/pause/resume/status → pix3_play, errors → pix3_errors.',
       };
-      for (const tool of activeTools()) out[tool.name] = tool.description;
+      for (const tool of BRIDGE_TOOLS) out[tool.name] = tool.description;
       return out;
     },
     status: () => callBridgeTool('pix3_status'),
@@ -730,11 +511,10 @@ export function createDebugBridge(): Pix3DebugBridge {
     errors: () => errors(),
     clearErrors: () => clearErrors(),
     play: {
-      status: playStatus,
+      status: () => callBridgeTool('pix3_play', { action: 'status' }),
       start: async scenePath =>
         asResult(await callBridgeTool('pix3_play', { action: 'start', scenePath })),
-      stop: async (options = {}) =>
-        asResult(await callBridgeTool('pix3_play', { action: 'stop', force: options.force })),
+      stop: async () => asResult(await callBridgeTool('pix3_play', { action: 'stop' })),
       restart: async () => asResult(await callBridgeTool('pix3_play', { action: 'restart' })),
       pause: async () => asResult(await callBridgeTool('pix3_play', { action: 'pause' })),
       resume: async () => asResult(await callBridgeTool('pix3_play', { action: 'resume' })),

@@ -54,8 +54,8 @@ const BUTTONS_BIT = [1, 4, 2] as const;
 
 /**
  * Where synthetic events go. The live implementation dispatches the same DOM events
- * `GameInputService` does — keys on the editor window (the runtime's `InputService`
- * registers there even when the game renders in a popout), pointers on the game canvas —
+ * `GameInputService` does — keys on the page's window (where the runtime's `InputService`
+ * registers), pointers on the game canvas —
  * so the harness travels the real player path and not a private back door into the input
  * service.
  */

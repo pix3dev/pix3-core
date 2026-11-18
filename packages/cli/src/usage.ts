@@ -335,9 +335,9 @@ Reference it from a scene or script as res://<path inside the project>.
                  '{"until":[{"kind":"frames","n":120}],"bot":{"name":"menu"}}'. The page's own test
                  host runs it (the editor's code; on dev imported by the page with the policies Vite
                  serves, on dist injected with the policy compiled here) and the report is the one
-                 the bridge returns ("run" in --json). Differences from the editor: a negative
-                 control restores state only through the game's reset(seed) (no scene restart on
-                 the page), and reach proofs last only as long as the page
+                 the bridge returns ("run" in --json). On a page a negative control restores
+                 state only through the game's reset(seed) (no scene restart in place), and
+                 reach proofs last only as long as the page
   --bot name     run design/tests/bots/<name>.ts on the page in real time: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
                  physical-input only. Ends at done() or after --frames game frames (default 7200,
@@ -426,8 +426,7 @@ Reference it from a scene or script as res://<path inside the project>.
   error; 2 = could not run (no Chrome, no such file, no project) or a refused pass.
 `,
   bridge: `Usage: pix3 bridge <pix3_tool> ['<json params>'] [--project <dir>]
-       pix3 bridge screenshot [--target game|viewport] [--page designer|agent]
-                              [--aspect free|16:9|9:16|4:3] [--out <file.png>]
+       pix3 bridge screenshot [--target game|viewport] [--page designer|agent] [--out <file.png>]
        pix3 bridge tap <x> <y> | --node <id> [--touch]
        pix3 bridge swipe <x1> <y1> <x2> <y2> | --from <id> --to <id> [--touch] [--ms 180]
        pix3 bridge render [--node <id>] [--views <list>] [--size 384] [--lights auto|studio|scene]
@@ -460,10 +459,7 @@ Reference it from a scene or script as res://<path inside the project>.
 
   The game runs on its own page, in a process of its own: pix3_play start opens yours. A
   pix3_play start whose window does not open (popup_blocked) is opened as a new tab in the
-  Chrome 'pix3 editor' started. With two
-  editor tabs open the CLI talks to the writer. With Editor Settings → "Play on the game's page"
-  off (the Game tab, until it is removed): screenshot and tap use the editor tab, and --aspect
-  sets the Game tab's frame (pix3_play's "aspect").
+  Chrome 'pix3 editor' started. With two editor tabs open the CLI talks to the writer.
 `,
   model: `Usage: pix3 model new <id> --target <scene|prefab|res://…> [--node <id>] [--title <text>]
                        [--reference <image> [--reference-background <hex>]]

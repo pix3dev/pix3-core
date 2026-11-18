@@ -119,7 +119,7 @@ const installState = (): Pix3PlayerState => {
 };
 
 /**
- * Dev only: the `?scene=` the editor's Play in Browser Tab / with Profiler asks for, when it is one
+ * Dev only: the `?scene=` the editor's Play asks for, when it is one
  * of the project's scenes (a prefab or a typo falls back to the entry scene, with a warning).
  */
 const requestedScene = (): string | null => {

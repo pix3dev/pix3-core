@@ -217,7 +217,7 @@ export function componentToDTO(component: unknown, index: number): ComponentDTO 
 }
 
 // ---------------------------------------------------------------------------
-// Live nodes of a running game (the editor's play session and the game's own page alike)
+// Live nodes of a running game (the game page's test host reads them)
 // ---------------------------------------------------------------------------
 
 /** The slice of `SceneRunner` the live reads use. */
@@ -237,14 +237,13 @@ export interface LiveNodeRead {
 
 /**
  * The running node `nodeId` (or, with `byName`, the first live node of that name), its
- * components' play-time state and its origin on the page. `onThisPage: false` (the canvas is in
- * another window) answers no `screen`: those coordinates would not click this page.
+ * components' play-time state and its origin on the page.
  */
 export function readLiveNode(
   runner: LiveRunner,
   canvas: HTMLCanvasElement,
   nodeId: string,
-  options: { byName?: boolean; onThisPage?: boolean } = {}
+  options: { byName?: boolean } = {}
 ): LiveNodeRead | null {
   const node =
     runner.getLiveNodeById(nodeId) ?? (options.byName ? runner.findLiveNodeByName(nodeId) : null);
@@ -254,7 +253,7 @@ export function readLiveNode(
   dto.components = components;
   const backing = runner.projectNodeToCanvas(node);
   const rect = canvas.getBoundingClientRect();
-  if (!backing || options.onThisPage === false || rect.width <= 0 || canvas.width <= 0) {
+  if (!backing || rect.width <= 0 || canvas.width <= 0) {
     return { dto, screen: null, components };
   }
   return {
@@ -292,105 +291,6 @@ export function findLiveNodes(
     }
   }
   return matches;
-}
-
-// ---------------------------------------------------------------------------
-// Live Three.js object tree (play-mode runtime instances)
-// ---------------------------------------------------------------------------
-
-/**
- * During play, games spawn raw Three.js objects (sprites, instanced meshes,
- * falling-cluster meshes) as children of authored nodes — they are NOT NodeBase
- * and so never appear in the authored graph. This walks the *actual* Object3D
- * tree so tooling can see the live render hierarchy.
- */
-export interface Object3DLike {
-  name?: string;
-  type?: string;
-  uuid?: string;
-  visible?: boolean;
-  renderOrder?: number;
-  position?: { x: number; y: number; z: number };
-  matrixWorld?: { elements: number[] };
-  children?: unknown[];
-  userData?: Record<string, unknown>;
-  count?: number;
-  isInstancedMesh?: boolean;
-}
-
-export interface LiveObjectDTO {
-  threeType: string;
-  name: string;
-  uuid: string | null;
-  visible: boolean;
-  renderOrder: number;
-  /** World-space position read from matrixWorld (updated every play frame). */
-  worldPos: { x: number; y: number; z: number } | null;
-  isNodeBase: boolean;
-  nodeId: string | null;
-  /** Instance count for InstancedMesh (else null). */
-  instances: number | null;
-  flags: { droppable?: boolean; gizmo?: boolean; overlay2D?: boolean };
-  childCount: number;
-  children?: LiveObjectDTO[];
-}
-
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
-
-export function liveObjectToDTO(obj: Object3DLike, depth: number): LiveObjectDTO {
-  const ctorName = (obj as { constructor?: { name?: string } }).constructor?.name;
-  const m = obj.matrixWorld?.elements;
-  const worldPos =
-    m && m.length >= 15
-      ? { x: round3(m[12]), y: round3(m[13]), z: round3(m[14]) }
-      : obj.position
-        ? { x: round3(obj.position.x), y: round3(obj.position.y), z: round3(obj.position.z) }
-        : null;
-  const ud = obj.userData ?? {};
-  const rawChildren = Array.isArray(obj.children) ? (obj.children as Object3DLike[]) : [];
-  const isNode = obj instanceof NodeBase;
-
-  const dto: LiveObjectDTO = {
-    threeType: obj.type || ctorName || 'Object3D',
-    name: obj.name || '',
-    uuid: obj.uuid ?? null,
-    visible: obj.visible !== false,
-    renderOrder: obj.renderOrder ?? 0,
-    worldPos,
-    isNodeBase: isNode,
-    nodeId: isNode ? (obj as unknown as NodeBase).nodeId : null,
-    instances: obj.isInstancedMesh ? (obj.count ?? null) : null,
-    flags: {
-      droppable: 'droppableItemRef' in ud || undefined,
-      gizmo: ud.isGizmo === true || undefined,
-      overlay2D: ud.overlay2D === true || undefined,
-    },
-    childCount: rawChildren.length,
-  };
-
-  if (rawChildren.length > 0 && depth > 0) {
-    dto.children = rawChildren.slice(0, MAX_ARRAY).map(child => liveObjectToDTO(child, depth - 1));
-  }
-  return dto;
-}
-
-/** Flatten the live tree to a filtered list (for searching spawned objects). */
-export function flattenLive(
-  obj: Object3DLike,
-  predicate: (dto: LiveObjectDTO, raw: Object3DLike) => boolean,
-  out: LiveObjectDTO[],
-  budget: { n: number }
-): void {
-  if (budget.n <= 0) return;
-  const dto = liveObjectToDTO(obj, 0);
-  if (predicate(dto, obj)) {
-    out.push(dto);
-    budget.n -= 1;
-  }
-  const children = Array.isArray(obj.children) ? (obj.children as Object3DLike[]) : [];
-  for (const child of children) flattenLive(child, predicate, out, budget);
 }
 
 // ---------------------------------------------------------------------------

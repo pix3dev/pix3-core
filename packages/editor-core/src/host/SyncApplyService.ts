@@ -1,7 +1,6 @@
 import { inject, injectable } from '@/fw/di';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { toProjectPath } from '@/services/project/disk/project-paths';
-import { BOT_DIRECTORY } from '@/services/game-test/game-bots';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
 import { appState } from '@/state';
 
@@ -9,32 +8,9 @@ import type { HookReply, SyncInfo } from './EditorHost';
 import { ExternalReloadService } from './ExternalReloadService';
 
 /**
- * What a sync during play cannot apply. A bot policy is not part of the game: the page already
- * re-imported `virtual:pix3/bot-policies` for this sync and `GameBotHost` reads the roots on every
- * run, so the next `pix3_game_run {bot}` uses the new file without a restart. The same holds for a
- * module only policies import (`policyOnly`, from the plugin's module graph — `.plans/done/scripts-vite.md`
- * S11): a helper under `design/tests/lib/` the game never runs.
- */
-export function pendingDuringPlay(
-  changedPaths: readonly string[],
-  externalPending: readonly string[],
-  policyOnly: readonly string[] = []
-): string[] {
-  const policyModules = new Set(policyOnly);
-  const applied = (path: string): boolean =>
-    path.startsWith(`${BOT_DIRECTORY}/`) || policyModules.has(path);
-  return [...new Set([...changedPaths, ...externalPending])].filter(path => !applied(path));
-}
-
-/**
  * The editor's half of the sync barrier (plan §B.3 step 4): the plugin re-imported the script
- * roots and asks this tab to take in everything the rescan found changed.
- *
- * While play runs, nothing is applied (bot policies aside, {@link pendingDuringPlay}) — external
- * changes wait for play to stop — and the answer
- * says whose session it is, so the agent knows whether it may restart it. A sync during play with
- * nothing to apply (the rescan found no change and nothing is held for play — after a restart
- * took the deferred version in) is `ok`: the game runs the files as they are on disk.
+ * roots and asks this tab to take in everything the rescan found changed. The game runs on its
+ * own page (plan play-in-page D4), so nothing here waits for it.
  */
 @injectable()
 export class SyncApplyService {
@@ -49,29 +25,13 @@ export class SyncApplyService {
 
   async apply(info: SyncInfo): Promise<HookReply> {
     const changedPaths = Object.keys(info.changed);
-    if (appState.ui.isPlaying) {
-      // The page re-imported the roots for this sync (a script added, deleted or changed is in
-      // them): queued for the stop, so a restart builds the game from the classes on disk. The
-      // plugin broadcasts `pix3:scripts` only for a change it propagates itself — never for one
-      // the sync propagated first — so this is the only road these roots have (S13).
-      this.scripts.queueRoots(info.roots);
-      const playing = appState.ui.playOwner ?? 'designer';
-      const pending = pendingDuringPlay(
-        changedPaths,
-        this.externalChanges.getPendingPaths(),
-        info.policyOnly
-      );
-      if (pending.length > 0) return { ok: false, reason: 'stale', playing, pending };
-      return { ok: true, playing, staleScenes: [...appState.project.host.staleScenes] };
-    }
     const mark = this.externalChanges.reportMark();
     this.scripts.registerRoots(info.roots);
     // The answer means the editor runs the files on disk: live components included.
     await this.scripts.componentsSettled();
     // What the rescan found plus what a `pix3:fs` frame reported before the plugin asked: the
     // watcher broadcasts a settled write on its own, so a sync that comes after that frame finds
-    // nothing changed — yet the frame's entry must not outlive the sync (a play started next
-    // would hold it and answer `stale` for a file the editor already runs).
+    // nothing changed — yet the frame's entry must not outlive the sync.
     const applied = [
       ...new Set([
         ...changedPaths.map(path => toProjectPath(path)),

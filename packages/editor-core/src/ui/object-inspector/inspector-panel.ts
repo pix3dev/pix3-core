@@ -1,5 +1,5 @@
 import { ComponentBase, customElement, html, state, subscribe, inject } from '@/fw';
-import { getNodePropertySchema, getRuntimeSceneRoot, NodeBase, Sprite2D } from '@pix3/runtime';
+import { getNodePropertySchema, NodeBase, Sprite2D } from '@pix3/runtime';
 import { SceneManager } from '@pix3/runtime';
 import { appState } from '@/state';
 import type { PropertySchema, PropertyDefinition } from '@/fw';
@@ -45,12 +45,6 @@ import './model-asset-preview';
 import './model-asset-report';
 import './property-editors';
 import { toProjectPath } from '@/services/project/disk/project-paths';
-
-/**
- * Poll cadence for the play-mode live read-out (~12.5 Hz). Fast enough to feel
- * "live" without re-rendering the inspector on every animation frame.
- */
-const LIVE_REFRESH_INTERVAL_MS = 80;
 
 interface PropertyUIState {
   value: string;
@@ -106,25 +100,6 @@ export class InspectorPanel extends ComponentBase {
   @state()
   primaryNode: NodeBase | null = null;
 
-  /**
-   * True while play mode is active AND the selected node resolves to its live
-   * runtime-clone counterpart. Drives the "LIVE" badge variant and live value
-   * mirroring; the read-only gate itself keys off play mode (`isPlaying`).
-   */
-  @state()
-  isLivePlayMode = false;
-
-  /**
-   * Whether play mode is active. Reactive so the inspector can render its
-   * read-only play-mode badge/tint, and used to detect transitions on the
-   * (noisy) appState.ui subscription. Two-way editing during play is out of scope.
-   */
-  @state()
-  isPlaying = appState.ui.isPlaying;
-
-  /** Interval that re-reads live values off the runtime clone while playing. */
-  private liveRefreshTimer: number | null = null;
-
   @state()
   propertySchema: PropertySchema | null = null;
 
@@ -159,7 +134,6 @@ export class InspectorPanel extends ComponentBase {
 
   private disposeSelectionSubscription?: () => void;
   private disposeSceneSubscription?: () => void;
-  private disposeUiSubscription?: () => void;
   private disposeLocalizationSubscription?: () => void;
   private disposeScriptSubscription?: () => void;
   /** `appState.project.scriptRefreshSignal` this panel last rendered against. */
@@ -193,21 +167,12 @@ export class InspectorPanel extends ComponentBase {
 
   connectedCallback() {
     super.connectedCallback();
-    // Anchor the transition detector to the play state at mount time — the panel
-    // may be lazily mounted (Golden Layout) while a game is already running.
-    this.isPlaying = appState.ui.isPlaying;
     this.collapsedSections = readInspectorCollapsedSections();
     this.disposeSelectionSubscription = subscribe(appState.selection, () => {
       this.updateSelectedNodes();
     });
     this.disposeSceneSubscription = subscribe(appState.scenes, () => {
       this.updateSelectedNodes();
-    });
-    this.disposeUiSubscription = subscribe(appState.ui, () => {
-      if (this.isPlaying !== appState.ui.isPlaying) {
-        this.isPlaying = appState.ui.isPlaying;
-        this.onPlayModeChanged();
-      }
     });
     // Re-render the localization-key editor's status/preview when the preview
     // locale switches or a locale table is edited.
@@ -232,9 +197,6 @@ export class InspectorPanel extends ComponentBase {
       this.requestUpdate();
     });
     this.updateSelectedNodes();
-    if (appState.ui.isPlaying) {
-      this.startLiveTimer();
-    }
 
     // Track focus for context-aware shortcuts
     this.addEventListener('focusin', () => {
@@ -296,16 +258,10 @@ export class InspectorPanel extends ComponentBase {
     this.disposeSelectionSubscription = undefined;
     this.disposeSceneSubscription?.();
     this.disposeSceneSubscription = undefined;
-    this.disposeUiSubscription?.();
-    this.disposeUiSubscription = undefined;
     this.disposeLocalizationSubscription?.();
     this.disposeLocalizationSubscription = undefined;
     this.disposeScriptSubscription?.();
     this.disposeScriptSubscription = undefined;
-    this.stopLiveTimer();
-    // Reset live-mirror UI state so a reused Lit instance starts clean even if it
-    // was detached mid-play and play stopped while it was disconnected.
-    this.isLivePlayMode = false;
     this.disposeAssetPreviewSubscription?.();
     this.disposeAssetPreviewSubscription = undefined;
     this.removeEventListener('locate-resource', this.onLocateResource as EventListener);
@@ -377,12 +333,6 @@ export class InspectorPanel extends ComponentBase {
     }
 
     this.syncValuesFromNode();
-
-    // While playing, immediately mirror the freshly selected node's live runtime
-    // values so the panel doesn't flash authored values until the next poll tick.
-    if (appState.ui.isPlaying) {
-      this.refreshLiveValues();
-    }
   }
 
   private findNodeById(nodeId: string, nodes: NodeBase[]): NodeBase | null {
@@ -398,16 +348,8 @@ export class InspectorPanel extends ComponentBase {
     return null;
   }
 
-  /**
-   * Refresh the cached property/component display values.
-   *
-   * `valueSource` lets the play-mode live read-out feed values from the running
-   * runtime clone while the schema (and everything else) stays bound to the
-   * authored `primaryNode`. The clone is the same concrete class, so its schema
-   * is identical; only the live `getValue(target)` results differ. When omitted,
-   * values come from the authored node (normal edit-mode behaviour).
-   */
-  syncValuesFromNode(valueSource?: NodeBase): void {
+  /** Refresh the cached property/component display values from the selected node. */
+  syncValuesFromNode(): void {
     if (!this.primaryNode) {
       this.propertySchema = null;
       this.propertyValues = {};
@@ -424,7 +366,7 @@ export class InspectorPanel extends ComponentBase {
     this.propertySchema = getNodePropertySchema(this.primaryNode);
     this.newGroupError = null;
 
-    const source = valueSource ?? this.primaryNode;
+    const source = this.primaryNode;
 
     // Initialize UI values from node properties
     const values: Record<string, PropertyUIState> = {};
@@ -442,35 +384,28 @@ export class InspectorPanel extends ComponentBase {
       if (values[name]) values[name] = refused;
     }
     this.propertyValues = values;
-    this.syncComponentValuesFromNode(valueSource);
+    this.syncComponentValuesFromNode();
   }
 
-  private syncComponentValuesFromNode(valueSource?: NodeBase): void {
+  private syncComponentValuesFromNode(): void {
     if (!this.primaryNode) {
       this.componentPropertyValues = {};
       return;
     }
 
-    // Render keys off the authored components (what the template iterates), but
-    // read live values from the matching runtime-clone component (same index +
-    // type) when a live value source is provided.
-    const liveComponents = valueSource?.components;
     const values: Record<string, PropertyUIState> = {};
-    this.primaryNode.components.forEach((component, index) => {
+    this.primaryNode.components.forEach(component => {
       const schema = this.scriptRegistry.getComponentPropertySchema(component.type);
       if (!schema) {
         return;
       }
-      const liveComponent = liveComponents?.[index];
-      const valueComponent =
-        liveComponent && liveComponent.type === component.type ? liveComponent : component;
       for (const prop of schema.properties) {
         if (prop.ui?.hidden) {
           continue;
         }
         const key = getComponentPropertyKey(component.id, prop.name);
         values[key] = {
-          value: getPropertyDisplayValue(valueComponent, prop),
+          value: getPropertyDisplayValue(component, prop),
           isValid: true,
         };
       }
@@ -479,87 +414,6 @@ export class InspectorPanel extends ComponentBase {
       if (values[key]) values[key] = refused;
     }
     this.componentPropertyValues = values;
-  }
-
-  /**
-   * Resolve the runtime-clone counterpart of the currently-selected node.
-   *
-   * Play mode runs an isolated clone in SceneRunner's own THREE.Scene; the
-   * scene root's direct children are the runtime NodeBase roots. The clone
-   * preserves authored nodeIds, so we match by id. Returns null when not
-   * playing, when the runtime scene is gone, or when the node has no 1:1 clone
-   * (e.g. nodes nested inside a prefab instance whose ids were remapped).
-   */
-  private resolveLiveNode(): NodeBase | null {
-    const id = this.primaryNode?.nodeId;
-    if (!id) {
-      return null;
-    }
-    const root = getRuntimeSceneRoot() as { children?: unknown[] } | null;
-    if (!root || !Array.isArray(root.children)) {
-      return null;
-    }
-    for (const child of root.children) {
-      if (child instanceof NodeBase) {
-        const hit = child.findById(id);
-        if (hit) {
-          return hit;
-        }
-      }
-    }
-    return null;
-  }
-
-  /** Re-read live values off the runtime clone and reflect them in the inspector. */
-  private refreshLiveValues(): void {
-    if (!appState.ui.isPlaying) {
-      this.setLivePlayMode(false);
-      return;
-    }
-    const live = this.resolveLiveNode();
-    this.setLivePlayMode(live !== null);
-    if (live) {
-      this.syncValuesFromNode(live);
-    }
-  }
-
-  /** Toggle the live-mirror UI state, restoring authored values when leaving live mode. */
-  private setLivePlayMode(active: boolean): void {
-    if (this.isLivePlayMode === active) {
-      return;
-    }
-    this.isLivePlayMode = active;
-    if (!active) {
-      // Restore the authored node's values now that the live mirror is gone.
-      this.syncValuesFromNode();
-    }
-  }
-
-  private startLiveTimer(): void {
-    if (this.liveRefreshTimer !== null) {
-      return;
-    }
-    this.liveRefreshTimer = window.setInterval(
-      () => this.refreshLiveValues(),
-      LIVE_REFRESH_INTERVAL_MS
-    );
-    this.refreshLiveValues();
-  }
-
-  private stopLiveTimer(): void {
-    if (this.liveRefreshTimer !== null) {
-      window.clearInterval(this.liveRefreshTimer);
-      this.liveRefreshTimer = null;
-    }
-  }
-
-  private onPlayModeChanged(): void {
-    if (appState.ui.isPlaying) {
-      this.startLiveTimer();
-    } else {
-      this.stopLiveTimer();
-      this.setLivePlayMode(false);
-    }
   }
 
   onTextureResourceDrop(propertyName: string, event: DragEvent): void {
@@ -1213,7 +1067,7 @@ export class InspectorPanel extends ComponentBase {
         panel-description="Adjust properties for the currently selected node."
         actions-label="Inspector actions"
       >
-        <div class="inspector-body ${this.isPlaying ? 'is-play-mode' : ''}">
+        <div class="inspector-body">
           ${hasAssetSelection
             ? this.sectionRenderers.renderAssetProperties()
             : hasSelection

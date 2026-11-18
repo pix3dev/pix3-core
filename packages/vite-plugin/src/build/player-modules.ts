@@ -319,8 +319,8 @@ export interface DevSourceOptions {
 /**
  * `virtual:pix3/dev`: the player's dev-only hooks. In dev:
  *
- * - `devSceneOverride()` is the URL's `?scene=` (`res://` stripped), the scene the editor's
- *   "Play in Browser Tab / with Profiler" asks for; the player checks it against its scene list;
+ * - `devSceneOverride()` is the URL's `?scene=` (`res://` stripped), the scene the editor's Play
+ *   asks for; the player checks it against its scene list;
  * - `devPageRev()` is the file revision the plugin stamped into the page's HTML
  *   (`<meta name="pix3-rev">`, {@link PAGE_REV_META}), the player's `__PIX3_PLAYER__.rev`;
  * - `devPageLink()` is the editor link `player/dev/page-link.ts` opened while a page the editor

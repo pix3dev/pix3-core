@@ -23,8 +23,6 @@ let home: string;
 let server: Server;
 let wss: WebSocketServer;
 let evaluated: string[];
-let playStatus: string;
-let pausedBy: string | undefined;
 
 const io = () => {
   const out: string[] = [];
@@ -44,8 +42,6 @@ const io = () => {
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'pix3-bridge-'));
   evaluated = [];
-  playStatus = 'playing';
-  pausedBy = undefined;
   server = createServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${TOKEN}`) {
       res.writeHead(401).end();
@@ -86,23 +82,10 @@ beforeEach(async () => {
         }
         evaluated.push(message.params.expression ?? '');
         const tool = /call\("([^"]+)"/.exec(message.params.expression ?? '')?.[1];
-        // A resume lifts the pause, as the editor's would.
-        if (tool === 'pix3_play' && message.params.expression?.includes('"resume"')) {
-          playStatus = 'playing';
-          pausedBy = undefined;
-        }
         ws.send(
           JSON.stringify({
             id: message.id,
-            result: {
-              result: {
-                value: {
-                  ok: tool !== 'pix3_fail',
-                  tool,
-                  ...(tool === 'pix3_play' ? { status: playStatus, pausedBy } : {}),
-                },
-              },
-            },
+            result: { result: { value: { ok: tool !== 'pix3_fail', tool } } },
           })
         );
       });
@@ -144,49 +127,5 @@ describe('pix3 bridge', () => {
     const none = io();
     expect(await runBridgeCli(['status'], none.io)).toBe(2);
     expect(none.err.join('')).toContain('pix3 editor');
-  });
-
-  it('screenshot --aspect sets the Game tab frame first (core-tests/game7)', async () => {
-    const run = io();
-    const out = join(home, 'shot.png');
-    const code = await runBridgeCli(['screenshot', '--aspect', '9:16', '--out', out], run.io);
-    expect(run.err).toEqual([]);
-    expect(code).toBe(0);
-    expect(evaluated[0]).toContain('call("pix3_play", {"action":"status","aspect":"9:16"})');
-    expect(evaluated[1]).toContain('call("pix3_screenshot"');
-  });
-
-  it('tap into a paused game says so: game_run leaves play paused (core-tests/game8)', async () => {
-    const running = io();
-    expect(await runBridgeCli(['tap', '10', '20'], running.io)).toBe(0);
-    expect(running.err).toEqual([]);
-    playStatus = 'paused';
-    const paused = io();
-    expect(await runBridgeCli(['tap', '10', '20'], paused.io)).toBe(0);
-    expect(paused.err.join('')).toContain(`play '{"action":"resume"}'`);
-    expect(evaluated.some(expression => expression.includes('"resume"'))).toBe(false);
-    // Both gestures say how they were sent (core-tests/game13).
-    const swipe = io();
-    expect(
-      await runBridgeCli(['swipe', '1', '2', '30', '2', '--touch', '--ms', '20'], swipe.io)
-    ).toBe(0);
-    expect(swipe.out.join('')).toContain('with a touch');
-  });
-
-  it('tap / swipe lift the pause pix3_game_run left, and say so (core-tests/game18)', async () => {
-    playStatus = 'paused';
-    pausedBy = 'pix3_game_run';
-    const tap = io();
-    expect(await runBridgeCli(['tap', '10', '20'], tap.io)).toBe(0);
-    expect(tap.err.join('')).toContain('resumed the game pix3_game_run had left paused');
-    const resume = evaluated.findIndex(expression => expression.includes('"resume"'));
-    const input = evaluated.length;
-    expect(resume).toBeGreaterThan(-1);
-    expect(resume).toBeLessThan(input);
-    expect(playStatus).toBe('playing');
-    // Already running: nothing is said and nothing is resumed.
-    const swipe = io();
-    expect(await runBridgeCli(['swipe', '1', '2', '30', '2'], swipe.io)).toBe(0);
-    expect(swipe.err).toEqual([]);
   });
 });

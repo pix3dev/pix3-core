@@ -7,8 +7,6 @@ import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
 import { RefreshPrefabInstancesCommand } from '@/features/scene/RefreshPrefabInstancesCommand';
 import { deriveSceneIdFromResourcePath } from '@/core/scene-id';
 import { ViewportRendererService } from '@/services/viewport/ViewportRenderService';
-import { OperationService } from '@/services/core/OperationService';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { SceneManager } from '@pix3/runtime';
 import { subscribe } from 'valtio/vanilla';
 import { ProjectScriptLoaderService } from '@/services/scripting/ProjectScriptLoaderService';
@@ -38,9 +36,6 @@ export class EditorTabService {
   @inject(SceneManager)
   private readonly sceneManager!: SceneManager;
 
-  @inject(OperationService)
-  private readonly operationService!: OperationService;
-
   @inject(ProjectScriptLoaderService)
   private readonly projectScriptLoader!: ProjectScriptLoaderService;
 
@@ -59,7 +54,6 @@ export class EditorTabService {
   private disposeProjectSubscription?: () => void;
   private handleBeforeUnload?: (e: BeforeUnloadEvent) => void;
   private readonly sceneLoadInFlight = new Map<string, Promise<void>>();
-  private previousActiveTabIdBeforeGame: string | null = null; // Track tab active before game tab
   private isRestoringProjectSession = false;
   // Project that owns the tabs currently in `appState.tabs`. Persistence writes only while this
   // matches `appState.project.id`; `null` means "not adopted yet" (right after a project switch or
@@ -112,11 +106,9 @@ export class EditorTabService {
         let savedActiveTabId = appState.tabs.activeTabId;
         const activeTab = appState.tabs.tabs.find(t => t.id === savedActiveTabId);
 
-        // If the active tab is excluded (like the game tab), use a persisted tab
+        // If the active tab is excluded (a template tab), use a persisted tab
         if (activeTab && !this.isPersistableTab(activeTab)) {
-          savedActiveTabId =
-            this.previousActiveTabIdBeforeGame ??
-            (filteredTabs.length > 0 ? filteredTabs[0].id : null);
+          savedActiveTabId = filteredTabs.length > 0 ? filteredTabs[0].id : null;
         }
 
         const session = {
@@ -205,18 +197,6 @@ export class EditorTabService {
         this.layoutManager.ensureEditorTab(existing, false);
       }
       return existing;
-    }
-
-    // Before opening a game tab, save the current active scene tab to restore later.
-    // Use active scene as source of truth because layout focus events can temporarily
-    // desync appState.tabs.activeTabId from the scene currently being edited.
-    if (type === 'game' && !existing && activate) {
-      const activeSceneTabId = this.findSceneTabIdBySceneId(appState.scenes.activeSceneId);
-      this.previousActiveTabIdBeforeGame = activeSceneTabId ?? appState.tabs.activeTabId;
-      console.log(
-        '[EditorTabService] Saving previous active tab before game:',
-        this.previousActiveTabIdBeforeGame
-      );
     }
 
     const tab: EditorTab = {
@@ -420,7 +400,6 @@ export class EditorTabService {
         (dirtyCount > 0 ? `, ${dirtyCount} with unsaved changes` : '')
     );
 
-    this.previousActiveTabIdBeforeGame = null;
     this.suppressLayoutFocusSync = true;
     try {
       for (const tab of tabs) {
@@ -436,10 +415,10 @@ export class EditorTabService {
   }
 
   /**
-   * Session-persistable tabs are real project resources only. Game and template tabs are
-   * editor-local, and sessions stored by 1.x may name tab types 2.x no longer has (prefab,
-   * script, texture, animation, code, sprite-editor, model-lab, uikit-forge, asset-generator):
-   * none of those is restored.
+   * Session-persistable tabs are real project resources only. Template tabs are editor-local, and
+   * stored sessions may name tab types this editor no longer has (1.x: prefab, script, texture,
+   * animation, code, sprite-editor, model-lab, uikit-forge, asset-generator; 2.x before plan
+   * play-in-page S6: game): none of those is restored.
    */
   private isPersistableTab(tab: { type: string; resourceId: string }): boolean {
     if (tab.resourceId.startsWith('templ://')) return false;
@@ -686,15 +665,6 @@ export class EditorTabService {
       }
     }
 
-    if (tab.type === 'game' && !appState.ui.isGamePopoutOpen) {
-      await this.operationService.invoke(
-        new SetPlayModeOperation({
-          isPlaying: false,
-          status: 'stopped',
-        })
-      );
-    }
-
     const wasActive = appState.tabs.activeTabId === tab.id;
 
     if (wasActive) {
@@ -708,8 +678,7 @@ export class EditorTabService {
     // Remove the Golden Layout component before restoring the next active tab. Closing a GL
     // component makes Golden Layout auto-activate a neighbouring tab and synchronously emit a focus
     // event; suppressing our focus-sync during removal prevents that event from hijacking the active
-    // tab. Otherwise stopping the game would land on an arbitrary neighbouring scene tab instead of
-    // the one that was playing.
+    // tab.
     this.suppressLayoutFocusSync = true;
     try {
       this.layoutManager.removeEditorTab(tab.id);
@@ -718,25 +687,12 @@ export class EditorTabService {
     }
 
     if (wasActive) {
-      let next: EditorTab | undefined;
-      if (tab.type === 'game' && this.previousActiveTabIdBeforeGame) {
-        next = appState.tabs.tabs.find(t => t.id === this.previousActiveTabIdBeforeGame);
-        console.log('[EditorTabService] Game tab closed, restoring previous active tab:', {
-          closedTabId: tab.id,
-          restoringTabId: this.previousActiveTabIdBeforeGame,
-          found: !!next,
-        });
-        this.previousActiveTabIdBeforeGame = null;
-      }
-
-      if (!next) {
-        next = appState.tabs.tabs[appState.tabs.tabs.length - 1] ?? undefined;
-        console.log('[EditorTabService] Active tab was closed, finding next tab:', {
-          closedTabId: tab.id,
-          nextTab: next ? { id: next.id, type: next.type } : null,
-          remainingTabs: appState.tabs.tabs.map(t => ({ id: t.id, type: t.type })),
-        });
-      }
+      const next = appState.tabs.tabs[appState.tabs.tabs.length - 1] ?? undefined;
+      console.log('[EditorTabService] Active tab was closed, finding next tab:', {
+        closedTabId: tab.id,
+        nextTab: next ? { id: next.id, type: next.type } : null,
+        remainingTabs: appState.tabs.tabs.map(t => ({ id: t.id, type: t.type })),
+      });
 
       appState.tabs.activeTabId = null;
       if (next) {
@@ -782,9 +738,6 @@ export class EditorTabService {
   }
 
   private deriveTitle(resourceId: string): string {
-    if (resourceId === 'game-view-instance') {
-      return 'Game';
-    }
     const normalized = resourceId.replace(/\\/g, '/');
     const segments = normalized.split('/').filter(Boolean);
     return segments.length ? segments[segments.length - 1] : resourceId;
@@ -821,13 +774,5 @@ export class EditorTabService {
 
       this.sceneManager.removeSceneGraph(sceneId);
     }
-  }
-
-  private findSceneTabIdBySceneId(sceneId: string | null): string | null {
-    if (!sceneId) return null;
-    const tab = appState.tabs.tabs.find(
-      t => t.type === 'scene' && this.deriveSceneIdFromResource(t.resourceId) === sceneId
-    );
-    return tab?.id ?? null;
   }
 }

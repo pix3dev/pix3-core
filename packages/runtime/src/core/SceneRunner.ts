@@ -477,9 +477,8 @@ export class SceneRunner {
       clone = await this.sceneManager.parseScene(serialized);
     } catch (err) {
       console.error('[SceneRunner] Failed to clone scene for runtime:', err);
-      // Surface to the caller (the editor's GamePlaySessionService wraps this in
-      // a try/catch that reports the failure); previously this returned silently,
-      // leaving the Game tab stuck on "Preparing runtime preview".
+      // Surface to the caller, which reports the failure; returning silently
+      // left the game stuck before its first frame.
       throw err;
     }
 
@@ -605,8 +604,8 @@ export class SceneRunner {
       this.scene.add(node);
     }
 
-    // Expose the live runtime scene root for dev tooling (the editor debug
-    // bridge / Runtime panel). This is the *running clone*, not the authored
+    // Expose the live runtime scene root for dev tooling. This is the
+    // *running clone*, not the authored
     // graph — the only place spawned objects (droppables, clusters) live.
     registerRuntimeSceneRoot(this.scene);
 

@@ -12,7 +12,6 @@ import type {
   ScriptComponent,
 } from '@pix3/runtime';
 import { applyTextureRegionToTexture, describeThrown, reportScriptError } from '@pix3/runtime';
-import { appState } from '@/state';
 
 /**
  * Dependencies the preview ticker borrows from {@link ViewportRendererService}.
@@ -67,11 +66,6 @@ export class ViewportPreviewTicker {
   constructor(private readonly deps: ViewportPreviewTickerDeps) {}
 
   tickParticles(dt: number): void {
-    if (appState.ui.isPlaying) {
-      this.activeParticlePreviewCount = 0;
-      return;
-    }
-
     if (dt <= 0) {
       return;
     }
@@ -104,14 +98,9 @@ export class ViewportPreviewTicker {
    * Advance the editor preview for SpineSkeleton2D nodes that opted in via
    * `previewInEditor`. The viewport draws proxy visuals, not the runtime nodes, so
    * this drives each proxy's own Spine view (the node's view stays at its authored
-   * pose until play mode ticks it).
+   * pose).
    */
   tickSpine(dt: number): void {
-    if (appState.ui.isPlaying) {
-      this.activeSpinePreviewCount = 0;
-      return;
-    }
-
     if (dt <= 0) {
       return;
     }
@@ -142,14 +131,6 @@ export class ViewportPreviewTicker {
   }
 
   tickComponents(dt: number): void {
-    if (appState.ui.isPlaying) {
-      this.componentFrameRequesters.clear();
-      // Play mode owns rendering; drop any editor-preview overrides so the
-      // proxies (if still around) revert, and re-apply cleanly on return.
-      this.clearComponentAppearanceOverrides();
-      return;
-    }
-
     if (dt <= 0) {
       return;
     }
@@ -285,7 +266,7 @@ export class ViewportPreviewTicker {
 
     // Error isolation: a throwing tickEditorPreview must not kill the frame or
     // the editor. Disable the component and surface the failure the same way the
-    // runtime does for play-mode hooks (Logs panel / Game tab).
+    // runtime does for its hooks (the Logs panel).
     try {
       component.tickEditorPreview(dt, context);
     } catch (thrown) {

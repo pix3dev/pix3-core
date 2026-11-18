@@ -11,8 +11,9 @@ import { relativeInside } from '../module-paths.ts';
  * The scripts the editor executes, and the proof that it executed the bytes on disk (plan §B.2).
  *
  * - `virtual:pix3/editor-scripts` — eager `import.meta.glob` over `scripts/` and `src/scripts/`
- *   (no specs, tests or declarations), exporting `__pix3Revision`;
- * - `virtual:pix3/bot-policies` — the same over `design/tests/bots/`;
+ *   (no specs, tests or declarations), exporting `__pix3Revision`: the editor's root;
+ * - `virtual:pix3/bot-policies` — the same over `design/tests/bots/`, imported by the game's
+ *   page for its test host only (plan play-in-page D10): the editor runs no policy;
  * - every project source module the client environment transforms gets an **executed-content
  *   stamp**, `(globalThis.__pix3Executed ??= {})[path] = sha`, which runs only when that module
  *   body runs. S1 showed the root's own hashes prove nothing about nested modules; the stamp does.
@@ -54,6 +55,9 @@ export const rootModuleSource = (id: string, revision: number): string => {
     '',
   ].join('\n');
 };
+
+const isBotPolicy = (wirePath: string): boolean =>
+  BOT_POLICY_DIRS.some(dir => wirePath.startsWith(`${dir}/`));
 
 /** True for a wire path the editor-scripts or bot-policies glob picks up. */
 export const isGlobbedScript = (wirePath: string): boolean =>
@@ -162,10 +166,13 @@ export class ScriptGraph {
     return [...(env.moduleGraph.getModulesByFile(normalizePath(this.absoluteOf(wirePath))) ?? [])];
   }
 
-  /** True when the editor executes `wirePath`: globbed, or imported (transitively) by a root. */
+  /**
+   * True when the editor executes `wirePath`: a script the editor root globs, or imported
+   * (transitively) by that root. A bot policy is not: only the game's page imports policies.
+   */
   isEditorModule(wirePath: string): boolean {
-    if (isGlobbedScript(wirePath)) return true;
-    const roots = new Set(ROOT_IDS.map(resolvedId));
+    if (isGlobbedScript(wirePath) && !isBotPolicy(wirePath)) return true;
+    const roots = new Set([resolvedId(EDITOR_SCRIPTS_ID)]);
     const seen = new Set<EnvironmentModuleNode>();
     const queue = this.modulesOf(wirePath);
     while (queue.length > 0) {
@@ -176,38 +183,6 @@ export class ScriptGraph {
       for (const importer of mod.importers) queue.push(importer);
     }
     return false;
-  }
-
-  /**
-   * Project modules only the bot policies reach (`.plans/done/scripts-vite.md` S4/S11): reachable from
-   * `virtual:pix3/bot-policies` and not from `virtual:pix3/editor-scripts`, so the game the editor
-   * plays never runs them and a change to one need not wait for play to stop. Read from the client
-   * graph as it is now (after the barrier's propagation); a module the graph has not seen is not
-   * listed, which errs on the side of holding play.
-   */
-  policyOnlyModules(): string[] {
-    const env = this.graph();
-    if (!env) return [];
-    const reach = (rootId: string): Set<string> => {
-      const out = new Set<string>();
-      const root = env.moduleGraph.getModuleById(resolvedId(rootId));
-      if (!root) return out;
-      const seen = new Set<EnvironmentModuleNode>([root]);
-      const queue = [...root.importedModules];
-      while (queue.length > 0) {
-        const mod = queue.shift() as EnvironmentModuleNode;
-        if (seen.has(mod)) continue;
-        seen.add(mod);
-        const wirePath = mod.file ? this.wirePathOf(mod.file) : null;
-        if (wirePath !== null) out.add(wirePath);
-        for (const imported of mod.importedModules) queue.push(imported);
-      }
-      return out;
-    };
-    // No editor root in the graph yet: nothing can be proven policy-only.
-    if (!env.moduleGraph.getModuleById(resolvedId(EDITOR_SCRIPTS_ID))) return [];
-    const game = reach(EDITOR_SCRIPTS_ID);
-    return [...reach(BOT_POLICIES_ID)].filter(path => !game.has(path)).sort();
   }
 
   /** HMR-propagate one file through the client graph (stamps `lastHMRTimestamp` up the chain). */

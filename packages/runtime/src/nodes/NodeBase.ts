@@ -356,7 +356,7 @@ export class NodeBase extends Object3D {
    * Run a script lifecycle hook with error isolation. A throwing script must not
    * kill the frame, its siblings, or the game loop, so we catch, report the
    * failure through the runtime's script-error sink (surfaced by the editor's
-   * Logs panel / Game tab), log to the console for DevTools, and disable the
+   * Logs panel, the game page's debug overlay), log to the console for DevTools, and disable the
    * offending component so it can't spam an error every frame. Returns whether
    * the hook completed without throwing.
    */

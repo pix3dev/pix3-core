@@ -2,7 +2,7 @@ import type { ProjectManifest } from '@/core/ProjectManifest';
 
 export type SceneLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
-export type EditorTabType = 'scene' | 'game';
+export type EditorTabType = 'scene';
 
 export interface CameraState {
   position: { x: number; y: number; z: number };
@@ -214,43 +214,6 @@ export interface Navigation2DSettings {
   zoomSensitivity: number;
 }
 
-export type GameAspectRatio = 'free' | '16:9-landscape' | '16:9-portrait' | '4:3';
-
-/**
- * Where the toolbar's Play runs the game: the editor's own runner in the Game tab or the game
- * window (`tab`, `window`), or the game's page on the dev server, plain or with the debug overlay
- * (`browser`, `debug`). The last one picked; `SetPlayTargetOperation`.
- */
-export type PlayTarget = 'tab' | 'window' | 'browser' | 'debug';
-
-/**
- * Who runs the game (plan play-in-page, an editor setting until S5 flips it): `editor` — Play and
- * the agent bridge use the editor's own runner (the run modes above); `page` — every run is a load
- * of the game's own page (`/?debug`, window `pix3-play`; the agent's `pix3-agent-play`), driven
- * over `PlayPageLink`.
- */
-export type PlayHost = 'editor' | 'page';
-
-/**
- * Details of the most recent runtime/script failure raised while the game was
- * launching or playing. Surfaced in the Game tab and the Logs panel so a broken
- * script no longer fails silently. Ephemeral UI state — never part of undo
- * history — so it is written directly (not via the mutation gateway), the same
- * way `project.errorMessage`/`scriptsStatus` are.
- */
-export interface PlayModeError {
-  /** Short, human-readable summary (usually the thrown Error's message). */
-  message: string;
-  /** Lifecycle stage the failure came from (start/update/scene-start/…). */
-  phase?: string;
-  /** Node this error is attributed to, when known. */
-  nodeName?: string;
-  /** Script component type that threw, when known. */
-  componentType?: string;
-  /** Epoch ms the error was recorded. */
-  at: number;
-}
-
 export interface UIState {
   isLayoutReady: boolean;
   navigationMode: NavigationMode;
@@ -278,13 +241,10 @@ export interface UIState {
   grid2DSize: number;
   /** Toggle for editor fallback lighting used when the scene has no explicit light sources */
   showLighting: boolean;
-  /** Toggle for the physics collider wireframe overlay in the running game preview */
-  showPhysicsColliders: boolean;
   /**
    * Toggle for drawing every node's authored 2D collider outline in the EDITOR
    * viewport (Godot's "Visible Collision Shapes"). Selected nodes always show
-   * theirs; this extends it to the whole scene. Distinct from
-   * {@link showPhysicsColliders}, which is the running game's overlay.
+   * theirs; this extends it to the whole scene.
    */
   showCollisionShapes: boolean;
   /**
@@ -293,8 +253,6 @@ export interface UIState {
    * it, the viewport tool consumes it, and both re-render off the same subscribe.
    */
   polygonEditing: { nodeId: string; componentId: string } | null;
-  /** Toggle for per-node direction-axis gizmos in the running game preview */
-  showDirectionAxes: boolean;
   /** Pause rendering when the window is unfocused for battery economy */
   pauseRenderingOnUnfocus: boolean;
   /**
@@ -302,26 +260,6 @@ export interface UIState {
    * the battery-saving pauses never gate work an agent asked for.
    */
   keepEditorRunningForAgent: boolean;
-  /** Preferred aspect ratio for the runtime preview surface */
-  gameAspectRatio: GameAspectRatio;
-  /** True when the scene is in play mode (scripts running) */
-  isPlaying: boolean;
-  /** True when a dedicated external game preview window is open */
-  isGamePopoutOpen: boolean;
-  /** Where the toolbar's Play runs the game (the last mode picked; persisted per browser). */
-  playTarget: PlayTarget;
-  /**
-   * The game's page (the default) or the editor's runner (an editor setting, persisted per
-   * browser; the editor's runner goes in plan play-in-page S6).
-   */
-  playHost: PlayHost;
-  playModeStatus: 'stopped' | 'playing' | 'paused';
-  /** Most recent runtime/script failure while playing, or null when clean. */
-  playModeError: PlayModeError | null;
-  /** Who started the running play session (plan §B.3): the agent may stop only its own. */
-  playOwner: 'agent' | 'designer' | null;
-  /** Epoch ms the current play session started, or null when stopped. */
-  playStartedAt: number | null;
   /** True between pointerdown and pointerup of a viewport drag; a flush waits for it (§C.1). */
   gestureInProgress: boolean;
 }
@@ -408,21 +346,10 @@ export const createInitialAppState = (): AppState => ({
     snapToGrid: false,
     grid2DSize: 16,
     showLighting: true,
-    showPhysicsColliders: false,
     showCollisionShapes: false,
     polygonEditing: null,
-    showDirectionAxes: false,
     pauseRenderingOnUnfocus: true,
     keepEditorRunningForAgent: true,
-    gameAspectRatio: 'free',
-    isPlaying: false,
-    isGamePopoutOpen: false,
-    playTarget: 'tab',
-    playHost: 'page',
-    playModeStatus: 'stopped',
-    playModeError: null,
-    playOwner: null,
-    playStartedAt: null,
     gestureInProgress: false,
   },
   localization: {

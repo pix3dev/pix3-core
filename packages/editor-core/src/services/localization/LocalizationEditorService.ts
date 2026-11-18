@@ -385,19 +385,6 @@ export class LocalizationEditorService {
     return this.previewLocale;
   }
 
-  /**
-   * Effective runtime localization config (manifest block, else auto-discovered),
-   * for injection into the play-mode SceneRunner. Null ⇒ localization inert.
-   */
-  getRuntimeConfig(): { defaultLocale: string; fallbackLocale?: string; locales: string[] } | null {
-    if (!this.settings) return null;
-    return {
-      defaultLocale: this.settings.defaultLocale,
-      ...(this.settings.fallbackLocale ? { fallbackLocale: this.settings.fallbackLocale } : {}),
-      locales: [...this.settings.locales],
-    };
-  }
-
   getLocaleDisplayName(locale: string): string {
     return (
       this.tables.get(locale)?.meta?.name ?? LOCALE_DISPLAY_NAMES[locale] ?? locale.toUpperCase()

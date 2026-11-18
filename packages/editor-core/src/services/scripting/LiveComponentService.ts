@@ -64,8 +64,7 @@ export class LiveComponentService {
 
   /**
    * Replace stale components in every open scene (queued behind a run in progress). Resolves to
-   * how many were replaced. Skipped during play: the running game keeps its classes, and the
-   * registration itself waits for play to stop.
+   * how many were replaced.
    */
   replaceStale(): Promise<number> {
     this.running = this.running.then(
@@ -86,7 +85,6 @@ export class LiveComponentService {
   }
 
   private async replaceInOpenScenes(): Promise<number> {
-    if (appState.ui.isPlaying) return 0;
     this.watchHistory();
     let replaced = 0;
     for (const descriptor of Object.values(appState.scenes.descriptors)) {

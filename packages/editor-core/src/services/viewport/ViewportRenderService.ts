@@ -3149,12 +3149,10 @@ export class ViewportRendererService {
    * Repaint every node drawn from an image file whose pixels just changed on disk
    * (an agent regenerated a sprite) — called by `ExternalReloadService` for each
    * settled image of an external batch (`.plans/done/editor-core-port.md`, texture
-   * refresh). Edit mode only: during play the batch is held (ExternalChangeService
-   * step 4) and arrives here when play stops.
+   * refresh).
    *
    * 1. The shared {@link AssetLoader}'s decoded copy goes first — the
-   *    AnimatedSprite2D / AnimatedSprite3D reloads below read through it, and so
-   *    does the next play.
+   *    AnimatedSprite2D / AnimatedSprite3D reloads below read through it.
    * 2. The 2D proxies (Sprite2D, TiledSprite2D, UI skins and overlay quads,
    *    AnimatedSprite2D frames, Spine atlas pages) and the 3D path caches
    *    (Sprite3D, Particles3D, GeometryMesh map) forget the path; the standard

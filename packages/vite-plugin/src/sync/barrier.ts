@@ -24,7 +24,7 @@ import { isGlobbedScript, type ScriptGraph } from './script-graph.ts';
  *    paths, ackRev}`.
  *
  * A non-ok answer is not a barrier: on `gesture_in_progress` and `stale_modules` the agent
- * retries; on `expect_mismatch` it re-reads; on `stale` (play is running) it follows `playing`.
+ * retries; on `expect_mismatch` it re-reads.
  */
 
 export const DEFAULT_SYNC_TIMEOUT_MS = 10_000;
@@ -194,13 +194,7 @@ export class SyncBarrier {
       return { ok: expectMismatch.length === 0, ...base, editor: false, ms: Date.now() - started };
     }
     const deadline = started + request.timeoutMs;
-    // `policyOnly`: modules only bot policies import — applied during play like a policy (S11).
-    const ask = {
-      rev: seq,
-      changed,
-      paths: Object.keys(changed),
-      policyOnly: scripts.policyOnlyModules(),
-    };
+    const ask = { rev: seq, changed, paths: Object.keys(changed) };
     let attempts = 0;
     let reply: RequestReply;
     let verdict: SyncResult;

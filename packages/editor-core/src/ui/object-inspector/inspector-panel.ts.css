@@ -63,42 +63,6 @@ pix3-inspector-panel pix3-panel {
   margin: 0.25rem 0 0 0;
 }
 
-/* Play-mode LIVE read-out: the Inspector mirrors the running game (read-only). */
-.inspector-live-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  border-radius: 999px;
-  padding: 0.04rem 0.4rem;
-  white-space: nowrap;
-}
-
-.inspector-live-badge:not(.inspector-live-badge--static)::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.inspector-live-badge--static {
-  color: var(--fg-2);
-  background: var(--bg-3);
-  border-color: var(--line-2);
-}
-
-.inspector-body.is-play-mode .property-section--object {
-  border-left: 2px solid var(--accent-line);
-  padding-left: 0.55rem;
-}
-
 /* Property Group Sections - organized by category */
 .property-group-section {
   display: flex;

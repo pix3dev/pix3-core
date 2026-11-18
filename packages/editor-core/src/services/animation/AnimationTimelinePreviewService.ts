@@ -15,9 +15,7 @@
  * - our own clips operation: the session refreshes its bindings/snapshot so
  *   editing keys while parked on the playhead keeps the preview alive.
  * - any other mutating operation, undo, or redo: the session ends and the
- *   authored state is restored (this includes play-mode start, whose
- *   `scripts.set-play-mode` operation completes before GamePlaySessionService
- *   reacts to the state change and serializes the scene).
+ *   authored state is restored.
  */
 
 import { inject, injectable } from '@/fw/di';

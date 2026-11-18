@@ -28,7 +28,7 @@ import {
   type NodeTypePickerInstance,
 } from '@/services/editor/NodeTypePickerService';
 import { ScriptExecutionService } from '@/services/play/ScriptExecutionService';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { LocalizationEditorService } from '@/services/localization/LocalizationEditorService';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { HostService } from '@/host/HostService';
@@ -46,19 +46,12 @@ import { FitGroup2DToContentsCommand } from '@/features/scene/FitGroup2DToConten
 import { BrowseNodeTypesCommand } from '@/features/scene/BrowseNodeTypesCommand';
 import { UndoCommand } from '@/features/history/UndoCommand';
 import { RedoCommand } from '@/features/history/RedoCommand';
-import { StartGameCommand } from '@/features/scripts/StartGameCommand';
-import { StartMainSceneGameCommand } from '@/features/scripts/StartMainSceneGameCommand';
-import { StopGameCommand } from '@/features/scripts/StopGameCommand';
-import { RestartGameCommand } from '@/features/scripts/RestartGameCommand';
-import { PauseGameCommand } from '@/features/scripts/PauseGameCommand';
 import {
-  createPlayInCommands,
-  PLAY_TARGET_INFO,
   PlayCommand,
   PlayEntryCommand,
+  StopGameCommand,
   type PlayDependencies,
 } from '@/features/scripts/PlayCommands';
-import { OpenGamePopoutWindowCommand } from '@/features/scripts/OpenGamePopoutWindowCommand';
 import { FocusAnimationTimelineCommand } from '@/features/animation-timeline/FocusAnimationTimelineCommand';
 import { AddAnimationPlayerToSelectionCommand } from '@/features/animation-timeline/AddAnimationPlayerToSelectionCommand';
 import { OpenLocalizationPanelCommand } from '@/features/localization/OpenLocalizationPanelCommand';
@@ -77,9 +70,7 @@ import { FrameSelectedCommand } from '@/features/viewport/FrameSelectedCommand';
 import { ZoomInCommand } from '@/features/viewport/ZoomInCommand';
 import { ZoomOutCommand } from '@/features/viewport/ZoomOutCommand';
 import { ToggleLightingCommand } from '@/features/viewport/ToggleLightingCommand';
-import { ToggleCollidersCommand } from '@/features/viewport/ToggleCollidersCommand';
 import { ToggleCollisionShapesCommand } from '@/features/viewport/ToggleCollisionShapesCommand';
-import { ToggleDirectionAxesCommand } from '@/features/viewport/ToggleDirectionAxesCommand';
 import { ToggleNavigationModeCommand } from '@/features/viewport/ToggleNavigationModeCommand';
 import { PeekShowAllCommand } from '@/features/peek/PeekCommands';
 import { NudgeNodesCommand } from '@/features/properties/NudgeNodesCommand';
@@ -88,9 +79,6 @@ import './shared/pix3-toolbar';
 import './shared/pix3-toolbar-button';
 import './shared/pix3-dropdown-button';
 import type { DropdownItem } from './shared/pix3-dropdown-button';
-import type { PlayTarget } from '@/state/AppState';
-
-const PLAY_TARGETS: readonly PlayTarget[] = ['tab', 'window', 'browser', 'debug'];
 import './shared/pix3-main-menu';
 import './shared/pix3-confirm-dialog';
 import './shared/pix3-behavior-picker';
@@ -103,7 +91,6 @@ import './shared/pix3-status-bar';
 import './shared/pix3-lightbox';
 import './scene-tree/scene-tree-panel';
 import './viewport/editor-tab';
-import './viewport/game-tab';
 import './object-inspector/inspector-panel';
 import './logs-view/logs-panel';
 import './pix3-editor-shell.ts.css';
@@ -142,8 +129,8 @@ export class Pix3EditorShell extends ComponentBase {
   @inject(EditorTabService)
   private readonly editorTabService!: EditorTabService;
 
-  @inject(GamePlaySessionService)
-  private readonly gamePlaySessionService!: GamePlaySessionService;
+  @inject(PlayPageLink)
+  private readonly playPageLink!: PlayPageLink;
 
   @inject(LocalizationEditorService)
   private readonly localizationEditorService!: LocalizationEditorService;
@@ -180,6 +167,8 @@ export class Pix3EditorShell extends ComponentBase {
 
   @state() private isLayoutReady = appState.ui.isLayoutReady;
   @state() private dialogs: DialogInstance[] = [];
+  /** The human's Play window is open (it said hello over the link). */
+  @state() private gameOpen = false;
   @state() private componentPickers: ComponentPickerInstance[] = [];
   @state() private effectPickers: EffectPickerInstance[] = [];
   @state() private activeEditorSettingsDialog: EditorSettingsDialogInstance | null = null;
@@ -232,15 +221,17 @@ export class Pix3EditorShell extends ComponentBase {
       }),
       subscribe(appState.scenes, () => {
         this.scriptExecutionService.onSceneChanged(appState.scenes.activeSceneId);
+      }),
+      this.playPageLink.onPagesChanged(() => {
+        this.gameOpen = this.playPageLink.page('designer') !== null;
       })
     );
 
     this.keyboardHandler = this.handleKeyboardShortcuts.bind(this);
     window.addEventListener('keydown', this.keyboardHandler);
 
-    // Tab sessions, play sessions and localization subscribe to state once, early.
+    // Tab sessions and localization subscribe to state once, early.
     this.editorTabService.initialize();
-    this.gamePlaySessionService.initialize();
     this.localizationEditorService.initialize();
     this.editorSettingsService.initialize();
   }
@@ -282,15 +273,9 @@ export class Pix3EditorShell extends ComponentBase {
       new DuplicateNodesCommand(),
       new GroupSelectedNodesCommand(),
       new FitGroup2DToContentsCommand(),
-      new StartGameCommand(this.editorTabService, this.gamePlaySessionService),
-      new StartMainSceneGameCommand(this.editorTabService, this.gamePlaySessionService),
-      new StopGameCommand(this.editorTabService, this.gamePlaySessionService),
-      new RestartGameCommand(this.gamePlaySessionService),
-      new PauseGameCommand(this.gamePlaySessionService),
-      new OpenGamePopoutWindowCommand(this.gamePlaySessionService),
       new PlayCommand(this.playDependencies()),
       new PlayEntryCommand(this.playDependencies()),
-      ...createPlayInCommands(this.playDependencies()),
+      new StopGameCommand(),
       new OpenEditorSettingsCommand(),
       new FocusAnimationTimelineCommand(),
       new OpenLocalizationPanelCommand(),
@@ -316,9 +301,7 @@ export class Pix3EditorShell extends ComponentBase {
       new ZoomInCommand(),
       new ZoomOutCommand(),
       new ToggleLightingCommand(),
-      new ToggleCollidersCommand(),
       new ToggleCollisionShapesCommand(),
-      new ToggleDirectionAxesCommand(),
       new ToggleNavigationModeCommand(),
       // Only Show All goes into the menu: the other Peek commands need a branch to act on and are
       // driven from `pix3-peek-strip`. This one is the guaranteed way out of a masked state.
@@ -406,46 +389,32 @@ export class Pix3EditorShell extends ComponentBase {
 
   private playDependencies(): PlayDependencies {
     return {
-      session: this.gamePlaySessionService,
       host: this.hostService,
       flush: this.flushService,
     };
   }
 
   private renderToolbar() {
-    const isPlaying = appState.ui.isPlaying;
-    const target = appState.ui.playTarget;
-    // The run modes first, the one Play uses checked: picking one runs in it and makes it Play's.
-    // Then Play Game — the entry scene, in that mode — the deliberate full-flow run, since the
-    // entry scene is a menu on most projects.
+    // The game runs on its own page (plan play-in-page): Play loads it, again to reload it.
     const runOptions: DropdownItem[] = [
-      ...PLAY_TARGETS.map(option => ({
-        id: `game.play-in-${option}`,
-        label: PLAY_TARGET_INFO[option].title,
-        icon: PLAY_TARGET_INFO[option].icon,
-        checked: option === target,
-      })),
-      { id: 'run-options-divider', label: '', divider: true },
+      { id: 'game.play', label: 'Play Scene', icon: 'play' },
       { id: 'game.play-entry', label: 'Play Game (entry scene)', icon: 'film' },
+      { id: 'run-options-divider', label: '', divider: true },
+      { id: 'game.stop', label: 'Stop (close the Play window)', icon: 'square' },
     ];
-    // The game's page (`playHost: 'page'`, plan play-in-page): every Play opens it, whatever mode.
-    const playLabel =
-      appState.ui.playHost === 'page'
-        ? "Play (the game's page)"
-        : `Play (${PLAY_TARGET_INFO[target].label})`;
+    const playLabel = this.gameOpen ? "Play again (the game's page)" : "Play (the game's page)";
     return html`
       <pix3-toolbar aria-label="Editor toolbar">
         <pix3-main-menu slot="start"></pix3-main-menu>
         <div class="toolbar-content">
           <div class="toolbar-group toolbar-group--play">
             <pix3-toolbar-button
-              icon=${isPlaying ? 'square' : 'play'}
+              icon=${this.gameOpen ? 'rotate-cw' : 'play'}
               iconOnly
-              label=${isPlaying ? 'Stop' : playLabel}
-              title=${isPlaying ? 'Stop' : playLabel}
-              ?toggled=${isPlaying}
-              @click=${() => this.togglePlayMode()}
-              aria-label=${isPlaying ? 'Stop' : playLabel}
+              label=${playLabel}
+              title=${playLabel}
+              @click=${() => void this.commandDispatcher.executeById('game.play')}
+              aria-label=${playLabel}
             ></pix3-toolbar-button>
             <pix3-dropdown-button
               class="run-options-dropdown"
@@ -466,10 +435,6 @@ export class Pix3EditorShell extends ComponentBase {
         <span class="project-name-label">${appState.project.projectName ?? 'No project open'}</span>
       </div>
     `;
-  }
-
-  private togglePlayMode(): void {
-    void this.commandDispatcher.executeById(appState.ui.isPlaying ? 'game.stop' : 'game.play');
   }
 
   private onRunOptionSelect = (event: CustomEvent<DropdownItem>): void => {

@@ -56,7 +56,6 @@ export class FakeHostError extends Error {
 
 const emptyRoots = (): ScriptRoots => ({
   editorScripts: { __pix3Revision: 0, modules: {} },
-  botPolicies: { __pix3Revision: 0, modules: {} },
 });
 
 export interface FakeHostOptions {

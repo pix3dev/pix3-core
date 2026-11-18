@@ -35,8 +35,15 @@ export const BRIDGE_GROUP_DESCRIPTION =
 
 const NOT_OK =
   'Not ok is not a barrier: on gesture_in_progress or stale_modules call again; on ' +
-  'expect_mismatch re-read the listed files and sync with new hashes; on stale follow ' +
-  '`playing`: "agent" → pix3_play restart (or stop) then sync again, "designer" → wait or ask.';
+  'expect_mismatch re-read the listed files and sync with new hashes.';
+
+const PAGE_PARAM: JsonSchema = {
+  type: 'string',
+  enum: ['designer', 'agent'],
+  description:
+    'Which game page: "designer" (the human’s Play window — read only) or "agent" (yours). ' +
+    'Default: the human’s page when it is open, else yours.',
+};
 
 export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
@@ -44,8 +51,9 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     description:
       'Versions, project, active scene, script status, which tab writes, scenes with edits not ' +
       'on disk yet (`dirty`, `pending` keys per scene), `gestureInProgress`, external versions ' +
-      'not applied yet, play state with its owner, error count, and `viteClient` (true = Vite’s ' +
-      'HMR client reached the editor page; `pix3 check` names the script that did it).',
+      'not applied yet, `play` = {pages:[{role, url, loadId, rev, scene, ' +
+      'status, paused, pausedBy?}]} (the game pages open now: "designer" = the human’s, "agent" ' +
+      '= yours), error count, and `viteClient`.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -71,15 +79,13 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
     name: 'pix3_scene',
     description:
-      'Read a scene as the editor holds it: the tree ({nodeId, type, name, properties, ' +
-      'children…}) of the active scene (or `path`; `properties` = what the file gets, unsaved ' +
-      'inspector edits included), one node with its components and `saved` (the node as the scene ' +
-      'file gets it) and `screen` (its origin on the page in CSS px, to click or drag it — during ' +
-      'play, on the running game canvas, with `live`: the play-time state of its components) with ' +
-      '`nodeId`, or the nodes whose name/type contains `find`. During play both also reach the ' +
-      'nodes only the running game has (spawned by a script, or in a scene changeScene went to): ' +
-      '`runtimeOnly: true`, no `saved`; `nodeId` there may be a node name too. Read-only: change scenes by ' +
-      'editing the .pix3scene file, then pix3_sync.',
+      'Read a scene as the editor holds it: the tree of the active scene (or `path`; ' +
+      '`properties` = what the file gets, unsaved inspector edits included), one node with its ' +
+      'components and `saved` with `nodeId`, or the nodes whose name/type contains `find`. While ' +
+      'a game page is open both also read the running game there: `live` (its components’ ' +
+      'play-time state), `screen` (its origin in CSS px of THAT page, to tap it there) and ' +
+      '`page` {role, loadId}; nodes only the running game has carry `runtimeOnly: true`. ' +
+      '`page` picks the game page (default: the human’s when open, else yours). Read-only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -87,6 +93,7 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
         maxDepth: { type: 'integer', minimum: 1, maximum: 8 },
         nodeId: { type: 'string' },
         find: { type: 'string' },
+        page: PAGE_PARAM,
       },
       additionalProperties: false,
     },
@@ -94,27 +101,24 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
     name: 'pix3_play',
     description:
-      'Play mode. `start` runs the active scene (or `scenePath`) and records you as the owner; ' +
-      '`stop`, `restart` (stop → apply deferred file changes → start; a plain start when nothing ' +
-      'plays) and `pause` work on any ' +
-      'session an agent started; a session the designer started from the UI is refused with ' +
-      'reason not_owner, even with `force`. `status` returns playOwner and startedAt, and ' +
-      '`pausedBy: "pix3_game_run"` while paused on a pix3_game_run outcome frame. `aspect` ' +
-      'sets the Game tab’s frame with any action ("9:16" for a phone, "free" fills the panel; ' +
-      'exact phone sizes: `pix3 play --size`).',
+      'Your own game page (window "pix3-agent-play", muted): `start` writes the editor’s ' +
+      'unsaved edits and loads the game’s page with the active scene (or `scenePath`) — every ' +
+      'start and `restart` is a fresh load of the files on disk, answered once the page is ready ' +
+      '(`page` {url, loadId, rev}); `stop` closes it; `pause` / `resume`; `status` lists the ' +
+      'pages open. The human’s Play window is theirs: control aimed at it is not_your_page. ' +
+      '`run` {seed?, config?} sets up a test run, repeated by `restart`.',
     inputSchema: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'resume', 'status'] },
         scenePath: { type: 'string' },
-        force: { type: 'boolean' },
-        aspect: { type: 'string', enum: ['free', '16:9', '9:16', '4:3'] },
+        page: PAGE_PARAM,
         run: {
           type: 'object',
           description:
-            'With start / restart: a test run — {seed?: integer (scene.random), config?: ' +
+            'With start / restart: {seed?: integer (scene.random), config?: ' +
             '{"<nodeId>": {"<componentId>": {key: value}}}} applied before the first onStart; ' +
-            'kept for the session’s restarts, cleared when play stops.',
+            'restart repeats the last one.',
         },
       },
       required: ['action'],
@@ -125,13 +129,17 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
     name: 'pix3_game_run',
     description:
       'Run the playing game frame by frame until a predicate holds (`until`, OR), one fails ' +
-      '(`fail`, OR) or a budget runs out; read `verdict` first. Needs a running play session ' +
-      '(pix3_play start). Predicates: {kind:"nodeProperty", name, path, op, value}, ' +
+      '(`fail`, OR) or a budget runs out; read `verdict` first. Runs on your own game page ' +
+      '(pix3_play start opens it); after a pix3_sync that reloads the page it waits for the new ' +
+      'load, a page reloaded during the run ends page_reloaded, one older than the sync that did ' +
+      'not reload is page_stale (pix3_play restart). ' +
+      'Predicates: {kind:"nodeProperty", name, path, op, value}, ' +
       '{kind:"gameState", path, op, value}, {kind:"newErrors"}, {kind:"nodeAppeared"|"nodeGone", name}… ' +
       'Steps far faster than real time: give async init real time with `settleMs`. ' +
       '`bot: {name, channel?, args?}` drives the game with the policy design/tests/bots/<name>.ts ' +
       '(exports {name, tick(bot)} satisfies BotPolicy — types in design/tests/bots/' +
-      'pix3-test-bot.d.ts); write the file, pix3_sync, then run — no restart needed.',
+      'pix3-test-bot.d.ts); write the file, pix3_sync, then run — no restart needed. The ' +
+      'answer carries `page` {role, url, loadId}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -173,12 +181,13 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
     name: 'pix3_screenshot',
     description:
-      'Bring the surface to the front so a screenshot shows it: `game` focuses the running ' +
-      'game’s tab, `viewport` the active scene’s viewport. Then call chrome-devtools-mcp’s own ' +
-      'take_screenshot — this tool never returns image data.',
+      'Bring a surface to the front so a screenshot shows it: `game` focuses a game page ' +
+      '(`page`; default the human’s when open, else yours) and answers its `page` {role, url, ' +
+      'loadId} — select THAT page for take_screenshot; `viewport` the editor’s viewport. This ' +
+      'tool never returns image data.',
     inputSchema: {
       type: 'object',
-      properties: { target: { type: 'string', enum: ['game', 'viewport'] } },
+      properties: { target: { type: 'string', enum: ['game', 'viewport'] }, page: PAGE_PARAM },
       required: ['target'],
       additionalProperties: false,
     },
@@ -244,97 +253,6 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   {
     name: 'pix3_errors',
     description:
-      'Console and runtime errors the editor captured (script throws during play, load errors), ' +
-      'newest last; `since` (epoch ms) limits them, `clear` empties the list after reading.',
-    inputSchema: {
-      type: 'object',
-      properties: { since: { type: 'integer', minimum: 0 }, clear: { type: 'boolean' } },
-      additionalProperties: false,
-    },
-  },
-];
-
-const PAGE_PARAM: JsonSchema = {
-  type: 'string',
-  enum: ['designer', 'agent'],
-  description:
-    'Which game page: "designer" (the human’s Play window — read only) or "agent" (yours). ' +
-    'Default: the human’s page when it is open, else yours.',
-};
-
-/** Tools whose schema or meaning changes when the game runs on its own page (§2.2 of the plan). */
-const PAGE_OVERRIDES: Readonly<Record<string, Omit<BridgeToolSpec, 'name'>>> = {
-  pix3_status: {
-    description:
-      'Versions, project, active scene, script status, which tab writes, scenes with edits not ' +
-      'on disk yet (`dirty`, `pending` keys per scene), `gestureInProgress`, external versions ' +
-      'not applied yet, `play` = {playHost:"page", pages:[{role, url, loadId, rev, scene, ' +
-      'status, paused, pausedBy?}]} (the game pages open now: "designer" = the human’s, "agent" ' +
-      '= yours), error count, and `viteClient`.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  pix3_scene: {
-    description:
-      'Read a scene as the editor holds it: the tree of the active scene (or `path`; ' +
-      '`properties` = what the file gets, unsaved inspector edits included), one node with its ' +
-      'components and `saved` with `nodeId`, or the nodes whose name/type contains `find`. While ' +
-      'a game page is open both also read the running game there: `live` (its components’ ' +
-      'play-time state), `screen` (its origin in CSS px of THAT page, to tap it there) and ' +
-      '`page` {role, loadId}; nodes only the running game has carry `runtimeOnly: true`. ' +
-      '`page` picks the game page (default: the human’s when open, else yours). Read-only.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        path: { type: 'string', description: 'res:// or project-relative scene path.' },
-        maxDepth: { type: 'integer', minimum: 1, maximum: 8 },
-        nodeId: { type: 'string' },
-        find: { type: 'string' },
-        page: PAGE_PARAM,
-      },
-      additionalProperties: false,
-    },
-  },
-  pix3_play: {
-    description:
-      'Your own game page (window "pix3-agent-play", muted): `start` writes the editor’s ' +
-      'unsaved edits and loads the game’s page with the active scene (or `scenePath`) — every ' +
-      'start and `restart` is a fresh load of the files on disk, answered once the page is ready ' +
-      '(`page` {url, loadId, rev}); `stop` closes it; `pause` / `resume`; `status` lists the ' +
-      'pages open. The human’s Play window is theirs: control aimed at it is not_your_page. ' +
-      '`run` {seed?, config?} sets up a test run, repeated by `restart`.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'resume', 'status'] },
-        scenePath: { type: 'string' },
-        page: PAGE_PARAM,
-        run: {
-          type: 'object',
-          description:
-            'With start / restart: {seed?: integer (scene.random), config?: ' +
-            '{"<nodeId>": {"<componentId>": {key: value}}}} applied before the first onStart; ' +
-            'restart repeats the last one.',
-        },
-      },
-      required: ['action'],
-      additionalProperties: false,
-    },
-  },
-  pix3_screenshot: {
-    description:
-      'Bring a surface to the front so a screenshot shows it: `game` focuses a game page ' +
-      '(`page`; default the human’s when open, else yours) and answers its `page` {role, url, ' +
-      'loadId} — select THAT page for take_screenshot; `viewport` the editor’s viewport. This ' +
-      'tool never returns image data.',
-    inputSchema: {
-      type: 'object',
-      properties: { target: { type: 'string', enum: ['game', 'viewport'] }, page: PAGE_PARAM },
-      required: ['target'],
-      additionalProperties: false,
-    },
-  },
-  pix3_errors: {
-    description:
       'Errors the editor and the game pages captured, newest last, each with `origin` ' +
       '("editor", "designer", "agent") and a page’s `loadId`; `page` keeps one page’s, `since` ' +
       '(epoch ms) limits them, `clear` empties the lists after reading.',
@@ -348,28 +266,7 @@ const PAGE_OVERRIDES: Readonly<Record<string, Omit<BridgeToolSpec, 'name'>>> = {
       additionalProperties: false,
     },
   },
-};
-
-/**
- * The table while the editor's `playHost` setting is `page` (plan play-in-page S4): the same
- * tools, the play ones aimed at the game's own pages. `pix3_game_run` keeps its schema (it allows
- * `page`); its description says where it runs.
- */
-export const PAGE_BRIDGE_TOOLS: readonly BridgeToolSpec[] = BRIDGE_TOOLS.map(tool =>
-  tool.name === 'pix3_game_run'
-    ? {
-        ...tool,
-        description:
-          tool.description.replace(
-            'Needs a running play session (pix3_play start).',
-            'Runs on your own game page (pix3_play start opens it); after a pix3_sync that ' +
-              'reloads the page it waits for the new load, a page reloaded during the run ends ' +
-              'page_reloaded, one older than the sync that did not reload is page_stale ' +
-              '(pix3_play restart).'
-          ) + ' The answer carries `page` {role, url, loadId}.',
-      }
-    : { name: tool.name, ...(PAGE_OVERRIDES[tool.name] ?? tool) }
-);
+];
 
 /** @internal The tool names in table order — the kit's drift spec (`cli/src/kit.spec.ts`) reads it. */
 export const BRIDGE_TOOL_NAMES: readonly string[] = BRIDGE_TOOLS.map(tool => tool.name);
@@ -381,14 +278,11 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = BRIDGE_TOOLS.map(tool => too
 export const BRIDGE_REASONS = [
   'unknown_tool',
   'invalid_params',
-  'not_owner',
-  'already_playing',
-  'not_playing',
   'refused',
   'no_scene',
   'not_found',
   'error',
-  // the game on its own page (playHost: 'page', §2.2 of plan play-in-page)
+  // the game on its own page (§2.2 of plan play-in-page)
   'no_game_page',
   'not_your_page',
   'popup_blocked',

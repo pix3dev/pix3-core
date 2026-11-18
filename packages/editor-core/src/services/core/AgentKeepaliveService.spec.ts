@@ -35,15 +35,6 @@ describe('AgentKeepaliveService', () => {
     expect(isEditorKeepAlive()).toBe(false);
   });
 
-  it('keeps alive for agent play until play stops', () => {
-    appState.ui.isPlaying = true;
-    service.notePlayStartedByAgent();
-    expect(service.isKeepAlive()).toBe(true);
-    appState.ui.isPlaying = false;
-    service.recompute();
-    expect(service.isKeepAlive()).toBe(false);
-  });
-
   it('respects the setting', () => {
     appState.ui.keepEditorRunningForAgent = false;
     service.noteCallStarted('a');

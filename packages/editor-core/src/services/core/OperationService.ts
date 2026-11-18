@@ -82,9 +82,6 @@ const READ_ONLY_ALLOWED_OPERATIONS = new Set([
   // Peek is a per-user view mask that never reaches the document, so a read-only tab must still
   // be able to look behind something.
   'viewport.set-peek-visibility',
-  'scene.set-play-mode',
-  'scene.set-play-paused',
-  'scene.set-game-popout-window-open',
   'editor.update-settings',
   // Following the disk is not an edit: a read-only tab must show what the writer tab (or an
   // agent) wrote — the external-version path reloads its scenes and refreshes prefab instances.

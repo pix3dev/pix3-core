@@ -53,6 +53,18 @@ describe('PlayPageLink', () => {
     expect(link.isReloading('agent', 1_000)).toBe(false);
   });
 
+  it('forgets a page that agreed to close though its bye never came (headless Chrome)', async () => {
+    page('designer'); // answers close {ok: true} and never says bye
+    await link.discover(50);
+    const changes = vi.fn();
+    const off = link.onPagesChanged(changes);
+    expect(await link.close('designer')).toMatchObject({ ok: true });
+    expect(link.page('designer')).toBeNull();
+    expect(link.isReloading('designer', 1_000)).toBe(false);
+    expect(changes).toHaveBeenCalled();
+    off();
+  });
+
   it('addresses a call by role and load, and matches answers by id', async () => {
     const agent = page('agent');
     const designer = page('designer');

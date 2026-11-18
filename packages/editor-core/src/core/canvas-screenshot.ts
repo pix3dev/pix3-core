@@ -1,8 +1,7 @@
 /**
- * Downscale + encode a (WebGL) canvas into a base64 image payload. Shared by the
- * editor-viewport and running-game screenshot paths (`ViewportRendererService` /
- * `GamePlaySessionService`). Callers MUST render a frame synchronously right
- * before calling this: the WebGL drawing buffer is cleared after compositing
+ * Downscale + encode a (WebGL) canvas into a base64 image payload, for the editor
+ * viewport's screenshots (`ViewportRendererService`, `ViewportScreenshotter`). Callers MUST
+ * render a frame synchronously right before calling this: the WebGL drawing buffer is cleared after compositing
  * (`preserveDrawingBuffer` is off), so pixels read in a later task are blank.
  */
 

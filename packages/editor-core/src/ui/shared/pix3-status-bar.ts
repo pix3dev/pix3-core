@@ -7,6 +7,7 @@ import {
 import { LayoutManagerService } from '@/core/LayoutManager';
 import { IconService, IconSize } from '@/services/editor/IconService';
 import { HostService } from '@/host/HostService';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { CURRENT_EDITOR_VERSION } from '@/version';
 import { subscribe } from 'valtio/vanilla';
 import { appState } from '@/state';
@@ -47,6 +48,9 @@ export class Pix3StatusBar extends ComponentBase {
   @inject(IconService)
   private readonly icons!: IconService;
 
+  @inject(PlayPageLink)
+  private readonly playPageLink!: PlayPageLink;
+
   @inject(HostService)
   private readonly hostService!: HostService;
 
@@ -56,8 +60,9 @@ export class Pix3StatusBar extends ComponentBase {
   @state()
   private projectName: string | null = null;
 
+  /** The game pages open now (plan play-in-page): the human's Play window, the agent's page. */
   @state()
-  private isPlaying = false;
+  private gamePages: { designer: boolean; agent: boolean } = { designer: false, agent: false };
 
   @state()
   private host: HostConnectionState = { ...appState.project.host };
@@ -87,14 +92,12 @@ export class Pix3StatusBar extends ComponentBase {
     super.connectedCallback();
     this.syncProjectState();
     this.syncDirtyCount();
-    this.isPlaying = appState.ui.isPlaying;
+    this.syncGamePages();
 
     this.disposers.push(
       subscribe(appState.project, () => this.syncProjectState()),
       subscribe(appState.scenes, () => this.syncDirtyCount()),
-      subscribe(appState.ui, () => {
-        this.isPlaying = appState.ui.isPlaying;
-      }),
+      this.playPageLink.onPagesChanged(() => this.syncGamePages()),
       this.logger.subscribe(entry => {
         if (entry.level === 'error') {
           this.unseenErrors += 1;
@@ -112,6 +115,13 @@ export class Pix3StatusBar extends ComponentBase {
         this.perfSample = sample;
       })
     );
+  }
+
+  private syncGamePages(): void {
+    this.gamePages = {
+      designer: this.playPageLink.page('designer') !== null,
+      agent: this.playPageLink.page('agent') !== null,
+    };
   }
 
   disconnectedCallback() {
@@ -169,9 +179,14 @@ export class Pix3StatusBar extends ComponentBase {
             : html`<span class="status-ready">Ready</span>`}
         </div>
         <div class="status-right">
-          ${this.isPlaying
-            ? html`<span class="status-indicator playing"
-                >${this.icons.getIcon('play', IconSize.SMALL)} Playing</span
+          ${this.gamePages.designer
+            ? html`<span class="status-indicator playing" title="The Play window is open"
+                >${this.icons.getIcon('play', IconSize.SMALL)} Game open</span
+              >`
+            : null}
+          ${this.gamePages.agent
+            ? html`<span class="status-indicator agent-page" title="The agent's game page is open"
+                >${this.icons.getIcon('cpu', IconSize.SMALL)} Agent's game</span
               >`
             : null}
           ${this.renderHostStatus()} ${this.renderDiagnostics()} ${this.renderPerformance()}

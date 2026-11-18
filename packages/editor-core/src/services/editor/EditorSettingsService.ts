@@ -5,7 +5,6 @@ import {
   UpdateEditorSettingsOperation,
   loadEditorSettings,
 } from '@/features/editor/UpdateEditorSettingsOperation';
-import { loadPlayTarget, SetPlayTargetOperation } from '@/features/scripts/SetPlayTargetOperation';
 
 /** Sidebar section the Editor Settings dialog can open on. */
 export type EditorSettingsTab = 'general' | 'images' | 'about';
@@ -29,10 +28,6 @@ export class EditorSettingsService {
     const stored = loadEditorSettings();
     if (stored) {
       void this.operationService.invoke(new UpdateEditorSettingsOperation(stored));
-    }
-    const playTarget = loadPlayTarget();
-    if (playTarget) {
-      void this.operationService.invoke(new SetPlayTargetOperation({ target: playTarget }));
     }
   }
 

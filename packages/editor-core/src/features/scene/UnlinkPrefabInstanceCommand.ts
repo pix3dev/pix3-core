@@ -35,13 +35,6 @@ export class UnlinkPrefabInstanceCommand extends CommandBase<void, void> {
     if (context.state.project.host.writer === 'other') {
       return { canExecute: false, reason: 'Scene is read-only', scope: 'service' };
     }
-    if (context.state.ui.isPlaying) {
-      return {
-        canExecute: false,
-        reason: 'Cannot unlink prefabs during play mode',
-        scope: 'service',
-      };
-    }
 
     const sceneManager = context.container.getService<SceneManager>(
       context.container.getOrCreateToken(SceneManager)

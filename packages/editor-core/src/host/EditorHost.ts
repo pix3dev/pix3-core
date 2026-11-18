@@ -174,9 +174,9 @@ export interface RootModule {
   readonly modules: Record<string, Record<string, unknown>>;
 }
 
+/** The editor's script root; bot policies run on the game's page only (plan play-in-page D10). */
 export interface ScriptRoots {
   readonly editorScripts: RootModule;
-  readonly botPolicies: RootModule;
 }
 
 export interface HostScripts {
@@ -195,20 +195,12 @@ export interface SyncInfo {
   /** `{path: sha256 | null}` the rescan found changed (`null` = deleted). */
   readonly changed: Record<string, string | null>;
   readonly roots: ScriptRoots;
-  /**
-   * Project modules only the bot policies import (the plugin reads its module graph): like a
-   * policy, a change to one is applied during play. Absent from an older plugin.
-   */
-  readonly policyOnly?: readonly string[];
 }
 
 export interface HostSyncHandlers {
   /** Write dirty scenes now; wait for pointerup up to `timeoutMs` (plan §B.3 step 0). */
   flush?(timeoutMs: number): Promise<HookReply>;
-  /**
-   * The roots were re-imported for a sync: register scripts, reload changed scenes. While play
-   * runs, answer `{ok:false, reason:'stale', playing, pending}`.
-   */
+  /** The roots were re-imported for a sync: register scripts, reload changed scenes. */
   applySync?(info: SyncInfo): Promise<HookReply>;
 }
 

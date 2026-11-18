@@ -19,9 +19,9 @@ export { HostFilesClient } from './host-files.ts';
  * Vite's import analysis does not see.
  */
 
+/** The editor's script root; bot policies run on the game's page only (plan play-in-page D10). */
 export interface ScriptRoots {
   readonly editorScripts: RootModule;
-  readonly botPolicies: RootModule;
 }
 
 export interface RootModule {
@@ -54,8 +54,6 @@ export interface SyncInfo {
   /** `{path: sha256 | null}` — what the rescan found changed (null = deleted). */
   readonly changed: Record<string, string | null>;
   readonly roots: ScriptRoots;
-  /** Project modules only the bot policies import (the game never runs them). */
-  readonly policyOnly: readonly string[];
 }
 
 /** What the editor plugs in. Every hook is optional: an absent one is a no-op that succeeds. */
@@ -64,7 +62,7 @@ export interface HostSyncHandlers {
   flush?(timeoutMs: number): Promise<HookReply>;
   /**
    * The roots were re-imported for a sync: register the new script classes, reload changed
-   * scenes. While play runs, answer `{ok:false, reason:'stale', playing, pending}` (plan §B.3).
+   * scenes (plan §B.3).
    */
   applySync?(info: SyncInfo): Promise<HookReply>;
 }
@@ -495,14 +493,8 @@ export class EditorHostConnection {
   }
 
   private async reimportRoots(): Promise<ScriptRoots> {
-    const [editorScripts, botPolicies] = await Promise.all([
-      dynamicImport(rootUrl(this.base, 'virtual:pix3/editor-scripts')),
-      dynamicImport(rootUrl(this.base, 'virtual:pix3/bot-policies')),
-    ]);
-    this.roots = {
-      editorScripts: editorScripts as RootModule,
-      botPolicies: botPolicies as RootModule,
-    };
+    const editorScripts = await dynamicImport(rootUrl(this.base, 'virtual:pix3/editor-scripts'));
+    this.roots = { editorScripts: editorScripts as RootModule };
     return this.roots;
   }
 
@@ -560,11 +552,8 @@ export class EditorHostConnection {
         const roots = await this.reimportRoots();
         const changed = (message.changed ?? {}) as Record<string, string | null>;
         const rev = roots.editorScripts.__pix3Revision;
-        const policyOnly = Array.isArray(message.policyOnly)
-          ? message.policyOnly.filter((path): path is string => typeof path === 'string')
-          : [];
         const applied = this.handlers.applySync
-          ? await this.handlers.applySync({ rev, changed, roots, policyOnly })
+          ? await this.handlers.applySync({ rev, changed, roots })
           : { ok: true };
         const viteClient = viteClientLoaded();
         if (viteClient && !this.viteClientReported) {

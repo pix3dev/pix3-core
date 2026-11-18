@@ -1462,7 +1462,6 @@ describe('ViewportRendererService', () => {
 
   it('ticks previewable components in editor mode', () => {
     resetAppState();
-    appState.ui.isPlaying = false;
 
     class PreviewScript extends Script {
       readonly tickSpy = vi.fn();
@@ -1498,44 +1497,6 @@ describe('ViewportRendererService', () => {
 
     expect(component.tickSpy).toHaveBeenCalledTimes(1);
     expect(component.tickSpy).toHaveBeenCalledWith(0.25);
-  });
-
-  it('skips previewable components while play mode is active', () => {
-    resetAppState();
-    appState.ui.isPlaying = true;
-
-    class PreviewScript extends Script {
-      readonly tickSpy = vi.fn();
-
-      override tickEditorPreview(dt: number): void {
-        this.tickSpy(dt);
-      }
-    }
-
-    const service = new ViewportRendererService();
-    const node = new Node3D({ id: 'preview-root-play', name: 'Preview Root Play' });
-    const component = new PreviewScript('preview-script-play', 'user:PreviewScript');
-
-    node.addComponent(component);
-
-    Object.defineProperty(service, 'sceneManager', {
-      value: {
-        getActiveSceneGraph: () => ({ rootNodes: [node] }),
-      },
-      configurable: true,
-    });
-    Object.defineProperty(service, 'assetLoader', {
-      value: { loadInstancingModel: vi.fn() },
-      configurable: true,
-    });
-
-    (
-      service as unknown as {
-        previewTicker: { tickComponents: (dt: number) => void };
-      }
-    ).previewTicker.tickComponents(0.25);
-
-    expect(component.tickSpy).not.toHaveBeenCalled();
   });
 });
 

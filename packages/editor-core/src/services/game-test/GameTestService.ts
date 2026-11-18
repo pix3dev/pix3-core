@@ -120,8 +120,8 @@ import { Vector3 } from 'three';
  * by play_restart. Either way the report states both facts under `time`.
  *
  * The pause is requested from the **host** (`deps.setHostPaused` →
- * `GamePlaySessionService.setPauseRequested`), not applied to the runner behind
- * its back. The editor decides the runner's pause state from its focus rule and
+ * `GameRuntimeHandle.setPauseRequested`), not applied to the runner behind
+ * its back. The host decides the runner's pause state from its focus rule and
  * re-applies that decision on every focus event and suppression toggle — and this
  * very call drops its focus-pause suppression in its `finally` — so a bare
  * `runner.pause()` was undone milliseconds after the report claimed it held.
@@ -604,11 +604,10 @@ export class GameTestService {
   ) {}
 
   /**
-   * The play runtime once its scene runs. Play mode turns on (and `pix3_play start` answers)
-   * before that: the runtime starts after the Game tab registers its host and the scene loads —
-   * about a second later in a minimized window, where no frame is painted (gate P2, «Окно
-   * свёрнуто → pix3_game_run»). A run that stepped a runner still starting reported "the runner
-   * stopped at frame 0". Bounded: a start that never comes is the caller's error to read.
+   * The play runtime once its scene runs. The page may answer before that: the runtime starts
+   * after the scene loads — later still in a minimized window, where no frame is painted (gate
+   * P2, «Окно свёрнуто → pix3_game_run»). A run that stepped a runner still starting reported
+   * "the runner stopped at frame 0". Bounded: a start that never comes is the caller's error to read.
    */
   private async waitForRunningRuntime(
     timeoutMs = GameTestService.RUNTIME_START_TIMEOUT_MS

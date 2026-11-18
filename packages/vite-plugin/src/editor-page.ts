@@ -85,12 +85,11 @@ export interface EditorHostSource {
 export const editorHostSource = ({ base, clientUrl, editorCore }: EditorHostSource): string => {
   const lines = [
     `import * as editorScripts from 'virtual:pix3/editor-scripts';`,
-    `import * as botPolicies from 'virtual:pix3/bot-policies';`,
     `import { EditorHostConnection, viteClientLoaded } from ${JSON.stringify(clientUrl)};`,
   ];
   if (editorCore) lines.push(`import { mountEditor } from '@pix3/editor-core';`);
   lines.push(
-    `const host = new EditorHostConnection({ base: ${JSON.stringify(base)}, roots: { editorScripts, botPolicies } });`,
+    `const host = new EditorHostConnection({ base: ${JSON.stringify(base)}, roots: { editorScripts } });`,
     `window.__PIX3_HOST__ = host;`,
     `host.connect();`,
     `if (viteClientLoaded()) console.error('[pix3] /@vite/client is loaded on the editor page: a non-literal import(), import.meta.hot or a CSS import reached the editor chain (plan §B.2, contract B; \`pix3 check\` names the file).');`,

@@ -175,7 +175,7 @@ export interface ChromeArgsOptions {
   readonly noSandbox?: boolean;
 }
 
-/** The headless window: the editor and a portrait game in its Game tab both readable. */
+/** The headless window: the editor, and a game page opened from it, readable in screenshots. */
 const HEADLESS_WINDOW = '1600,1200';
 
 /** The owner's launch: CDP over the pipe (fds 3/4), never a TCP debugging port. */
@@ -184,8 +184,8 @@ export const chromeArgs = (options: ChromeArgsOptions): string[] => [
   '--remote-debugging-pipe',
   ...CHROME_FLAGS,
   ...(options.noSandbox ? ['--no-sandbox'] : []),
-  // Headless Chrome's default window is 780×380: the editor's Game tab then shows a portrait
-  // game a few hundred pixels tall. A desktop-sized window gives screenshots something to read.
+  // Headless Chrome's default window is 780×380: a desktop-sized window gives screenshots of
+  // the editor something to read.
   ...(options.headless
     ? ['--headless=new', `--window-size=${HEADLESS_WINDOW}`, options.url]
     : [`--app=${options.url}`]),

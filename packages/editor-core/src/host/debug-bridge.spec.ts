@@ -1,28 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NodeBase, SceneManager, Script, ScriptRegistry, type PropertySchema } from '@pix3/runtime';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { Command } from '@/core/command';
 import { UpdateObjectPropertyCommand } from '@/features/properties/UpdateObjectPropertyCommand';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
-import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { ServiceContainer } from '@/fw/di';
 import { AgentKeepaliveService, RECENT_CALL_MS } from '@/services/core/AgentKeepaliveService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
-import { CommandRegistry } from '@/services/core/CommandRegistry';
-import { OperationService } from '@/services/core/OperationService';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
-import { appState, resetAppState } from '@/state';
+import { resetAppState } from '@/state';
 
 import { BRIDGE_TOOLS, BRIDGE_TOOL_NAMES, validateParams } from './bridge-tools';
 import { callBridgeTool, thirdPartyToolGroup, type Pix3DebugBridge } from './debug-bridge';
-import type { ScriptRoots } from './EditorHost';
 import { HostService } from './HostService';
 import { mountEditorWith, type EditorHandle } from './mount';
 import { FakeHost } from './testing/fake-host';
 
 /**
  * The agent bridge (plan §D.1, §B.3): one tool table behind the 3p transport and the inline
- * `__PIX3_DEBUG__` fallback, owner rules for play, refusals that say why.
+ * `__PIX3_DEBUG__` fallback, refusals that say why. The play tools on the game pages are
+ * `bridge-play-page.spec.ts`.
  */
 
 const SCENE = `version: 1.0.0
@@ -55,9 +49,6 @@ describe('agent bridge', () => {
 
   beforeEach(async () => {
     resetAppState();
-    // The game in the editor's Game tab (until plan play-in-page S6); the page host is
-    // `bridge-play-page.spec.ts`.
-    appState.ui.playHost = 'editor';
     host = new FakeHost({
       files: {
         'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-bridge\n',
@@ -120,7 +111,7 @@ describe('agent bridge', () => {
       writer: 'self',
       dirty: [],
       pending: {},
-      play: { playing: false, playOwner: null },
+      play: { pages: [] },
       viteClient: false,
     });
     expect(statusInline).toEqual(status3p);
@@ -203,83 +194,6 @@ describe('agent bridge', () => {
     });
   });
 
-  it('during play reads and finds the nodes only the running game has (core-tests/game7)', async () => {
-    const container = ServiceContainer.getInstance();
-    const session = container.getService<GamePlaySessionService>(
-      container.getOrCreateToken(GamePlaySessionService)
-    );
-    // The running clone: the authored hero, plus a gem a script spawned (id ≠ name, as spawned
-    // nodes usually are).
-    const hero = new NodeBase({ id: 'hero', type: 'Group2D', name: 'Hero' });
-    const gem = new NodeBase({ id: 'n-7f3a', type: 'Sprite2D', name: 'gem-1' });
-    hero.add(gem);
-    const all = [hero, gem];
-    const canvas = document.createElement('canvas');
-    canvas.width = 200;
-    canvas.height = 100;
-    canvas.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 50 }) as DOMRect;
-    const runner = {
-      getLiveNodeById: (id: string) => all.find(n => n.nodeId === id) ?? null,
-      findLiveNodeByName: (name: string) =>
-        all.find(n => n.name.toLowerCase() === name.toLowerCase()) ?? null,
-      getLiveRootNodes: () => [hero],
-      projectNodeToCanvas: () => ({ x: 100, y: 50 }),
-    };
-    const spy = vi
-      .spyOn(session, 'getActiveRuntime')
-      .mockReturnValue({ runner, canvas, windowRef: window } as unknown as ReturnType<
-        GamePlaySessionService['getActiveRuntime']
-      >);
-    try {
-      for (const query of ['n-7f3a', 'gem-1']) {
-        expect(await callBridgeTool('pix3_scene', { nodeId: query }), query).toMatchObject({
-          ok: true,
-          node: { nodeId: 'n-7f3a', type: 'Sprite2D', name: 'gem-1' },
-          saved: null,
-          screen: { x: 60, y: 45 },
-          live: { components: [] },
-          runtimeOnly: true,
-        });
-      }
-      // An authored node still answers from the editor, with its saved form.
-      expect(await callBridgeTool('pix3_scene', { nodeId: 'hero' })).toMatchObject({
-        ok: true,
-        saved: { id: 'hero' },
-        screen: { x: 60, y: 45 },
-      });
-      const found = await callBridgeTool('pix3_scene', { find: 'gem' });
-      expect(found.matches).toEqual([
-        { nodeId: 'n-7f3a', type: 'Sprite2D', name: 'gem-1', runtimeOnly: true },
-      ]);
-      // The authored hero is not listed twice.
-      const heroes = await callBridgeTool('pix3_scene', { find: 'hero' });
-      expect((heroes.matches as unknown[]).length).toBe(1);
-      expect(await callBridgeTool('pix3_scene', { nodeId: 'gem-99' })).toMatchObject({
-        ok: false,
-        reason: 'not_found',
-      });
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it('play: aspect sets the Game tab preset with any action', async () => {
-    expect(await callBridgeTool('pix3_play', { action: 'status', aspect: '9:16' })).toMatchObject({
-      ok: true,
-      aspect: '9:16',
-    });
-    expect(appState.ui.gameAspectRatio).toBe('16:9-portrait');
-    expect(await callBridgeTool('pix3_play', { action: 'status' })).toMatchObject({
-      aspect: '9:16',
-    });
-    expect(await callBridgeTool('pix3_play', { action: 'status', aspect: '3:2' })).toMatchObject({
-      ok: false,
-      reason: 'invalid_params',
-    });
-    await callBridgeTool('pix3_play', { action: 'status', aspect: 'free' });
-    expect(appState.ui.gameAspectRatio).toBe('free');
-  });
-
   it('reads a node as the inspector and the file have it right after an inspector commit', async () => {
     const container = ServiceContainer.getInstance();
     await container
@@ -318,194 +232,6 @@ describe('agent bridge', () => {
     expect(keepalive.isKeepAlive()).toBe(false);
     keepalive.now = () => Date.now();
     expect(await bridge().sync({ timeoutMs: 1000 })).toMatchObject({ ok: true });
-  });
-
-  it('play: the designer’s session is refused even with force; a sync during it is stale', async () => {
-    appState.ui.isPlaying = true;
-    appState.ui.playModeStatus = 'playing';
-    appState.ui.playOwner = 'designer';
-    appState.ui.playStartedAt = 123;
-    const status = await callBridgeTool('pix3_play', { action: 'status' });
-    expect(status).toMatchObject({
-      ok: true,
-      playing: true,
-      playOwner: 'designer',
-      startedAt: 123,
-    });
-    for (const action of ['stop', 'restart', 'pause']) {
-      expect(await callBridgeTool('pix3_play', { action, force: true }), action).toMatchObject({
-        ok: false,
-        reason: 'not_owner',
-        playing: true,
-        playOwner: 'designer',
-      });
-    }
-    expect(await bridge().play.stop({ force: true })).toMatchObject({
-      ok: false,
-      reason: 'not_owner',
-    });
-    expect(appState.ui.isPlaying).toBe(true);
-    expect(await callBridgeTool('pix3_play', { action: 'start' })).toMatchObject({
-      ok: false,
-      reason: 'already_playing',
-    });
-    // A file written during play is held until play stops: the sync names it and the owner.
-    await host.externalWrite('scenes/main.pix3scene', SCENE.replace('"0"', '"1"'));
-    expect(await callBridgeTool('pix3_sync')).toMatchObject({
-      ok: false,
-      reason: 'stale',
-      playing: 'designer',
-      pending: ['scenes/main.pix3scene'],
-    });
-  });
-
-  it('play: restart registers the script roots a sync re-imported during play, before the start (S13)', async () => {
-    const container = ServiceContainer.getInstance();
-    const registry = container.getService<ScriptRegistry>(
-      container.getOrCreateToken(ScriptRegistry)
-    );
-    const sceneManager = container.getService<SceneManager>(
-      container.getOrCreateToken(SceneManager)
-    );
-    // The shell registers the play commands; without it, stand-ins that only flip play mode (the
-    // Game tab and its runtime are not under test here).
-    const playCommand = (id: string, isPlaying: boolean): Command => ({
-      metadata: { id, title: id, description: id, keywords: [] },
-      async execute(context) {
-        const operations = context.container.getService<OperationService>(
-          context.container.getOrCreateToken(OperationService)
-        );
-        await operations.invoke(
-          new SetPlayModeOperation({ isPlaying, status: isPlaying ? 'playing' : 'stopped' })
-        );
-        return { didMutate: true, payload: undefined };
-      },
-    });
-    container
-      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
-      .registerMany(playCommand('game.start', true), playCommand('game.stop', false));
-    expect(await callBridgeTool('pix3_play', { action: 'start' })).toMatchObject({ ok: true });
-    expect(appState.ui.playOwner).toBe('agent');
-
-    // During play the agent adds scripts/Jumper.ts, places user:Jumper on the hero, and syncs: the
-    // page re-imported the roots with the new class and hands them to the sync handler.
-    class Jumper extends Script {
-      static getPropertySchema(): PropertySchema {
-        return { nodeType: 'Jumper', properties: [], groups: {} };
-      }
-    }
-    const roots: ScriptRoots = {
-      editorScripts: { __pix3Revision: 2, modules: { '/scripts/Jumper.ts': { Jumper } } },
-      botPolicies: { __pix3Revision: 2, modules: {} },
-    };
-    await host.externalWrite(
-      'scenes/main.pix3scene',
-      SCENE.replace(
-        '    children:',
-        '    components:\n      - id: jump\n        type: user:Jumper\n        enabled: true\n        config: {}\n    children:'
-      )
-    );
-    const synced = await host.handlers.applySync!({
-      rev: 2,
-      changed: { 'scripts/Jumper.ts': 'a'.repeat(64), 'scenes/main.pix3scene': 'b'.repeat(64) },
-      roots,
-    });
-    expect(synced).toMatchObject({ ok: false, reason: 'stale', playing: 'agent' });
-    // The running game keeps its classes: nothing registered yet.
-    expect(registry.getComponentType('user:Jumper')).toBeUndefined();
-
-    expect(await callBridgeTool('pix3_play', { action: 'restart' })).toMatchObject({ ok: true });
-    expect(appState.ui.isPlaying).toBe(true);
-    // The restart registered the roots and the held scene reloaded against them: the placed
-    // component is live, not parked — and the next sync is ok.
-    expect(registry.getComponentType('user:Jumper')?.componentClass).toBe(Jumper);
-    const hero = sceneManager.getActiveSceneGraph()?.nodeMap.get('hero');
-    expect(hero?.components.map(c => c.type)).toEqual(['user:Jumper']);
-    expect(hero?.components[0]).toBeInstanceOf(Jumper);
-    expect(await callBridgeTool('pix3_sync', { timeoutMs: 1000 })).toMatchObject({
-      ok: true,
-      playing: 'agent',
-    });
-    // The payload goes through GameTestService.parseSpec (bot.channel defaults, validation)
-    // instead of reaching run() raw.
-    expect(
-      await callBridgeTool('pix3_game_run', {
-        until: [{ kind: 'newErrors' }],
-        bot: { name: 'dodge', channel: 'telepathy' },
-      })
-    ).toMatchObject({ ok: false, reason: 'invalid_spec' });
-    await callBridgeTool('pix3_play', { action: 'stop' });
-  });
-
-  it('play: restart with nothing playing starts the game (core-tests/game10)', async () => {
-    const container = ServiceContainer.getInstance();
-    const started: string[] = [];
-    container
-      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
-      .registerMany({
-        metadata: { id: 'game.start', title: 'start', description: 'start', keywords: [] },
-        async execute(context) {
-          started.push('game.start');
-          await context.container
-            .getService<OperationService>(context.container.getOrCreateToken(OperationService))
-            .invoke(new SetPlayModeOperation({ isPlaying: true, status: 'playing' }));
-          return { didMutate: true, payload: undefined };
-        },
-      });
-    expect(await callBridgeTool('pix3_play', { action: 'restart' })).toMatchObject({
-      ok: true,
-      playing: true,
-      playOwner: 'agent',
-    });
-    expect(started).toEqual(['game.start']);
-  });
-
-  it('play: run arms a seed and config for the start; a malformed one is refused (core-tests/game10)', async () => {
-    const container = ServiceContainer.getInstance();
-    const session = container.getService<GamePlaySessionService>(
-      container.getOrCreateToken(GamePlaySessionService)
-    );
-    const armed = vi.spyOn(session, 'setRunOverrides');
-    container
-      .getService<CommandRegistry>(container.getOrCreateToken(CommandRegistry))
-      .registerMany({
-        metadata: { id: 'game.start', title: 'start', description: 'start', keywords: [] },
-        async execute(context) {
-          await context.container
-            .getService<OperationService>(context.container.getOrCreateToken(OperationService))
-            .invoke(new SetPlayModeOperation({ isPlaying: true, status: 'playing' }));
-          return { didMutate: true, payload: undefined };
-        },
-      });
-    expect(
-      await callBridgeTool('pix3_play', { action: 'start', run: { seed: 'x' } })
-    ).toMatchObject({ ok: false, reason: 'invalid_params', detail: 'run.seed must be an integer' });
-    expect(armed).not.toHaveBeenCalled();
-    const run = { seed: 7, config: { 'game-root': { rules: { moves: 3 } } } };
-    expect(await callBridgeTool('pix3_play', { action: 'start', run })).toMatchObject({ ok: true });
-    expect(armed).toHaveBeenLastCalledWith(run);
-    armed.mockRestore();
-  });
-
-  it('play: stop and pause without a session say not_playing; game_run needs play', async () => {
-    expect(await callBridgeTool('pix3_play', { action: 'stop' })).toMatchObject({
-      ok: false,
-      reason: 'not_playing',
-    });
-    expect(await callBridgeTool('pix3_play', { action: 'pause' })).toMatchObject({
-      ok: false,
-      reason: 'not_playing',
-    });
-    expect(await callBridgeTool('pix3_game_run', { until: [{ kind: 'newErrors' }] })).toMatchObject(
-      {
-        ok: false,
-        reason: 'not_playing',
-      }
-    );
-    expect(await callBridgeTool('pix3_screenshot', { target: 'game' })).toMatchObject({
-      ok: false,
-      reason: 'not_playing',
-    });
   });
 
   it('errors: lists, filters by since, clears', async () => {

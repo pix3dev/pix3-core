@@ -133,7 +133,7 @@ export interface StoredBot {
 
 /**
  * The storage seam: the tool layer decides whether it is the dev server's evaluated
- * modules (`ModuleBotStore` in `GameBotHost.ts`) or memory, and the driver never knows.
+ * modules (`ModuleBotStore` in `bot-loader.ts`) or memory, and the driver never knows.
  *
  * A policy is **not parsed here** — it is TypeScript, and the only thing that can tell
  * whether it is valid is Vite, which compiles it.
@@ -145,7 +145,7 @@ export interface BotStore {
   list(): Promise<StoredBot[]>;
 }
 
-/** In-memory store: the default, and what the specs run against. */
+/** @internal In-memory store: what the specs run against (the page reads `ModuleBotStore`). */
 export class InMemoryBotStore implements BotStore {
   private readonly byPath = new Map<string, StoredBot>();
 

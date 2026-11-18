@@ -45,9 +45,6 @@ export interface PeekSnapshot {
   readonly soloActive: boolean;
 }
 
-/** Receives the mask so a running play session can apply it to its own (cloned) graph. */
-export type PeekRuntimeSink = (hiddenNodeIds: readonly string[]) => void;
-
 /**
  * Editor Peek: a per-user, non-serializable "what I do not want to look at right now" mask.
  *
@@ -123,8 +120,6 @@ export class PeekService {
    */
   private readonly previousSoloByScene = new Map<string, string[]>();
 
-  private runtimeSink: PeekRuntimeSink | null = null;
-
   private lastAppliedSceneId: string | null = null;
 
   /**
@@ -152,7 +147,6 @@ export class PeekService {
   dispose(): void {
     this.disposeSceneWatch();
     this.listeners.clear();
-    this.runtimeSink = null;
   }
 
   /** Notified whenever the mask or the derived branch list may have changed (for the UI strip). */
@@ -161,17 +155,6 @@ export class PeekService {
     return () => {
       this.listeners.delete(listener);
     };
-  }
-
-  /**
-   * Register the play session's runner so a live game follows the mask.
-   *
-   * Called with the current mask immediately: hiding the HUD to see the world underneath is the
-   * whole point, and it has to work while the game is running. Pass `null` on teardown.
-   */
-  setRuntimeSink(sink: PeekRuntimeSink | null): void {
-    this.runtimeSink = sink;
-    sink?.(this.getHiddenNodeIds());
   }
 
   /** Node ids currently masked in the active scene. */
@@ -409,7 +392,6 @@ export class PeekService {
     if (!changed) {
       return false;
     }
-    this.runtimeSink?.([...hidden]);
     this.requestRender();
     for (const listener of this.listeners) {
       listener();

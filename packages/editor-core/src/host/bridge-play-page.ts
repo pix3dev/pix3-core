@@ -25,12 +25,13 @@ import { appState } from '@/state';
 import { HostService } from './HostService';
 
 /**
- * The bridge's play tools when the game runs on its own page (plan play-in-page S4, §2.2; the
- * `playHost: 'page'` setting — `debug-bridge.ts` picks these over the in-editor ones):
+ * The bridge's play tools: the game runs on its own page (plan play-in-page S4, §2.2), never in
+ * the editor.
  *
  * - control (`pix3_play` start/restart/stop/pause/resume, `pix3_game_run`) goes to the agent's own
- *   page (`role=agent`, opened `noopener`: a process of its own, S5b) only; aimed at the human's page it is `not_your_page` (D7). A read-only
- *   editor tab does not drive it either: the writer tab owns the agent's page.
+ *   page (`role=agent`, opened `noopener`: a process of its own, S5b) only; aimed at the human's
+ *   page it is `not_your_page` (D7). A read-only editor tab does not drive it either: the writer
+ *   tab owns the agent's page.
  * - `start` / `restart` = flush + a fresh load of the page (`?run=` carries the test run) + the
  *   readiness barrier: the answer comes when the new load says hello with a revision no older
  *   than the last `pix3_sync` (D5, D6). `pix3_game_run` waits the same way when a sync reloaded
@@ -116,7 +117,7 @@ const isPage = (value: PageInfo | PageAnswer): value is PageInfo =>
 /** A running node as a game answers it; `page` when it came from a game page. */
 type LiveRead = LiveNodeRead & { page?: { role: string; loadId: string } };
 
-/** Where `pix3_scene` reads the running game: the editor's play session, or a game page. */
+/** Where `pix3_scene` reads the running game: a game page, or none. */
 export interface LiveSource {
   node(nodeId: string, byName: boolean): Promise<LiveRead | null>;
   /** Every live node whose name or type contains `text`. */
@@ -387,7 +388,7 @@ export const pageErrors = (params: Params): PageAnswer => {
 const STATUS_WAIT_MS = 3_000;
 
 /**
- * `pix3_status.play` on the page host: the pages that answer, no owner (D4, D7). Each page is
+ * `pix3_status.play`: the pages that answer, no owner (D4, D7). Each page is
  * asked for its state: a hello is as old as the page's last load or `who`, and a busy page answers
  * `who` late — `paused` / `pausedBy` from it said a run's pause was not there, so `pix3 bridge tap`
  * left the game frozen.
@@ -401,5 +402,5 @@ export const pagePlayStatus = async (): Promise<PageAnswer> => {
       return answer.ok !== false && answer.page ? (answer.page as PageInfo) : page;
     })
   );
-  return { playHost: 'page', pages: fresh };
+  return { pages: fresh };
 };

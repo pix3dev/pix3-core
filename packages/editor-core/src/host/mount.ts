@@ -61,8 +61,9 @@ export async function mountEditorWith(
 
   const scripts = service(ProjectScriptLoaderService);
   scripts.registerRoots(host.scripts.current());
-  // A script edited during play applies when play stops (`queueRoots` defers it).
-  const disposers: Array<() => void> = [host.scripts.onChange(roots => scripts.queueRoots(roots))];
+  const disposers: Array<() => void> = [
+    host.scripts.onChange(roots => scripts.registerRoots(roots)),
+  ];
 
   await service(ProjectService).openHostProject();
 
@@ -101,7 +102,7 @@ export async function mountEditorWith(
 
   installDebugBridge();
   disposers.push(installEditorPresence());
-  // The game's pages (the `playHost: 'page'` setting): found again after an editor reload.
+  // The game's pages (plan play-in-page): found again after an editor reload.
   disposers.push(service(PlayPageLink).start());
 
   if (options.shell !== false) {
