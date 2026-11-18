@@ -45,7 +45,8 @@ for (const file of files.filter(path => path.endsWith('.js'))) {
 // The game page's test host (plan play-in-page S3, D10) is imported by the game's dev page, not the
 // editor's: it may import nothing but the page's own `@pix3/runtime` and `three`, and its graph
 // (read from its source map) must stay out of the editor — no service outside `game-test` and the
-// two dependency-free `core` timers, no state, DI, host, UI, `lit` or `yaml`.
+// two dependency-free `core` timers, nothing of `host` but its tool table, no state, DI, UI, `lit`
+// or `yaml`.
 const PAGE_HOST = join(dist, 'page-test-host.js');
 if (existsSync(PAGE_HOST) && existsSync(`${PAGE_HOST}.map`)) {
   const code = readFileSync(PAGE_HOST, 'utf8');
@@ -63,6 +64,8 @@ if (existsSync(PAGE_HOST) && existsSync(`${PAGE_HOST}.map`)) {
     /^\.\.\/src\/services\/game-test\/[^/]+\.ts$/,
     /^\.\.\/src\/services\/core\/(background-ticker|page-activity)\.ts$/,
     /^\.\.\/src\/core\/agent-introspection\.ts$/,
+    // the bridge's tool table: data only, no imports
+    /^\.\.\/src\/host\/bridge-tools\.ts$/,
   ];
   const { sources } = JSON.parse(readFileSync(`${PAGE_HOST}.map`, 'utf8'));
   for (const source of sources) {

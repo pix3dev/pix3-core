@@ -166,6 +166,16 @@ for a clean picture. The report also lists the sounds the game asked to play
 `sfx:<preset>`) — nobody listens to a headless page, so this is how a run proves a match clicks.
 No editor, no MCP: it works from a subagent and in CI.
 
+`--run '<json>'` is `pix3_game_run` without the editor: the same params (`until`/`fail`
+predicates, `watch`, `monkey`, `bot` on `physical-input` or `direct-action`, `control`,
+`maxFrames`, `maxWallMs`) and the same report, run by the game's own page on dev or `dist` —
+`npx pix3 play dist --config '<json>' --run '{"bot":{"name":"round"},"until":[{"kind":"gameState","path":"won","op":"eq","value":true}]}'`.
+Exit 0 only when an `until` is met or the policy's `done(true)` ends it. Read `verdict` first, as
+with the bridge. The page has no scene restart: a negative `control` there needs the game's
+`reset(seed)` (`registerGameDebug`), or it comes back `inconclusive` with `isolation: none`.
+`--bot` stays the realtime run with real pictures for `bot.screenshot`; under `--run` a
+`bot.screenshot` is a marker in the log, as in the editor. One run at a time per page.
+
 `--tree` adds the running game's object tree at the end of the run (dev and `dist`): `pix3 tree`
 outlines the scene **file**; this is what the game built from it — nodes as `Type#id`, and the
 objects your scripts made at run time under them as `Type "name"`, `×N` on an instanced mesh,

@@ -1,4 +1,5 @@
 import type { RuntimeRenderer, SceneRunner } from '@pix3/runtime';
+import { BRIDGE_TOOLS, validateParams } from '@/host/bridge-tools';
 import {
   errors as capturedErrors,
   installErrorCapture,
@@ -417,6 +418,10 @@ const gameRun = async (
   params: unknown
 ): Promise<unknown> => {
   if (active) return busy();
+  // The bridge's own schema first, so the page refuses what `pix3_game_run` refuses.
+  const schema = BRIDGE_TOOLS.find(tool => tool.name === 'pix3_game_run')?.inputSchema;
+  const problem = schema ? validateParams(schema, params ?? {}) : null;
+  if (problem) return refuse('invalid_params', problem);
   const parsed = GameTestService.parseSpec(params);
   if ('error' in parsed) return refuse('invalid_spec', parsed.error);
   const runtime = pageRuntime(player, page);

@@ -3,7 +3,9 @@
 // Types for the test policies in this folder (global: no import needed). A policy is
 // one file exporting an object with a `tick(bot)`; the harness runs it once per logic
 // tick while the game plays, through `pix3_game_run {bot: {name: '<file name without
-// .ts>'}, …}`. Write it as
+// .ts>'}, …}` in the editor, or on the game's own page (dev or dist) through
+// `pix3 play --run '{"bot":{"name":"…"},…}'` (every channel) and `pix3 play --bot <name>`
+// (realtime, physical-input only, real pictures). Write it as
 //
 //   export default {
 //     name: 'dodge',
@@ -55,8 +57,8 @@ declare interface Pix3TestBot {
   /** Ticks this policy has been ticked for: 1 on the run's first frame (never during settleMs). */
   readonly frame: number;
   /**
-   * The run's parameters (frozen; `{}` when none): pix3_game_run {bot: {name, args: {…}}} or
-   * pix3 play --bot <name> --bot-args '{…}'. One policy, several variants.
+   * The run's parameters (frozen; `{}` when none): pix3_game_run / pix3 play --run
+   * {bot: {name, args: {…}}} or pix3 play --bot <name> --bot-args '{…}'. One policy, several variants.
    */
   readonly args: Readonly<Record<string, unknown>>;
 
@@ -108,8 +110,8 @@ declare interface Pix3TestBot {
   command(name: string, args?: Record<string, unknown>): boolean;
   /**
    * A named picture of this frame: `pix3 play --bot` freezes the game here, saves <name>.png
-   * (--shots dir) and lets it run on — a selected cell, a result card, a 200 ms effect. In the
-   * editor's pix3_game_run it is only a log marker.
+   * (--shots dir) and lets it run on — a selected cell, a result card, a 200 ms effect. Under
+   * pix3_game_run (the editor, or pix3 play --run) it is only a log marker.
    */
   screenshot(name: string): void;
 

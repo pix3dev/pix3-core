@@ -575,7 +575,8 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
             session,
             '(() => { const r = window.__PIX3_PAGE_RUN__; return r ? { done: r.done, result: r.done ? r.result : undefined } : { gone: true }; })()'
           )
-          .catch(() => ({ gone: true }))) ?? { gone: true }) as {
+          // A busy page can miss an answer; only a page without the run is a reloaded one.
+          .catch(() => ({}))) ?? {}) as {
           gone?: boolean;
           done?: boolean;
           result?: unknown;

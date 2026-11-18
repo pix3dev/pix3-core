@@ -665,6 +665,7 @@ home directory. Chrome on macOS / Windows is untested (`.plans/done/agent-bridge
 npx pix3 play                                  # the running dev server (?clean), else dist/
 npx pix3 play dist --bot swiper --size 390x844 --screenshot shot.png
 npx pix3 play --bot round --seed 7 --config '{"game-root":{"rules":{"moves":3}}}' --shots shots/
+npx pix3 play dist --run '{"bot":{"name":"round"},"until":[{"kind":"gameState","path":"won","op":"eq","value":true}]}'
 npx pix3 play https://example.com/game/ --seconds 5 --json
 npx pix3 play dist --profile --seconds 8         # a performance report of the run (dev or dist)
 npx pix3 play --tree                             # the running game's object tree at the end
@@ -674,15 +675,38 @@ A private headless Chrome (its own temp profile, CDP over `--remote-debugging-pi
 `pix3 editor` would use; `--no-sandbox` where it needs one) opens the page at a phone's CSS size
 (`Emulation.setDeviceMetricsOverride`, `--scale` the device pixel ratio, touch emulation on), waits
 for `__PIX3_PLAYER__.status` to say `running`, and reports page exceptions, `console.error`, the
-player's errors, the game's `registerGameDebug` snapshot and, with `--screenshot`, a PNG. `--bot`
-compiles `design/tests/bots/<name>.ts` with the project's esbuild and runs it in the page with the
-editor's own `BotSession` and a page world (`packages/editor-core/src/services/game-test/
-page-bot-host.ts`, bundled into `dist/play/prebuilt/` at `prepack`, from source in a checkout):
-taps, swipes and keys are DOM events on the canvas, the policy is ticked by
-`SceneRunner.subscribeFrameStats`, `physical-input` only. Neither script carries `@pix3/runtime`
-(the page has one; a shim recognises its nodes by shape). Exit 0 = booted, frames went by, nothing
-threw, the bot passed; 1 = otherwise (a page that says `running` with no frame counted is an
-error too); 2 = could not run. Code: `src/play/`.
+player's errors, the game's `registerGameDebug` snapshot and, with `--screenshot`, a PNG. Exit 0 =
+booted, frames went by, nothing threw, the bot or the run passed; 1 = otherwise (a page that says
+`running` with no frame counted is an error too); 2 = could not run. Code: `src/play/`.
+
+**The page's test tools.** `--run` and `--bot` drive the game through the test host on the page
+itself, `window.__PIX3_PLAYER__.tools.call(name, params)` (`packages/editor-core/src/services/
+game-test/page-test-host.ts`: the editor's own `GameTestService`, `GameInputService` and
+`BotSession` behind a `GameRuntimeHandle` over the page's player). On the dev server the page
+imports it (`__PIX3_PLAYER__.loadTools()`, `virtual:pix3/dev`: editor-core's prebuilt
+`dist/page-test-host.js`, with `@pix3/runtime` and `three` the page's own) and plays the policies
+Vite serves (`virtual:pix3/bot-policies`, like the editor); `?debug` loads it too. A build has no
+such import: the CLI injects the host as an IIFE (bundled into `dist/play/prebuilt/` at `prepack`,
+from source in a checkout) and the policy it compiles with the project's esbuild; neither carries
+`@pix3/runtime` (a shim recognises the page's nodes by shape and brings the few runtime values the
+host calls; `three` is a second copy there, math only). Tools: `game_run`, `game_controls`,
+`game_cancel`, `bot_start`; a refusal is `{ok: false, reason, detail}` as on the bridge. One run
+at a time (`run_active` for the second); a cancelled run, or one whose page goes away
+(`pagehide`), cancels the pointer it held, lets the game run on and hands its frames back to rAF.
+While a run holds the page its frames come from `BackgroundTicker`'s worker when the page is
+hidden (a hidden page gets no rAF).
+
+`--run '<json>'` is one `pix3_game_run` on the page, with the bridge tool's params (`until`/`fail`
+predicates, `watch`, `monkey`, `bot` on `physical-input` or `direct-action`, `control`,
+`maxFrames`, `maxWallMs`, `pauseOnOutcome`, …) and its report (`run` in `--json`, a verdict line
+in the human one); it passes when an `until` is met or the policy's `done(true)` ends it. Two
+differences from the editor: the negative control restores the starting state only through the
+game's `reset(seed)` — the page does not restart a scene in place (a fresh game is a fresh page
+load), so a game without one gets `isolation: none` and an `inconclusive` control — and reach
+proofs last as long as the page (it does not write `design/tests/reachability.json`). `--bot` is
+the realtime shorthand for a policy alone: `design/tests/bots/<name>.ts` with the page world
+(taps, swipes and keys are DOM events on the canvas, `physical-input` only), ticked by
+`SceneRunner.subscribeFrameStats`, with real pictures for `bot.screenshot`.
 
 While a bot plays, the runner ticks a fixed 1/60 s per frame (`setTimeMode('fixed')`) whatever the
 headless page paints, so `bot.frame` is game time; the budget is `--frames` game frames (default
@@ -717,7 +741,7 @@ whose own `visible` is false; at most 250 children per object and 5000 in all (`
 
 `--profile` adds a performance report of the run (`profile` in `--json`, a block in the human
 report), dev and `dist` alike: the CLI evaluates the debug overlay's collector in the page
-(`packages/vite-plugin/player/debug/profile.ts`, bundled beside the bot host into
+(`packages/vite-plugin/player/debug/profile.ts`, bundled beside the test host into
 `dist/play/prebuilt/page-debug.js`; the player ships none of it), so a built page — on any
 runtime that has `SceneRunner.subscribeFrameStats`, 2.0.0-alpha.5 included — is profiled like
 the dev one. It subscribes to the runner's frame stats as the overlay does and reports, over the

@@ -61,6 +61,7 @@ Usage:
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
+        [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
   pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless

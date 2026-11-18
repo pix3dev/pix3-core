@@ -11,7 +11,8 @@ import { formatTreeHuman } from './tree-report.ts';
 /**
  * `pix3 play`'s refusals, which happen before a browser starts. The run itself (a private headless
  * Chrome, the page booted, a policy ticked by the runner, the report) needs a Chrome and is checked
- * by hand against a starter: `pix3 play dist --bot <name>` and `pix3 play --bot <name>`.
+ * by hand against a starter: `pix3 play dist --bot <name>`, `pix3 play --bot <name>` and the same
+ * with `--run '<pix3_game_run params>'` (the S3 parity runs of `.plans/play-in-page.md`).
  */
 
 let root: string;
@@ -72,6 +73,14 @@ describe('pix3 play', () => {
     const policy = await run(['dist', '--bot', 'missing']);
     expect(policy.code).toBe(2);
     expect(policy.err).toContain(join('design', 'tests', 'bots', 'missing.ts'));
+
+    // --run takes pix3_game_run's params; its policy is checked before Chrome starts, and a run
+    // is either a --run or a --bot (play-in-page S3).
+    expect((await run(['dist', '--run', '[1]'])).err).toContain('--run takes the params');
+    expect((await run(['dist', '--run', '{}', '--bot', 'x'])).err).toContain('--bot and --run');
+    const runPolicy = await run(['dist', '--run', '{"bot":{"name":"gone"}}']);
+    expect(runPolicy.code).toBe(2);
+    expect(runPolicy.err).toContain(join('design', 'tests', 'bots', 'gone.ts'));
   });
 
   it('shades the unsafe bands for a picture and takes them off again (core-tests/game18)', async () => {
