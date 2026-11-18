@@ -1,6 +1,6 @@
 # Play на странице игры: один путь запуска, отладка в оверлее, редактор без play-режима
 
-Дата: 2026-11-18. Статус: ревизия 3, решения владельца приняты (§5), можно начинать S0.
+Дата: 2026-11-18. Статус: ревизия 4 — S0 выполнен (§7), D6, D10, S1, S3, S4 уточнены по его итогам.
 Утверждения о коде проверены по исходникам (`2.0.0-alpha.8`, `dae25f9`), рядом указан путь.
 Ревью Codex шло по тексту плана: его песочница здесь не читает файлы.
 
@@ -77,7 +77,9 @@
 - Барьер синхронизации (`vite-plugin/src/sync/barrier.ts`) считает ревизии (`rev`) и ждёт
   подтверждения **вкладки редактора**. Страница игры в нём не участвует: событий `pix3:fs` она
   не слушает, сцены и ассеты после правки сама не перечитывает. Перезагружает её только Vite —
-  при изменении скрипта.
+  при изменении скрипта, **политики бота** (и модуля, который импортирует только она) и
+  `pix3project.yaml`. Full-reload Vite рассылает всем страницам с `/@vite/client`, поэтому
+  перезагружается любая открытая страница игры, даже не импортирующая модуль (S0.5).
 
 ## 2. Решения
 
@@ -106,6 +108,14 @@
   `pix3_play start` отвечает `ok` только после `hello {loadId, rev}` с `rev` не старше последнего
   `pix3_sync`. Каждый вызов инструмента несёт `loadId`; ответ другого документа отбрасывается,
   прогон, чья страница сменилась, завершается `page_reloaded`.
+  Механизм (S0.4): `rev` = `ProjectFiles.currentSeq` в момент отдачи HTML страницы — хук
+  `transformIndexHtml` плагина (только serve) вписывает его в страницу; это нижняя граница того,
+  что страница прочтёт, и после `pix3_sync` она равна `rev` барьера. Ждать `hello` с `rev` не
+  старше последнего `pix3_sync` должен и `pix3_game_run`, не только `start`: правка скрипта или
+  политики сама перезагружает страницу агента (§1.3), и прогон уходит в новый `loadId`. Барьер
+  сам инвалидирует `virtual:pix3/scene-manifest` при изменении `pix3project.yaml` и при
+  появлении/удалении сцены — сейчас это делает только watcher (`hot-update.ts:26-31`,
+  `index.ts:237-244`), и страница, загруженная сразу после sync, может получить старый манифест.
 - **D7. У агента своя страница для управления, читать он может обе.**
   - Управление (`start`, `restart`, `stop`, `pix3_game_run`, ввод) идёт только в цель
     `pix3-agent-play`, звук выключен (`?mute`). На страницу человека такие вызовы отвечают
@@ -126,12 +136,20 @@
   используется: теряется при перезагрузке редактора, у CDP-цели её нет.
 - **D9. Открытие страницы агента.** В своём Chrome добавляем `--disable-popup-blocking`.
   `pix3 bridge` создаёт цель через `Target.createTarget` (как `chrome-owner.ts:246`). В чужом
-  браузере `pix3_play start` отвечает `popup_blocked` с URL.
+  браузере `pix3_play start` отвечает `popup_blocked` с URL. В headless (S0.3) окно открывается
+  и без флага, вторая цель видна в `/json/list` прокси; в оконном Chrome флаг не проверен.
 - **D10. Код тест-хоста остаётся в `editor-core/src/services/game-test/`**, меняется точка
   входа: `page-bot-host.ts` вырастает в `page-test-host.ts`; `editor-core` публикует его готовым
   модулем, `virtual:pix3/dev` импортирует по пути файла (как оверлей). Политики на dev-странице
   хост берёт из того же `virtual:pix3/bot-policies`; для `dist` CLI компилирует политику, как
   сейчас. Редактору этот корень больше не нужен — S11 и S13 удаляются.
+  Условия (S0.1, S0.6): отдельный вход `editor-core/dist/page-test-host.js` с теми же external,
+  что у редактора (`@pix3/runtime`, `three`) — тогда Vite отдаёт ему prebundle страницы, и
+  `instanceof` верен без шима; путь — `findPackageDir(root, '@pix3/editor-core')/dist/…`
+  (каталог уже в `fs.allow`, `vite-config.ts:67-75`), без `editor-core` хоста нет. Граф входа не
+  должен доходить до сервисов редактора: сегодня `GameTestService` тянет 116 модулей и 1,27 МБ
+  (`GamePlaySessionService`, вьюпорт, `ProjectStorageService`, `yaml`), так что разрез через
+  `GameRuntimeHandle` (S3) — обязательное условие, и `check-dist` его проверяет.
 - **D11. Живая правка в этот план не входит.** Правка свойства при открытой игре = сохранение и
   Play. Пересылка `property(...)` покрывает один путь из нескольких (undo/redo, компоненты,
   `LiveComponentService`, текстуры) и без привязки к `loadId` пишет не в ту игру; отдельная
@@ -144,7 +162,7 @@
 
 | Инструмент | Адресат | Что меняется | Новые / ушедшие отказы |
 |---|---|---|---|
-| `pix3_play` | редактор → страница агента | `start`/`restart` = flush + новая загрузка + барьер D6; ответ несёт `page {url, loadId, rev}`; `aspect` удалён | + `no_game_page`, `popup_blocked`, `flush_failed`, `not_your_page`; − `not_owner` |
+| `pix3_play` | редактор → страница агента | `start`/`restart` = flush + новая загрузка + барьер D6; ответ несёт `page {url, loadId, rev}`; `aspect` удалён; `run` (seed, config) живёт в `?run=` и повторяется `restart`; `pause`/`resume` → `debug.pause/resume` страницы, `status` — как `pix3_status.play`, `pausedBy` прогона сохраняется | + `no_game_page`, `popup_blocked`, `flush_failed`, `not_your_page`; − `not_owner` |
 | `pix3_game_run` | страница агента | параметры те же; + `page_reloaded` | + `no_game_page`, `page_reloaded` |
 | `pix3_scene` (игра открыта) | редактор + страница по `page` (D7) | `live`, `runtimeOnly` со страницы; `screen` — в CSS-пикселях **этой страницы**, рядом `page {role, loadId}`; без страницы — как вне play | — |
 | `pix3_status` | редактор | `play` = `{pages: [{role, url, loadId, rev, paused}]}` вместо `playOwner` | — |
@@ -152,6 +170,10 @@
 | `pix3_screenshot game` | страница по `page` (D7) | выводит её вперёд, отвечает `page`; сам снимок — `take_screenshot` по этой странице | + `no_game_page` |
 | `pix3_errors` | редактор + страницы | записи помечены `source: editor \| designer \| agent` и `loadId` | — |
 | `pix3 bridge screenshot\|tap\|swipe` | CLI | `screenshot --page designer\|agent`; `tap`/`swipe` — только страница агента; координаты и ввод — одна цель, один `loadId` | + `no_game_page`, `not_your_page` |
+
+Отказы A3 `already_playing` и `not_playing` в таблице не учтены: при D5 `start` поверх живой
+страницы — это новая загрузка, `already_playing` не нужен; `not_playing` совпадает с `no_game_page`.
+Решается в S4, в `BRIDGE_REASONS` одна причина на случай. Сверка с прежними гарантиями (A1–A29, S7, S11–S13, §6.24) — таблица в §7, S0.
 
 ## 3. Этапы
 
@@ -184,7 +206,10 @@
   (`editor-core/src/core/agent-introspection.ts:220-330`) и сборка деталей объекта из
   `runtime-panel.ts`. В `editor-core` остаётся реэкспорт до S6.
 - `DebugSession`: `tree()`, `node(id)`, `highlight(id|null)` (Box3 в живой сцене с учётом слоя).
-- `loadId` и `rev` в `Pix3PlayerState` (D6).
+- `loadId` и `rev` в `Pix3PlayerState` (D6): `transformIndexHtml` (serve, только страница игры —
+  страница редактора raw) в `vite-plugin/src/index.ts` вписывает `rev`; `virtual:pix3/dev`
+  (`devSource`, `player-modules.ts`) отдаёт его плееру, в сборке — `null`; `player/index.ts`
+  ставит `loadId = crypto.randomUUID()` и `rev`. Спеки: `player-modules.spec.ts`, хук.
 - `pix3 play --tree` печатает дерево в конце прогона (`--json`).
 - Спеки: `tree.spec.ts`, `session.spec.ts`. Документы: `vite-plugin/README.md`, `cli/README.md`,
   `usage.ts`, `kit-src/skills/pix3-verify/SKILL.md`.
@@ -208,7 +233,18 @@
 - Две реализации: редакторная (над `GamePlaySessionService`, живёт до S6) и страничная.
 - `page-test-host.ts` = `page-bot-host.ts` + предикаты, watch, monkey, `direct-action`, negative
   control; `installPageTools(context)` → `__PIX3_PLAYER__.tools.call`. Подключается лениво: при
-  `?debug` и при инъекции CLI.
+  `?debug` и при инъекции CLI. Вход собирается в `editor-core/dist/page-test-host.js` (D10);
+  `check-dist` отказывает, если вход импортирует `lit`, `yaml` или сервисы редактора.
+- **Фоновые тики** (S0.2): плеер крутит цикл на rAF (`player/index.ts:178-185`), скрытый документ
+  rAF не получает, и прогон на свёрнутой или фоновой странице агента встанет. Сейчас редактор
+  держит игру `BackgroundTicker` под keepalive (спецификация «Agent keepalive»). Страница агента
+  и страница с активным прогоном или `watch` ставят планировщик кадров на воркер, пока документ
+  скрыт (порт `background-ticker.ts` в `player/dev/`).
+- Шим для IIFE поверх `dist` (S0.1) покрывает весь хост, а не только `NodeBase`: `isInteractive`
+  (чистая), `getGameDebug` / `reportScriptError` (через `globalThis`, берётся настоящий
+  `core/game-debug.ts`), `DEFAULT_FIXED_DELTA_SEC`, `collectRenderabilityIssues` (с `NodeBase` по
+  форме). `three` в IIFE остаётся второй копией (только математика; уже сейчас каждый
+  `pix3 play --bot` пишет «Multiple instances of Three.js»).
 - `pix3 play --run '<json>'` принимает параметры `pix3_game_run`; `--bot` остаётся сокращением.
 - **Паритет** проверяется без моста: сценарии `pix3-e2e/bridge-e2e` идут через редакторный хост
   и через `pix3 play --run` на dev и на `dist`. Сравниваются вердикты, порядок действий и итоговое
@@ -223,7 +259,8 @@
 Всё новое включается настройкой редактора `playHost: 'page'`; по умолчанию — старый путь, так
 что вкладка Game и мост остаются согласованными.
 
-- `PlayPageLink` (редактор) и `player/dev/editor-rpc.ts` (страница): протокол D8, барьер D6.
+- `PlayPageLink` (редактор) и `player/dev/editor-rpc.ts` (страница): протокол D8, барьер D6 — для
+  `start`, `restart` и `pix3_game_run`; барьер sync инвалидирует манифест сцен (D6).
 - `game.play` под флагом: flush (ошибка flush останавливает запуск), окно по D2, страница
   агента по D7 и D9. `game.stop` закрывает окно.
 - Инструменты моста — по таблице §2.2, реализация выбирается флагом.
@@ -307,6 +344,8 @@
 | Правка при открытой игре больше не видна сразу | D11: сохранить и Play; живая правка — отдельная задача |
 | Старые сохранённые раскладки | миграция в S6 |
 | Две игры одновременно грузят машину | страница агента без звука, закрывается по `stop` и idle |
+| Правка скрипта или политики агентом перезагружает окно человека (full-reload Vite — всем страницам) и стирает состояние, которое человек «показал агенту» | S0.5; решение владельца (§7, S0): принять или гасить reload для правок, которые страница не импортирует |
+| Свёрнутая страница агента не тикает (rAF) | фоновые тики на воркере (S3) |
 
 ## 5. Решения владельца (2026-11-18, приняты)
 
@@ -343,3 +382,78 @@
 - D7 разделён на управление (только страница агента) и чтение (обе страницы, параметр `page`):
   агент должен видеть состояние, в котором человек нашёл баг. Добавлены кнопка «Показать
   агенту», отказ `not_your_page`, сценарий проверки в S5.
+
+Ревизия 4, 2026-11-18, по итогам S0 (§7):
+
+- §1.3: Vite перезагружает страницу игры не только на скрипт — ещё на политику бота и
+  `pix3project.yaml`, и всем страницам сразу.
+- D6: механизм `rev` (HTML-хук, `currentSeq`); барьер готовности — и для `pix3_game_run`;
+  барьер sync инвалидирует манифест сцен.
+- D9: в headless проверено, в оконном Chrome — нет.
+- D10: отдельный вход `dist/page-test-host.js` с external `@pix3/runtime`/`three`; граф без
+  сервисов редактора — условие.
+- S1: файлы для `loadId`/`rev`. S3: фоновые тики на воркере, полный список шима для `dist`,
+  проверка входа в `check-dist`. S4: барьер D6 для `pix3_game_run`, инвалидация манифеста.
+- §2.2: `run`, `pause/resume/status`, `pausedBy`; отказы `already_playing`/`not_playing`.
+- §4: два риска — reload окна человека правкой агента, свёрнутая страница агента.
+
+## 7. Ход работ
+
+### S0 (2026-11-18)
+
+Стенд: копия Skyways в `/tmp/claude-1001/play-in-page-s0/sky` (`@pix3/*` — ссылки на этот checkout,
+`2.0.0-alpha.8`; `core-tests/game*` стоят на npm `alpha.2` и для проверки не годятся), Vite 8.3.8,
+chrome-headless-shell 155 (`pix3-e2e/chrome.sh`, SwiftShader), `pix3 editor --headless
+--chrome-only`, `pix3 bridge`. Код спайка — там же (`probe/`); в репозитории кода не менялось.
+
+| Проверка | Результат | Следствие |
+|---|---|---|
+| 1. Тот же `@pix3/runtime` у хоста | Да. ESM-бандл хоста (esbuild, `@pix3/runtime`/`three` external), импортированный на `/?clean` по пути: `runner instanceof SceneRunner` — true, `instanceof NodeBase` — 244 из 244 узлов; рантайм один — `/node_modules/.vite/deps/@pix3_runtime.js`. Так же уже живут `editor-core/dist` и плеер (`vite-config.ts:94-97`). Но полный хост сегодня не собирается отдельно: `GameTestService` тянет 116 модулей, 1,27 МБ (`GamePlaySessionService`, вьюпорт, `ProjectStorageService`), на странице падает на `yaml`; без `GameTestService` (`page-bot-host` + bot-world + monkey) — 9 модулей, 55 КБ | D10 подтверждён с условиями (вход `dist/page-test-host.js`, разрез S3 обязателен). Для `dist` шим: `NodeBase` по форме, `isInteractive`, `getGameDebug`/`reportScriptError` (globalThis, `game-debug.ts:79-140,327-345`), `DEFAULT_FIXED_DELTA_SEC`, `collectRenderabilityIssues` (`renderability-lint.ts:220`) |
+| 2. Скорость прогона | Headless, `core-loop`, seed 58, 600 тиков: страница (`pix3 play dev --bot`, 390×844@2) ≈ 6,9 тика/с (602 тика, ~83 с со стартом); вкладка Game (`pix3_game_run`, 9:16) — 6,5 тика/с (`wallMs` 92 573). В обоих 1 действие, 0 отказов. В headless страница не скрывается: после `Target.activateTarget` другой цели — `visible`, `hasFocus` true. Перекрытое/свёрнутое окно не проверено (нет оконного Chrome). По коду: плеер на rAF (`player/index.ts:178-185`), редактор под keepalive — на `BackgroundTicker` (`GamePlaySessionService.ts:104,591`) | Паритет скорости в headless есть. Скрытая страница агента в оконном Chrome встанет — S3 получает фоновые тики на воркере |
+| 3a. Окно после async flush | В chrome-headless-shell блокировщика попапов нет: `window.open` открывает и через 6 с после клика, и без жеста. Активация клика (`navigator.userActivation.isActive`) жива через 3 с и погашена через 6 с (окно Chrome — 5 с). `about:blank` в клике + навигация через 6 с — работает (URL дочернего окна читается, один origin) | D2 без изменений; поведение блокировщика в оконном Chrome не проверено |
+| 3b. `window.open` из `Runtime.evaluate` | Открывает в headless и без `--disable-popup-blocking`, и с ним; `Runtime.evaluate {userGesture: true}` тоже открывает | D9 без изменений; `userGesture` — запасной путь для `pix3 bridge` |
+| 3c. Вторая цель в прокси | `pix3 editor --headless`: после `window.open('/?clean&agent=1', 'pix3-agent-play')` из вкладки редактора `/json/list` прокси показывает 2 страницы; повторный `window.open('', name)` возвращает то же окно; `close()` убирает цель | Подтверждено |
+| 4. `rev` на странице | Сейчас его нет: `Pix3PlayerState` без `rev`, корни редактора несут `__pix3Revision` (`script-graph.ts:49-56`), но страница их не импортирует. `rev` барьера = `ProjectFiles.seq` (`barrier.ts:144,174`), и `GET /__pix3/api/hello` после `pix3_sync` отдаёт тот же `seq` для скрипта (15/15), политики (17/17), сцены (19/19), svg (21/21), нового png (23/23), `pix3project.yaml` (25/25); файл в `.pix3/` seq не двигает. Watcher поднимает `seq` сам через ~300 мс, поэтому `changed` у sync был пуст. Autoload отдельно не проверен (у Skyways `autoloads: []`): это скрипт + запись в `pix3project.yaml`, оба случая выше | Механизм D6 — `currentSeq` в HTML через `transformIndexHtml` (S1). Манифест сцен инвалидирует только watcher (`hot-update.ts:26-31`, `index.ts:237-244`; без редактора `hotUpdate` выходит сразу, `index.ts:397`) — барьер должен делать это сам (S4) |
+| 5. Что перезагружает Vite | Метка в `window` после правки на диске, 3 с, без sync и с sync — одинаково: скрипт `scripts/Tutor.ts` — reload; политика `design/tests/bots/menu.ts` — **reload**; `pix3project.yaml` — reload; сцена, svg, новый png, png в `.pix3/` — нет. Политику страница не импортирует: full-reload Vite уходит всем клиентам | §1.3 исправлен. Правка агента перезагружает и окно человека — риск в §4, решение владельца ниже. `pix3_game_run` ждёт `hello` (D6) |
+| 6. Тарболы | По `files`/`exports` и `npm pack --dry-run` (полный `release:check --keep` не запускался): `editor-core` публикует только `dist` → хост должен быть файлом `dist/`, импорт по пути обходит `exports` (как оверлей); каталог в `fs.allow`; `lit`/`yaml` — зависимости `editor-core`, разрешимы. Политики: `virtual:pix3/bot-policies` отдаётся плагином в serve. Сборка: `devSource('none')` не импортирует ничего (`player-modules.ts:325-335`); в `Skyways/dist/index.html` нет `startPageBot`, `BotSession`, `mountDebugOverlay`, `bot-policies`. CLI несёт `dist/play/prebuilt/page-bot-host.js` (262 КБ) — путь `dist` | Подтверждено рассуждением; в S3 — `release:check` с новым входом и проверка, что сборка его не несёт |
+
+Попутно: первый прогон `pix3 play dev --bot` упал «the page reloaded during the run», в логе Vite —
+`page reload .pix3/screenshots/…/0-start.png`; повторить не удалось (png в `.pix3/` reload не
+вызвал), возможная причина — переоптимизация зависимостей после пробы. В долг S5.
+
+**Сверка гарантий**
+
+| Гарантия (источник) | Судьба | Этап | Примечание |
+|---|---|---|---|
+| Одна таблица инструментов, два транспорта; отказ всегда `{ok:false, reason, detail}` (A1, A3) | сохраняется | S4 | новые причины — §2.2; `already_playing`/`not_playing` — §2.2 |
+| Порядок `sync → start → run` (A4, A5, барьер) | меняется | S1, S4 | `start` и `pix3_game_run` ждут `hello` с `rev` ≥ sync (D6) |
+| `restart` = stop → применить отложенное → start (A4, S13) | меняется | S4, S6 | новая загрузка (D5); очередь корней S13 удаляется |
+| `start` ждёт запуска рантайма ≤ 15 с (A19) | меняется | S4 | заменяется `hello` (D6) |
+| Sync во время игры `stale`, `playing` (A5) | удаляется | S6 | под флагом — с S4 |
+| Владение `playOwner`, `not_owner` (A3, `bridge-tools.ts:101`) | меняется | S4, S6 | роли страниц, `not_your_page` (D7) |
+| `run` {seed, config} живёт до stop, повторяется на restart (`bridge-tools.ts:112-118`) | сохраняется | S4 | `?run=` (D5); **не было в §2.2** — добавлено |
+| `pause`/`resume`/`status`, `pausedBy: pix3_game_run`, `pauseOnOutcome` | меняется | S3, S4 | `debug.pause/resume` страницы; **не было в §2.2** — добавлено |
+| Скриншот: инструмент только готовит вид, снимок — `take_screenshot` (A2) | меняется | S4 | цель — страница по `page` |
+| Keepalive: скрытая вкладка тикает от воркера (A6, спецификация «Agent keepalive») | меняется | S3 | **в плане не было** — фоновые тики страницы |
+| Флаги Chrome против троттлинга (A6, `chrome.ts:16-22`) | сохраняется | S4 | + `--disable-popup-blocking` |
+| Четыре режима Play, `game.play-entry`, F5/F6 (§6.24) | меняется | S5, S6 | один путь (D1); F5/F6 — Play / Play Scene |
+| `?scene=`, ссылка «Pix3 editor», `?debug`, Pause/Step, `debug.snapshot()` (§6.24) | сохраняется | — | оверлей получает вкладку Scene (S2) |
+| Всё dev-only, по пути файла, сборка не несёт (§6.24, P33/P34) | сохраняется | S3 | распространяется на тест-хост и политики (S0.6) |
+| `pix3 play --profile`, `--bot` на `dist` через IIFE (§6.24) | сохраняется | S3 | шим расширяется (S0.1) |
+| Контракт B: на странице редактора нет `/@vite/client` (`barrier.ts:30-34`) | сохраняется | — | страницы игры его имеют — отсюда reload всех (S0.5) |
+| S7: живые компоненты следуют за скриптом; во время игры не меняются | меняется | S6 | первая часть остаётся, оговорка про игру уходит |
+| S11 `policyOnly` | удаляется | S6 | политики исполняет страница (D10) |
+| S12 исчезнувший тип паркуется | сохраняется | — | редактор |
+| S13 корни, принятые во время игры, — на `restart` | удаляется | S6 | D5 |
+| Ошибки рантайма → Logs, баннер с «Copy for agent» | меняется | S4 | со страницы, баннер в оверлее |
+
+Не проверено: блокировщик попапов и жест в **оконном** Chrome (D2, D9); скорость и тики на
+перекрытом / свёрнутом окне; `release:check --keep` целиком (S0.6 — по `files`/`exports`);
+autoload отдельно от скрипта и `pix3project.yaml`; что страница после sync показывает новое
+содержимое сцены (проверен только `rev`, `Cache-Control: no-cache` у сцен и ассетов).
+
+Решение «идём / меняем»: **идём** по S1–S4 с правками ревизии 4. Нужно решение владельца: правка
+скрипта или политики агентом (и любой sync с ними) перезагружает окно человека и стирает
+состояние, которое тот «показал агенту» (D7). Варианты: принять (агент сначала читает, потом
+правит) или в S4 гасить full-reload для правок, которых страница не импортирует (политики), —
+скрипты игры перезагружать всё равно нужно.
