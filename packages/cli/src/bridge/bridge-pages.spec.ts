@@ -131,6 +131,11 @@ beforeEach(async () => {
         if (target === 'agent') return reply({ result: { value: agentLoadId } });
         const tool = /call\("([^"]+)", (.*)\);/.exec(expression);
         const answer = tools[tool?.[1] ?? '']?.(JSON.parse(tool?.[2] ?? '{}')) ?? { ok: true };
+        // A second, read-only editor tab (the writer is `editor`).
+        if (target === 'editor-ro')
+          return reply({ result: { value: { ...answer, writer: 'other' } } });
+        if (tool?.[1] === 'pix3_status')
+          return reply({ result: { value: { ...answer, writer: 'self' } } });
         return reply({ result: { value: answer } });
       });
     });
@@ -182,6 +187,14 @@ describe('pix3 bridge on the game page (playHost: page)', () => {
     expect(await runBridgeCli(['swipe', '--from', 'a', '--to', 'b'], run.io)).toBe(1);
     expect(run.err.join('')).toContain('page_reloaded');
     expect(sent.agent?.some(method => method.startsWith('Input.'))).toBe(false);
+  });
+
+  it('talks to the writer when two editor tabs are open', async () => {
+    targets.unshift({ id: 'editor-ro', type: 'page', url: `${ORIGIN}/__pix3/` });
+    const run = io();
+    expect(await runBridgeCli(['pix3_play', '{"action":"restart"}'], run.io)).toBe(0);
+    expect(sent['editor-ro']).toEqual(['Runtime.evaluate']); // only its pix3_status
+    expect(sent.editor).toEqual(['Runtime.evaluate', 'Runtime.evaluate']);
   });
 
   it('says no_game_page when the agent has no page yet', async () => {

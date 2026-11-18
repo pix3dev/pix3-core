@@ -36,6 +36,9 @@ const STYLE = `
 }
 .panel.collapsed { width: auto; }
 .panel.collapsed .body { display: none; }
+/* Collapsed = a chip (D1): it sits over the game's top corner, where HUDs live. */
+.panel.collapsed [data-action="step"], .panel.collapsed [data-action="editor"],
+.panel.collapsed.has-role .title { display: none; }
 .panel.wide { width: min(380px, calc(100vw - 16px)); }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .title { font-weight: 600; color: #ffcf33; margin-right: auto; white-space: nowrap; }
@@ -156,7 +159,7 @@ export class DebugOverlay {
     const root = this.host.attachShadow({ mode: 'open' });
     this.root = root;
     root.innerHTML = `<style>${STYLE}</style>
-<div class="panel" part="panel">
+<div class="panel${rpc ? ' has-role' : ''}" part="panel">
   <header>
     <span class="title">Pix3 debug</span>
     ${rpc ? `<span class="role" title="Opened by the Pix3 editor">${rpc.role === 'agent' ? "agent's page" : 'from editor'}</span>` : ''}

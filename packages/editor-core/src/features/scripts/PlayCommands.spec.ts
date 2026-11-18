@@ -167,7 +167,7 @@ describe('Play', () => {
 });
 
 describe("Play on the game's page (playHost: page, plan play-in-page D1, D2)", () => {
-  /** The window as the click opened it: `about:blank`, navigated after the flush. */
+  /** The window as the click opened it (blank), navigated after the flush. */
   const pageSetup = (flushOk = true) => {
     const editor = setup();
     const game = { location: { href: 'about:blank' }, close: vi.fn() };
@@ -189,13 +189,14 @@ describe("Play on the game's page (playHost: page, plan play-in-page D1, D2)", (
     return { ...editor, game, opened };
   };
 
-  it('opens pix3-play on about:blank in the click, then loads the page after the flush', async () => {
+  it('opens pix3-play with an empty URL in the click, then loads the page after the flush', async () => {
     const { deps, context, opened, order, game, dispatched } = pageSetup();
     appState.ui.playHost = 'page';
     appState.ui.playTarget = 'tab'; // any mode: every Play is the page
     await new PlayCommand(deps).execute(context());
     expect(order).toEqual(['open-page', 'flush']);
-    expect(opened[0]).toMatchObject({ url: 'about:blank', name: 'pix3-play' });
+    // Empty, not `about:blank`: an open game window keeps its name (and the next Play finds it).
+    expect(opened[0]).toMatchObject({ url: '', name: 'pix3-play' });
     expect(game.location.href).toBe(
       `${window.location.origin}/?debug&role=designer&scene=scenes%2Flevel.pix3scene`
     );

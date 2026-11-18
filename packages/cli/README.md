@@ -916,7 +916,8 @@ The same tab and the same CDP token proxy the `pix3-browser` MCP server uses, fr
 an agent that cannot load an MCP server (a subagent, CI) or cannot start the new thread
 `pix3 agent-setup` asks for. It reads `~/.pix3/chrome.json` and the token (the local proxy
 `pix3 editor` started; else the Remote SSH forward and its token), lists the proxy's pages, takes
-the one on the project's `editorUrl` (`.pix3/dev.json`), and evaluates
+the one on the project's `editorUrl` (`.pix3/dev.json`) — with two editor tabs open, the writer
+(`pix3_status` `writer: "self"`; the other refuses to drive the agent's game page) — and evaluates
 `window.__PIX3_DEBUG__.call(tool, params)` there — the tools answer exactly as through MCP; exit 1
 on `{ok:false}`, 2 when there is no editor to reach. `screenshot` brings the surface to the front
 (`pix3_screenshot`) and saves `Page.captureScreenshot` (`--aspect` sets the Game tab's frame

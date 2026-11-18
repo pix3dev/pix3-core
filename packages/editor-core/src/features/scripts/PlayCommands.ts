@@ -102,10 +102,15 @@ const service = <T>(context: CommandContext, token: new (...args: never[]) => T)
   context.container.getService<T>(context.container.getOrCreateToken(token));
 
 /**
- * Play on the game's page (D1, D2): the window `pix3-play` opens on `about:blank` in the click,
- * before the flush (the flush is async, and a browser's popup blocker honours a click only for a
- * few seconds), then loads `/?debug&role=designer[&scene=…]` — a fresh load every time (D5). A
- * failed flush closes the window: the page would play an older file.
+ * Play on the game's page (D1, D2): the window `pix3-play` opens in the click, before the flush
+ * (the flush is async, and a browser's popup blocker honours a click only for a few seconds), then
+ * loads `/?debug&role=designer[&scene=…]` — a fresh load every time (D5). A failed flush closes
+ * the window: the page would play an older file.
+ *
+ * The window is opened with an empty URL: a new one starts blank, an open one is returned as it
+ * is. Navigating an open game window to `about:blank` instead puts it in another browsing context
+ * group (the editor's COOP is `same-origin-allow-popups`, the game's none): Chrome clears its
+ * name, and the next Play opened a second window.
  */
 async function launchPagePlay(
   context: CommandContext,
@@ -114,7 +119,7 @@ async function launchPagePlay(
 ): Promise<void> {
   const open = deps.openWindow ?? ((href, name, features) => window.open(href, name, features));
   const game = open(
-    'about:blank',
+    '',
     PAGE_WINDOW_NAMES.designer,
     pageWindowFeatures(context.state.project.manifest?.viewportBaseSize)
   );

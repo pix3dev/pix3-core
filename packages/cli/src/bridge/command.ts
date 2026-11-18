@@ -65,15 +65,12 @@ const str = (parsed: Parsed, name: string): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
-/** The editor tab: the page on this project's editor URL (dev.json), else any `/__pix3/` page. */
-const findEditorPage = (pages: readonly PageTarget[], root: string | null): PageTarget | null => {
+/** The editor tabs: the pages on this project's editor URL (dev.json), else any `/__pix3/` page. */
+const findEditorPages = (pages: readonly PageTarget[], root: string | null): PageTarget[] => {
   const info = root ? readDevInfo(root) : null;
   const urls = [info?.editorUrl, info?.publicEditorUrl].filter((u): u is string => Boolean(u));
-  return (
-    pages.find(page => urls.some(url => page.url.startsWith(url))) ??
-    pages.find(page => page.url.includes('/__pix3/')) ??
-    null
-  );
+  const own = pages.filter(page => urls.some(url => page.url.startsWith(url)));
+  return own.length > 0 ? own : pages.filter(page => page.url.includes('/__pix3/'));
 };
 
 /** Call one bridge tool in the page; `pix3_*` answers are JSON objects. */
@@ -90,6 +87,23 @@ const callTool = async (
   // pix3_game_run waits up to 180 s of wall clock (maxWallMs) plus settle time.
   const value = await page.evaluate(expression, 240_000);
   return (value ?? { ok: false, reason: 'no_answer' }) as Record<string, unknown>;
+};
+
+/**
+ * The editor tab to talk to. With a second tab open on the project, the writer (`pix3_status`
+ * `writer: "self"`): a read-only tab refuses to drive the agent's game page (`not_your_page`).
+ */
+const openEditorPage = async (
+  endpoint: ProxyEndpoint,
+  editors: readonly PageTarget[]
+): Promise<CdpPage> => {
+  for (const target of editors.length > 1 ? editors : []) {
+    const page = await CdpPage.open(endpoint, target.id);
+    const status = await callTool(page, 'pix3_status', {}).catch(() => null);
+    if (status?.writer === 'self') return page;
+    page.close();
+  }
+  return CdpPage.open(endpoint, editors[0].id);
 };
 
 /** A game page as `pix3_status.play.pages` lists it (the `playHost: 'page'` setting). */
@@ -234,14 +248,14 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
     );
     return 2;
   }
-  const target = findEditorPage(pages, root);
-  if (!target) {
+  const editors = findEditorPages(pages, root);
+  if (editors.length === 0) {
     io.stderr(
       `pix3 bridge: Chrome has no editor tab (${pages.length} page(s) open). Run \`npx pix3 editor\`: it opens one.\n`
     );
     return 2;
   }
-  const page = await CdpPage.open(endpoint, target.id);
+  const page = await openEditorPage(endpoint, editors);
   // tap / swipe on the page host: the agent's game page, not the editor tab.
   let agentPage: GamePage | null = null;
   let inputPage = page;
