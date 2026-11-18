@@ -122,6 +122,10 @@ const gamePages = async (editor: CdpPage): Promise<GamePage[] | null> => {
   return play?.playHost === 'page' ? (play.pages ?? []) : null;
 };
 
+/** Hide (`'hidden'`) or show again (`''`) the game page's debug overlay. */
+const overlayVisibility = (visibility: '' | 'hidden'): string =>
+  `document.querySelectorAll('.pix3-debug-overlay').forEach(el => { el.style.visibility = ${JSON.stringify(visibility)}; })`;
+
 /** The CDP target of a game page: its exact URL, else any page of that role. */
 const targetOfPage = (targets: readonly PageTarget[], page: { url: string; role: string }) =>
   targets.find(target => target.url === page.url) ??
@@ -298,11 +302,16 @@ export const runBridgeCli = async (argv: readonly string[], io: CliIo): Promise<
         // A target in the background paints no frame to capture (headless: none at all) — with
         // a game page open the editor tab is one of two.
         await shooter.send('Page.bringToFront');
+        // The game as it plays: the page's collapsed debug overlay sits over its top HUD.
+        if (shooter !== page) await shooter.evaluate(overlayVisibility('hidden')).catch(() => null);
         shot = (await shooter.send('Page.captureScreenshot', { format: 'png' })) as {
           data?: string;
         };
       } finally {
-        if (shooter !== page) shooter.close();
+        if (shooter !== page) {
+          await shooter.evaluate(overlayVisibility('')).catch(() => null);
+          shooter.close();
+        }
       }
       const out = resolve(
         io.cwd,

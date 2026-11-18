@@ -234,6 +234,19 @@ describe('the bridge on the game page (playHost: page)', () => {
     expect(agent.calls.map(call => call.loadId)).toEqual(['agent-load-1']);
   });
 
+  it("status asks each page: its last hello may predate a run's pause", async () => {
+    appState.ui.playHost = 'page';
+    const agent = page('agent'); // said hello unpaused
+    await service(PlayPageLink).discover(50);
+    agent.answer = tool =>
+      tool === 'status'
+        ? { ok: true, page: { ...agent.info, paused: true, pausedBy: 'pix3_game_run' } }
+        : { ok: true };
+    expect(await callBridgeTool('pix3_play', { action: 'status' })).toMatchObject({
+      pages: [{ role: 'agent', paused: true, pausedBy: 'pix3_game_run' }],
+    });
+  });
+
   it("tags the pages' errors and the editor's in pix3_errors", async () => {
     appState.ui.playHost = 'page';
     const agent = page('agent');

@@ -162,10 +162,21 @@ describe('pix3 bridge on the game page (playHost: page)', () => {
     expect(
       await runBridgeCli(['screenshot', '--page', 'agent', '--out', join(home, 'a.png')], run.io)
     ).toBe(0);
-    expect(sent.agent).toEqual(['Page.bringToFront', 'Page.captureScreenshot']);
+    // The debug overlay is hidden for the capture and shown again.
+    expect(sent.agent).toEqual([
+      'Page.bringToFront',
+      'Runtime.evaluate',
+      'Page.captureScreenshot',
+      'Runtime.evaluate',
+    ]);
     expect(sent.editor).not.toContain('Page.captureScreenshot');
     expect(await runBridgeCli(['screenshot', '--out', join(home, 'd.png')], io().io)).toBe(0);
-    expect(sent.designer).toEqual(['Page.bringToFront', 'Page.captureScreenshot']);
+    expect(sent.designer).toEqual([
+      'Page.bringToFront',
+      'Runtime.evaluate',
+      'Page.captureScreenshot',
+      'Runtime.evaluate',
+    ]);
   });
 
   it("taps the agent's page, never the human's", async () => {

@@ -358,8 +358,23 @@ export const pageErrors = (params: Params): PageAnswer => {
   return { ok: true, count: all.length, errors: all };
 };
 
-/** `pix3_status.play` on the page host: the pages that answer, no owner (D4, D7). */
-export const pagePlayStatus = async (): Promise<PageAnswer> => ({
-  playHost: 'page',
-  pages: await link().discover(),
-});
+/** How long `status` waits for a page's own answer before it falls back to its last hello. */
+const STATUS_WAIT_MS = 3_000;
+
+/**
+ * `pix3_status.play` on the page host: the pages that answer, no owner (D4, D7). Each page is
+ * asked for its state: a hello is as old as the page's last load or `who`, and a busy page answers
+ * `who` late — `paused` / `pausedBy` from it said a run's pause was not there, so `pix3 bridge tap`
+ * left the game frozen.
+ */
+export const pagePlayStatus = async (): Promise<PageAnswer> => {
+  const pages = link();
+  const known = await pages.discover();
+  const fresh = await Promise.all(
+    known.map(async page => {
+      const answer = await pages.call(page.role, 'status', {}, STATUS_WAIT_MS);
+      return answer.ok !== false && answer.page ? (answer.page as PageInfo) : page;
+    })
+  );
+  return { playHost: 'page', pages: fresh };
+};

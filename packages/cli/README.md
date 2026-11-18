@@ -935,7 +935,8 @@ never printed.
 preview until it becomes the default; spec §6.24): the game is a CDP target of its own, so
 `pix3 bridge` picks the target per command. `screenshot --target game [--page designer|agent]`
 captures the page `pix3_screenshot` names (the human's Play window by default while it is open,
-else the agent's page), after `Page.bringToFront` — a background target paints nothing to capture;
+else the agent's page), after `Page.bringToFront` — a background target paints nothing to capture —
+with the page's debug overlay hidden for the capture (it sits over the game's top HUD);
 `--aspect` does not apply (exact sizes: `pix3 play --size`). `tap` / `swipe` go to the agent's page
 only (`--page designer` is `not_your_page`; no agent page, `no_game_page`), a node's position is
 read with `pix3_scene {nodeId, page: "agent"}`, and the input is refused with `page_reloaded` when
