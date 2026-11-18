@@ -40,9 +40,6 @@
  * discrete `collapsed` flag instead.
  */
 
-import { ServiceContainer } from '@/fw/di';
-import { ProjectStorageService } from '@/services/project/ProjectStorageService';
-
 /** Where the journal lives inside the project. The project templates ship an empty one. */
 export const REACHABILITY_JOURNAL_PATH = 'design/tests/reachability.json';
 
@@ -370,7 +367,7 @@ export interface ReachabilityStore {
   write(text: string): Promise<void>;
 }
 
-/** @internal The specs' store (a journal without a project); production uses the file store. */
+/** A journal without a project: the game page's (proofs last as long as the page) and the specs'. */
 export class InMemoryReachabilityStore implements ReachabilityStore {
   constructor(private text: string | null = null) {}
 
@@ -385,41 +382,5 @@ export class InMemoryReachabilityStore implements ReachabilityStore {
   /** Test aid: what a reader would see right now. */
   peek(): string | null {
     return this.text;
-  }
-}
-
-/** The real backend: `design/tests/reachability.json` inside the open project. */
-export class ProjectFileReachabilityStore implements ReachabilityStore {
-  private storage(): ProjectStorageService {
-    const container = ServiceContainer.getInstance();
-    return container.getService<ProjectStorageService>(
-      container.getOrCreateToken(ProjectStorageService)
-    );
-  }
-
-  async read(): Promise<string | null> {
-    try {
-      return await this.storage().readTextFile(REACHABILITY_JOURNAL_PATH);
-    } catch {
-      // Missing file, no project open, no permission — all "nothing proved yet" as far as the
-      // journal is concerned. A hard failure here would take `game_controls` down with it.
-      return null;
-    }
-  }
-
-  async write(text: string): Promise<void> {
-    const storage = this.storage();
-    try {
-      await storage.writeTextFile(REACHABILITY_JOURNAL_PATH, text);
-    } catch (error) {
-      // The one recoverable case: the project predates `design/tests/` (only newer templates ship
-      // it). Create it once and retry; anything else is reported to the caller.
-      try {
-        await storage.createDirectory('design/tests');
-      } catch {
-        throw error;
-      }
-      await storage.writeTextFile(REACHABILITY_JOURNAL_PATH, text);
-    }
   }
 }

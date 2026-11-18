@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Euler, Quaternion } from 'three';
 import { registerGameDebug } from '@pix3/runtime';
-import { appState } from '@/state';
 import { clearErrors } from '@/core/agent-introspection';
 import { GameInputService, type GameInputStep } from './GameInputService';
+import { fakeGameTestHost, fakeRuntimeHandle, type FakePlayState } from './game-test.spec-helper';
 import {
   InMemoryReachabilityStore,
   REACHABILITY_JOURNAL_VERSION,
@@ -104,6 +104,9 @@ const makeRuntime = (nodes: FakeLiveNode[]) => {
   return { runner, canvas, windowRef: window };
 };
 
+/** The play state every service in this file reads. */
+const play: FakePlayState = { playing: true, sceneId: '' };
+
 const buildService = (
   runtime: ReturnType<typeof makeRuntime> | null,
   store: ReachabilityStore = new InMemoryReachabilityStore()
@@ -112,11 +115,10 @@ const buildService = (
   // Input needs a running game, so a run releases any host-held pause (the one
   // `game_run` leaves on its outcome frame) before it starts sending events.
   const setPauseRequested = vi.fn();
-  const service = new GameInputService();
-  Object.defineProperty(service, 'playSession', {
-    value: { getActiveRuntime: () => runtime, setFocusPauseSuppressed, setPauseRequested },
-    configurable: true,
-  });
+  const handle = runtime
+    ? fakeRuntimeHandle(runtime, { setFocusPauseSuppressed, setPauseRequested })
+    : null;
+  const service = new GameInputService(fakeGameTestHost(() => handle, {}, play));
   // Every service in a spec journals into memory, never into a project on disk.
   service.setReachabilityStore(store);
   return { service, setFocusPauseSuppressed, setPauseRequested, store };
@@ -125,17 +127,17 @@ const buildService = (
 describe('GameInputService', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
 
   it('refuses to run when the game is not playing', async () => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     const { service } = buildService(null);
     const result = await service.run([{ type: 'key', code: 'KeyW', ms: 10 }]);
     expect(result.ok).toBe(false);
@@ -540,7 +542,7 @@ describe('GameInputService', () => {
   });
 
   it('observe() without playing directs to play_start', async () => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     const { service } = buildService(null);
     const result = await service.observe([]);
     expect(result.ok).toBe(false);
@@ -854,11 +856,11 @@ const makeFakeInput = () => {
 describe('GameInputService frame denomination', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
@@ -966,11 +968,11 @@ const withFrameTicks = (runner: object, intervalMs: number | null) => {
 describe('GameInputService observe frame budget', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
@@ -1070,11 +1072,11 @@ describe('GameInputService observe frame budget', () => {
 describe('GameInputService observedPolls', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
@@ -1188,17 +1190,17 @@ const makeControl = (
 describe('GameInputService control discovery (game_controls)', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
 
   it('refuses when the game is not running', async () => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     expect((await buildService(null).service.listControls()).error).toMatch(/play_start/);
   });
 
@@ -1301,13 +1303,13 @@ describe('GameInputService control discovery (game_controls)', () => {
 describe('GameInputService reachability journal', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
-    appState.scenes.activeSceneId = 'res://scenes/Main.pix3scene';
+    play.playing = true;
+    play.sceneId = 'res://scenes/Main.pix3scene';
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
-    appState.scenes.activeSceneId = null;
+    play.playing = false;
+    play.sceneId = '';
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
@@ -1569,11 +1571,11 @@ describe('GameInputService reachability journal', () => {
 describe('GameInputService invoke step', () => {
   beforeEach(() => {
     clearErrors();
-    appState.ui.isPlaying = true;
+    play.playing = true;
   });
 
   afterEach(() => {
-    appState.ui.isPlaying = false;
+    play.playing = false;
     document.body.innerHTML = '';
     vi.useRealTimers();
   });

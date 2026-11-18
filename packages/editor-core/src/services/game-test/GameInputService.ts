@@ -1,10 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
-import { keepaliveSleep } from '@/services/core/background-ticker';
 import { describeError, diffJsonPaths, fmtScalar } from '@/services/game-test/report-format';
-import { injectable, inject } from '@/fw/di';
-import { appState } from '@/state';
-import { errors as capturedErrors, safeSerialize, type Json } from '@/core/agent-introspection';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { safeSerialize, type Json } from '@/core/agent-introspection';
+import type { GameTestHost } from '@/services/game-test/game-runtime-handle';
 import {
   NodeBase,
   getGameDebug,
@@ -28,7 +25,6 @@ import {
   normalizeContext,
   parseJournal,
   proofKey,
-  ProjectFileReachabilityStore,
   REACHABILITY_JOURNAL_PATH,
   serializeJournal,
   type ReachContext,
@@ -832,10 +828,8 @@ const describeInteractionArg = (
  * editor window would otherwise freeze the loop and eat the input); a fully
  * hidden tab still cannot tick (rAF stops) — keep the tab visible during runs.
  */
-@injectable()
 export class GameInputService {
-  @inject(GamePlaySessionService)
-  private readonly playSession!: GamePlaySessionService;
+  constructor(private readonly host: GameTestHost) {}
 
   /** Run a scripted input sequence against the running game. */
   async run(
@@ -855,10 +849,10 @@ export class GameInputService {
       newErrors: [],
     });
 
-    if (!appState.ui.isPlaying) {
+    if (!this.host.isPlaying()) {
       return failure('The game is not running. Call play_start first, then send input.');
     }
-    const runtime = this.playSession.getActiveRuntime();
+    const runtime = this.host.runtime();
     if (!runtime) {
       return failure(
         'Play mode is starting but the runtime is not attached yet; retry in a moment.'
@@ -883,15 +877,15 @@ export class GameInputService {
     await this.loadJournal();
 
     const { runner } = runtime;
-    const errorsBefore = capturedErrors().length;
+    const errorsBefore = this.host.errors().length;
     const wasPaused = runner.paused;
     // Input is driven in realtime, so a held pause (a previous `game_run`'s
     // outcome frame, most often) would swallow the whole script: the events land
     // and no tick ever polls them. Releasing the host-held pause is what makes
     // the resume below stick — the host re-applies its own pause decision on
     // every focus event, including the suppression toggle on the next line.
-    this.playSession.setPauseRequested(false);
-    this.playSession.setFocusPauseSuppressed(true);
+    runtime.setPauseRequested(false);
+    runtime.setFocusPauseSuppressed(true);
     // Any node named in `expect` is implicitly observed, so a model can just state its assertion.
     const observeQueries = Array.from(
       new Set([...(options?.observe ?? []), ...Object.keys(options?.expect ?? {})])
@@ -921,7 +915,7 @@ export class GameInputService {
         stepsRun += 1;
       }
 
-      await keepaliveSleep(Math.max(0, options?.settleMs ?? DEFAULT_SETTLE_MS));
+      await this.host.sleep(Math.max(0, options?.settleMs ?? DEFAULT_SETTLE_MS));
       const input = this.collectObservedPolls(inputService);
 
       const activities = recorder ? recorder.stop() : new Map<string, NodeActivity>();
@@ -980,7 +974,7 @@ export class GameInputService {
       };
     } finally {
       inputService?.stopPollRecording();
-      this.playSession.setFocusPauseSuppressed(false);
+      runtime.setFocusPauseSuppressed(false);
       // The tool-call boundary is where the journal hits the disk: awaited (so a proof is on disk
       // before the agent can act on the answer and reload the page), once per call (so a twenty-tap
       // script writes once, not twenty times inside a real-time loop), and unable to fail the call
@@ -1001,14 +995,14 @@ export class GameInputService {
    * (and for any host that exposes no frame hook).
    */
   async observe(queries: string[], sampleMs = 0, frames?: number): Promise<GameObserveResult> {
-    if (!appState.ui.isPlaying) {
+    if (!this.host.isPlaying()) {
       return {
         ok: false,
         error:
           'The game is not running — game_observe reads the LIVE runtime. Call play_start first (edit-mode state is available via node_inspect).',
       };
     }
-    const runtime = this.playSession.getActiveRuntime();
+    const runtime = this.host.runtime();
     if (!runtime) {
       return {
         ok: false,
@@ -1073,7 +1067,9 @@ export class GameInputService {
         nodes: Object.fromEntries(first),
         ...(game ? { game } : {}),
         ...(hint ? { hint } : {}),
-        ...renderabilityNote(runtime.runner.getLiveRootNodes()),
+        ...renderabilityNote(runtime.runner.getLiveRootNodes(), {
+          targetPlatform: this.host.targetPlatform(),
+        }),
       };
     }
 
@@ -1086,7 +1082,7 @@ export class GameInputService {
         : Math.min(sampleMs, MAX_SAMPLE_MS);
     const recorder = this.makeRecorder(runtime.runner, targets);
     const inputService = this.resolveInputService(runtime.runner);
-    this.playSession.setFocusPauseSuppressed(true);
+    runtime.setFocusPauseSuppressed(true);
     try {
       const rootsBefore = this.rootIdentity(runtime.runner);
       const gameBefore = this.snapshotGame();
@@ -1100,7 +1096,7 @@ export class GameInputService {
           frameMs
         );
       } else {
-        await keepaliveSleep(clampedMs);
+        await this.host.sleep(clampedMs);
       }
       const input = this.collectObservedPolls(inputService);
       const activities = recorder.stop();
@@ -1141,7 +1137,9 @@ export class GameInputService {
         ok: true,
         nodes: Object.fromEntries(first),
         movement,
-        ...renderabilityNote(runtime.runner.getLiveRootNodes()),
+        ...renderabilityNote(runtime.runner.getLiveRootNodes(), {
+          targetPlatform: this.host.targetPlatform(),
+        }),
         sampleMs: budget ? Math.round(budget.elapsedMs) : clampedMs,
         ...(budget
           ? {
@@ -1164,7 +1162,7 @@ export class GameInputService {
       };
     } finally {
       inputService?.stopPollRecording();
-      this.playSession.setFocusPauseSuppressed(false);
+      runtime.setFocusPauseSuppressed(false);
     }
   }
 
@@ -1176,14 +1174,14 @@ export class GameInputService {
    * tree, then guess which nodes are buttons and where they are".
    */
   async listControls(): Promise<GameControlsResult> {
-    if (!appState.ui.isPlaying) {
+    if (!this.host.isPlaying()) {
       return {
         ok: false,
         error:
           'The game is not running — game_controls lists the LIVE scene. Call play_start first (the authored graph is available via scene_tree).',
       };
     }
-    const runtime = this.playSession.getActiveRuntime();
+    const runtime = this.host.runtime();
     if (!runtime) {
       return {
         ok: false,
@@ -1459,7 +1457,7 @@ export class GameInputService {
    * same id in another scene is another control — so the journal is keyed by both.
    */
   private currentSceneId(): string {
-    return appState.scenes.activeSceneId ?? '';
+    return this.host.sceneId();
   }
 
   /**
@@ -1520,7 +1518,7 @@ export class GameInputService {
   }
 
   private store(): ReachabilityStore {
-    if (!this.reachStore) this.reachStore = new ProjectFileReachabilityStore();
+    if (!this.reachStore) this.reachStore = this.host.reachabilityStore();
     return this.reachStore;
   }
 
@@ -1771,7 +1769,7 @@ export class GameInputService {
     const durationOf = (s: GameInputStep): number => this.stepDurationMs(s, frameMs);
     switch (step.type) {
       case 'wait':
-        await keepaliveSleep(durationOf(step));
+        await this.host.sleep(durationOf(step));
         return null;
       case 'key':
         if (!step.code) return "A 'key' step needs a `code` (KeyboardEvent.code, e.g. 'KeyW').";
@@ -1783,7 +1781,7 @@ export class GameInputService {
         const point = this.resolveClientPoint(runtime, step.target, step.x, step.y, step.space);
         if (typeof point === 'string') return point;
         this.dispatchPointer(runtime.canvas, 'pointerdown', point);
-        await keepaliveSleep(durationOf(step));
+        await this.host.sleep(durationOf(step));
         // Read the witness while the finger is still down: by now the control has ticked, so its
         // own bounds check has decided whether the point actually landed on it.
         this.notePhysicalReach(runtime, step.target);
@@ -1794,7 +1792,7 @@ export class GameInputService {
         const point = this.resolveClientPoint(runtime, step.target, step.x, step.y, step.space);
         if (typeof point === 'string') return point;
         this.dispatchPointer(runtime.canvas, 'pointermove', point, { buttons: 0 });
-        await keepaliveSleep(durationOf(step));
+        await this.host.sleep(durationOf(step));
         this.notePhysicalReach(runtime, step.target);
         return null;
       }
@@ -1815,7 +1813,7 @@ export class GameInputService {
           step.args
         );
         if (refusal) return refusal;
-        await keepaliveSleep(durationOf(step));
+        await this.host.sleep(durationOf(step));
         return null;
       }
       case 'drag': {
@@ -1838,7 +1836,7 @@ export class GameInputService {
         const moves = Math.max(2, Math.min(20, requested));
         this.dispatchPointer(runtime.canvas, 'pointerdown', from);
         for (let i = 1; i <= moves; i++) {
-          await keepaliveSleep(durationMs / moves);
+          await this.host.sleep(durationMs / moves);
           this.dispatchPointer(runtime.canvas, 'pointermove', {
             x: from.x + ((to.x - from.x) * i) / moves,
             y: from.y + ((to.y - from.y) * i) / moves,
@@ -1856,7 +1854,7 @@ export class GameInputService {
     for (const code of codes) {
       this.dispatchKey('keydown', code);
     }
-    await keepaliveSleep(ms);
+    await this.host.sleep(ms);
     for (const code of codes) {
       this.dispatchKey('keyup', code);
     }
@@ -2058,7 +2056,8 @@ export class GameInputService {
 
   /** Errors captured after index `count` in the ring buffer (compact form). */
   private newErrorsSince(count: number): Array<{ source: string; message: string }> {
-    return capturedErrors()
+    return this.host
+      .errors()
       .slice(count)
       .map(entry => ({ source: entry.source, message: entry.message }));
   }
@@ -2263,7 +2262,7 @@ export class GameInputService {
       observed: number,
       why: string
     ): Promise<ObserveFrameBudget & { elapsedMs: number }> => {
-      await keepaliveSleep(Math.max(0, nominalMs - (Date.now() - startedAt)));
+      await this.host.sleep(Math.max(0, nominalMs - (Date.now() - startedAt)));
       return {
         requested: frames,
         observed,

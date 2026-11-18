@@ -1,4 +1,3 @@
-import { appState } from '@/state';
 import { collectRenderabilityIssues, type NodeBase, type RenderabilityIssue } from '@pix3/runtime';
 
 /**
@@ -25,6 +24,8 @@ export interface RenderabilityNoteOptions {
    * cost warning on every poll is how the blocking findings next to it lose their weight.
    */
   readonly includeAdvice?: boolean;
+  /** `pix3project.yaml` `targetPlatform`: some findings depend on it. */
+  readonly targetPlatform?: string;
 }
 
 export const renderabilityNote = (
@@ -32,7 +33,7 @@ export const renderabilityNote = (
   options: RenderabilityNoteOptions = {}
 ): RenderabilityNote => {
   const issues = collectRenderabilityIssues(roots, {
-    targetPlatform: appState.project.manifest?.targetPlatform,
+    targetPlatform: options.targetPlatform,
   }).filter(issue => options.includeAdvice === true || issue.severity !== 'advice');
 
   return issues.length === 0 ? {} : { sceneIssues: issues.map(toEntry) };

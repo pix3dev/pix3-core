@@ -1,9 +1,6 @@
-import { injectable, inject } from '@/fw/di';
-import { keepaliveSleep } from '@/services/core/background-ticker';
 import { diffJsonPaths, fmtScalar } from '@/services/game-test/report-format';
-import { appState } from '@/state';
-import { errors as capturedErrors, safeSerialize, type Json } from '@/core/agent-introspection';
-import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { safeSerialize, type Json } from '@/core/agent-introspection';
+import type { GameRuntimeHandle, GameTestHost } from '@/services/game-test/game-runtime-handle';
 import {
   getGameDebug,
   isInteractive,
@@ -74,7 +71,6 @@ import {
   worldForward,
   type LiveNodeSnapshot,
 } from '@/services/game-test/GameInputService';
-import { GameBotHost } from '@/services/game-test/GameBotHost';
 import {
   BotSession,
   buildBotVerdict,
@@ -596,26 +592,16 @@ export interface GameRunLoopDeps {
 // Service
 // ---------------------------------------------------------------------------
 
-@injectable()
 export class GameTestService {
-  @inject(GamePlaySessionService)
-  private readonly playSession!: GamePlaySessionService;
-
   /**
-   * Borrowed for one thing only: the live control listing. A monkey presses what
-   * `game_controls` lists, and building a second opinion on "what is pressable"
-   * here would drift from the first one the moment either changed.
+   * `gameInput` is borrowed for one thing only: the live control listing. A monkey presses what
+   * `game_controls` lists, and building a second opinion on "what is pressable" here would drift
+   * from the first one the moment either changed.
    */
-  @inject(GameInputService)
-  private readonly gameInput!: GameInputService;
-
-  /**
-   * Compiles the stored policies. Borrowed rather than absorbed for the same reason
-   * `gameInput` is: turning a `.ts` file into a callable object is a compiler
-   * concern, and this service's business is the frame loop.
-   */
-  @inject(GameBotHost)
-  private readonly botHost!: GameBotHost;
+  constructor(
+    private readonly host: GameTestHost,
+    private readonly gameInput: GameInputService
+  ) {}
 
   /**
    * The play runtime once its scene runs. Play mode turns on (and `pix3_play start` answers)
@@ -626,11 +612,11 @@ export class GameTestService {
    */
   private async waitForRunningRuntime(
     timeoutMs = GameTestService.RUNTIME_START_TIMEOUT_MS
-  ): Promise<ReturnType<GamePlaySessionService['getActiveRuntime']>> {
+  ): Promise<GameRuntimeHandle | null> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const runtime = this.playSession.getActiveRuntime();
-      if (runtime?.runner.running || !appState.ui.isPlaying || Date.now() >= deadline) {
+      const runtime = this.host.runtime();
+      if (runtime?.runner.running || !this.host.isPlaying() || Date.now() >= deadline) {
         return runtime;
       }
       await new Promise(resolve => setTimeout(resolve, 25));
@@ -645,7 +631,7 @@ export class GameTestService {
    * a negative verdict.
    */
   async run(spec: GameRunSpec & { input?: unknown }, signal?: AbortSignal): Promise<GameRunResult> {
-    if (!appState.ui.isPlaying) {
+    if (!this.host.isPlaying()) {
       return {
         ok: false,
         error: 'The game is not running. Call play_start first, then game_run.',
@@ -677,7 +663,7 @@ export class GameTestService {
     // over a typo.
     let bot: BotSession | null = null;
     if (normalized.bot) {
-      const loaded = await this.botHost.load(normalized.bot.name);
+      const loaded = await this.host.loadBot(normalized.bot.name);
       if ('error' in loaded) return { ok: false, error: loaded.error };
       bot = new BotSession(
         loaded.name,
@@ -715,7 +701,7 @@ export class GameTestService {
       : null;
     let main: GameRunResult;
     try {
-      main = await this.runSession(runtime.runner, deps =>
+      main = await this.runSession(runtime, deps =>
         runGameTestLoop(
           {
             ...deps,
@@ -802,15 +788,16 @@ export class GameTestService {
     const control = spec.control;
     const gesture = `pointer down at nx ${control.tap.nx}, ny ${control.tap.ny} (fractions of the canvas), held ${control.holdFrames} frames`;
     const reset = resolveGameReset();
+    const restartScene = this.host.restartScene?.bind(this.host);
     const isolation = await isolateForControl({
       ...(reset ? { resetGame: reset } : {}),
-      restartScene: () => this.playSession.restart(),
+      ...(restartScene ? { restartScene } : {}),
       ...(control.seed !== undefined ? { seed: control.seed } : {}),
     });
 
     // Re-read the runtime: a scene restart replaces it wholesale, so the handle the
     // main run used is stale by now.
-    const runtime = this.playSession.getActiveRuntime();
+    const runtime = this.host.runtime();
     let controlBaseline: AssertionBaseline | null = null;
     let controlResult: GameRunResult | null = null;
     if (runtime) {
@@ -826,7 +813,7 @@ export class GameTestService {
         controlGestureEvents(control),
         new DomInputSink(runtime.canvas, runtime.windowRef)
       );
-      controlResult = await this.runSession(runtime.runner, deps =>
+      controlResult = await this.runSession(runtime, deps =>
         runGameTestLoop(
           {
             ...deps,
@@ -1169,11 +1156,12 @@ export class GameTestService {
    * frame inspectable.
    */
   private async runSession(
-    runner: SceneRunner,
+    runtime: GameRuntimeHandle,
     execute: (deps: GameRunLoopDeps) => Promise<GameRunResult>
   ): Promise<GameRunResult> {
-    const deps = this.buildDeps(runner);
-    this.playSession.setFocusPauseSuppressed(true);
+    const { runner } = runtime;
+    const deps = this.buildDeps(runtime);
+    runtime.setFocusPauseSuppressed(true);
     let result: GameRunResult;
     try {
       result = await execute(deps);
@@ -1184,7 +1172,7 @@ export class GameTestService {
       // re-checked against reality afterwards regardless — this seam is where a
       // future resumer would appear, and it must show up as a note, not as a
       // quietly wrong `leftPaused`.
-      this.playSession.setFocusPauseSuppressed(false);
+      runtime.setFocusPauseSuppressed(false);
     }
     if (result.time && result.time.leftPaused !== runner.paused) {
       result.time.leftPaused = runner.paused;
@@ -1264,13 +1252,15 @@ export class GameTestService {
     };
   }
 
-  private buildDeps(runner: SceneRunner): GameRunLoopDeps {
+  private buildDeps(runtime: GameRuntimeHandle): GameRunLoopDeps {
+    const { runner } = runtime;
     return {
       runner: runner as unknown as TestableRunner,
       sampleGameState: readGameState,
-      errorCount: () => capturedErrors().length,
+      errorCount: () => this.host.errors().length,
       errorsSince: from =>
-        capturedErrors()
+        this.host
+          .errors()
           .slice(from)
           .map(entry => ({ source: entry.source, message: entry.message })),
       nodeExists: query =>
@@ -1287,13 +1277,10 @@ export class GameTestService {
         return registry ? { entries: registry.log, dropped: registry.droppedLogEntries } : null;
       },
       watchSignals: specs => new LiveSignalWatcher(() => runner.getLiveRootNodes(), specs),
-      setHostPaused: (paused, by) => this.playSession.setPauseRequested(paused, by),
+      setHostPaused: (paused, by) => runtime.setPauseRequested(paused, by),
       now: () => performance.now(),
-      // A macrotask, not a microtask: a microtask queue drain never lets the host
-      // paint or deliver events, so the editor would still look frozen.
-      yieldToHost: () => new Promise<void>(resolve => setTimeout(resolve, 0)),
-      // Not throttled in a hidden tab while an agent keeps the editor alive.
-      sleep: keepaliveSleep,
+      yieldToHost: () => this.host.yieldToHost(),
+      sleep: ms => this.host.sleep(ms),
     };
   }
 }

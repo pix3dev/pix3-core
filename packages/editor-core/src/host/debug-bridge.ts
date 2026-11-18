@@ -20,6 +20,7 @@ import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { EditorTabService } from '@/services/editor/EditorTabService';
+import { EditorGameTestService } from '@/services/game-test/EditorGameTestService';
 import { GameTestService } from '@/services/game-test/GameTestService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { FlushService } from '@/services/project/FlushService';
@@ -581,7 +582,7 @@ const EXECUTES: Record<string, Execute> = {
     // straight to `run` left `bot.channel` undefined, and every bot action read as direct-action.
     const parsed = GameTestService.parseSpec(params);
     if ('error' in parsed) return refuse('invalid_spec', parsed.error);
-    const result = await service(GameTestService).run(parsed.spec);
+    const result = await service(EditorGameTestService).test.run(parsed.spec);
     return result.ok
       ? (result as unknown as Record<string, unknown>)
       : refuse('refused', result.error ?? 'game run did not start');

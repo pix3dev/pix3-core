@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GameBotHost, ModuleBotStore } from '@/services/game-test/GameBotHost';
+import { GameBotHost } from '@/services/game-test/GameBotHost';
+import { ModuleBotStore } from '@/services/game-test/bot-loader';
 import { BOT_DIRECTORY, InMemoryBotStore } from '@/services/game-test/game-bots';
 import { HostService } from '@/host/HostService';
 import { FakeHost } from '@/host/testing/fake-host';

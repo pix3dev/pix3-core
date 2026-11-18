@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Json } from '@/core/agent-introspection';
+import { EditorGameTestService } from '@/services/game-test/EditorGameTestService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
 import { NodeBase, type GameCommandLogEntry } from '@pix3/runtime';
 import {
@@ -26,7 +27,13 @@ import {
 } from './game-monkey';
 import { DEFAULT_CONTROL_HOLD_FRAMES } from './game-control';
 import type { BotReport, BotWorld } from './game-bots';
-import type { LiveControlEntry, LiveNodeSnapshot } from './GameInputService';
+import { GameInputService, type LiveControlEntry, type LiveNodeSnapshot } from './GameInputService';
+import {
+  fakeGameTestHost,
+  fakeRuntimeHandle,
+  type FakePlayState,
+  type FakeRuntime,
+} from './game-test.spec-helper';
 import {
   signalWatchKey,
   type GameAssertion,
@@ -740,9 +747,11 @@ describe('GameTestService.run — the pause survives the focus rule', () => {
       configurable: true,
     });
 
-    const service = new GameTestService();
-    Object.defineProperty(service, 'playSession', { value: session, configurable: true });
-    return { service, session };
+    // The editor's own host over the session: this block is the glue to `GamePlaySessionService`
+    // and goes with it (plan play-in-page S6).
+    const editor = new EditorGameTestService();
+    Object.defineProperty(editor, 'playSession', { value: session, configurable: true });
+    return { service: editor.test, session };
   };
 
   it('leaves the game paused after the call returns, and says so truthfully', async () => {
@@ -859,30 +868,22 @@ describe('GameTestService.run — the pause survives the focus rule', () => {
 });
 
 describe('GameTestService.run — guards', () => {
-  const buildService = (runtime: unknown) => {
-    const service = new GameTestService();
-    Object.defineProperty(service, 'playSession', {
-      value: {
-        getActiveRuntime: () => runtime,
-        setFocusPauseSuppressed: vi.fn(),
-        setPauseRequested: vi.fn(),
-      },
-      configurable: true,
-    });
-    return service;
+  const play: FakePlayState = { playing: true, sceneId: '' };
+  const buildService = (runtime: FakeRuntime | null) => {
+    const handle = runtime ? fakeRuntimeHandle(runtime) : null;
+    const host = fakeGameTestHost(() => handle, {}, play);
+    return new GameTestService(host, new GameInputService(host));
   };
 
   it('refuses when the game is not playing', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = false;
+    play.playing = false;
     const result = await buildService(null).run({ until: [{ kind: 'frames', n: 5 }] });
     expect(result.ok).toBe(false);
     expect(result.error).toContain('play_start');
   });
 
   it('rejects input steps with the reason, rather than running them into a false negative', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
+    play.playing = true;
     try {
       const service = buildService({ runner: makeRunner() });
       const result = await service.run({
@@ -893,20 +894,19 @@ describe('GameTestService.run — guards', () => {
       expect(result.error).toContain('game_input');
       expect(result.error).toContain('manual');
     } finally {
-      appState.ui.isPlaying = false;
+      play.playing = false;
     }
   });
 
   it('refuses a spec with no until', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
+    play.playing = true;
     try {
       const service = buildService({ runner: makeRunner() });
       const result = await service.run({ until: [] as GameAssertion[] });
       expect(result.ok).toBe(false);
       expect(result.error).toContain('at least one `until`');
     } finally {
-      appState.ui.isPlaying = false;
+      play.playing = false;
     }
   });
 });
@@ -1685,7 +1685,7 @@ describe('GameTestService.run — the negative control', () => {
   }): Harness => {
     const runner = makeRunner();
     const harness: Harness = {
-      service: new GameTestService(),
+      service: null as unknown as GameTestService,
       runner,
       resets: 0,
       restarts: 0,
@@ -1723,27 +1723,21 @@ describe('GameTestService.run — the negative control', () => {
       canvas: document.createElement('canvas'),
       windowRef: globalThis.window as Window,
     };
-    Object.defineProperty(harness.service, 'playSession', {
-      value: {
-        getActiveRuntime: () => runtime,
-        setFocusPauseSuppressed: vi.fn(),
-        setPauseRequested: vi.fn(),
-        restart: async () => {
+    const handle = fakeRuntimeHandle(runtime);
+    harness.service = new GameTestService(
+      fakeGameTestHost(() => handle, {
+        restartScene: async () => {
           harness.restarts += 1;
           if (options.restart) await options.restart();
           run += 1;
           score = 0;
           runner.frames = 0;
         },
-      },
-      configurable: true,
-    });
-    Object.defineProperty(harness.service, 'gameInput', {
-      value: {
+      }),
+      {
         listControls: () => Promise.resolve({ ok: true, controls: options.controls ?? [] }),
-      },
-      configurable: true,
-    });
+      } as unknown as GameInputService
+    );
     return harness;
   };
 
@@ -1758,138 +1752,102 @@ describe('GameTestService.run — the negative control', () => {
   });
 
   it('passes when the same gesture away from the control produces nothing, and names the isolation', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({
-        // The effect only ever happens in the main run.
-        score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
-        reset: true,
-      });
+    const harness = buildHarness({
+      // The effect only ever happens in the main run.
+      score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
+      reset: true,
+    });
 
-      const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
+    const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
 
-      expect(result.outcome?.kind).toBe('until');
-      expect(harness.resets).toBe(1);
-      expect(result.control?.verdict).toBe('passed');
-      expect(result.control?.isolation.method).toBe('reset');
-      expect(result.control?.frames).toEqual({ main: 3, control: 20 });
-      expect(result.verdict).toContain('NEGATIVE CONTROL PASSED');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(result.outcome?.kind).toBe('until');
+    expect(harness.resets).toBe(1);
+    expect(result.control?.verdict).toBe('passed');
+    expect(result.control?.isolation.method).toBe('reset');
+    expect(result.control?.frames).toEqual({ main: 3, control: 20 });
+    expect(result.verdict).toContain('NEGATIVE CONTROL PASSED');
   });
 
   it('fails the control when the effect happens without it, and marks the verdict', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({
-        // Any tap anywhere raises the score — the Action_Primary trap of §5.4.4.
-        score: frame => (frame >= 3 ? 1 : 0),
-        reset: true,
-      });
+    const harness = buildHarness({
+      // Any tap anywhere raises the score — the Action_Primary trap of §5.4.4.
+      score: frame => (frame >= 3 ? 1 : 0),
+      reset: true,
+    });
 
-      const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
+    const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
 
-      expect(result.outcome?.kind).toBe('until');
-      expect(result.control?.verdict).toBe('failed');
-      expect(result.control?.outcome?.kind).toBe('until');
-      expect(result.verdict).toContain('CONTROL FAILED');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(result.outcome?.kind).toBe('until');
+    expect(result.control?.verdict).toBe('failed');
+    expect(result.control?.outcome?.kind).toBe('until');
+    expect(result.verdict).toContain('CONTROL FAILED');
   });
 
   it('is inconclusive — never "passed" — when the state could not be restored', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({
-        score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
-        // No reset() on the provider, and the scene restart itself fails.
-        restart: () => Promise.reject(new Error('no project open')),
-      });
+    const harness = buildHarness({
+      score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
+      // No reset() on the provider, and the scene restart itself fails.
+      restart: () => Promise.reject(new Error('no project open')),
+    });
 
-      const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
+    const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
 
-      expect(harness.restarts).toBe(1);
-      expect(result.control?.verdict).toBe('inconclusive');
-      expect(result.control?.reason).toBe('no-isolation');
-      expect(result.control?.isolation.ok).toBe(false);
-      expect(result.verdict).toContain('CONTROL INCONCLUSIVE');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(harness.restarts).toBe(1);
+    expect(result.control?.verdict).toBe('inconclusive');
+    expect(result.control?.reason).toBe('no-isolation');
+    expect(result.control?.isolation.ok).toBe(false);
+    expect(result.verdict).toContain('CONTROL INCONCLUSIVE');
   });
 
   it('does not run the control at all when the main run proved nothing to control', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({ score: () => 0, reset: true });
+    const harness = buildHarness({ score: () => 0, reset: true });
 
-      const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
+    const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
 
-      expect(result.outcome?.kind).toBe('timeout');
-      expect(harness.resets).toBe(0);
-      expect(result.control).toBeUndefined();
-      expect(result.notes?.join(' ')).toContain('negative control was not run');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(result.outcome?.kind).toBe('timeout');
+    expect(harness.resets).toBe(0);
+    expect(result.control).toBeUndefined();
+    expect(result.notes?.join(' ')).toContain('negative control was not run');
   });
 
   it('marks a passing claim about an on-screen control WEAK when no control gesture was given', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({
-        score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
-        liveNodes: ['FireButton'],
-        controls: [
-          {
-            nodeId: 'fire-id',
-            name: 'FireButton',
-            type: 'Button2D',
-            visible: true,
-            reach: 'reachable',
-            interactions: [{ name: 'click' }],
-          },
+    const harness = buildHarness({
+      score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
+      liveNodes: ['FireButton'],
+      controls: [
+        {
+          nodeId: 'fire-id',
+          name: 'FireButton',
+          type: 'Button2D',
+          visible: true,
+          reach: 'reachable',
+          interactions: [{ name: 'click' }],
+        },
+      ],
+    });
+
+    const result = await harness.service.run(
+      spec({
+        until: [
+          { kind: 'gameStateChanged', path: 'score', by: 1 } as GameAssertion,
+          { kind: 'nodeGone', name: 'FireButton' } as GameAssertion,
         ],
-      });
+      })
+    );
 
-      const result = await harness.service.run(
-        spec({
-          until: [
-            { kind: 'gameStateChanged', path: 'score', by: 1 } as GameAssertion,
-            { kind: 'nodeGone', name: 'FireButton' } as GameAssertion,
-          ],
-        })
-      );
-
-      expect(result.outcome?.kind).toBe('until');
-      expect(result.control).toBeUndefined();
-      expect(result.verdict).toContain('WEAK');
-      expect(result.verdict).toContain('Action_Primary');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(result.outcome?.kind).toBe('until');
+    expect(result.control).toBeUndefined();
+    expect(result.verdict).toContain('WEAK');
+    expect(result.verdict).toContain('Action_Primary');
   });
 
   it('leaves a run that names no on-screen control unmarked', async () => {
-    const { appState } = await import('@/state');
-    appState.ui.isPlaying = true;
-    try {
-      const harness = buildHarness({ score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0) });
+    const harness = buildHarness({ score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0) });
 
-      const result = await harness.service.run(spec());
+    const result = await harness.service.run(spec());
 
-      expect(result.verdict).toContain('PASS');
-      expect(result.verdict).not.toContain('WEAK');
-    } finally {
-      appState.ui.isPlaying = false;
-    }
+    expect(result.verdict).toContain('PASS');
+    expect(result.verdict).not.toContain('WEAK');
   });
 });
 
@@ -2152,7 +2110,6 @@ describe('GameTestService — bot taps feed the reachability journal', () => {
   }
 
   function buildWorld(channel: 'physical-input' | 'direct-action'): ReachSpy {
-    const service = new GameTestService();
     const noted: string[] = [];
     const spy: ReachSpy = { world: null as unknown as BotWorld, noted, flushes: 0 };
 
@@ -2176,15 +2133,15 @@ describe('GameTestService — bot taps feed the reachability journal', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 80 });
     Object.defineProperty(canvas, 'clientHeight', { value: 60 });
 
-    Object.defineProperty(service, 'gameInput', {
-      value: {
+    const service = new GameTestService(
+      fakeGameTestHost(() => null),
+      {
         noteExternalPhysicalReach: (_runtime: unknown, target: string) => noted.push(target),
         flushReachJournal: async () => {
           spy.flushes += 1;
         },
-      },
-      configurable: true,
-    });
+      } as unknown as GameInputService
+    );
 
     spy.world = (
       service as unknown as {
