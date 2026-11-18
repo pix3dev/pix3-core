@@ -2,7 +2,9 @@ import type { RuntimeRenderer, SceneRunner } from '@pix3/runtime';
 import { BRIDGE_TOOLS, validateParams } from '@/host/bridge-tools';
 import {
   errors as capturedErrors,
+  findLiveNodes,
   installErrorCapture,
+  readLiveNode,
   type Json,
 } from '@/core/agent-introspection';
 import { BackgroundTicker, keepaliveSleep } from '@/services/core/background-ticker';
@@ -66,9 +68,12 @@ interface PageWindow extends Window {
 /** `__PIX3_PLAYER__.tools`: the page's test tools, by name. */
 export interface PageTools {
   /**
-   * `game_run` (the params of `pix3_game_run`), `game_controls`, `game_cancel`, and `bot_start`
+   * `game_run` (the params of `pix3_game_run`), `game_controls`, `game_cancel`, `bot_start`
    * (`{name, args?}`: the realtime policy run of `pix3 play --bot`, read through
-   * `window.__PIX3_PAGE_BOT__`). A refusal is `{ok: false, reason, detail}`, as on the bridge.
+   * `window.__PIX3_PAGE_BOT__`), and the live reads behind `pix3_scene` on the page —
+   * `live_node` (`{nodeId, byName?}` → `{node, screen, components}`, `screen` in this page's CSS
+   * px) and `live_find` (`{text}` → `{matches}`). A refusal is `{ok: false, reason, detail}`, as
+   * on the bridge.
    */
   call(name: string, params?: unknown): Promise<unknown>;
 }
@@ -479,6 +484,25 @@ export const installPageTools = (options: PageTestOptions): PageTools => {
           if (!active) return { ok: true, cancelled: false };
           active.cancel();
           return { ok: true, cancelled: true };
+        case 'live_node': {
+          const runtime = pageRuntime(player, page);
+          if (typeof record.nodeId !== 'string')
+            return refuse('invalid_params', 'live_node takes {nodeId, byName?}.');
+          const live = runtime
+            ? readLiveNode(runtime.runner, runtime.canvas, record.nodeId, {
+                byName: record.byName === true,
+              })
+            : null;
+          return live
+            ? { ok: true, node: live.dto, screen: live.screen, components: live.components }
+            : refuse('not_found', `No live node "${record.nodeId}" in the running game.`);
+        }
+        case 'live_find': {
+          const runtime = pageRuntime(player, page);
+          if (typeof record.text !== 'string')
+            return refuse('invalid_params', 'live_find takes {text}.');
+          return { ok: true, matches: runtime ? findLiveNodes(runtime.runner, record.text) : [] };
+        }
         case 'bot_start': {
           if (typeof record.name !== 'string')
             return refuse('invalid_spec', 'bot_start takes {name, args?}.');
@@ -489,7 +513,7 @@ export const installPageTools = (options: PageTestOptions): PageTools => {
         default:
           return refuse(
             'unknown_tool',
-            `No page tool "${name}": game_run, game_controls, game_cancel, bot_start.`
+            `No page tool "${name}": game_run, game_controls, game_cancel, bot_start, live_node, live_find.`
           );
       }
     },

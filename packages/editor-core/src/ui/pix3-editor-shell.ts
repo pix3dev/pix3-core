@@ -428,7 +428,11 @@ export class Pix3EditorShell extends ComponentBase {
       { id: 'run-options-divider', label: '', divider: true },
       { id: 'game.play-entry', label: 'Play Game (entry scene)', icon: 'film' },
     ];
-    const playLabel = `Play (${PLAY_TARGET_INFO[target].label})`;
+    // The game's page (`playHost: 'page'`, plan play-in-page): every Play opens it, whatever mode.
+    const playLabel =
+      appState.ui.playHost === 'page'
+        ? "Play (the game's page)"
+        : `Play (${PLAY_TARGET_INFO[target].label})`;
     return html`
       <pix3-toolbar aria-label="Editor toolbar">
         <pix3-main-menu slot="start"></pix3-main-menu>

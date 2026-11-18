@@ -217,6 +217,84 @@ export function componentToDTO(component: unknown, index: number): ComponentDTO 
 }
 
 // ---------------------------------------------------------------------------
+// Live nodes of a running game (the editor's play session and the game's own page alike)
+// ---------------------------------------------------------------------------
+
+/** The slice of `SceneRunner` the live reads use. */
+export interface LiveRunner {
+  getLiveNodeById(id: string): NodeBase | null;
+  findLiveNodeByName(name: string): NodeBase | null;
+  getLiveRootNodes(): readonly NodeBase[];
+  projectNodeToCanvas(node: NodeBase): { x: number; y: number } | null;
+}
+
+export interface LiveNodeRead {
+  dto: NodeDTO;
+  /** The node's origin in CSS px of the page the canvas is on; null off screen or unprojectable. */
+  screen: { x: number; y: number } | null;
+  components: ComponentDTO[];
+}
+
+/**
+ * The running node `nodeId` (or, with `byName`, the first live node of that name), its
+ * components' play-time state and its origin on the page. `onThisPage: false` (the canvas is in
+ * another window) answers no `screen`: those coordinates would not click this page.
+ */
+export function readLiveNode(
+  runner: LiveRunner,
+  canvas: HTMLCanvasElement,
+  nodeId: string,
+  options: { byName?: boolean; onThisPage?: boolean } = {}
+): LiveNodeRead | null {
+  const node =
+    runner.getLiveNodeById(nodeId) ?? (options.byName ? runner.findLiveNodeByName(nodeId) : null);
+  if (!node) return null;
+  const components = node.components.map((c, i) => componentToDTO(c, i));
+  const dto = nodeToDTO(node, 0);
+  dto.components = components;
+  const backing = runner.projectNodeToCanvas(node);
+  const rect = canvas.getBoundingClientRect();
+  if (!backing || options.onThisPage === false || rect.width <= 0 || canvas.width <= 0) {
+    return { dto, screen: null, components };
+  }
+  return {
+    dto,
+    screen: {
+      x: rect.left + (backing.x / canvas.width) * rect.width,
+      y: rect.top + (backing.y / canvas.height) * rect.height,
+    },
+    components,
+  };
+}
+
+/** At most this many live matches (a board of gems is 64). */
+const MAX_LIVE_MATCHES = 200;
+
+/** Live nodes whose name or type contains `text`, depth first, skipping `known` ids. */
+export function findLiveNodes(
+  runner: LiveRunner,
+  text: string,
+  known: (nodeId: string) => boolean = () => false
+): NodeSummary[] {
+  const needle = text.toLowerCase();
+  const matches: NodeSummary[] = [];
+  const stack: NodeBase[] = [...runner.getLiveRootNodes()].reverse();
+  while (stack.length > 0 && matches.length < MAX_LIVE_MATCHES) {
+    const node = stack.pop() as NodeBase;
+    const hit =
+      node.name.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle);
+    if (hit && !known(node.nodeId)) {
+      matches.push({ nodeId: node.nodeId, type: node.type, name: node.name });
+    }
+    for (let i = node.children.length - 1; i >= 0; i -= 1) {
+      const child = node.children[i];
+      if (child instanceof NodeBase) stack.push(child);
+    }
+  }
+  return matches;
+}
+
+// ---------------------------------------------------------------------------
 // Live Three.js object tree (play-mode runtime instances)
 // ---------------------------------------------------------------------------
 

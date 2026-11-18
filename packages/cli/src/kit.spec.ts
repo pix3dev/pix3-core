@@ -807,7 +807,7 @@ describe('kit drift', () => {
     // `{find}`: `{ok, path, matches: [{nodeId, type, name}]}` — the bridge's literal and NodeSummary.
     const shown = /`\{ok, path, matches: \[\{([a-zA-Z, ]+)\}\]\}`/.exec(skill)?.[1];
     expect(shown, 'the pix3_scene {find} answer').toBeDefined();
-    expect(bridge).toContain('return { ok: true, path, matches: findNodes(');
+    expect(bridge).toContain('return { ok: true, path, matches: await findNodes(');
     expect(shown?.split(', ').sort()).toEqual(
       interfaceMembers(introspection, 'NodeSummary').sort()
     );

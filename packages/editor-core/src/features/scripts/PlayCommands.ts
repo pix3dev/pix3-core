@@ -9,6 +9,7 @@ import { HostService } from '@/host/HostService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { gamePageUrl, PAGE_WINDOW_NAMES, pageWindowFeatures } from '@/services/play/PlayPageLink';
 import { FlushService } from '@/services/project/FlushService';
 import type { PlayTarget } from '@/state/AppState';
 
@@ -25,9 +26,12 @@ import { SetPlayTargetOperation } from './SetPlayTargetOperation';
  *
  * "Play in …" sets the mode and runs in it; Play runs in the mode set. A run in the editor's
  * runner restarts it in the chosen surface.
+ *
+ * With the editor setting `playHost: 'page'` (plan play-in-page, S4) every Play is the game's
+ * page instead — see {@link launchPagePlay}.
  */
 
-type OpenWindow = (url: string, target: string) => Window | null;
+type OpenWindow = (url: string, target: string, features?: string) => Window | null;
 
 export interface PlayDependencies {
   readonly session: GamePlaySessionService;
@@ -97,6 +101,43 @@ const activeScenePath = (context: CommandContext): string | null => {
 const service = <T>(context: CommandContext, token: new (...args: never[]) => T): T =>
   context.container.getService<T>(context.container.getOrCreateToken(token));
 
+/**
+ * Play on the game's page (D1, D2): the window `pix3-play` opens on `about:blank` in the click,
+ * before the flush (the flush is async, and a browser's popup blocker honours a click only for a
+ * few seconds), then loads `/?debug&role=designer[&scene=…]` — a fresh load every time (D5). A
+ * failed flush closes the window: the page would play an older file.
+ */
+async function launchPagePlay(
+  context: CommandContext,
+  scope: 'scene' | 'entry',
+  deps: PlayDependencies
+): Promise<void> {
+  const open = deps.openWindow ?? ((href, name, features) => window.open(href, name, features));
+  const game = open(
+    'about:blank',
+    PAGE_WINDOW_NAMES.designer,
+    pageWindowFeatures(context.state.project.manifest?.viewportBaseSize)
+  );
+  const url = gamePageUrl(
+    deps.host.info.base,
+    'designer',
+    scope === 'scene' ? activeScenePath(context) : null
+  );
+  const flushed = await deps.flush.flushDirty(0);
+  if (!flushed.ok) {
+    game?.close();
+    console.warn(
+      `[Pix3] Play stopped: the editor could not write its unsaved edits (${String(flushed.reason)}).`
+    );
+    return;
+  }
+  if (!game) {
+    console.warn(`[Pix3] The browser blocked the game window; open ${url} yourself.`);
+    return;
+  }
+  game.location.href = url;
+}
+
 /** Run the game in `target`: the active scene (`scene`) or the project's entry scene (`entry`). */
 export async function launchPlay(
   context: CommandContext,
@@ -104,6 +145,7 @@ export async function launchPlay(
   scope: 'scene' | 'entry',
   deps: PlayDependencies
 ): Promise<void> {
+  if (context.state.ui.playHost === 'page') return launchPagePlay(context, scope, deps);
   if (target === 'tab' || target === 'window') {
     const dispatcher = service(context, CommandDispatcher);
     if (context.state.ui.isPlaying) await dispatcher.executeById('game.stop');

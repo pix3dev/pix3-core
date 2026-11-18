@@ -254,6 +254,123 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
   },
 ];
 
+const PAGE_PARAM: JsonSchema = {
+  type: 'string',
+  enum: ['designer', 'agent'],
+  description:
+    'Which game page: "designer" (the human’s Play window — read only) or "agent" (yours). ' +
+    'Default: the human’s page when it is open, else yours.',
+};
+
+/** Tools whose schema or meaning changes when the game runs on its own page (§2.2 of the plan). */
+const PAGE_OVERRIDES: Readonly<Record<string, Omit<BridgeToolSpec, 'name'>>> = {
+  pix3_status: {
+    description:
+      'Versions, project, active scene, script status, which tab writes, scenes with edits not ' +
+      'on disk yet (`dirty`, `pending` keys per scene), `gestureInProgress`, external versions ' +
+      'not applied yet, `play` = {playHost:"page", pages:[{role, url, loadId, rev, scene, ' +
+      'status, paused, pausedBy?}]} (the game pages open now: "designer" = the human’s, "agent" ' +
+      '= yours), error count, and `viteClient`.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  pix3_scene: {
+    description:
+      'Read a scene as the editor holds it: the tree of the active scene (or `path`; ' +
+      '`properties` = what the file gets, unsaved inspector edits included), one node with its ' +
+      'components and `saved` with `nodeId`, or the nodes whose name/type contains `find`. While ' +
+      'a game page is open both also read the running game there: `live` (its components’ ' +
+      'play-time state), `screen` (its origin in CSS px of THAT page, to tap it there) and ' +
+      '`page` {role, loadId}; nodes only the running game has carry `runtimeOnly: true`. ' +
+      '`page` picks the game page (default: the human’s when open, else yours). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'res:// or project-relative scene path.' },
+        maxDepth: { type: 'integer', minimum: 1, maximum: 8 },
+        nodeId: { type: 'string' },
+        find: { type: 'string' },
+        page: PAGE_PARAM,
+      },
+      additionalProperties: false,
+    },
+  },
+  pix3_play: {
+    description:
+      'Your own game page (window "pix3-agent-play", muted): `start` writes the editor’s ' +
+      'unsaved edits and loads the game’s page with the active scene (or `scenePath`) — every ' +
+      'start and `restart` is a fresh load of the files on disk, answered once the page is ready ' +
+      '(`page` {url, loadId, rev}); `stop` closes it; `pause` / `resume`; `status` lists the ' +
+      'pages open. The human’s Play window is theirs: control aimed at it is not_your_page. ' +
+      '`run` {seed?, config?} sets up a test run, repeated by `restart`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'stop', 'restart', 'pause', 'resume', 'status'] },
+        scenePath: { type: 'string' },
+        page: PAGE_PARAM,
+        run: {
+          type: 'object',
+          description:
+            'With start / restart: {seed?: integer (scene.random), config?: ' +
+            '{"<nodeId>": {"<componentId>": {key: value}}}} applied before the first onStart; ' +
+            'restart repeats the last one.',
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  pix3_screenshot: {
+    description:
+      'Bring a surface to the front so a screenshot shows it: `game` focuses a game page ' +
+      '(`page`; default the human’s when open, else yours) and answers its `page` {role, url, ' +
+      'loadId} — select THAT page for take_screenshot; `viewport` the editor’s viewport. This ' +
+      'tool never returns image data.',
+    inputSchema: {
+      type: 'object',
+      properties: { target: { type: 'string', enum: ['game', 'viewport'] }, page: PAGE_PARAM },
+      required: ['target'],
+      additionalProperties: false,
+    },
+  },
+  pix3_errors: {
+    description:
+      'Errors the editor and the game pages captured, newest last, each with `origin` ' +
+      '("editor", "designer", "agent") and a page’s `loadId`; `page` keeps one page’s, `since` ' +
+      '(epoch ms) limits them, `clear` empties the lists after reading.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: { type: 'integer', minimum: 0 },
+        clear: { type: 'boolean' },
+        page: PAGE_PARAM,
+      },
+      additionalProperties: false,
+    },
+  },
+};
+
+/**
+ * The table while the editor's `playHost` setting is `page` (plan play-in-page S4): the same
+ * tools, the play ones aimed at the game's own pages. `pix3_game_run` keeps its schema (it allows
+ * `page`); its description says where it runs.
+ */
+export const PAGE_BRIDGE_TOOLS: readonly BridgeToolSpec[] = BRIDGE_TOOLS.map(tool =>
+  tool.name === 'pix3_game_run'
+    ? {
+        ...tool,
+        description:
+          tool.description.replace(
+            'Needs a running play session (pix3_play start).',
+            'Runs on your own game page (pix3_play start opens it); after a pix3_sync that ' +
+              'reloads the page it waits for the new load, a page reloaded during the run ends ' +
+              'page_reloaded, one older than the sync that did not reload is page_stale ' +
+              '(pix3_play restart).'
+          ) + ' The answer carries `page` {role, url, loadId}.',
+      }
+    : { name: tool.name, ...(PAGE_OVERRIDES[tool.name] ?? tool) }
+);
+
 /** @internal The tool names in table order — the kit's drift spec (`cli/src/kit.spec.ts`) reads it. */
 export const BRIDGE_TOOL_NAMES: readonly string[] = BRIDGE_TOOLS.map(tool => tool.name);
 
@@ -271,6 +388,13 @@ export const BRIDGE_REASONS = [
   'no_scene',
   'not_found',
   'error',
+  // the game on its own page (playHost: 'page', §2.2 of plan play-in-page)
+  'no_game_page',
+  'not_your_page',
+  'popup_blocked',
+  'flush_failed',
+  'page_reloaded',
+  'page_stale',
 ] as const;
 
 /**

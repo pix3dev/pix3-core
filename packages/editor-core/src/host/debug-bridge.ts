@@ -4,8 +4,10 @@ import {
   clearErrors,
   componentToDTO,
   errors,
+  findLiveNodes,
   installErrorCapture,
   nodeToDTO,
+  readLiveNode,
   safeSerialize,
   type Json,
   type CapturedError,
@@ -18,6 +20,7 @@ import { StartSceneGameCommand } from '@/features/scripts/StartSceneGameCommand'
 import { openGameSurface } from '@/features/scripts/play-workspace';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { resolveCommandDispatcher } from '@/services/core/CommandDispatcher';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { EditorGameTestService } from '@/services/game-test/EditorGameTestService';
@@ -37,9 +40,21 @@ import {
   BRIDGE_GROUP_DESCRIPTION,
   BRIDGE_GROUP_NAME,
   BRIDGE_TOOLS,
+  PAGE_BRIDGE_TOOLS,
   validateParams,
   type BridgeToolSpec,
 } from './bridge-tools';
+import {
+  pageErrors,
+  pageGameRun,
+  pageLiveSource,
+  pagePlay,
+  pagePlayStatus,
+  PageRefusal,
+  pageScreenshot,
+  runOverridesProblem,
+  type LiveSource,
+} from './bridge-play-page';
 import { bake, hideModelSheet, renderModel } from './bridge-model';
 import type { HookReply } from './EditorHost';
 import { HostService } from './HostService';
@@ -198,16 +213,35 @@ const sceneTree = (
   };
 };
 
-const nodeRead = (
+const editorLive: LiveSource = {
+  async node(nodeId, byName) {
+    const runtime = service(GamePlaySessionService).getActiveRuntime();
+    if (!runtime) return null;
+    // A popped-out game window is another page: its coordinates would not click this one.
+    return readLiveNode(runtime.runner, runtime.canvas, nodeId, {
+      byName,
+      onThisPage: runtime.windowRef === window,
+    });
+  },
+  async find(text) {
+    const runtime = service(GamePlaySessionService).getActiveRuntime();
+    return runtime ? findLiveNodes(runtime.runner, text) : [];
+  },
+};
+
+const nodeRead = async (
   found: NonNullable<ReturnType<typeof graphOf>>,
-  nodeId: string
-): BridgeResult<{
-  node: NodeDTO;
-  saved: SceneNodeDefinition | null;
-  screen: { x: number; y: number } | null;
-  live?: { components: ComponentDTO[] };
-  runtimeOnly?: true;
-}> => {
+  nodeId: string,
+  live: LiveSource
+): Promise<
+  BridgeResult<{
+    node: NodeDTO;
+    saved: SceneNodeDefinition | null;
+    screen: { x: number; y: number } | null;
+    live?: { components: ComponentDTO[] };
+    runtimeOnly?: true;
+  }>
+> => {
   const { graph, descriptor } = found;
   const node = graph.nodeMap.get(nodeId);
   const active = descriptor.id === appState.scenes.activeSceneId;
@@ -215,7 +249,7 @@ const nodeRead = (
     // A node a script made during play (a gem, a bullet) or one of the scene `changeScene` went to
     // is only in the running game: answer it from there, by id or by name (core-tests/game7, where
     // every gem was spawned and `--node gem-1` read not_found).
-    const spawned = active ? livePlayNode(nodeId, { byName: true }) : null;
+    const spawned = active ? await live.node(nodeId, true) : null;
     if (!spawned)
       return refuse('not_found', `No node "${nodeId}" in the scene or the running game.`);
     return {
@@ -225,18 +259,19 @@ const nodeRead = (
       screen: spawned.screen,
       live: { components: spawned.components },
       runtimeOnly: true,
+      ...(spawned.page ? { page: spawned.page } : {}),
     };
   }
   const savedNodes = savedNodesOf(found);
   const dto = nodeToDTO(node, 0, savedPropertiesOf(savedNodes));
   dto.components = node.components.map((c, i) => componentToDTO(c, i));
   const saved = savedNodes.get(nodeId)?.def ?? null;
-  const live = active ? livePlayNode(nodeId) : null;
-  // During play the editor viewport is hidden behind the Game tab: `screen` is where the RUNNING
-  // node is on the game canvas, and `live` its components' play-time state (`node` stays what the
-  // editor holds — the scene as authored).
-  const screen = live
-    ? live.screen
+  const running = active ? await live.node(nodeId, false) : null;
+  // While the game runs, `screen` is where the RUNNING node is on the game's canvas (the Game
+  // tab, or the game page `page` names), and `live` its components' play-time state (`node` stays
+  // what the editor holds — the scene as authored).
+  const screen = running
+    ? running.screen
     : active
       ? service(ViewportRendererService).projectNodeToClient(node)
       : null;
@@ -245,81 +280,30 @@ const nodeRead = (
     node: dto,
     saved,
     screen,
-    ...(live ? { live: { components: live.components } } : {}),
+    ...(running ? { live: { components: running.components } } : {}),
+    ...(running?.page ? { page: running.page } : {}),
   };
 };
 
 /**
- * The play clone of `nodeId` in the running game (or, with `byName`, the first live node of that
- * name), its page position and component state.
+ * Nodes whose name or type contains `text`: the editor's scene, then — while the game runs — the
+ * nodes only the running game has (`runtimeOnly: true`: spawned by a script, or in a scene the
+ * game changed to).
  */
-const livePlayNode = (
-  nodeId: string,
-  options: { byName?: boolean } = {}
-): {
-  dto: NodeDTO;
-  screen: { x: number; y: number } | null;
-  components: ComponentDTO[];
-} | null => {
-  const runtime = service(GamePlaySessionService).getActiveRuntime();
-  if (!runtime) return null;
-  const node =
-    runtime.runner.getLiveNodeById(nodeId) ??
-    (options.byName ? runtime.runner.findLiveNodeByName(nodeId) : null);
-  if (!node) return null;
-  const components = node.components.map((c, i) => componentToDTO(c, i));
-  const dto = nodeToDTO(node, 0);
-  dto.components = components;
-  const backing = runtime.runner.projectNodeToCanvas(node);
-  const canvas = runtime.canvas;
-  const rect = canvas.getBoundingClientRect();
-  // A popped-out game window is another page: its coordinates would not click this one.
-  if (!backing || runtime.windowRef !== window || rect.width <= 0 || canvas.width <= 0) {
-    return { dto, screen: null, components };
-  }
-  return {
-    dto,
-    screen: {
-      x: rect.left + (backing.x / canvas.width) * rect.width,
-      y: rect.top + (backing.y / canvas.height) * rect.height,
-    },
-    components,
-  };
-};
-
-/** At most this many `find` matches from the running game (a board of gems is 64). */
-const MAX_LIVE_MATCHES = 200;
-
-/**
- * Nodes whose name or type contains `text`: the editor's scene, then — during play — the nodes
- * only the running game has (`runtimeOnly: true`: spawned by a script, or in a scene the game
- * changed to).
- */
-const findNodes = (
+const findNodes = async (
   graph: NonNullable<ReturnType<typeof graphOf>>['graph'],
-  text: string
-): Array<NodeSummary & { runtimeOnly?: true }> => {
+  text: string,
+  live: LiveSource
+): Promise<Array<NodeSummary & { runtimeOnly?: true }>> => {
   const needle = text.toLowerCase();
-  const hit = (node: NodeBase) =>
-    node.name.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle);
   const matches: Array<NodeSummary & { runtimeOnly?: true }> = [];
   for (const node of graph.nodeMap.values()) {
-    if (hit(node)) matches.push({ nodeId: node.nodeId, type: node.type, name: node.name });
+    if (node.name.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle)) {
+      matches.push({ nodeId: node.nodeId, type: node.type, name: node.name });
+    }
   }
-  const runtime = service(GamePlaySessionService).getActiveRuntime();
-  if (!runtime) return matches;
-  const stack: NodeBase[] = [...runtime.runner.getLiveRootNodes()].reverse();
-  let live = 0;
-  while (stack.length > 0 && live < MAX_LIVE_MATCHES) {
-    const node = stack.pop() as NodeBase;
-    if (hit(node) && !graph.nodeMap.has(node.nodeId)) {
-      matches.push({ nodeId: node.nodeId, type: node.type, name: node.name, runtimeOnly: true });
-      live += 1;
-    }
-    for (let i = node.children.length - 1; i >= 0; i -= 1) {
-      const child = node.children[i];
-      if (child instanceof NodeBase) stack.push(child);
-    }
+  for (const found of await live.find(text)) {
+    if (!graph.nodeMap.has(found.nodeId)) matches.push({ ...found, runtimeOnly: true });
   }
   return matches;
 };
@@ -360,22 +344,6 @@ const playStatus = (): PlayStatus => ({
     ? { pausedBy: 'pix3_game_run' as const }
     : {}),
 });
-
-/** Why `run` is not `{seed?: integer, config?: {nodeId: {componentId: {…}}}}`, or null. */
-const runOverridesProblem = (run: RunOverrides): string | null => {
-  if (run.seed !== undefined && !Number.isInteger(run.seed)) return 'run.seed must be an integer';
-  const isObject = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null && !Array.isArray(value);
-  if (run.config === undefined) return null;
-  if (!isObject(run.config)) return 'run.config must be {"<nodeId>": {"<componentId>": {…}}}';
-  for (const [nodeId, components] of Object.entries(run.config)) {
-    if (!isObject(components)) return `run.config["${nodeId}"] must map component ids to config`;
-    for (const [componentId, values] of Object.entries(components)) {
-      if (!isObject(values)) return `run.config["${nodeId}"]["${componentId}"] must be an object`;
-    }
-  }
-  return null;
-};
 
 /** The Game tab's presets as the bridge names them (the tab's own button labels). */
 const ASPECT_NAMES: Record<GameAspectRatio, PlayAspect> = {
@@ -513,7 +481,7 @@ const EXECUTES: Record<string, Execute> = {
       gestureInProgress: appState.ui.gestureInProgress,
       // Paths whose external version is seen but not applied yet (settling, unreadable, play).
       pendingExternal: service(SceneBaselineService).getPendingExternalPaths(),
-      play: playStatus(),
+      play: onPage() ? await pagePlayStatus() : playStatus(),
       selection: selection(),
       errorCount: errors().length,
       keepalive: service(AgentKeepaliveService).isKeepAlive(),
@@ -527,6 +495,8 @@ const EXECUTES: Record<string, Execute> = {
       expect: params.expect as Record<string, string> | undefined,
       timeoutMs: params.timeoutMs as number | undefined,
     });
+    // The readiness barrier of the game pages (D6): a page older than this is stale.
+    if (typeof reply.rev === 'number') service(PlayPageLink).noteSync(reply.rev);
     return reply as Record<string, unknown>;
   },
 
@@ -539,9 +509,12 @@ const EXECUTES: Record<string, Execute> = {
       );
     }
     const path = found.descriptor.filePath;
-    if (typeof params.nodeId === 'string') return { ...nodeRead(found, params.nodeId), path };
+    const live = onPage() ? pageLiveSource(params.page) : editorLive;
+    if (typeof params.nodeId === 'string') {
+      return { ...(await nodeRead(found, params.nodeId, live)), path };
+    }
     if (typeof params.find === 'string') {
-      return { ok: true, path, matches: findNodes(found.graph, params.find) };
+      return { ok: true, path, matches: await findNodes(found.graph, params.find, live) };
     }
     const maxDepth = typeof params.maxDepth === 'number' ? params.maxDepth : 3;
     return { ok: true, path, scene: sceneTree(found, maxDepth), selection: selection() };
@@ -626,19 +599,35 @@ const EXECUTES: Record<string, Execute> = {
   },
 };
 
-const SPECS = new Map(BRIDGE_TOOLS.map(tool => [tool.name, tool]));
+/** The play tools on the game's own page (`playHost: 'page'`, plan play-in-page S4). */
+const PAGE_EXECUTES: Record<string, Execute> = {
+  pix3_play: pagePlay,
+  pix3_game_run: pageGameRun,
+  async pix3_screenshot(params) {
+    return params.target === 'game' ? pageScreenshot(params) : EXECUTES.pix3_screenshot(params);
+  },
+  async pix3_errors(params) {
+    return pageErrors(params);
+  },
+};
+
+/** The editor setting `playHost` (plan play-in-page): the game on its own page. */
+const onPage = (): boolean => appState.ui.playHost === 'page';
+
+const activeTools = (): readonly BridgeToolSpec[] => (onPage() ? PAGE_BRIDGE_TOOLS : BRIDGE_TOOLS);
 
 /** One call of the bridge, whichever transport asked: validate, keep alive, never throw. */
 export async function callBridgeTool(
   name: string,
   params: unknown = {}
 ): Promise<Record<string, unknown>> {
-  const spec = SPECS.get(name);
-  const execute = EXECUTES[name];
+  const tools = activeTools();
+  const spec = tools.find(tool => tool.name === name);
+  const execute = (onPage() ? PAGE_EXECUTES[name] : undefined) ?? EXECUTES[name];
   if (!spec || !execute) {
     return refuse(
       'unknown_tool',
-      `No tool "${name}"; the tools are ${[...SPECS.keys()].join(', ')}.`
+      `No tool "${name}"; the tools are ${tools.map(tool => tool.name).join(', ')}.`
     );
   }
   const problem = validateParams(spec.inputSchema, params ?? {});
@@ -649,6 +638,7 @@ export async function callBridgeTool(
     try {
       return await execute((params ?? {}) as Params);
     } catch (error) {
+      if (error instanceof PageRefusal) return error.answer;
       return refuse('error', error instanceof Error ? error.message : String(error));
     }
   });
@@ -673,7 +663,7 @@ export function thirdPartyToolGroup(): {
   return {
     name: BRIDGE_GROUP_NAME,
     description: BRIDGE_GROUP_DESCRIPTION,
-    tools: BRIDGE_TOOLS.map(spec => ({
+    tools: activeTools().map(spec => ({
       ...spec,
       execute: params => callBridgeTool(spec.name, params),
     })),
@@ -701,7 +691,7 @@ const asResult = (answer: Record<string, unknown>): BridgeResult =>
 export function createDebugBridge(): Pix3DebugBridge {
   return {
     version: 2,
-    tools: () => BRIDGE_TOOLS.map(tool => ({ ...tool })),
+    tools: () => activeTools().map(tool => ({ ...tool })),
     call: (name, params = {}) => callBridgeTool(name, params),
     help() {
       const out: Record<string, string> = {
@@ -710,7 +700,7 @@ export function createDebugBridge(): Pix3DebugBridge {
         'status() / sync({expect?, timeoutMs?}) / scene(maxDepth) / node(id) / find(text) / screen(id) / pending() / selection() / play.* / errors() / clearErrors()':
           'Short forms over call(): status → pix3_status, sync → pix3_sync, scene/node/find/screen → pix3_scene, play.start/stop/restart/pause/resume/status → pix3_play, errors → pix3_errors.',
       };
-      for (const tool of BRIDGE_TOOLS) out[tool.name] = tool.description;
+      for (const tool of activeTools()) out[tool.name] = tool.description;
       return out;
     },
     status: () => callBridgeTool('pix3_status'),

@@ -7,6 +7,7 @@ import {
 } from '@/core/command';
 import { EditorTabService } from '@/services/editor/EditorTabService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { OperationService } from '@/services/core/OperationService';
 import { SetPlayModeOperation } from '@/features/scripts/SetPlayModeOperation';
 import { closeGameSurface } from '@/features/scripts/play-workspace';
@@ -36,6 +37,9 @@ export class StopGameCommand extends CommandBase<void, void> {
   }
 
   preconditions(context: CommandContext): CommandPreconditionResult {
+    // The game's page (`playHost: 'page'`): Stop closes the Play window; the editor keeps no
+    // play state to check (plan play-in-page D4).
+    if (context.snapshot.ui.playHost === 'page') return { canExecute: true };
     if (!context.snapshot.ui.isPlaying) {
       return {
         canExecute: false,
@@ -49,6 +53,13 @@ export class StopGameCommand extends CommandBase<void, void> {
   }
 
   async execute(context: CommandContext): Promise<CommandExecutionResult<void>> {
+    if (context.snapshot.ui.playHost === 'page' && !context.snapshot.ui.isPlaying) {
+      const link = context.container.getService<PlayPageLink>(
+        context.container.getOrCreateToken(PlayPageLink)
+      );
+      await link.close('designer');
+      return { didMutate: false, payload: undefined };
+    }
     const operationService = context.container.getService<OperationService>(
       context.container.getOrCreateToken(OperationService)
     );

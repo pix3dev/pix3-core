@@ -89,6 +89,7 @@ afterEach(() => {
   appState.scenes.activeSceneId = null;
   appState.ui.isPlaying = false;
   appState.ui.playTarget = 'tab';
+  appState.ui.playHost = 'editor';
   localStorage.removeItem(PLAY_TARGET_STORAGE_KEY);
 });
 
@@ -162,5 +163,52 @@ describe('Play', () => {
     appState.ui.playTarget = 'tab';
     await new PlayEntryCommand(editor.deps).execute(editor.context());
     expect(editor.dispatched).toEqual(['game.start-main']);
+  });
+});
+
+describe("Play on the game's page (playHost: page, plan play-in-page D1, D2)", () => {
+  /** The window as the click opened it: `about:blank`, navigated after the flush. */
+  const pageSetup = (flushOk = true) => {
+    const editor = setup();
+    const game = { location: { href: 'about:blank' }, close: vi.fn() };
+    const opened: { url: string; name: string; features?: string; at: number }[] = [];
+    editor.deps = {
+      ...editor.deps,
+      flush: {
+        flushDirty: vi.fn(async () => {
+          editor.order.push('flush');
+          return flushOk ? { ok: true } : { ok: false, reason: 'write_failed' };
+        }),
+      } as unknown as FlushService,
+      openWindow: (url, name, features) => {
+        editor.order.push('open-page');
+        opened.push({ url, name, features, at: editor.order.length });
+        return game as unknown as Window;
+      },
+    };
+    return { ...editor, game, opened };
+  };
+
+  it('opens pix3-play on about:blank in the click, then loads the page after the flush', async () => {
+    const { deps, context, opened, order, game, dispatched } = pageSetup();
+    appState.ui.playHost = 'page';
+    appState.ui.playTarget = 'tab'; // any mode: every Play is the page
+    await new PlayCommand(deps).execute(context());
+    expect(order).toEqual(['open-page', 'flush']);
+    expect(opened[0]).toMatchObject({ url: 'about:blank', name: 'pix3-play' });
+    expect(game.location.href).toBe(
+      `${window.location.origin}/?debug&role=designer&scene=scenes%2Flevel.pix3scene`
+    );
+    expect(dispatched).toEqual([]);
+    expect(appState.ui.isPlaying).toBe(false);
+  });
+
+  it('a failed flush closes the window: the page would play an older file', async () => {
+    const { deps, context, game } = pageSetup(false);
+    appState.ui.playHost = 'page';
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await new PlayEntryCommand(deps).execute(context());
+    expect(game.close).toHaveBeenCalled();
+    expect(game.location.href).toBe('about:blank');
   });
 });

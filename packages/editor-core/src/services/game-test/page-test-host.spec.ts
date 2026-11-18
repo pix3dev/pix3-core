@@ -1,3 +1,4 @@
+import { Node3D } from '@pix3/runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installPageTools, type PageTools } from './page-test-host';
 
@@ -131,6 +132,34 @@ describe('installPageTools', () => {
       reason: 'invalid_params',
     });
     expect(await tools.call('game_walk')).toMatchObject({ ok: false, reason: 'unknown_tool' });
+  });
+
+  it('reads a live node and finds live nodes for pix3_scene on the page (play-in-page S4)', async () => {
+    const { player, tools } = mountPlayer();
+    const ship = new Node3D({ id: 'ship', name: 'Ship' });
+    const runner = player.runner as unknown as Record<string, unknown>;
+    runner.getLiveNodeById = (id: string) => (id === 'ship' ? ship : null);
+    runner.getLiveRootNodes = () => [ship];
+    runner.projectNodeToCanvas = () => ({ x: 100, y: 50 });
+    const canvas = player.renderer.domElement;
+    canvas.width = 200;
+    canvas.height = 100;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, width: 400, height: 200 }) as DOMRect;
+    expect(await tools.call('live_node', { nodeId: 'ship' })).toMatchObject({
+      ok: true,
+      node: { nodeId: 'ship', type: 'Node3D', name: 'Ship' },
+      screen: { x: 210, y: 120 },
+      components: [],
+    });
+    expect(await tools.call('live_node', { nodeId: 'gone' })).toMatchObject({
+      ok: false,
+      reason: 'not_found',
+    });
+    expect(await tools.call('live_find', { text: 'shi' })).toEqual({
+      ok: true,
+      matches: [{ nodeId: 'ship', type: 'Node3D', name: 'Ship' }],
+    });
   });
 
   it('plays a policy from the page’s own policies (virtual:pix3/bot-policies)', async () => {

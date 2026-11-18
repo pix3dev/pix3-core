@@ -224,6 +224,14 @@ export type GameAspectRatio = 'free' | '16:9-landscape' | '16:9-portrait' | '4:3
 export type PlayTarget = 'tab' | 'window' | 'browser' | 'debug';
 
 /**
+ * Who runs the game (plan play-in-page, an editor setting until S5 flips it): `editor` — Play and
+ * the agent bridge use the editor's own runner (the run modes above); `page` — every run is a load
+ * of the game's own page (`/?debug`, window `pix3-play`; the agent's `pix3-agent-play`), driven
+ * over `PlayPageLink`.
+ */
+export type PlayHost = 'editor' | 'page';
+
+/**
  * Details of the most recent runtime/script failure raised while the game was
  * launching or playing. Surfaced in the Game tab and the Logs panel so a broken
  * script no longer fails silently. Ephemeral UI state — never part of undo
@@ -302,6 +310,8 @@ export interface UIState {
   isGamePopoutOpen: boolean;
   /** Where the toolbar's Play runs the game (the last mode picked; persisted per browser). */
   playTarget: PlayTarget;
+  /** The editor's runner or the game's page (an editor setting, persisted per browser). */
+  playHost: PlayHost;
   playModeStatus: 'stopped' | 'playing' | 'paused';
   /** Most recent runtime/script failure while playing, or null when clean. */
   playModeError: PlayModeError | null;
@@ -405,6 +415,7 @@ export const createInitialAppState = (): AppState => ({
     isPlaying: false,
     isGamePopoutOpen: false,
     playTarget: 'tab',
+    playHost: 'editor',
     playModeStatus: 'stopped',
     playModeError: null,
     playOwner: null,

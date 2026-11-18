@@ -5,6 +5,7 @@ import { registerSpineModuleLoader } from '@/core/lazy-spine';
 import { registerRuntimeServices } from '@/core/register-runtime-services';
 import { ServiceContainer } from '@/fw/di';
 import { AgentKeepaliveService } from '@/services/core/AgentKeepaliveService';
+import { PlayPageLink } from '@/services/play/PlayPageLink';
 import { RuntimeErrorBridgeService } from '@/services/play/RuntimeErrorBridgeService';
 import { ExternalChangeService } from '@/services/project/disk/ExternalChangeService';
 import { ProjectService } from '@/services/project/ProjectService';
@@ -100,6 +101,8 @@ export async function mountEditorWith(
 
   installDebugBridge();
   disposers.push(installEditorPresence());
+  // The game's pages (the `playHost: 'page'` setting): found again after an editor reload.
+  disposers.push(service(PlayPageLink).start());
 
   if (options.shell !== false) {
     await import('@/ui/pix3-editor-shell');
