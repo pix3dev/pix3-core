@@ -10,7 +10,7 @@ import {
   SceneRunner,
   ScriptRegistry,
 } from '@pix3/runtime';
-import { devRunOverrides, devSceneOverride, installDevTools } from 'virtual:pix3/dev';
+import { devPageRev, devRunOverrides, devSceneOverride, installDevTools } from 'virtual:pix3/dev';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
 import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
@@ -31,6 +31,8 @@ import 'virtual:pix3/spine';
 // a PostProcess node, the runtime's own code-split import otherwise.
 import 'virtual:pix3/postprocessing';
 
+import type { Pix3PlayerDebug } from './debug/index';
+
 /**
  * `@pix3/vite-plugin/player` (plan §B.5): the game's entry. A project's `src/main.ts` is
  * `import { startGame } from '@pix3/vite-plugin/player'; startGame('#app');` — in dev the scenes
@@ -39,12 +41,19 @@ import 'virtual:pix3/postprocessing';
  *
  * `window.__PIX3_PLAYER__` is the gate's witness: `status`, `frames` (loop iterations), `errors`.
  * In dev (`virtual:pix3/dev`), `/?debug` adds the debug overlay (`player/debug/`) and
- * `__PIX3_PLAYER__.debug.snapshot()`, a plain page gets the "Pix3 editor" link
+ * `__PIX3_PLAYER__.debug`, a plain page gets the "Pix3 editor" link
  * (`player/dev/`), and `?scene=<res path>` boots that scene.
  */
 
 export interface Pix3PlayerState {
   status: 'booting' | 'running' | 'failed';
+  /** Random, one per document: a reload is a new `loadId` (plan play-in-page D6). */
+  readonly loadId: string;
+  /**
+   * The dev server's file revision (`seq`) when it served this page: the page read files at
+   * least this new. Null in a build and on a dev server without the editor.
+   */
+  readonly rev: number | null;
   /** Frames the runner's loop has run. */
   frames: number;
   errors: string[];
@@ -53,8 +62,8 @@ export interface Pix3PlayerState {
   runner: SceneRunner | null;
   /** The runner's renderer (draw-call counters for `pix3 play --profile`). */
   renderer: RuntimeRenderer | null;
-  /** Debug mode only (`/?debug` in dev): the overlay's numbers, for an agent over CDP. */
-  debug?: { snapshot(): unknown };
+  /** Debug mode only (`/?debug` in dev): the overlay's numbers, live scene and controls. */
+  debug?: Pix3PlayerDebug;
 }
 
 declare global {
@@ -71,11 +80,21 @@ export interface StartGameOptions {
 const describe = (error: unknown): string =>
   error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
+/** `crypto.randomUUID` needs a secure context; a phone on the LAN IP of the dev server is not. */
+const newLoadId = (): string =>
+  typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte =>
+        byte.toString(16).padStart(2, '0')
+      ).join('');
+
 const installState = (): Pix3PlayerState => {
   const existing = window.__PIX3_PLAYER__;
   if (existing) return existing;
   const state: Pix3PlayerState = {
     status: 'booting',
+    loadId: newLoadId(),
+    rev: devPageRev(),
     frames: 0,
     errors: [],
     scene: null,

@@ -1,5 +1,7 @@
 import {
   getScriptErrorSink,
+  Node3D,
+  registerRuntimeSceneRoot,
   registerGameDebug,
   reportScriptError,
   resolveRuntimeTimeConfig,
@@ -10,6 +12,7 @@ import {
   type SceneRunner,
   type SceneRunnerFrameSample,
 } from '@pix3/runtime';
+import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Pix3PlayerState } from '../index';
@@ -31,6 +34,7 @@ const fakeRunner = () => {
       mode = resolveRuntimeTimeConfig(config);
     }),
     stepFrames: vi.fn(() => (mode.mode === 'manual' ? 1 : 0)),
+    renderOnce: vi.fn(() => true),
   };
   const emit = (over: Partial<SceneRunnerFrameSample> = {}): void => {
     for (const listener of listeners) {
@@ -54,6 +58,8 @@ const context = (runner: ReturnType<typeof fakeRunner>['runner']) => {
   const programs = { count: 3 };
   const state: Pix3PlayerState = {
     status: 'running',
+    loadId: 'load-1',
+    rev: 3,
     frames: 0,
     errors: [],
     scene: 'scenes/main.pix3scene',
@@ -85,8 +91,26 @@ const context = (runner: ReturnType<typeof fakeRunner>['runner']) => {
 const sessions: { dispose(): void }[] = [];
 afterEach(() => {
   for (const session of sessions.splice(0)) session.dispose();
+  registerRuntimeSceneRoot(null);
   document.body.innerHTML = '';
 });
+
+/** A running scene: a 3D node with a mesh the game spawned, and a 2D-layer quad. */
+const liveScene = () => {
+  const root = new THREE.Scene();
+  const ship = new Node3D({ id: 'ship', name: 'Ship' });
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial());
+  hull.position.set(1, 0, 0);
+  ship.add(hull);
+  const badge = new THREE.Mesh(new THREE.PlaneGeometry(10, 4), new THREE.MeshBasicMaterial());
+  badge.layers.set(1);
+  root.add(ship, badge);
+  registerRuntimeSceneRoot(root);
+  return { root, ship, hull, badge };
+};
+
+const helpersIn = (root: THREE.Object3D): THREE.Box3Helper[] =>
+  root.children.filter((child): child is THREE.Box3Helper => child instanceof THREE.Box3Helper);
 
 describe('DebugSession', () => {
   it('pauses in manual time mode, steps only while paused, and resumes the previous mode', () => {
@@ -187,6 +211,74 @@ describe('DebugSession', () => {
   });
 });
 
+describe('DebugSession: the live scene', () => {
+  it('lists the live tree and reads one object in detail, a node with its properties', () => {
+    const { hull } = liveScene();
+    const session = new DebugSession(context(fakeRunner().runner).value);
+    expect(session.tree()).toMatchObject({
+      count: 3,
+      roots: [
+        { id: 'ship', nodeId: 'ship', children: [{ id: hull.uuid, nodeId: null }] },
+        { type: 'Mesh', nodeId: null },
+      ],
+    });
+    expect(session.node(hull.uuid)).toMatchObject({
+      type: 'Mesh',
+      nodeId: null,
+      world: { position: { x: 1, y: 0, z: 0 } },
+      geometry: { type: 'BoxGeometry', params: { width: '2' } },
+      materials: [{ type: 'MeshBasicMaterial', color: '#ffffff', map: false }],
+      components: [],
+    });
+    const ship = session.node('ship');
+    expect(ship).toMatchObject({ nodeId: 'ship', name: 'Ship', components: [] });
+    expect(Object.keys(ship?.properties ?? {})).toContain('position');
+    expect(session.node('gone')).toBeNull();
+  });
+
+  it('highlights an object on its own layers, follows it, and drops the box when it leaves', () => {
+    const { root, hull, badge } = liveScene();
+    const fake = fakeRunner();
+    const session = new DebugSession(context(fake.runner).value);
+    sessions.push(session);
+    session.start();
+
+    expect(session.highlight(hull.uuid)).toBe(true);
+    const [box] = helpersIn(root);
+    expect(box.box.getCenter(new THREE.Vector3()).x).toBeCloseTo(1);
+    expect(box.layers.mask).toBe(hull.layers.mask);
+    // The box is the debug tools' own: never in the tree.
+    expect(session.tree().count).toBe(3);
+
+    hull.position.x = 5;
+    fake.emit();
+    expect(box.box.getCenter(new THREE.Vector3()).x).toBeCloseTo(5);
+
+    expect(session.highlight(badge.uuid)).toBe(true);
+    expect(helpersIn(root)).toHaveLength(1);
+    expect(helpersIn(root)[0].layers.mask).toBe(badge.layers.mask);
+
+    badge.removeFromParent();
+    fake.emit();
+    expect(helpersIn(root)).toHaveLength(0);
+    expect(session.highlight('gone')).toBe(false);
+    expect(fake.runner.renderOnce).not.toHaveBeenCalled();
+  });
+
+  it('repaints a paused game once so the box shows, and clears it on highlight(null)', () => {
+    const { root } = liveScene();
+    const fake = fakeRunner();
+    const session = new DebugSession(context(fake.runner).value);
+    sessions.push(session);
+    session.pause();
+    session.highlight('ship');
+    expect(helpersIn(root)).toHaveLength(1);
+    expect(fake.runner.renderOnce).toHaveBeenCalledTimes(1);
+    session.highlight(null);
+    expect(helpersIn(root)).toHaveLength(0);
+  });
+});
+
 describe('mountDebugOverlay', () => {
   it('mounts the panel, exposes __PIX3_PLAYER__.debug and tears both down', () => {
     const { runner, listeners } = fakeRunner();
@@ -196,6 +288,7 @@ describe('mountDebugOverlay', () => {
     const host = document.querySelector('.pix3-debug-overlay');
     expect(host?.shadowRoot?.querySelector('.title')?.textContent).toBe('Pix3 debug');
     expect(ctx.state.debug?.snapshot()).toMatchObject({ scene: 'scenes/main.pix3scene' });
+    expect(ctx.state.debug?.tree()).toEqual({ count: 0, truncated: false, roots: [] });
     expect(listeners.size).toBe(1);
 
     host?.shadowRoot?.querySelector<HTMLButtonElement>('[data-action="pause"]')?.click();

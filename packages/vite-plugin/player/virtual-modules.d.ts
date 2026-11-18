@@ -67,6 +67,8 @@ declare module 'virtual:pix3/dev' {
   export function devSceneOverride(): string | null;
   /** `?run=<json>` on the dev server — a test run's `{seed?, config?}`; null in a build. */
   export function devRunOverrides(): import('@pix3/runtime').RunOverrides | null;
+  /** Dev with the editor: the file revision the server stamped into the page; else null. */
+  export function devPageRev(): number | null;
   /**
    * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link. Build: a no-op.
    * The argument is `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot

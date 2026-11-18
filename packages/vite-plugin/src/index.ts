@@ -29,6 +29,7 @@ import {
   GLTF_LOADER_STUB_ID,
   gltfLoaderStubSource,
   NETWORK_ID,
+  PAGE_REV_META,
   networkSource,
   noEmbeddedAssetsSource,
   PLAYER_VIRTUAL_IDS,
@@ -391,6 +392,22 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
       });
       if (error) this.error(error);
       return null;
+    },
+
+    /**
+     * Dev, with the editor: stamp the file revision into the game's page (`devPageRev`, plan
+     * play-in-page D6) — the files it reads are at least this new. The editor page is raw HTML
+     * served by the plugin, so this reaches only the game's pages.
+     */
+    transformIndexHtml(_html, context) {
+      if (!context.server || !editor) return;
+      return [
+        {
+          tag: 'meta',
+          attrs: { name: PAGE_REV_META, content: String(editor.files.currentSeq) },
+          injectTo: 'head-prepend',
+        },
+      ];
     },
 
     async hotUpdate(update) {

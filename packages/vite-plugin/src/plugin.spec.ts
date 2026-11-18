@@ -170,6 +170,27 @@ describe('editor page and discovery', () => {
     expect(code).toContain('const editorUrl = null');
   });
 
+  it("stamps the file revision into the game's page, and not into the editor's", async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE });
+    const rev = async (): Promise<string | undefined> =>
+      /<meta name="pix3-rev" content="(\d+)"/.exec(await (await p.fetch('/')).text())?.[1];
+    expect(await rev()).toBe('0');
+    await p.mutate('/__pix3/api/file?path=scenes/b.pix3scene', {
+      method: 'PUT',
+      body: SCENE,
+      headers: { 'If-None-Match': '*' },
+    });
+    const { seq } = await json(await p.fetch('/__pix3/api/hello'));
+    expect(seq).toBeGreaterThan(0);
+    expect(await rev()).toBe(String(seq));
+    expect(await (await p.fetch('/__pix3/')).text()).not.toContain('pix3-rev');
+  });
+
+  it('stamps no revision without the editor', async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE }, { editor: false });
+    expect(await (await p.fetch('/')).text()).not.toContain('pix3-rev');
+  });
+
   it('answers hello with the revision, seq and versions', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const hello = await json(await p.fetch('/__pix3/api/hello'));

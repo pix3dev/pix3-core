@@ -299,6 +299,9 @@ export const networkSource = (usesNetwork: boolean): string =>
         '',
       ].join('\n');
 
+/** The `<meta name>` carrying the file revision a dev page was served at (plan play-in-page D6). */
+export const PAGE_REV_META = 'pix3-rev';
+
 export interface DevSourceOptions {
   /** This package's `player/debug/index` (the debug overlay), as a file path. */
   readonly overlayPath: string;
@@ -313,6 +316,8 @@ export interface DevSourceOptions {
  *
  * - `devSceneOverride()` is the URL's `?scene=` (`res://` stripped), the scene the editor's
  *   "Play in Browser Tab / with Profiler" asks for; the player checks it against its scene list;
+ * - `devPageRev()` is the file revision the plugin stamped into the page's HTML
+ *   (`<meta name="pix3-rev">`, {@link PAGE_REV_META}), the player's `__PIX3_PLAYER__.rev`;
  * - `installDevTools(context)` imports the debug overlay when the URL has `debug`, otherwise the
  *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
  *   module and `/?clean` none.
@@ -330,6 +335,7 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
       '// `__PIX3_RUN__`; a player nobody drives sees nothing there.',
       'export function devSceneOverride() { return null; }',
       'export function devRunOverrides() { return globalThis.__PIX3_RUN__ ?? null; }',
+      'export function devPageRev() { return null; }',
       'export function installDevTools() {}',
       '',
     ].join('\n');
@@ -348,6 +354,11 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `  if (!run) return globalThis.__PIX3_RUN__ ?? null;`,
     `  try { return JSON.parse(run); }`,
     `  catch (error) { console.error('[pix3] ?run= is not JSON:', error); return null; }`,
+    `}`,
+    `export function devPageRev() {`,
+    `  const meta = document.querySelector('meta[name="${PAGE_REV_META}"]');`,
+    `  const rev = Number.parseInt(meta ? meta.getAttribute('content') : '', 10);`,
+    `  return Number.isNaN(rev) ? null : rev;`,
     `}`,
     `export function installDevTools(context) {`,
     `  if (params.has('debug')) {`,

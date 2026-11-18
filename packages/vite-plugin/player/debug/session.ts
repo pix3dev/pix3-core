@@ -1,5 +1,6 @@
 import {
   getGameDebug,
+  getRuntimeSceneRoot,
   type GameDebugProvider,
   registerScriptErrorSink,
   type ResolvedRuntimeTimeConfig,
@@ -7,6 +8,7 @@ import {
   type SceneRunnerFrameSample,
   type ScriptErrorInfo,
 } from '@pix3/runtime';
+import type { Object3D } from 'three';
 
 import type { Pix3DebugContext } from './context';
 import { readDeviceInfo, readHeapMb, type DeviceInfo } from './device-info';
@@ -18,12 +20,14 @@ import {
   type FrameStability,
   type FrameWindow,
 } from './frame-stats';
+import { LiveHighlight, liveObjectDetail, type LiveObjectDetail } from './inspect';
 import { LongFrameObserver, type LongFrameStats } from './long-frames';
+import { findLiveObject, isUnder, liveTree, type LiveTree } from './tree';
 
 /**
  * The debug mode's model, DOM-free: subscribes to the runner's frame stats, keeps the numbers the
- * overlay draws, and owns the pause / step controls. `snapshot()` is also what
- * `__PIX3_PLAYER__.debug.snapshot()` answers, so an agent reads the same numbers a human sees.
+ * overlay draws, owns the pause / step controls and reads the live scene (`tree`, `node`,
+ * `highlight`). The same methods are `__PIX3_PLAYER__.debug`, so an agent reads what a human sees.
  */
 
 interface DebugError {
@@ -82,6 +86,8 @@ export class DebugSession {
   /** The time mode pause replaced, or null while the overlay has not paused the game. */
   private pausedFrom: ResolvedRuntimeTimeConfig | null = null;
   private readonly disposers: (() => void)[] = [];
+  private readonly highlighter = new LiveHighlight();
+  private highlighted: Object3D | null = null;
 
   constructor(private readonly context: Pix3DebugContext) {}
 
@@ -95,6 +101,7 @@ export class DebugSession {
 
   dispose(): void {
     if (this.pausedFrom) this.resume();
+    this.highlight(null);
     for (const dispose of this.disposers.splice(0)) dispose();
   }
 
@@ -141,6 +148,29 @@ export class DebugSession {
     if (this.pausedFrom) this.context.runner.stepFrames(1);
   }
 
+  /** The live object tree (`tree.ts`). */
+  tree(): LiveTree {
+    return liveTree(liveRoot());
+  }
+
+  /** One live object by `uuid` (a node's authored id), in detail; null when it is not in the scene. */
+  node(id: string): LiveObjectDetail | null {
+    const object = findLiveObject(liveRoot(), id);
+    return object ? liveObjectDetail(object) : null;
+  }
+
+  /**
+   * Box the object `id` names in the running game until `highlight(null)`, a scene change or the
+   * object leaving the scene. False when there is no such object. A paused game repaints once.
+   */
+  highlight(id: string | null): boolean {
+    const root = liveRoot();
+    this.highlighted = id === null ? null : findLiveObject(root, id);
+    this.followHighlight(root);
+    if (this.paused) this.context.runner.renderOnce();
+    return this.highlighted !== null;
+  }
+
   snapshot(): DebugSnapshot {
     this.collectPageErrors();
     const { audio, state } = this.context;
@@ -174,8 +204,18 @@ export class DebugSession {
     };
   }
 
+  private followHighlight(root: Object3D | null): void {
+    if (this.highlighted && root && isUnder(this.highlighted, root)) {
+      this.highlighter.update(this.highlighted, root);
+    } else {
+      this.highlighted = null;
+      this.highlighter.clear();
+    }
+  }
+
   private readonly onFrame = (sample: SceneRunnerFrameSample): void => {
     this.frameNumber = sample.frameNumber;
+    if (this.highlighted) this.followHighlight(liveRoot());
     const frameMs = sample.dt * 1000;
     this.histogram.record(frameMs);
     this.ring.push(sample.logicMs, sample.renderMs, frameMs);
@@ -209,6 +249,8 @@ export class DebugSession {
     if (this.errors.length > KEEP_ERRORS) this.errors.shift();
   }
 }
+
+const liveRoot = (): Object3D | null => getRuntimeSceneRoot() as Object3D | null;
 
 const readGameSnapshot = (provider: GameDebugProvider): unknown => {
   if (!provider.snapshot) return null;

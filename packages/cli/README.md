@@ -667,6 +667,7 @@ npx pix3 play dist --bot swiper --size 390x844 --screenshot shot.png
 npx pix3 play --bot round --seed 7 --config '{"game-root":{"rules":{"moves":3}}}' --shots shots/
 npx pix3 play https://example.com/game/ --seconds 5 --json
 npx pix3 play dist --profile --seconds 8         # a performance report of the run (dev or dist)
+npx pix3 play --tree                             # the running game's object tree at the end
 ```
 
 A private headless Chrome (its own temp profile, CDP over `--remote-debugging-pipe`, the Chrome
@@ -705,10 +706,19 @@ The report carries `sounds: { requested, last: [{ sound, frame }] }` read from t
 `scene.audio.requested()` (a clip path or `sfx:<preset>`, the runner frame) — absent when the
 game asked for no sound; `pix3_game_run` answers the same field for its run.
 
+`--tree` prints the running game's object tree at the end of the run (`tree` in `--json`:
+`{count, truncated, roots}`, each object `{id, nodeId, type, name, visible, instances, children,
+more}`), dev and `dist` alike: the same walk as the debug overlay's Scene tab and
+`__PIX3_PLAYER__.debug.tree()` (`packages/vite-plugin/player/debug/tree.ts`, in `page-debug.js`)
+over the live `THREE.Scene` — the nodes (`Type#id`) and every object the game made at run time
+under them (`Type "name"`: spawned meshes, an instanced pool with `×N`), `hidden` for an object
+whose own `visible` is false; at most 250 children per object and 5000 in all (`more`,
+`truncated`).
+
 `--profile` adds a performance report of the run (`profile` in `--json`, a block in the human
 report), dev and `dist` alike: the CLI evaluates the debug overlay's collector in the page
 (`packages/vite-plugin/player/debug/profile.ts`, bundled beside the bot host into
-`dist/play/prebuilt/page-profile.js`; the player ships none of it), so a built page — on any
+`dist/play/prebuilt/page-debug.js`; the player ships none of it), so a built page — on any
 runtime that has `SceneRunner.subscribeFrameStats`, 2.0.0-alpha.5 included — is profiled like
 the dev one. It subscribes to the runner's frame stats as the overlay does and reports, over the
 measured window: the **wall-clock interval between animation frames** (mean, p50/p95/p99, worst,

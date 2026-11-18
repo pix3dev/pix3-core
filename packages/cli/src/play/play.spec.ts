@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { runPlayCli, safeAreaOverlayScript } from './command.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
+import { formatTreeHuman } from './tree-report.ts';
 
 /**
  * `pix3 play`'s refusals, which happen before a browser starts. The run itself (a private headless
@@ -151,5 +152,36 @@ describe('pix3 play', () => {
     expect(text).toContain('SOFTWARE GPU');
     expect(text).toContain('outside the runner: 142.0 ms');
     expect(formatProfileHuman({ error: 'x' })).toEqual(['profile: not measured — x']);
+  });
+
+  it('prints the live tree: nodes by id, run-time objects by name, instances and hidden marked', () => {
+    const leaf = { children: [], more: 0, visible: true, instances: null };
+    const text = formatTreeHuman({
+      count: 4,
+      truncated: true,
+      roots: [
+        {
+          ...leaf,
+          id: 'world',
+          nodeId: 'world',
+          type: 'Node3D',
+          name: 'World',
+          more: 3,
+          children: [
+            { ...leaf, id: 'a', nodeId: null, type: 'Mesh', name: 'fog-puffs', instances: 1245 },
+            { ...leaf, id: 'b', nodeId: 'hud', type: 'Group2D', name: 'hud', visible: false },
+          ],
+        },
+      ],
+    });
+    expect(text).toEqual([
+      'tree: 4 object(s), capped',
+      '  Node3D#world "World" (+3 more)',
+      '    Mesh "fog-puffs" ×1245',
+      '    Group2D#hud hidden',
+    ]);
+    expect(formatTreeHuman({ error: 'the game is failed' })).toEqual([
+      'tree: not read — the game is failed',
+    ]);
   });
 });

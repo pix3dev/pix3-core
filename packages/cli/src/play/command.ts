@@ -10,6 +10,7 @@ import { findChrome, needsNoSandbox, describeChromeNotFound } from '../editor/ch
 import { readDevInfo } from '../editor/dev-server.ts';
 import { PipeChrome, type CdpEvent } from './chrome-pipe.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
+import { formatTreeHuman, type PlayTree } from './tree-report.ts';
 
 /**
  * `pix3 play` — the game's own page (the dev server, or a built `dist/index.html` as it ships) in
@@ -41,6 +42,8 @@ interface PlayArgs {
   readonly json: boolean;
   /** Measure the run: frame / logic / render times, FrameProfiler activities, renderer counters. */
   readonly profile: boolean;
+  /** Read the live object tree at the end of the run. */
+  readonly tree: boolean;
   readonly project?: string;
 }
 
@@ -68,6 +71,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let shots: string | undefined;
   let json = false;
   let profile = false;
+  let tree = false;
   let project: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -76,6 +80,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     if (flag === '--help' || flag === '-h') return 'help';
     if (flag === '--json') json = true;
     else if (flag === '--profile') profile = true;
+    else if (flag === '--tree') tree = true;
     else if (flag === '--size') {
       const match = /^(\d+)x(\d+)$/.exec(value() ?? '');
       if (!match) return { error: '--size takes WIDTHxHEIGHT in CSS px, e.g. --size 390x844' };
@@ -162,6 +167,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     shots,
     json,
     profile,
+    tree,
     project,
   };
 };
@@ -246,6 +252,8 @@ interface PlayReport {
   readonly screenshots?: readonly { name: string; frame: number; path: string }[];
   /** `--profile`: the measured window (`packages/vite-plugin/player/debug/profile.ts`). */
   readonly profile?: PlayProfile | { error: string };
+  /** `--tree`: the live object tree at the end (`packages/vite-plugin/player/debug/tree.ts`). */
+  readonly tree?: PlayTree | { error: string };
 }
 
 /** How often the CLI asks the page whether the policy is done or wants a picture. */
@@ -380,14 +388,14 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     let profile: PlayReport['profile'];
     const shots: { name: string; frame: number; path: string }[] = [];
     const pageScripts =
-      status === 'running' && (args.profile || (policyScript !== null && args.bot))
+      status === 'running' && (args.profile || args.tree || (policyScript !== null && args.bot))
         ? await withCommandBundle(
             'play',
-            'page-profile.js',
+            'page-debug.js',
             async outdir => (await import('./bundle.ts')).buildPlayBundle(outdir),
             async dir => {
               const bundle = await import('./bundle.ts');
-              return { host: bundle.readPlayHost(dir), profile: bundle.readPlayProfile(dir) };
+              return { host: bundle.readPlayHost(dir), debug: bundle.readPlayDebug(dir) };
             }
           )
         : null;
@@ -398,11 +406,8 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     const startProfile = async (): Promise<void> => {
       if (!args.profile || !pageScripts) return;
       try {
-        await chrome.evaluate(session, pageScripts.profile);
-        await chrome.evaluate(
-          session,
-          'window.__PIX3_PAGE_PROFILE_HOST__.startPageProfile(), true'
-        );
+        await chrome.evaluate(session, pageScripts.debug);
+        await chrome.evaluate(session, 'window.__PIX3_PAGE_DEBUG_HOST__.startPageProfile(), true');
       } catch (error) {
         profile = { error: (error as Error).message };
       }
@@ -532,6 +537,19 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       )
       .catch(() => null);
 
+    // Evaluated again here: a page that reloaded during the run lost the first copy.
+    let tree: PlayReport['tree'];
+    if (args.tree && pageScripts) {
+      tree = (await chrome
+        .evaluate(
+          session,
+          `${pageScripts.debug}\n;JSON.parse(JSON.stringify(window.__PIX3_PAGE_DEBUG_HOST__.liveTree(window.__PIX3_RUNTIME_SCENE__ ?? null)))`
+        )
+        .catch((error: Error) => ({ error: error.message }))) as PlayReport['tree'];
+    } else if (args.tree) {
+      tree = { error: `the game is ${status}` };
+    }
+
     let screenshotPath: string | undefined;
     if (args.screenshot) {
       const png = await capture();
@@ -552,6 +570,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(shots.length > 0 ? { screenshots: shots } : {}),
       ...(sounds ? { sounds } : {}),
       ...(profile ? { profile } : {}),
+      ...(tree ? { tree } : {}),
     };
     const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
     const botFailed =
@@ -599,5 +618,6 @@ const formatPlayHuman = (report: PlayReport): string => {
   for (const shot of report.screenshots ?? [])
     lines.push(`screenshot ${shot.name} (frame ${shot.frame}): ${shot.path}`);
   if (report.profile) lines.push(...formatProfileHuman(report.profile));
+  if (report.tree) lines.push(...formatTreeHuman(report.tree));
   return `${lines.join('\n')}\n`;
 };

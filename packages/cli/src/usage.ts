@@ -61,7 +61,8 @@ Usage:
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
-        [--profile]                --profile: frame/logic/render ms, activities, draw calls
+        [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
+                                   --tree: the live object tree at the end
   pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless
         [--node <id>] [--views iso,front,right,top|all|az:el] Chrome; the scene starts, so
         [--size 512] [--out <f.png>] core:MergeStatic bakes); mesh, draw-call, triangle counts,
@@ -309,7 +310,7 @@ Reference it from a scene or script as res://<path inside the project>.
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay]
-                 [--screenshot <file.png>] [--shots <dir>] [--profile] [--json]
+                 [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -355,7 +356,12 @@ Reference it from a scene or script as res://<path inside the project>.
                  painted frame: compare logic per tick; frame interval is the page's throughput.
                  Headless Chrome renders on SwiftShader (said in the report): render ms there are
                  not a device's — logic ms and the counters are. Give it --seconds 6 or more
-  --json         machine-readable report
+  --tree         print the running game's object tree at the end (dev and dist): every node
+                 (Type#id) and every object the game made at run time (Type "name") under it,
+                 ×N for an instanced mesh, hidden for one not visible; capped at 250 children an
+                 object and 5000 in all. The same tree as /?debug's Scene tab and
+                 __PIX3_PLAYER__.debug.tree()
+  --json         machine-readable report (with --tree: "tree" {count, truncated, roots})
 
   Exit 0 = the page ran frames, nothing threw, the bot passed; 1 = errors, a failed or crashed
   bot, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome, nothing to play, no such policy).

@@ -166,6 +166,13 @@ for a clean picture. The report also lists the sounds the game asked to play
 `sfx:<preset>`) — nobody listens to a headless page, so this is how a run proves a match clicks.
 No editor, no MCP: it works from a subagent and in CI.
 
+`--tree` adds the running game's object tree at the end of the run (dev and `dist`): `pix3 tree`
+outlines the scene **file**; this is what the game built from it — nodes as `Type#id`, and the
+objects your scripts made at run time under them as `Type "name"`, `×N` on an instanced mesh,
+`hidden` when not visible. Use it to check that a spawn happened, that a pool holds what you
+expect, or that a thing you hid is hidden. A `/?debug` dev page answers the same over CDP:
+`__PIX3_PLAYER__.debug.tree()`, and `.node(id)` for one object's live values.
+
 ### Profiling a game — `pix3 play --profile`
 
 To find what is slow and to confirm a fix, measure the same run before and after:

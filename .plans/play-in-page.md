@@ -202,9 +202,10 @@
 
 ### S1. Контракт страницы: дерево и управление (2 дня)
 
-- `player/debug/tree.ts`: обход живого `THREE.Scene` → DTO. Переносится `collectLiveTree`
-  (`editor-core/src/core/agent-introspection.ts:220-330`) и сборка деталей объекта из
-  `runtime-panel.ts`. В `editor-core` остаётся реэкспорт до S6.
+- `player/debug/tree.ts`: обход живого `THREE.Scene` → DTO. Переносится обход живого дерева
+  (`liveObjectToDTO` / `flattenLive`, `editor-core/src/core/agent-introspection.ts:220-316`) и
+  сборка деталей объекта из `runtime-panel.ts` (`buildDetail`). Реэкспорта нет: `editor-core` не
+  импортирует из плеера (обратная зависимость), до S6 код редактора остаётся копией.
 - `DebugSession`: `tree()`, `node(id)`, `highlight(id|null)` (Box3 в живой сцене с учётом слоя).
 - `loadId` и `rev` в `Pix3PlayerState` (D6): `transformIndexHtml` (serve, только страница игры —
   страница редактора raw) в `vite-plugin/src/index.ts` вписывает `rev`; `virtual:pix3/dev`
@@ -312,7 +313,9 @@
   `inspector-panel.ts`, вызов sink в `UpdateObjectPropertyOperation.ts:207`, статус-бар, меню Run;
 - редакторный корень `virtual:pix3/bot-policies`, `policyOnly` в барьере (S11) и очередь корней
   S13 в плагине и редакторе; `GameBotHost` остаётся только в страничном виде;
-- редакторная реализация `GameRuntimeHandle`, реэкспорт `collectLiveTree`,
+- редакторная реализация `GameRuntimeHandle`, копии обхода живого дерева в редакторе
+  (`liveObjectToDTO` / `flattenLive` в `core/agent-introspection.ts` и `buildDetail` в
+  `ui/runtime/runtime-panel.ts`; на странице — `player/debug/tree.ts` и `inspect.ts`),
   `core/canvas-screenshot.ts`, если не осталось читателей.
 
 `getRuntimeSceneRoot` / `registerRuntimeSceneRoot` (`runtime/src/core/game-debug.ts:118-140`)
@@ -457,3 +460,33 @@ autoload отдельно от скрипта и `pix3project.yaml`; что ст
 состояние, которое тот «показал агенту» (D7). Варианты: принять (агент сначала читает, потом
 правит) или в S4 гасить full-reload для правок, которых страница не импортирует (политики), —
 скрипты игры перезагружать всё равно нужно.
+
+### S1 (2026-11-18)
+
+Сделано: `player/debug/tree.ts` — `liveTree(root)` → `{count, truncated, roots}`, объект
+`{id (= uuid, у узла — его id), nodeId, type, name, visible, instances, children, more}`, пределы
+250 детей на объект и 5000 всего (как у панели Runtime, без предела глубины); без импортов, поэтому
+CLI собирает его в страничный скрипт и для `dist`. `player/debug/inspect.ts` — `node(id)`: мировой и
+локальный трансформ, слои, геометрия, материалы, `userData`, а для узла — компоненты и живые
+значения свойств инспектора (`getPropertyDisplayValue`; это LIVE-чтение из D11); `LiveHighlight` —
+`Box3Helper` на слоях объекта, следует за ним каждый тик, снимается при смене сцены или уходе
+объекта, на паузе — один `renderOnce`. `DebugSession`: `tree/node/highlight`; на
+`__PIX3_PLAYER__.debug` ещё `pause/resume/step` (D3). `loadId` (`crypto.randomUUID`, без
+защищённого контекста — `getRandomValues`) и `rev`: хук `transformIndexHtml` (serve, есть
+редактор) вписывает `<meta name="pix3-rev">`, `devPageRev()` в `virtual:pix3/dev` читает её, в
+сборке `null`. `pix3 play --tree` (и `tree` в `--json`); страничный скрипт CLI переименован
+`page-profile.js` → `page-debug.js` (`__PIX3_PAGE_DEBUG_HOST__ = {startPageProfile, liveTree}`).
+
+Отклонения: реэкспорта в `editor-core` нет (см. S1 выше), дубли — в списке S6; детали и подсветка
+вынесены из `tree.ts` в `inspect.ts`, чтобы `tree.ts` остался без `three` для страницы `dist`.
+`three` плеер берёт по `resolve.dedupe` проекта; в `peerDependencies` плагина не добавлен.
+
+Проверено (Skyways, копия S0, Vite 8.3.8, headless Chrome): `/?debug` — `debug.tree()` 494
+объекта, 15 `InstancedMesh` с `instances` (`fog-puffs ×1245`, `peaks ×87`), объекты без `nodeId`
+(меши тумана, `Pix3Batch2D`); `highlight('flagship')` — рамка вокруг корабля в 3D-проходе,
+`highlight('probe-button')` — рамка вокруг кнопки в 2D-проходе (скриншоты); перезагрузка — новый
+`loadId`; `rev` в HTML (спека: после записи файла равен `seq` из `hello`; страница редактора без
+метки). `pix3 play dev --tree` и `pix3 play dist --tree` печатают то же дерево; в
+`dist/index.html` нет ни `pix3-rev`, ни `liveTree`. Не проверено: `rev` после `pix3_sync` в живом
+браузере (только спека), `node()` на объекте Spine.
+

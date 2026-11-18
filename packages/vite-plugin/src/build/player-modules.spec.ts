@@ -5,14 +5,20 @@ import { devSource } from './player-modules.ts';
 
 /** `virtual:pix3/dev`: a test run's `?run=` exists on the dev server only (core-tests/game10). */
 describe('devSource', () => {
-  const evaluate = (source: string, search: string) => {
+  /** `meta` stands for the page's `<meta name="pix3-rev">` content. */
+  const evaluate = (source: string, search: string, meta: string | null = null) => {
     const module: Record<string, () => unknown> = {};
     const body = source.replace(/export function (\w+)/g, 'module.$1 = function $1');
-    new Function('module', 'location', 'URLSearchParams', 'console', body)(
+    const document = {
+      querySelector: (selector: string) =>
+        meta !== null && selector === 'meta[name="pix3-rev"]' ? { getAttribute: () => meta } : null,
+    };
+    new Function('module', 'location', 'URLSearchParams', 'console', 'document', body)(
       module,
       { search },
       URLSearchParams,
-      { error: () => {} }
+      { error: () => {} },
+      document
     );
     return module;
   };
@@ -43,5 +49,12 @@ describe('devSource', () => {
     } finally {
       delete injected.__PIX3_RUN__;
     }
+  });
+
+  it('reads the revision the plugin stamped into the page on the dev server, none in a build', () => {
+    const dev = devSource('dev', { overlayPath: '/o', editorLinkPath: '/l', editorUrl: null });
+    expect(evaluate(dev, '').devPageRev()).toBeNull();
+    expect(evaluate(dev, '', '42').devPageRev()).toBe(42);
+    expect(evaluate(devSource('none'), '', '42').devPageRev()).toBeNull();
   });
 });
