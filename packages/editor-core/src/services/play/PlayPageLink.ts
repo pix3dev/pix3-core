@@ -251,14 +251,15 @@ export class PlayPageLink {
 
   /**
    * Close the page of `role` (Stop, the agent's `stop`, the idle timeout). A window that closes
-   * may never get its `bye` out (headless Chrome drops it), so a page that agreed to close is
-   * forgotten here; one that stays open after all says hello to the next `who`.
+   * may never get its `bye` out (headless Chrome drops it) and a window closed by hand may not
+   * either, so the page is forgotten here whether it agreed or did not answer at all; one that
+   * stays open after all says hello to the next `who`.
    */
   async close(role: PageRole): Promise<PageAnswer> {
     const page = this.pages.get(role);
     if (page) this.closing.add(page.loadId);
     const answer = await this.call(role, 'close');
-    if (answer.ok !== false && page) this.leave(role, page.loadId, false);
+    if (page) this.leave(role, page.loadId, false);
     return answer;
   }
 

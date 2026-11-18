@@ -65,6 +65,21 @@ describe('PlayPageLink', () => {
     off();
   });
 
+  it('forgets a page that never answers close (a window closed by hand, its bye lost)', async () => {
+    const agent = page('agent');
+    await link.discover(50);
+    agent.answer = () => new Promise(() => undefined);
+    vi.useFakeTimers();
+    try {
+      const closed = link.close('agent');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await closed).toMatchObject({ ok: false, reason: 'no_game_page' });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(link.page('agent')).toBeNull();
+  });
+
   it('addresses a call by role and load, and matches answers by id', async () => {
     const agent = page('agent');
     const designer = page('designer');
