@@ -213,7 +213,7 @@ describe('DebugSession', () => {
 
 describe('DebugSession: the live scene', () => {
   it('lists the live tree and reads one object in detail, a node with its properties', () => {
-    const { hull } = liveScene();
+    const { hull, ship: shipNode } = liveScene();
     const session = new DebugSession(context(fakeRunner().runner).value);
     expect(session.tree()).toMatchObject({
       count: 3,
@@ -230,9 +230,10 @@ describe('DebugSession: the live scene', () => {
       materials: [{ type: 'MeshBasicMaterial', color: '#ffffff', map: false }],
       components: [],
     });
+    shipNode.position.x = 1 / 3;
     const ship = session.node('ship');
     expect(ship).toMatchObject({ nodeId: 'ship', name: 'Ship', components: [] });
-    expect(Object.keys(ship?.properties ?? {})).toContain('position');
+    expect(ship?.properties.position).toBe('{"x":0.333,"y":0,"z":0}');
     expect(session.node('gone')).toBeNull();
   });
 
@@ -300,5 +301,47 @@ describe('mountDebugOverlay', () => {
     expect(listeners.size).toBe(0);
     // Unmounting a paused session hands the game its clock back.
     expect(runner.getTimeMode().mode).toBe('realtime');
+  });
+
+  it('Scene tab: reads the tree on opening, filters it, selects, highlights and clears', () => {
+    const { root, hull } = liveScene();
+    const { runner } = fakeRunner();
+    const unmount = mountDebugOverlay(context(runner).value);
+    const shadow = document.querySelector('.pix3-debug-overlay')?.shadowRoot as ShadowRoot;
+    const rows = () => [...shadow.querySelectorAll<HTMLElement>('.tree .node')];
+    const click = (selector: string) => shadow.querySelector<HTMLElement>(selector)?.click();
+    try {
+      expect(rows()).toHaveLength(0);
+      click('[data-tab="scene"]');
+      expect(shadow.querySelector<HTMLElement>('[data-pane="profiler"]')?.hidden).toBe(true);
+      // The ship holds nothing authored, so it starts closed: the rows are the roots.
+      expect(rows().map(row => row.dataset.id)).toEqual(['ship', root.children[1].uuid]);
+      expect(shadow.querySelector('.scene-count')?.textContent).toBe('3 objects');
+      click('[data-id="ship"] .twisty');
+      expect(rows()).toHaveLength(3);
+      click('[data-id="ship"] .twisty');
+      expect(rows()).toHaveLength(2);
+
+      const filter = shadow.querySelector('input') as HTMLInputElement;
+      filter.value = 'box';
+      filter.dispatchEvent(new Event('input'));
+      expect(rows()).toHaveLength(0);
+      filter.value = 'mesh';
+      filter.dispatchEvent(new Event('input'));
+      // A match deep down shows with its ancestors.
+      expect(rows().map(row => row.dataset.id)).toEqual(['ship', hull.uuid, root.children[1].uuid]);
+      expect(shadow.querySelector('.scene-count')?.textContent).toBe('3 objects · 2 match');
+
+      click(`[data-id="${hull.uuid}"] .name`);
+      expect(helpersIn(root)).toHaveLength(1);
+      expect(shadow.querySelector('.detail-head .type')?.textContent).toBe('Mesh');
+      expect(shadow.querySelector(`[data-id="${hull.uuid}"]`)?.classList).toContain('selected');
+
+      click('[data-action="clear"]');
+      expect(helpersIn(root)).toHaveLength(0);
+      expect(shadow.querySelector('.detail-head')).toBeNull();
+    } finally {
+      unmount();
+    }
   });
 });

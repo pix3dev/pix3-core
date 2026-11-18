@@ -98,7 +98,12 @@ const nodeFields = (
   const properties: Record<string, string> = {};
   for (const property of getNodePropertySchema(object).properties) {
     try {
-      properties[property.name] = getPropertyDisplayValue(object, property);
+      const value: unknown = property.getValue(object);
+      // Vectors as the inspector writes them (JSON), at a readable precision.
+      properties[property.name] =
+        value !== null && typeof value === 'object'
+          ? JSON.stringify(value, (_key, v: unknown) => (typeof v === 'number' ? round(v, 3) : v))
+          : getPropertyDisplayValue(object, property);
     } catch (error) {
       properties[property.name] = `(${error instanceof Error ? error.message : String(error)})`;
     }

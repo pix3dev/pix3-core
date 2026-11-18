@@ -1,12 +1,15 @@
 import { openEditor } from '../dev/editor-link';
 import { LONG_FRAME_MS, type FrameRing } from './frame-stats';
+import { escapeHtml, row, section } from './markup';
+import { SceneTab } from './scene-tab';
 import type { DebugSession, DebugSnapshot } from './session';
 
 /**
  * The debug overlay's DOM: a panel over the game's top-right corner, in a shadow root so the
- * game's CSS cannot reach it (and its CSS cannot reach the game). The chart repaints at 8 Hz and
- * the text at 2 Hz (each text refresh closes an averaging window), from timers rather than the game's frame listener, so a slow page shows a
- * slow overlay instead of a slower game.
+ * game's CSS cannot reach it (and its CSS cannot reach the game). Two tabs: **Profiler**, whose
+ * chart repaints at 8 Hz and text at 2 Hz (each text refresh closes an averaging window), from
+ * timers rather than the game's frame listener, so a slow page shows a slow overlay instead of a
+ * slower game; and **Scene** (`scene-tab.ts`), the live object tree, read on demand.
  */
 
 const CHART_MS = 125;
@@ -28,7 +31,8 @@ const STYLE = `
 }
 .panel.collapsed { width: auto; }
 .panel.collapsed .body { display: none; }
-header { display: flex; align-items: center; gap: 6px; }
+.panel.wide { width: min(380px, calc(100vw - 16px)); }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .title { font-weight: 600; color: #ffcf33; margin-right: auto; white-space: nowrap; }
 .fps { font-weight: 600; min-width: 4.5em; text-align: right; white-space: nowrap; }
 button {
@@ -54,6 +58,33 @@ h3 { all: unset; display: block; color: #a0a0a0; text-transform: uppercase; font
 .error { color: #ff6b6b; word-break: break-word; margin-top: 2px; }
 .error small { display: block; color: #a0a0a0; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 160px; overflow: auto; }
+.tabs { display: flex; gap: 4px; margin-top: 6px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+.tabs button { border-radius: 4px 4px 0 0; border-bottom: none; }
+.scene-bar { display: flex; gap: 6px; margin-top: 6px; }
+.scene-bar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.16); border-radius: 4px; padding: 1px 6px; }
+.scene-count { margin: 4px 0 2px; }
+.tree { max-height: 40vh; overflow: auto; scrollbar-width: thin; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px; padding: 2px 0; }
+.node { display: flex; align-items: center; gap: 5px; padding-right: 4px; white-space: nowrap; cursor: pointer; }
+.node:hover { background: rgba(255,255,255,0.08); }
+.node.selected { background: rgba(255,207,51,0.22); }
+.node.match .name, .node.match .type { color: #ffcf33; }
+.node.hidden > .type, .node.hidden > .name { opacity: 0.5; }
+.node .type { color: #a0a0a0; }
+.node .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.twisty { flex: none; width: 12px; height: 12px; position: relative; }
+.twisty.open::before, .twisty.closed::before { content: ''; position: absolute; left: 3px; top: 3px;
+  border: 4px solid transparent; }
+.twisty.closed::before { border-left: 5px solid #a0a0a0; border-right: none; top: 2px; }
+.twisty.open::before { border-top: 5px solid #a0a0a0; border-bottom: none; left: 2px; top: 4px; }
+.chip { flex: none; padding: 0 4px; border-radius: 3px; font-size: 10px; background: rgba(78,161,255,0.25); color: #cfe3ff; }
+.chip.off { background: rgba(255,255,255,0.12); color: #a0a0a0; }
+.detail { margin-top: 6px; }
+.detail-head { display: flex; align-items: center; gap: 6px; }
+.detail-head .type { color: #ffcf33; font-weight: 600; }
+.detail-head .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: auto; }
+.swatch { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: -1px; border: 1px solid rgba(255,255,255,0.3); }
 `;
 
 const COLORS = {
@@ -68,12 +99,6 @@ const ms = (value: number | null, digits = 1): string =>
   value === null ? '–' : `${value.toFixed(digits)} ms`;
 const num = (value: number | null | undefined): string =>
   value === null || value === undefined ? '–' : value.toLocaleString('en-US');
-const escapeHtml = (text: string): string =>
-  text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
-const row = (label: string, value: string, cls = ''): string =>
-  `<div class="row"><span>${escapeHtml(label)}</span><span class="${cls}">${value}</span></div>`;
-const section = (title: string, body: string): string =>
-  `<section><h3>${escapeHtml(title)}</h3>${body}</section>`;
 
 const readCollapsed = (): boolean => {
   try {
@@ -101,6 +126,8 @@ export class DebugOverlay {
   private readonly pauseButton: HTMLButtonElement;
   private readonly stepButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
+  private readonly sceneTab: SceneTab;
+  private tab: 'profiler' | 'scene' = 'profiler';
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticks = 0;
 
@@ -122,10 +149,14 @@ export class DebugOverlay {
     <button type="button" data-action="collapse" title="Collapse">Hide</button>
   </header>
   <div class="body">
-    <canvas></canvas>
-    <div class="legend"><span><i style="background:${COLORS.logic}"></i>logic</span><span><i style="background:${COLORS.render}"></i>render</span><span><i style="background:${COLORS.other}"></i>other</span><span class="muted">lines: 16.7 / 33.3 ms</span></div>
-    <div class="sections"></div>
-    <section><button type="button" data-action="reset" title="Reset percentiles, long frames and the program count">Reset stats</button></section>
+    <nav class="tabs"><button type="button" data-action="tab" data-tab="profiler" aria-pressed="true">Profiler</button><button type="button" data-action="tab" data-tab="scene" aria-pressed="false">Scene</button></nav>
+    <div data-pane="profiler">
+      <canvas></canvas>
+      <div class="legend"><span><i style="background:${COLORS.logic}"></i>logic</span><span><i style="background:${COLORS.render}"></i>render</span><span><i style="background:${COLORS.other}"></i>other</span><span class="muted">lines: 16.7 / 33.3 ms</span></div>
+      <div class="sections"></div>
+      <section><button type="button" data-action="reset" title="Reset percentiles, long frames and the program count">Reset stats</button></section>
+    </div>
+    <div data-pane="scene" hidden></div>
   </div>
 </div>`;
     const pick = <T extends Element>(selector: string): T => root.querySelector(selector) as T;
@@ -136,9 +167,18 @@ export class DebugOverlay {
     this.pauseButton = pick('[data-action="pause"]');
     this.stepButton = pick('[data-action="step"]');
     this.collapseButton = pick('[data-action="collapse"]');
+    this.sceneTab = new SceneTab(session, pick('[data-pane="scene"]'));
     root.addEventListener('click', this.onClick);
-    // Keep the game's own listeners (a tap-to-jump on `window`) out of the panel's clicks.
-    for (const type of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'wheel', 'keydown']) {
+    // Keep the game's own listeners (a tap-to-jump on `window`, a key) out of the panel's input.
+    for (const type of [
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+      'wheel',
+      'keydown',
+      'keyup',
+    ]) {
       this.panel.addEventListener(type, event => event.stopPropagation());
     }
     this.setCollapsed(readCollapsed());
@@ -162,14 +202,18 @@ export class DebugOverlay {
     const withText = this.ticks % TEXT_EVERY === 0;
     // Only the timer closes windows: a click must not cut one short (an empty window reads "–").
     if (withText) this.session.rollWindow();
-    if (!this.panel.classList.contains('collapsed')) drawChart(this.canvas, this.session.ring);
+    if (this.profilerShown()) drawChart(this.canvas, this.session.ring);
     if (withText) this.render();
+  }
+
+  private profilerShown(): boolean {
+    return this.tab === 'profiler' && !this.panel.classList.contains('collapsed');
   }
 
   private render(): void {
     const snapshot = this.session.snapshot();
     this.renderHeader(snapshot);
-    if (this.panel.classList.contains('collapsed')) return;
+    if (!this.profilerShown()) return;
     drawChart(this.canvas, this.session.ring);
     this.sections.innerHTML = renderSections(snapshot);
   }
@@ -215,11 +259,31 @@ export class DebugOverlay {
       case 'collapse':
         this.setCollapsed(!this.panel.classList.contains('collapsed'));
         break;
+      case 'tab':
+        this.showTab(
+          (event.target as Element).closest('[data-tab]')?.getAttribute('data-tab') === 'scene'
+            ? 'scene'
+            : 'profiler'
+        );
+        break;
       default:
         return;
     }
     this.render();
   };
+
+  /** Opening Scene reads the live tree (it is never read on a timer). */
+  private showTab(tab: 'profiler' | 'scene'): void {
+    this.tab = tab;
+    for (const button of this.root.querySelectorAll('[data-tab]')) {
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-tab') === tab));
+    }
+    for (const pane of this.root.querySelectorAll<HTMLElement>('[data-pane]')) {
+      pane.hidden = pane.getAttribute('data-pane') !== tab;
+    }
+    this.panel.classList.toggle('wide', tab === 'scene');
+    if (tab === 'scene') this.sceneTab.refresh();
+  }
 
   private setCollapsed(collapsed: boolean): void {
     this.panel.classList.toggle('collapsed', collapsed);

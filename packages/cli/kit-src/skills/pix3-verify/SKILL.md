@@ -170,8 +170,9 @@ No editor, no MCP: it works from a subagent and in CI.
 outlines the scene **file**; this is what the game built from it — nodes as `Type#id`, and the
 objects your scripts made at run time under them as `Type "name"`, `×N` on an instanced mesh,
 `hidden` when not visible. Use it to check that a spawn happened, that a pool holds what you
-expect, or that a thing you hid is hidden. A `/?debug` dev page answers the same over CDP:
-`__PIX3_PLAYER__.debug.tree()`, and `.node(id)` for one object's live values.
+expect, or that a thing you hid is hidden. On the dev page, `/?debug`'s **Scene** tab shows the
+same tree to the human; over CDP it is `__PIX3_PLAYER__.debug.tree()`, and `.node(id)` for one
+object's live values.
 
 ### Profiling a game — `pix3 play --profile`
 
