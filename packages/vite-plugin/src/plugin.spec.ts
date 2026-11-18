@@ -537,6 +537,21 @@ describe('sync barrier', () => {
     );
   });
 
+  it('drops the cached scene manifest when a sync finds a new scene (play-in-page D6)', async () => {
+    const p = await start({ 'scenes/a.pix3scene': SCENE });
+    const scenePaths = async (): Promise<unknown> => {
+      const code = await (await p.fetch('/@id/__x00__virtual:pix3/scene-manifest')).text();
+      return JSON.parse(/export const scenePaths = ([\s\S]*?);\n/.exec(code)?.[1] ?? 'null');
+    };
+    expect(await scenePaths()).toEqual(['scenes/a.pix3scene']);
+    // A game page loaded right after the sync must list the new scene — the watcher drops the
+    // list too, on its own time; here it is off, so only the barrier can.
+    await p.server.watcher.close();
+    writeFileSync(join(p.root, 'scenes/b.pix3scene'), SCENE);
+    expect((await sync(p)).ok).toBe(true);
+    expect(await scenePaths()).toEqual(['scenes/a.pix3scene', 'scenes/b.pix3scene']);
+  });
+
   it('reports expect mismatches as not ok, with the disk hash', async () => {
     const p = await start({ 'scenes/a.pix3scene': SCENE });
     const result = await sync(p, { expect: { 'scenes/a.pix3scene': sha('agent thought so') } });

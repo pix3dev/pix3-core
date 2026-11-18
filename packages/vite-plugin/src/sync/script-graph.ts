@@ -148,6 +148,13 @@ export class ScriptGraph {
     }
   }
 
+  /** Drop a virtual module's cached `load()` in the client environment (`id` unresolved). */
+  invalidateVirtual(id: string): void {
+    const env = this.graph();
+    const mod = env?.moduleGraph.getModuleById(resolvedId(id));
+    if (env && mod) env.moduleGraph.invalidateModule(mod);
+  }
+
   /** Client-environment nodes of a file (never Vite 8's mixed nodes — S1, finding 5). */
   modulesOf(wirePath: string): EnvironmentModuleNode[] {
     const env = this.graph();

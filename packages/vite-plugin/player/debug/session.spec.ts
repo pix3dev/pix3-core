@@ -344,4 +344,51 @@ describe('mountDebugOverlay', () => {
       unmount();
     }
   });
+
+  it('a page the editor opened: starts collapsed, mutes ?mute, hands the paused game to the agent', async () => {
+    const { ship } = liveScene();
+    const { runner } = fakeRunner();
+    const ctx = context(runner);
+    const mute = vi.fn();
+    (ctx.value as { audio: unknown }).audio = {
+      getActivePlaybackSnapshot: () => [],
+      mute,
+    } as unknown as AudioService;
+    const select = vi.fn();
+    const channel = new BroadcastChannel('pix3-play-pages');
+    channel.onmessage = event => {
+      if ((event.data as { type?: string }).type === 'select') select(event.data);
+    };
+    history.replaceState(null, '', '/?debug&role=designer&mute');
+    localStorage.removeItem('pix3:debug:collapsed');
+    const unmount = mountDebugOverlay(ctx.value);
+    const shadow = document.querySelector('.pix3-debug-overlay')?.shadowRoot as ShadowRoot;
+    const click = (selector: string) => shadow.querySelector<HTMLElement>(selector)?.click();
+    try {
+      expect(mute).toHaveBeenCalled();
+      expect(shadow.querySelector('.panel')?.classList).toContain('collapsed');
+      expect(shadow.querySelector('.role')?.textContent).toBe('from editor');
+      // "Show agent": the game pauses and the message goes to the clipboard.
+      click('header [data-action="show-agent"]');
+      expect(runner.getTimeMode().mode).toBe('manual');
+      await vi.waitFor(() =>
+        expect(shadow.querySelector('.handoff')?.textContent).toContain('clipboard')
+      );
+      const message = await navigator.clipboard.readText();
+      expect(message).toContain('page "designer", loadId load-1');
+      expect(message).toContain('pix3_screenshot {"target":"game","page":"designer"}');
+      // An authored node offers "Show in editor": the editor selects it.
+      click('[data-action="collapse"]');
+      click('[data-tab="scene"]');
+      click(`[data-id="${ship.nodeId}"] .name`);
+      click('[data-action="show-in-editor"]');
+      await vi.waitFor(() =>
+        expect(select).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'ship' }))
+      );
+    } finally {
+      unmount();
+      channel.close();
+      history.replaceState(null, '', '/');
+    }
+  });
 });

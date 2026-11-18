@@ -34,12 +34,12 @@ const entries = (record: Record<string, string>): string =>
     .map(([key, value]) => row(key, escapeHtml(value)))
     .join('');
 
-const renderDetail = (d: LiveObjectDetail): string => {
+const renderDetail = (d: LiveObjectDetail, inEditor: boolean): string => {
   const chips =
     (d.instances !== null ? `<span class="chip">×${d.instances}</span>` : '') +
     (d.visible ? '' : '<span class="chip off">HIDDEN</span>');
   const parts = [
-    `<div class="detail-head"><span class="type">${escapeHtml(d.type)}</span><span class="name">${escapeHtml(d.name)}</span>${chips}<button type="button" data-action="clear" title="Clear the selection and the highlight">Clear</button></div>`,
+    `<div class="detail-head"><span class="type">${escapeHtml(d.type)}</span><span class="name">${escapeHtml(d.name)}</span>${chips}${inEditor && d.nodeId ? '<button type="button" data-action="show-in-editor" title="Select this node in the Pix3 editor">Show in editor</button>' : ''}<button type="button" data-action="clear" title="Clear the selection and the highlight">Clear</button></div>`,
     section(
       'Object',
       row('id', escapeHtml(d.id)) +
@@ -100,7 +100,9 @@ export class SceneTab {
 
   constructor(
     private readonly session: DebugSession,
-    container: HTMLElement
+    container: HTMLElement,
+    /** "Show in editor" on an authored node, on a page the editor opened (plan play-in-page S4). */
+    private readonly showInEditor: ((nodeId: string) => void) | null = null
   ) {
     container.innerHTML = `<div class="scene-bar"><input type="search" placeholder="Filter: type, name, id" spellcheck="false" aria-label="Filter the tree"><button type="button" data-action="refresh" title="Read the live scene again">Refresh</button></div>
 <div class="scene-count muted"></div>
@@ -130,6 +132,11 @@ export class SceneTab {
     const action = target.closest('[data-action]')?.getAttribute('data-action');
     if (action === 'refresh') return this.refresh();
     if (action === 'clear') return this.select(null);
+    if (action === 'show-in-editor') {
+      const nodeId = this.selected === null ? null : this.session.node(this.selected)?.nodeId;
+      if (nodeId) this.showInEditor?.(nodeId);
+      return;
+    }
     const id = target.closest('[data-id]')?.getAttribute('data-id');
     if (!id) return;
     if (action === 'toggle') {
@@ -203,7 +210,7 @@ export class SceneTab {
       this.session.highlight(null);
     }
     this.detail.innerHTML = detail
-      ? renderDetail(detail)
+      ? renderDetail(detail, this.showInEditor !== null)
       : '<div class="muted">Pick an object to see it in detail and box it in the game.</div>';
   }
 }

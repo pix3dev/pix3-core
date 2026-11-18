@@ -1,3 +1,4 @@
+import { SCENE_MANIFEST_ID } from '../build/player-modules.ts';
 import type { FsEvent, ProjectFiles } from '../files/project-files.ts';
 import { parseWirePath } from '../files/paths.ts';
 import type { EditorSocket, RequestReply } from '../server/editor-socket.ts';
@@ -79,6 +80,12 @@ export const parseSyncRequest = (body: Record<string, unknown>): SyncRequest => 
   const tabId = typeof body.tabId === 'string' ? body.tabId : null;
   return { expect, timeoutMs: parseTimeout(body.timeoutMs, DEFAULT_SYNC_TIMEOUT_MS), tabId };
 };
+
+/** `pix3project.yaml`, or a scene that appeared, went or moved: the scene manifest is stale. */
+const changesSceneManifest = (event: FsEvent): boolean =>
+  event.path === 'pix3project.yaml' ||
+  (event.op !== 'modify' &&
+    [event.path, event.from ?? ''].some(path => path.endsWith('.pix3scene')));
 
 export interface BarrierDeps {
   readonly files: ProjectFiles;
@@ -168,6 +175,9 @@ export class SyncBarrier {
       await scripts.reload(event.path);
     }
     if (rootsNeedReload) await scripts.reloadRoots();
+    // A game page loaded right after this sync must not get the old scene list, entry scene or
+    // viewport (plan play-in-page D6); the watcher drops it too, but later.
+    if (changedFiles.some(changesSceneManifest)) scripts.invalidateVirtual(SCENE_MANIFEST_ID);
     const required = this.requiredStamps(changedFiles);
 
     const base = {

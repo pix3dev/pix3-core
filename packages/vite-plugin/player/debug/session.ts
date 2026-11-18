@@ -30,7 +30,7 @@ import { findLiveObject, isUnder, liveTree, type LiveTree } from './tree';
  * `highlight`). The same methods are `__PIX3_PLAYER__.debug`, so an agent reads what a human sees.
  */
 
-interface DebugError {
+export interface DebugError {
   readonly at: number;
   readonly message: string;
   /** `phase · node · component` for a script error, null for a page error. */
@@ -86,6 +86,7 @@ export class DebugSession {
   /** The time mode pause replaced, or null while the overlay has not paused the game. */
   private pausedFrom: ResolvedRuntimeTimeConfig | null = null;
   private readonly disposers: (() => void)[] = [];
+  private readonly errorListeners = new Set<(error: DebugError) => void>();
   private readonly highlighter = new LiveHighlight();
   private highlighted: Object3D | null = null;
 
@@ -243,10 +244,17 @@ export class DebugSession {
     }
   }
 
+  /** Every error the session records from now on (page errors as the overlay's timer collects them). */
+  onError(listener: (error: DebugError) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => this.errorListeners.delete(listener);
+  }
+
   private pushError(error: DebugError): void {
     this.errorCount += 1;
     this.errors.push(error);
     if (this.errors.length > KEEP_ERRORS) this.errors.shift();
+    for (const listener of this.errorListeners) listener(error);
   }
 }
 

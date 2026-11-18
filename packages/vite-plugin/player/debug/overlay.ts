@@ -1,4 +1,5 @@
 import { openEditor } from '../dev/editor-link';
+import type { EditorRpc, PageInfo } from '../dev/editor-rpc';
 import { LONG_FRAME_MS, type FrameRing } from './frame-stats';
 import { escapeHtml, row, section } from './markup';
 import { SceneTab } from './scene-tab';
@@ -10,6 +11,10 @@ import type { DebugSession, DebugSnapshot } from './session';
  * chart repaints at 8 Hz and text at 2 Hz (each text refresh closes an averaging window), from
  * timers rather than the game's frame listener, so a slow page shows a slow overlay instead of a
  * slower game; and **Scene** (`scene-tab.ts`), the live object tree, read on demand.
+ *
+ * A page the editor opened (`rpc`, plan play-in-page S4) starts collapsed, names its role in the
+ * header, and — the human's page — offers "Show agent" (pause + a message for the agent on the
+ * clipboard) and an error banner with "Copy for agent", the same message.
  */
 
 const CHART_MS = 125;
@@ -84,6 +89,12 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 160p
 .detail-head { display: flex; align-items: center; gap: 6px; }
 .detail-head .type { color: #ffcf33; font-weight: 600; }
 .detail-head .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: auto; }
+.role { color: #4ea1ff; white-space: nowrap; }
+.alert { margin-top: 6px; color: #ff6b6b; display: flex; gap: 6px; align-items: baseline; }
+.alert span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.alert[hidden], .handoff[hidden] { display: none; }
+.handoff { margin-top: 6px; }
+.handoff pre { user-select: all; border: 1px solid rgba(255,255,255,0.16); border-radius: 4px; padding: 4px; }
 .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: -1px; border: 1px solid rgba(255,255,255,0.3); }
 `;
 
@@ -100,11 +111,13 @@ const ms = (value: number | null, digits = 1): string =>
 const num = (value: number | null | undefined): string =>
   value === null || value === undefined ? '–' : value.toLocaleString('en-US');
 
-const readCollapsed = (): boolean => {
+/** The stored choice, else `fallback` (collapsed on a page the editor opened, D1). */
+const readCollapsed = (fallback: boolean): boolean => {
   try {
-    return localStorage.getItem(COLLAPSED_KEY) === '1';
+    const stored = localStorage.getItem(COLLAPSED_KEY);
+    return stored === null ? fallback : stored === '1';
   } catch {
-    return false;
+    return fallback;
   }
 };
 
@@ -127,14 +140,18 @@ export class DebugOverlay {
   private readonly stepButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
   private readonly sceneTab: SceneTab;
+  private readonly alert: HTMLElement;
+  private readonly handoff: HTMLElement;
   private tab: 'profiler' | 'scene' = 'profiler';
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticks = 0;
 
   constructor(
     private readonly session: DebugSession,
-    private readonly editorUrl: string | null = null
+    private readonly editorUrl: string | null = null,
+    private readonly rpc: EditorRpc | null = null
   ) {
+    const designer = rpc?.role === 'designer';
     this.host.className = 'pix3-debug-overlay';
     const root = this.host.attachShadow({ mode: 'open' });
     this.root = root;
@@ -142,12 +159,16 @@ export class DebugOverlay {
 <div class="panel" part="panel">
   <header>
     <span class="title">Pix3 debug</span>
+    ${rpc ? `<span class="role" title="Opened by the Pix3 editor">${rpc.role === 'agent' ? "agent's page" : 'from editor'}</span>` : ''}
     <span class="fps">– fps</span>
     <button type="button" data-action="pause" aria-pressed="false" title="Freeze the game (manual time mode)">Pause</button>
     <button type="button" data-action="step" title="Advance one frame while paused" disabled>Step</button>
+    ${designer ? '<button type="button" data-action="show-agent" title="Pause here and copy a message that lets the agent read this page">Show agent</button>' : ''}
     ${editorUrl ? '<button type="button" data-action="editor" title="Open this project in the Pix3 editor">Editor</button>' : ''}
     <button type="button" data-action="collapse" title="Collapse">Hide</button>
   </header>
+  <div class="alert" hidden><span></span><button type="button" data-action="show-agent" title="Pause here and copy a message for the agent">Copy for agent</button></div>
+  <div class="handoff" hidden></div>
   <div class="body">
     <nav class="tabs"><button type="button" data-action="tab" data-tab="profiler" aria-pressed="true">Profiler</button><button type="button" data-action="tab" data-tab="scene" aria-pressed="false">Scene</button></nav>
     <div data-pane="profiler">
@@ -167,7 +188,13 @@ export class DebugOverlay {
     this.pauseButton = pick('[data-action="pause"]');
     this.stepButton = pick('[data-action="step"]');
     this.collapseButton = pick('[data-action="collapse"]');
-    this.sceneTab = new SceneTab(session, pick('[data-pane="scene"]'));
+    this.alert = pick('.alert');
+    this.handoff = pick('.handoff');
+    this.sceneTab = new SceneTab(
+      session,
+      pick('[data-pane="scene"]'),
+      rpc ? nodeId => this.showInEditor(nodeId) : null
+    );
     root.addEventListener('click', this.onClick);
     // Keep the game's own listeners (a tap-to-jump on `window`, a key) out of the panel's input.
     for (const type of [
@@ -181,7 +208,7 @@ export class DebugOverlay {
     ]) {
       this.panel.addEventListener(type, event => event.stopPropagation());
     }
-    this.setCollapsed(readCollapsed());
+    this.setCollapsed(readCollapsed(rpc !== null));
   }
 
   mount(): void {
@@ -229,6 +256,43 @@ export class DebugOverlay {
     this.pauseButton.textContent = snapshot.paused ? 'Resume' : 'Pause';
     this.pauseButton.setAttribute('aria-pressed', String(snapshot.paused));
     this.stepButton.disabled = !snapshot.paused;
+    // The human's page: the newest error, and the way to hand it to the agent.
+    const latest = this.rpc?.role === 'designer' ? snapshot.errors.recent.at(-1) : undefined;
+    this.alert.hidden = !latest;
+    if (latest) {
+      (this.alert.firstElementChild as HTMLElement).textContent =
+        `${snapshot.errors.count} error${snapshot.errors.count === 1 ? '' : 's'}: ${latest.message}`;
+    }
+  }
+
+  /** Pause, and put a message on the clipboard that tells the agent how to read this page. */
+  private showAgent(): void {
+    if (!this.rpc) return;
+    this.session.pause();
+    const text = agentMessage(this.rpc.info(), this.session.snapshot());
+    const shown = (copied: boolean): void => {
+      this.handoff.hidden = false;
+      this.handoff.innerHTML = copied
+        ? '<div class="muted">Paused. The message for the agent is on the clipboard.</div>'
+        : `<div class="muted">Paused. Copy this for the agent:</div><pre>${escapeHtml(text)}</pre>`;
+      if (copied) setTimeout(() => (this.handoff.hidden = true), 4000);
+    };
+    const clipboard = navigator.clipboard as Clipboard | undefined;
+    if (!clipboard) return shown(false);
+    clipboard.writeText(text).then(
+      () => shown(true),
+      () => shown(false)
+    );
+  }
+
+  /** The Scene tab's "Show in editor": the editor selects the node, and its window comes forward. */
+  private showInEditor(nodeId: string): void {
+    this.rpc?.select(nodeId);
+    try {
+      window.opener?.focus();
+    } catch {
+      // A severed opener: the editor still selects the node.
+    }
   }
 
   private readonly onClick = (event: Event): void => {
@@ -245,6 +309,9 @@ export class DebugOverlay {
         break;
       case 'reset':
         this.session.resetStats();
+        break;
+      case 'show-agent':
+        this.showAgent();
         break;
       case 'editor':
         if (this.editorUrl) {
@@ -292,6 +359,30 @@ export class DebugOverlay {
     writeCollapsed(collapsed);
   }
 }
+
+/**
+ * What "Show agent" copies: which page, where the game stopped, the tools that read it without
+ * touching it, and the latest errors.
+ */
+const agentMessage = (page: PageInfo, snapshot: DebugSnapshot): string => {
+  const lines = [
+    `I paused the game in my Pix3 play window to show you something: page "designer", ` +
+      `loadId ${page.loadId}, scene ${page.scene ?? '?'}, frame ${snapshot.frameNumber}.`,
+    'Read it as it is — do not start, restart or tap it (it is my page: not_your_page):',
+    '- pix3_scene {"page":"designer","nodeId":"…"} or {"page":"designer","find":"…"} — live node state',
+    '- pix3_screenshot {"target":"game","page":"designer"}, then take_screenshot of that page',
+    '- pix3_errors',
+    'Reproduce it on your own page (pix3_play start) before you change anything.',
+  ];
+  const errors = snapshot.errors.recent.slice(-5);
+  if (errors.length > 0) {
+    lines.push('Latest errors:');
+    for (const error of errors) {
+      lines.push(`- ${error.message}${error.where ? ` (${error.where})` : ''}`);
+    }
+  }
+  return lines.join('\n');
+};
 
 /** Stacked bars, oldest left: logic, render, then the rest of the frame (`dt` − work). */
 const drawChart = (canvas: HTMLCanvasElement, ring: FrameRing): void => {
