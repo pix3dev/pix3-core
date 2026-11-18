@@ -41,3 +41,18 @@ for (const name of ['localStorage', 'sessionStorage'] as const) {
     });
   }
 }
+
+/**
+ * The specs run in worker threads of one process, and Node's `BroadcastChannel` reaches every
+ * thread: the editor ↔ game page link (`pix3-play-pages`) of one spec file answered the fake pages
+ * of another running beside it. Each spec file gets channels of its own.
+ */
+const NativeBroadcastChannel = globalThis.BroadcastChannel;
+if (NativeBroadcastChannel) {
+  const scope = `spec-${Math.random().toString(36).slice(2)}`;
+  globalThis.BroadcastChannel = class extends NativeBroadcastChannel {
+    constructor(name: string) {
+      super(`${scope}/${name}`);
+    }
+  };
+}
