@@ -592,3 +592,153 @@ answer within 240000 ms`) — на SwiftShader редактор шагает ~5�
 
 Не проверено: фоновые тики на действительно скрытой странице (в headless страница не
 скрывается, S0.2) — только спека; оконный Chrome; `release:check --keep` с новым входом.
+
+### S4 (2026-11-18)
+
+Сделано (всё за настройкой редактора `playHost: 'page'`, по умолчанию `editor`; переключатель —
+Editor Settings → General «Play on the game's page (preview)», хранится в `pix3.editorSettings:v1`):
+
+- **Связь (D8, D6):** `editor-core/src/services/play/PlayPageLink.ts` ↔
+  `vite-plugin/player/dev/editor-rpc.ts`, `BroadcastChannel` `pix3-play-pages`. Кадры: `hello
+  {page: {role, loadId, rev, url, scene, status, frames, paused, pausedBy?}}` — когда игра
+  загрузилась (или упала) и инструменты загружены, и в ответ на `who`; `bye` на `pagehide`; `call
+  {id, role, loadId, tool, params}` → `result {id, loadId, value}`; `log` (ошибка страницы);
+  `select` («Show in editor»). Страница отвечает `page_reloaded` на вызов другой загрузки; редактор
+  — на ожидающие вызовы, когда та же роль сказала `bye` или новый `hello`; нет ответа — `no_game_page`.
+  `discover` = `who` + 300 мс и не забывает молчащую страницу (только `bye`). `start/restart/stop`
+  вкладки — по очереди (`serial`). Связь открывается в `mount` — перезагрузка редактора находит
+  страницы заново. Оверлей ставит RPC странице с `?role=`; на странице — `status`, `navigate`
+  (`location.replace`), `close`, `front`, `pause`/`resume` (снимают и паузу прогона), прочее —
+  `__PIX3_PLAYER__.tools.call`; `pausedBy: pix3_game_run` RPC отмечает сам.
+- **Тест-хост:** инструменты `live_node` (`{nodeId, byName}` → узел, `screen` в CSS px страницы,
+  компоненты) и `live_find`; обход вынесен в `readLiveNode` / `findLiveNodes`
+  (`core/agent-introspection.ts`), им же читает редакторный `pix3_scene`.
+- **Play (D1, D2, D5):** `launchPagePlay` (`PlayCommands.ts`) — окно `pix3-play` на `about:blank`
+  синхронно в клике, размер — viewport проекта в пределах 90 % экрана, flush, затем
+  `?debug&role=designer[&scene=…]`; ошибка flush закрывает окно. Любой режим Play под флагом —
+  страница; второй Play перезагружает то же окно; `game.stop` (F8) закрывает его
+  (`StopGameCommand`). Кнопка подписана «Play (the game's page)». `isPlaying` не трогается (D4).
+- **Мост (§2.2, D7):** `PAGE_BRIDGE_TOOLS` в `bridge-tools.ts` — та же таблица, переписаны
+  `pix3_status`, `pix3_scene`, `pix3_play` (без `aspect`/`force`, с `page`), `pix3_screenshot`,
+  `pix3_errors`, описание `pix3_game_run`; выбирается флагом для валидации, 3p и inline.
+  Исполнение — `host/bridge-play-page.ts`. `pix3_play start|restart`: flush (`flush_failed`) →
+  `navigate` открытой страницы агента или `window.open(…, 'pix3-agent-play')`
+  (`?debug&role=agent&mute&scene=…&run=…`; `null` → `popup_blocked` с `url`) → ждать до 90 с `hello`
+  с новым `loadId` и `rev` ≥ последнего `pix3_sync` → `{page: {role, url, loadId, rev, scene}}`;
+  `restart` повторяет сцену и `run` последнего `start`; `stop` закрывает; `pause`/`resume` — странице;
+  `status` — `{playHost, pages}`. `pix3_game_run`: страница, ушедшая без нашего `close` за последние
+  30 с, считается перезагружающейся (ждём новую); страница старше sync получает 3 с на начало
+  перезагрузки, иначе `page_stale`; `page` вырезается из параметров; ответ несёт `page`.
+  `pix3_scene` (`nodeId`/`find`) читает живую игру на странице `page` (по умолчанию человека, если
+  открыта, иначе агента): `live`, `screen` в CSS px этой страницы, `page {role, loadId}`; явный
+  `page` без страницы — `no_game_page`, отказ страницы отдаётся как ответ инструмента.
+  `pix3_screenshot game` — `front` (ждёт 2 с, только `page_reloaded` останавливает) и `page`.
+  `pix3_errors` — `origin: editor|designer|agent`, `loadId`, фильтр `page`. Управление страницей
+  человека и любое управление из read-only вкладки — `not_your_page`. Страница агента закрывается
+  через 10 мин без вызовов (не во время вызова; часы ставит и `hello` агента). `BRIDGE_REASONS` +=
+  `no_game_page`, `not_your_page`, `popup_blocked`, `flush_failed`, `page_reloaded`, `page_stale`.
+- **Ошибки страницы** → Logs (`[agent page] …`) и `pix3_errors`: `DebugSession.onError` (страничные
+  ошибки собираются в темпе оверлея, ≤ 0,5 с).
+- **Оверлей:** на странице с `role` свёрнут по умолчанию (сохранённый выбор сильнее), в заголовке
+  роль («from editor» / «agent's page»); у человека **Show agent** (пауза + текст для агента:
+  страница, `loadId`, сцена, кадр, инструменты чтения, последние ошибки — в буфер, без буфера текст в
+  панели) и баннер последней ошибки с **Copy for agent** (то же действие); во вкладке Scene у
+  авторского узла **Show in editor** (выделение в активной сцене редактора, `opener.focus()`);
+  `?mute` → `audio.mute()`.
+- **Барьер:** изменённый `pix3project.yaml` или появившаяся/исчезнувшая/переехавшая сцена —
+  `ScriptGraph.invalidateVirtual(SCENE_MANIFEST_ID)` (спека с выключенным watcher-ом; без правки
+  падает).
+- **CLI:** `--disable-popup-blocking` в `CHROME_FLAGS`; `pix3 bridge`: `screenshot` снимает цель
+  страницы из ответа `pix3_screenshot` (`--page designer|agent`), всегда после
+  `Page.bringToFront`; `tap`/`swipe` — в цель страницы агента (`--page designer` → `not_your_page`,
+  exit 2; нет страницы — `no_game_page`), позиция узла — `pix3_scene {nodeId, page:"agent"}`,
+  `__PIX3_PLAYER__.loadId` цели сверяется → `page_reloaded`; `pix3_play start|restart` с
+  `popup_blocked` в своём Chrome → `Target.createTarget` (`proxyCall` экспортирован из
+  `chrome-owner.ts`) и ожидание страницы в `pix3_status` до 90 с → `{ok, page, opened}`.
+- **Документы:** спецификация §6.24 (абзац «Play on the game's page»), `cli/README.md` (`pix3
+  editor`, `pix3 bridge`), `usage.ts`, `vite-plugin/README.md`, роутер `CLAUDE.md`. Кит —
+  `.plans/play-in-page-kit.md`: текст для `pix3-editor/SKILL.md`, `kit-src/AGENTS.md`
+  (`engine-api-map.md` без изменений), переносится в `kit-src` в S5.
+- **Спеки:** `editor-rpc.spec.ts`, `PlayPageLink.spec.ts` (адресация, корреляция, смена `loadId` →
+  `page_reloaded`, таймаут, свежесть, `close` ≠ перезагрузка, ошибки, URL), `bridge-play-page.spec.ts`
+  (гейтинг флагом, `not_your_page`, start/restart/`popup_blocked`, `game_run` по `loadId` и
+  `page_reloaded`, ожидание перезагрузки после sync, `pix3_errors`, read-only, Show in editor),
+  `cli/src/bridge/bridge-pages.spec.ts` (выбор цели снимка и ввода, `page_reloaded`,
+  `no_game_page`, `Target.createTarget`), плюс `session.spec` (оверлей с `role`),
+  `page-test-host.spec`, `PlayCommands.spec`, `UpdateEditorSettingsOperation.spec`, `plugin.spec`
+  (манифест), `editor.spec` (флаг Chrome). Фейк страницы — `host/testing/fake-game-page.ts`.
+
+Отклонения:
+
+- Отдельного кадра `error` нет: ответ всегда `result {value}`, отказ — `value {ok:false, reason}`.
+- В `pix3_errors` поле `origin`, не `source`: `source` уже занято (`console.error | window.onerror |
+  unhandledrejection`).
+- Новая причина `page_stale`: страница агента старше sync и сама не перезагрузилась (сцена,
+  ассет) — прогон проверил бы старые файлы; сам мост её не перезапускает (D5).
+- Read-only вкладка редактора → `not_your_page`, без отдельной причины.
+- D9: `Target.createTarget` — запасной путь `pix3 bridge` после `popup_blocked`; основной — `window.open`
+  из редактора (в своём Chrome с `--disable-popup-blocking`). Такая цель не названа
+  `pix3-agent-play`, но редактор находит её по `hello`, `restart` навигирует её по RPC, `stop`
+  закрывает `window.close()` (цель с одной записью истории закрываема).
+- Страница агента тоже `?debug` (оверлей свёрнут): API паузы живёт в сессии оверлея.
+- Новый поток — вторая таблица `PAGE_BRIDGE_TOOLS` рядом с `BRIDGE_TOOLS`; кит и его drift-спека
+  держатся старой до S5.
+- `pix3 bridge screenshot` делает `Page.bringToFront` и в старом потоке: фоновая цель в headless
+  кадров не даёт.
+- `discover` не забывает страницу, не ответившую за 300 мс: в SwiftShader занятая страница
+  отвечает позже, и `tap` получал ложный `no_game_page`.
+
+Проверено (Skyways, копия S0 — ссылки `@pix3/*` на этот checkout проверены; Vite 8.3.8, `pix3 editor
+--headless --chrome-only`, `PIX3_HOME` во временном каталоге, chrome-headless-shell 155,
+SwiftShader; скриншоты просмотрены):
+
+| Сценарий | Результат |
+|---|---|
+| флаг вкл., `bridge play start` (`run {seed: 8}`) | `window.open` → цель `?debug&role=agent&mute&scene=…&run=…`, ответ за 1,3 с с `page {loadId, rev}` |
+| `pix3_game_run` бот `ship-mark` | BOT PASS, кадр 237, 11 действий — как S3; ответ с `page` |
+| `pix3_scene {nodeId: flagship}`, `{find: ship}` | `live` со страницы агента, `screen` в её CSS px, `page {role: agent}`; `runtimeOnly`-узлы со страницы |
+| `bridge screenshot` | снимок страницы агента (оверлей «agent's page»); `--target viewport` — вкладка редактора |
+| страница человека (`?debug&role=designer` через CDP) | `pix3_scene` по умолчанию читает её (`screen` попал на корабль на её снимке); `page: agent` — агента; `pix3_play {restart\|stop, page: designer}`, `pix3_game_run {page: designer}` → `not_your_page`; `bridge tap --page designer` → `not_your_page`, exit 2; `bridge screenshot --page designer` — её снимок |
+| Show agent | пауза; буфера в headless нет — текст в панели |
+| Show in editor | `flagship` выделен в редакторе |
+| ошибка на странице агента | `pix3_errors {page: agent}` — `origin: agent`, `loadId`; строка в Logs |
+| правка скрипта + `pix3_sync` + сразу `pix3_game_run` | ждёт перезагрузку (8,3 с), прогон на новой загрузке (rev 2) |
+| правка скрипта во время длинного прогона | `page_reloaded` |
+| `pix3_play stop` → `pix3_game_run` | окно закрыто; `no_game_page` |
+| `window.open` подменён на `null` → `bridge play start` | `popup_blocked` → `Target.createTarget`, `{ok, opened, page}` за 3 с |
+| `restart` | та же сцена и `run`, новый `loadId`, окон не прибавилось |
+| `bridge tap --node probe-button` | ввод на странице агента, `probeAim: true` в состоянии игры |
+| Play в редакторе (кнопка) | окно `pix3-play`: `about:blank` → `?debug&role=designer&scene=…`; второй Play — то же окно, новый `loadId`; F8 закрыл |
+| перезагрузка редактора при открытых страницах | обе найдены заново |
+| флаг выкл. | вкладка Game: `start` с `aspect 9:16` (`playOwner: agent`), бот `ship-mark` кадр 237, `pix3_scene` live без `page`, параметр `page` → `invalid_params`, снимок Game tab, `stop` |
+
+Не проверено: блокировщик попапов и жест в оконном Chrome (в headless блокировщика нет; Play в
+проверке нажат `element.click()` без жеста); скрытое/свёрнутое окно агента (headless не
+скрывает); буфер обмена у «Show agent» (в headless отказ → текст в панели; путь с буфером — спека
+на happy-dom); настоящий клик человека; idle-закрытие через 10 мин (только по коду, спеки таймера нет);
+Remote SSH (`popup_blocked` остаётся отказом — спека); `release:check --keep` целиком. Ревью Codex не
+запускалось: его песочница здесь не читает файлы (S0).
+
+Попутно / долги S5:
+
+- SwiftShader: три WebGL-контекста (редактор, человек, агент) — прогон на странице агента даёт long
+  frame 8,5 с (`page-test-host.js`), главный поток редактора стоит до 21 с, `pix3_sync` в это время
+  — `timeout`, `front` странице человека не успевал за 10 с (теперь 2 с без ожидания); бот без
+  страницы человека — 237 кадров за 11 с, с ней 3000-кадровый прогон дошёл до 330 кадров за 74 с.
+  Окно из `window.open` редактора — в одной группе контекстов с ним (один процесс): в S5 проверить
+  `noopener` для страницы агента (тогда `window.open` возвращает `null`, и блокировку видно только
+  по таймауту `hello`) и замер на настоящем GPU.
+- Первая загрузка после удаления `node_modules/.vite`: Vite переоптимизирует зависимости, и в первой
+  загрузке редактора 6–8 ошибок «Failed to inject SceneManager» (смешанные `?v=`); после
+  перезагрузки их нет — не от S4.
+- Снимок вкладки редактора сразу после бот-прогона (флаг выкл.) однажды не уложился в 30 с
+  (SwiftShader; повтор — 0,6 с).
+- Если Vite перезагрузит страницу раньше, чем watcher поднимет `seq`, её `rev` окажется меньше `rev`
+  sync → ложный `page_stale`; не наблюдалось.
+- Кит из `.plans/play-in-page-kit.md` → `kit-src` (S5).
+
+Добавить в список S6: `BRIDGE_TOOLS` в старом виде (остаётся `PAGE_BRIDGE_TOOLS`), ветки `onPage()` и
+`editorLive` в `debug-bridge.ts`, флаг `playHost` и его переключатель в настройках, ветка
+`isPlaying` в `StopGameCommand`, `PlayTarget`/`playPageUrl`/`PLAY_WINDOW_NAMES` и режимы в
+`PlayCommands.ts`, причины `not_owner`/`already_playing`/`not_playing` в `BRIDGE_REASONS`,
+`--aspect` и редакторная ветка `releaseRunPause` в `pix3 bridge`.
