@@ -94,9 +94,10 @@ export const isReady = (page: PageInfo): boolean => page.status !== 'booting';
 /**
  * How long a page `window.open` asked for gets to say its first hello (the page's early link
  * speaks right after the HTML, long before the game has loaded). No hello by then: the browser
- * blocked the window — with `noopener` there is no other sign of it.
+ * blocked the window — with `noopener` there is no other sign of it. Hello normally comes ~0.4 s
+ * after the open; 5 s leaves room for a browser behind an SSH port forward.
  */
-export const OPEN_WAIT_MS = 10_000;
+export const OPEN_WAIT_MS = 5_000;
 
 /** The agent's page closes after this long without a call (never during one, D7). */
 const AGENT_IDLE_MS = 10 * 60_000;

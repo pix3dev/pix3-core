@@ -1514,14 +1514,12 @@ describe('GameTestService.run — the negative control', () => {
     runner: FakeRunner;
     /** How many times the game was put back to the start. */
     resets: number;
-    restarts: number;
   }
 
   const buildHarness = (options: {
     /** Score as a function of the frame, per run index (0 = main run). */
     score: (frame: number, run: number) => number;
     reset?: boolean;
-    restart?: () => Promise<void>;
     controls?: LiveControlEntry[];
     /** Node names the live scene answers to, so a `nodeGone` predicate has something to lose. */
     liveNodes?: string[];
@@ -1531,7 +1529,6 @@ describe('GameTestService.run — the negative control', () => {
       service: null as unknown as GameTestService,
       runner,
       resets: 0,
-      restarts: 0,
     };
     let run = 0;
     let score = 0;
@@ -1568,15 +1565,7 @@ describe('GameTestService.run — the negative control', () => {
     };
     const handle = fakeRuntimeHandle(runtime);
     harness.service = new GameTestService(
-      fakeGameTestHost(() => handle, {
-        restartScene: async () => {
-          harness.restarts += 1;
-          if (options.restart) await options.restart();
-          run += 1;
-          score = 0;
-          runner.frames = 0;
-        },
-      }),
+      fakeGameTestHost(() => handle),
       {
         listControls: () => Promise.resolve({ ok: true, controls: options.controls ?? [] }),
       } as unknown as GameInputService
@@ -1629,13 +1618,11 @@ describe('GameTestService.run — the negative control', () => {
   it('is inconclusive — never "passed" — when the state could not be restored', async () => {
     const harness = buildHarness({
       score: (frame, run) => (run === 0 && frame >= 3 ? 1 : 0),
-      // No reset() on the provider, and the scene restart itself fails.
-      restart: () => Promise.reject(new Error('no project open')),
+      // No reset() on the provider: nothing can put the game back.
     });
 
     const result = await harness.service.run(spec({ control: { tap: { nx: 0.02, ny: 0.02 } } }));
 
-    expect(harness.restarts).toBe(1);
     expect(result.control?.verdict).toBe('inconclusive');
     expect(result.control?.reason).toBe('no-isolation');
     expect(result.control?.isolation.ok).toBe(false);

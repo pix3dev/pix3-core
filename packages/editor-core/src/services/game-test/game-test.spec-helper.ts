@@ -35,7 +35,7 @@ export interface FakePlayState {
 
 /**
  * A {@link GameTestHost} for specs: playing, the editor's error capture, real timers, an in-memory journal, no
- * policies, no scene restart. Override any member.
+ * policies. Override any member.
  */
 export const fakeGameTestHost = (
   runtime: () => GameRuntimeHandle | null,

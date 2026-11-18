@@ -942,7 +942,7 @@ read with `pix3_scene {nodeId, page: "agent"}`, and the input is refused with `p
 the page's `__PIX3_PLAYER__.loadId` is no longer the load the position came from. The game pages
 are opened `noopener` (each in a renderer process of its own, so a run on the agent's page does not
 stall the editor or the human's page), so the editor sees a blocked window only by its silence: a
-`pix3_play start|restart` whose window has not said hello within 10 s is `popup_blocked`, and is
+`pix3_play start|restart` whose window has not said hello within 5 s is `popup_blocked`, and is
 opened as a new target with `Target.createTarget` in the Chrome `pix3 editor` owns — unless a target
 with that URL is there after all, only late (it waits up to 90 s for the page to boot and answers
 `opened: "Target.createTarget"` or `"window.open"`); over a Remote SSH forward the refusal stands,

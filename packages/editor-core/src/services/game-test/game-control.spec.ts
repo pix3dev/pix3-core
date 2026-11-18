@@ -291,9 +291,6 @@ describe('isolateForControl', () => {
         await Promise.resolve();
         settled = true;
       },
-      restartScene: () => {
-        throw new Error('the scene must not be restarted when the game can reset itself');
-      },
     });
     expect(settled).toBe(true);
     expect(report).toMatchObject({ method: 'reset', ok: true, seed: 11 });
@@ -304,12 +301,6 @@ describe('isolateForControl', () => {
     const report = await isolateForControl({ resetGame: () => Promise.reject(new Error('boom')) });
     expect(report).toMatchObject({ method: 'reset', ok: false });
     expect(report.detail).toContain('boom');
-  });
-
-  it('falls back to a scene restart and says the fallback is approximate', async () => {
-    const report = await isolateForControl({ restartScene: () => {} });
-    expect(report).toMatchObject({ method: 'scene-restart', ok: true });
-    expect(report.detail).toContain('module-level state');
   });
 
   it('reports no method at all as a failure, never as a clean start', async () => {
@@ -454,16 +445,6 @@ describe('judgeNegativeControl', () => {
     );
     expect(judgement).toMatchObject({ verdict: 'inconclusive', reason: 'no-isolation' });
     expect(judgement.note).toContain('no reset(seed)');
-  });
-
-  it('accepts a scene restart as isolation, and still names the weaker method', () => {
-    const judgement = judgeNegativeControl(
-      judgementInput({
-        isolation: { method: 'scene-restart', ok: true, detail: 'the scene was restarted' },
-      })
-    );
-    expect(judgement.verdict).toBe('passed');
-    expect(judgement.note).toContain('the scene restarted');
   });
 });
 

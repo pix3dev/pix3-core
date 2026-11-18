@@ -5,7 +5,7 @@ import type { ReachabilityStore } from '@/services/game-test/reachability-journa
 /**
  * The running game as the game-test code sees it (plan play-in-page S3): the runner, where input
  * goes, and the two pause levers a run pulls. No `restart` — a fresh game is a new page load
- * (D5); a host that can restart a scene in place says so through {@link GameTestHost.restartScene}.
+ * (D5); a negative control starts over through the game's own `reset(seed)`.
  *
  * Implemented by the game page over `window.__PIX3_PLAYER__` (`page-test-host.ts`); specs fake it
  * (`game-test.spec-helper.ts`).
@@ -43,9 +43,4 @@ export interface GameTestHost {
   reachabilityStore(): ReachabilityStore;
   /** A stored bot policy, compiled and resolved. */
   loadBot(name: string): Promise<BotLoaded | BotLoadFailure>;
-  /**
-   * Restart the scene in place before a negative control; absent where only a reload can (the
-   * game page today: its control restarts through the game's own `reset(seed)`).
-   */
-  restartScene?(): Promise<void>;
 }

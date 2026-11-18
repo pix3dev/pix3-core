@@ -2,7 +2,11 @@ import {
   getGameDebug,
   getRuntimeSceneRoot,
   type GameDebugProvider,
+  isDirectionAxesEnabled,
+  isPhysicsDebugEnabled,
   registerScriptErrorSink,
+  setDirectionAxesEnabled,
+  setPhysicsDebugEnabled,
   type ResolvedRuntimeTimeConfig,
   type RuntimeRendererStatsSnapshot,
   type SceneRunnerFrameSample,
@@ -103,6 +107,8 @@ export class DebugSession {
   dispose(): void {
     if (this.pausedFrom) this.resume();
     this.highlight(null);
+    setPhysicsDebugEnabled(false);
+    setDirectionAxesEnabled(false);
     for (const dispose of this.disposers.splice(0)) dispose();
   }
 
@@ -149,6 +155,33 @@ export class DebugSession {
     if (this.pausedFrom) this.context.runner.stepFrames(1);
   }
 
+  /**
+   * The runtime's collider wireframes: the built-in 2D solver's (sensors green, sleeping bodies
+   * dim) and, with a 3D camera, whatever the game published through `registerPhysicsDebugSource`.
+   * Not persisted. Returns the state now in force; without an argument, only reads it.
+   */
+  physicsWireframe(on?: boolean): boolean {
+    if (on !== undefined) {
+      setPhysicsDebugEnabled(on);
+      this.repaintIfPaused();
+    }
+    return isPhysicsDebugEnabled();
+  }
+
+  /** Every node's local axes (X red, Y green, Z blue) over the game. Same rules as above. */
+  directionAxes(on?: boolean): boolean {
+    if (on !== undefined) {
+      setDirectionAxesEnabled(on);
+      this.repaintIfPaused();
+    }
+    return isDirectionAxesEnabled();
+  }
+
+  /** A paused game draws no frame on its own: draw one so the switch shows at once. */
+  private repaintIfPaused(): void {
+    if (this.paused) this.context.runner.renderOnce();
+  }
+
   /** The live object tree (`tree.ts`). */
   tree(): LiveTree {
     return liveTree(liveRoot());
@@ -168,7 +201,7 @@ export class DebugSession {
     const root = liveRoot();
     this.highlighted = id === null ? null : findLiveObject(root, id);
     this.followHighlight(root);
-    if (this.paused) this.context.runner.renderOnce();
+    this.repaintIfPaused();
     return this.highlighted !== null;
   }
 

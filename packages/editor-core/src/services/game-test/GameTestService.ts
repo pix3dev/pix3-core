@@ -370,8 +370,7 @@ export interface GameRunResult {
 /**
  * The negative control's own report. Every field exists because the verdict alone
  * cannot be acted on: `isolation.method` says whether the state really came back
- * (a scene restart keeps a script's module state, a game's own `reset` does not),
- * and `frames` is the budget comparison the verdict depends on.
+ * (the game's own `reset`, or nothing), and `frames` is the budget comparison the verdict depends on.
  */
 export interface NegativeControlReport {
   verdict: ControlVerdict;
@@ -720,7 +719,7 @@ export class GameTestService {
       );
     } finally {
       // Unsubscribe before anything else can tick: a policy still attached while the
-      // negative control restarts the scene would play the control run too.
+      // negative control resets the game would play the control run too.
       detachBot?.();
       // One write per run, the same granularity `game_input` uses: a policy can press twenty
       // controls, and each press happens inside the frame loop the run is judged by.
@@ -787,15 +786,12 @@ export class GameTestService {
     const control = spec.control;
     const gesture = `pointer down at nx ${control.tap.nx}, ny ${control.tap.ny} (fractions of the canvas), held ${control.holdFrames} frames`;
     const reset = resolveGameReset();
-    const restartScene = this.host.restartScene?.bind(this.host);
     const isolation = await isolateForControl({
       ...(reset ? { resetGame: reset } : {}),
-      ...(restartScene ? { restartScene } : {}),
       ...(control.seed !== undefined ? { seed: control.seed } : {}),
     });
 
-    // Re-read the runtime: a scene restart replaces it wholesale, so the handle the
-    // main run used is stale by now.
+    // Re-read the runtime: the game may have stopped since the main run.
     const runtime = this.host.runtime();
     let controlBaseline: AssertionBaseline | null = null;
     let controlResult: GameRunResult | null = null;
@@ -1499,8 +1495,8 @@ function release(hold: { release: () => void }): void {
  * Duck-typed on purpose: `reset` is an optional part of the test manifest (§5.5)
  * that a game may carry ahead of the runtime's own type, and the alternative —
  * guessing at a command name like `restart` — is exactly the name-hunting the
- * declared contract exists to end. No `reset` simply means the fallback (a scene
- * restart) is used and *named* in the report.
+ * declared contract exists to end. No `reset` means no isolation, *named* in the report
+ * (the control is then inconclusive).
  */
 function resolveGameReset(): ((seed?: number) => void | Promise<void>) | null {
   const provider = getGameDebug() as

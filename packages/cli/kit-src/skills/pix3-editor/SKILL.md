@@ -128,7 +128,7 @@ The game pages answer with their own reasons:
 | --- | --- | --- |
 | `not_your_page` | you aimed `start`/`restart`/`stop`/`pause`/`resume`/`pix3_game_run`/input at the human's page, or called from a read-only editor tab | read it with `page:"designer"`; drive your own page, from the tab whose `pix3_status` says `writer: "self"` |
 | `no_game_page` | that page is not open (or did not answer) | `pix3_play {action:"start"}` |
-| `popup_blocked` | the window did not open within 10 s (a popup blocker); the answer has `url` | open `url` with `new_page`, then `pix3_play` again (`npx pix3 bridge` does it itself) |
+| `popup_blocked` | the window did not open within 5 s (a popup blocker); the answer has `url` | open `url` with `new_page`, then `pix3_play` again (`npx pix3 bridge` does it itself) |
 | `flush_failed` | the editor could not write its unsaved edits; nothing started | `pix3_status`, `pix3_sync`, then start again |
 | `page_reloaded` | your page reloaded during the call (a script or bot-policy change does that) | run again |
 | `page_stale` | your page is older than the last `pix3_sync` and did not reload by itself (a scene or asset changed) | `pix3_play {action:"restart"}`, then run |

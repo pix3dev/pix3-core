@@ -6,7 +6,15 @@ import { DebugSession } from './session';
 /** `__PIX3_PLAYER__.debug`: the debug session's numbers, live scene and controls, for an agent. */
 export type Pix3PlayerDebug = Pick<
   DebugSession,
-  'snapshot' | 'tree' | 'node' | 'highlight' | 'pause' | 'resume' | 'step'
+  | 'snapshot'
+  | 'tree'
+  | 'node'
+  | 'highlight'
+  | 'pause'
+  | 'resume'
+  | 'step'
+  | 'physicsWireframe'
+  | 'directionAxes'
 >;
 
 /**
@@ -38,6 +46,8 @@ export function mountDebugOverlay(
     pause: () => session.pause(),
     resume: () => session.resume(),
     step: () => session.step(),
+    physicsWireframe: on => session.physicsWireframe(on),
+    directionAxes: on => session.directionAxes(on),
   };
   return () => {
     rpc?.dispose();

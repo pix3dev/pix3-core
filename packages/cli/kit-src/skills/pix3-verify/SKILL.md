@@ -183,7 +183,9 @@ objects your scripts made at run time under them as `Type "name"`, `×N` on an i
 `hidden` when not visible. Use it to check that a spawn happened, that a pool holds what you
 expect, or that a thing you hid is hidden. On the dev page, `/?debug`'s **Scene** tab shows the
 same tree to the human; over CDP it is `__PIX3_PLAYER__.debug.tree()`, and `.node(id)` for one
-object's live values.
+object's live values. The same tab's **Colliders** / **Axes** draw the physics colliders / every
+node's local axes over the game; before a screenshot, `__PIX3_PLAYER__.debug.physicsWireframe(true)`
+/ `.directionAxes(true)` turn them on.
 
 ### Profiling a game — `pix3 play --profile`
 

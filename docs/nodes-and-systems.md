@@ -447,9 +447,10 @@ fights the joint.
 
 Stepped in `SceneRunner`'s existing fixed-step slot, so hitstop and slow motion
 dilate the simulation for free and the `fixed`/`manual` time modes make a run
-reproducible. A running game draws collider wireframes when its host turns the
-runtime's physics debug on (`setPhysicsDebugEnabled`; sensors green, sleeping bodies
-dim); the editor viewport draws the
+reproducible. A running game draws collider wireframes when the runtime's physics
+debug is on (`setPhysicsDebugEnabled`; sensors green, sleeping bodies dim) — on the
+dev page, the debug overlay's Scene tab → **Colliders**, or
+`__PIX3_PLAYER__.debug.physicsWireframe(true)`; the editor viewport draws the
 authored outlines for the selected node, or for everything under **View → Collision
 Shapes** (a check item).
 

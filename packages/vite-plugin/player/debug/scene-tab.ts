@@ -6,8 +6,9 @@ import type { LiveTree, LiveTreeNode } from './tree';
 /**
  * The overlay's Scene tab: the live object tree (`DebugSession.tree()`) with a text filter, the
  * detail of the selected object (`node()`) and its highlight in the game (`highlight()`).
- * Read-only. The tree is read when the tab opens and on Refresh, never on a timer: a scene of
- * hundreds of objects is a walk and a DOM rebuild the game should not pay every frame.
+ * Read-only, but for two draw switches over the game — Colliders and Axes. The tree is read when
+ * the tab opens and on Refresh, never on a timer: a scene of hundreds of objects is a walk and a
+ * DOM rebuild the game should not pay every frame.
  */
 
 const INDENT_PX = 12;
@@ -82,6 +83,9 @@ const renderDetail = (d: LiveObjectDetail, inEditor: boolean): string => {
   return parts.join('');
 };
 
+const drawOf = (input: HTMLInputElement): 'physicsWireframe' | 'directionAxes' =>
+  input.dataset.draw === 'physicsWireframe' ? 'physicsWireframe' : 'directionAxes';
+
 const matches = (node: LiveTreeNode, filter: string): boolean =>
   node.type.toLowerCase().includes(filter) ||
   node.name.toLowerCase().includes(filter) ||
@@ -92,6 +96,8 @@ export class SceneTab {
   private readonly count: HTMLElement;
   private readonly list: HTMLElement;
   private readonly detail: HTMLElement;
+  /** The Colliders / Axes switches (`DebugSession.physicsWireframe` / `directionAxes`). */
+  private readonly draws: readonly HTMLInputElement[];
   private tree: LiveTree | null = null;
   private filter = '';
   private selected: string | null = null;
@@ -105,11 +111,13 @@ export class SceneTab {
     private readonly showInEditor: ((nodeId: string) => void) | null = null
   ) {
     container.innerHTML = `<div class="scene-bar"><input type="search" placeholder="Filter: type, name, id" spellcheck="false" aria-label="Filter the tree"><button type="button" data-action="refresh" title="Read the live scene again">Refresh</button></div>
+<div class="scene-bar draw"><label title="Draw the physics colliders over the game"><input type="checkbox" data-draw="physicsWireframe"> Colliders</label><label title="Draw every node's local axes (X red, Y green, Z blue)"><input type="checkbox" data-draw="directionAxes"> Axes</label></div>
 <div class="scene-count muted"></div>
 <div class="tree" role="tree"></div>
 <div class="detail"></div>`;
     const pick = <T extends Element>(selector: string): T => container.querySelector(selector) as T;
-    this.filterInput = pick('input');
+    this.filterInput = pick('input[type="search"]');
+    this.draws = [...container.querySelectorAll<HTMLInputElement>('[data-draw]')];
     this.count = pick('.scene-count');
     this.list = pick('.tree');
     this.detail = pick('.detail');
@@ -118,10 +126,15 @@ export class SceneTab {
       this.renderTree();
     });
     container.addEventListener('click', this.onClick);
+    for (const input of this.draws) {
+      input.addEventListener('change', () => this.session[drawOf(input)](input.checked));
+    }
   }
 
   /** Read the live tree and the selected object again. */
   refresh(): void {
+    // An agent may have flipped them through `__PIX3_PLAYER__.debug`.
+    for (const input of this.draws) input.checked = this.session[drawOf(input)]();
     this.tree = this.session.tree();
     this.renderTree();
     this.renderDetail();

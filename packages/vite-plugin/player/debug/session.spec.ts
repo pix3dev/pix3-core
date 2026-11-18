@@ -1,5 +1,7 @@
 import {
   getScriptErrorSink,
+  isDirectionAxesEnabled,
+  isPhysicsDebugEnabled,
   Node3D,
   registerRuntimeSceneRoot,
   registerGameDebug,
@@ -343,6 +345,41 @@ describe('mountDebugOverlay', () => {
     } finally {
       unmount();
     }
+  });
+
+  it('Scene tab: Colliders / Axes switch the runtime flags, and __PIX3_PLAYER__.debug does too', () => {
+    const { runner } = fakeRunner();
+    const ctx = context(runner);
+    const unmount = mountDebugOverlay(ctx.value);
+    const shadow = document.querySelector('.pix3-debug-overlay')?.shadowRoot as ShadowRoot;
+    const box = (which: string) =>
+      shadow.querySelector(`[data-draw="${which}"]`) as HTMLInputElement;
+    const flip = (input: HTMLInputElement) => {
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    try {
+      flip(box('physicsWireframe'));
+      expect(isPhysicsDebugEnabled()).toBe(true);
+      expect(isDirectionAxesEnabled()).toBe(false);
+      flip(box('directionAxes'));
+      expect(isDirectionAxesEnabled()).toBe(true);
+
+      // An agent turns one off; the switch shows it when the tab is read again.
+      ctx.state.debug?.pause();
+      runner.renderOnce.mockClear();
+      expect(ctx.state.debug?.physicsWireframe(false)).toBe(false);
+      // Paused, the game is repainted once so the change shows.
+      expect(runner.renderOnce).toHaveBeenCalledTimes(1);
+      shadow.querySelector<HTMLElement>('[data-tab="scene"]')?.click();
+      expect(box('physicsWireframe').checked).toBe(false);
+      expect(box('directionAxes').checked).toBe(true);
+      expect(ctx.state.debug?.directionAxes()).toBe(true);
+    } finally {
+      unmount();
+    }
+    // Not remembered: the page's teardown switches both off.
+    expect(isDirectionAxesEnabled()).toBe(false);
   });
 
   it('a page the editor opened: starts collapsed, mutes ?mute, hands the paused game to the agent', async () => {

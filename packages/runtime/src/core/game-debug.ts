@@ -49,12 +49,12 @@ export interface GameDebugProvider {
    * Put the game back to what *it* considers the start, optionally seeding its
    * randomness so two runs are comparable.
    *
-   * The engine can restart the scene, and that restores the scene *graph* — but
-   * everything a script kept outside it survives untouched: module-level state, a
-   * cached level index, an accumulated score, a lazily built pool. So a
-   * scene-restart is only an approximation of "the start", and tooling that uses
-   * it has to label it as such. This hook is the exact version, because only the
-   * game knows what its own beginning means.
+   * The game page restarts no scene in place: restarting the scene would restore
+   * only the scene *graph*, while everything a script kept outside it — module-level
+   * state, a cached level index, an accumulated score, a lazily built pool — would
+   * survive. This hook is the in-page way back to the start (a negative control
+   * without it is inconclusive), because only the game knows what its own
+   * beginning means.
    *
    * Two obligations, both load-bearing:
    *
@@ -136,43 +136,6 @@ export function getRuntimeSceneRoot(): object | null {
 }
 
 /**
- * Applies an inspector/debug property edit to the *running clone* by node id.
- * Returns `true` when the property was found and applied on a live node.
- *
- * `SceneRunner` runs the game on an isolated clone (see {@link getRuntimeSceneRoot}),
- * so property edits made through the editor's mutation gateway only touch the
- * authored graph. To make edits hot-reload into the running scene without a
- * restart, `SceneRunner` registers a sink here on scene start (and clears it on
- * stop). No editor pushes through it since the game left the editor's page (plan
- * play-in-page S6; live editing is a separate task). Stored on `globalThis` so it bridges runtime
- * module copies, matching the other globals in this module.
- */
-export type RuntimeLivePropertySink = (
-  nodeId: string,
-  propertyPath: string,
-  value: unknown
-) => boolean;
-
-export const RUNTIME_PROPERTY_SINK_GLOBAL_KEY = '__PIX3_RUNTIME_PROPERTY_SINK__';
-
-type RuntimePropertySinkGlobal = Record<string, RuntimeLivePropertySink | null | undefined>;
-
-/**
- * Register (or clear, with `null`) the live property sink. Called by
- * `SceneRunner` on scene start/stop.
- */
-export function registerRuntimeLivePropertySink(sink: RuntimeLivePropertySink | null): void {
-  const store = globalThis as unknown as RuntimePropertySinkGlobal;
-  store[RUNTIME_PROPERTY_SINK_GLOBAL_KEY] = sink ?? undefined;
-}
-
-/** The registered live property sink, if a scene is running, else null. */
-export function getRuntimeLivePropertySink(): RuntimeLivePropertySink | null {
-  const store = globalThis as unknown as RuntimePropertySinkGlobal;
-  return store[RUNTIME_PROPERTY_SINK_GLOBAL_KEY] ?? null;
-}
-
-/**
  * Collider/line-segment buffers for visualising physics colliders. Mirrors the
  * shape returned by Rapier's `World.debugRender()`: a flat list of line-segment
  * endpoints (`vertices`, 3 floats per point, 2 points per segment) and optional
@@ -218,9 +181,9 @@ export function getPhysicsDebugSource(): PhysicsDebugSource | null {
 }
 
 /**
- * Well-known global key for the **collider-debug visibility flag**. The editor's
- * collider toggle writes it; the runtime's `SceneRunner` reads it every frame to
- * decide whether to draw the physics wireframe overlay (pulling geometry from
+ * Well-known global key for the **collider-debug visibility flag**. The game page's
+ * debug overlay writes it (Scene tab → Colliders, `__PIX3_PLAYER__.debug.physicsWireframe`);
+ * the runtime's `SceneRunner` reads it every frame to decide whether to draw the physics wireframe overlay (pulling geometry from
  * the registered {@link PhysicsDebugSource}). Stored on `globalThis` so it
  * bridges module copies — the editor, in-editor user scripts, and the running
  * game may each resolve a separate copy of this module.
@@ -242,9 +205,9 @@ export function isPhysicsDebugEnabled(): boolean {
 }
 
 /**
- * Well-known global key for the **direction-axes debug flag**. The editor's
- * axes toggle writes it; the runtime's `SceneRunner` reads it every frame to
- * decide whether to draw per-node local-axis gizmos over the running scene
+ * Well-known global key for the **direction-axes debug flag**. The game page's
+ * debug overlay writes it (Scene tab → Axes, `__PIX3_PLAYER__.debug.directionAxes`); the
+ * runtime's `SceneRunner` reads it every frame to decide whether to draw per-node local-axis gizmos over the running scene
  * (X = red, Y = green, Z = blue). It reveals object orientation — e.g. which
  * way a moving sprite is actually facing — which a flat screenshot can't show.
  * Stored on `globalThis` so it bridges module copies, matching the physics flag.

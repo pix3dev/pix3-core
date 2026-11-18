@@ -128,23 +128,19 @@ export function parseNegativeControlSpec(
 // ---------------------------------------------------------------------------
 
 /**
- * How the harness can put the game back to the start.
- *
- * `resetGame` is the game's own `GameDebugProvider.reset(seed)` (§5.5) — the good
- * path, because the game knows what "the start" means for it. `restartScene` is
- * the engine-level fallback: it restores the scene graph, but anything a script
- * kept in module state survives it, which is why the report names the method that
- * was used instead of pretending the two are equivalent.
+ * How the harness can put the game back to the start: the game's own
+ * `GameDebugProvider.reset(seed)` (§5.5), because only the game knows what "the start"
+ * means for it. The page restarts no scene in place (owner's decision after play-in-page
+ * S6); a game without `reset` gets an inconclusive control.
  */
 export interface ControlIsolationDeps {
   resetGame?: (seed?: number) => void | Promise<void>;
-  restartScene?: () => void | Promise<void>;
   /** Seed handed to `reset`, so the control run replays the same randomness. */
   seed?: number;
 }
 
 export interface ControlIsolationReport {
-  method: 'reset' | 'scene-restart' | 'none';
+  method: 'reset' | 'none';
   /** False when the chosen method threw, or when there was no method at all. */
   ok: boolean;
   seed?: number;
@@ -184,28 +180,11 @@ export async function isolateForControl(
       };
     }
   }
-  if (deps.restartScene) {
-    try {
-      await deps.restartScene();
-      return {
-        method: 'scene-restart',
-        ok: true,
-        detail:
-          'the scene was restarted before the control gesture (module-level state kept by scripts survives this — a GameDebugProvider.reset(seed) would be exact)',
-      };
-    } catch (error) {
-      return {
-        method: 'scene-restart',
-        ok: false,
-        detail: `restarting the scene threw (${describeError(error)}), so the starting state could not be restored`,
-      };
-    }
-  }
   return {
     method: 'none',
     ok: false,
     detail:
-      'the game exposes no reset(seed) and the scene could not be restarted, so the control gesture could only run on whatever state the main run left behind',
+      'the game exposes no reset(seed), so the control gesture could only run on whatever state the main run left behind',
   };
 }
 
@@ -506,10 +485,6 @@ export function assessControlStrength(input: ControlStrengthInput): ControlStren
 }
 
 const describeMethod = (isolation: ControlIsolationReport): string =>
-  isolation.method === 'reset'
-    ? 'the game reset itself'
-    : isolation.method === 'scene-restart'
-      ? 'the scene restarted'
-      : 'no isolation';
+  isolation.method === 'reset' ? 'the game reset itself' : 'no isolation';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;

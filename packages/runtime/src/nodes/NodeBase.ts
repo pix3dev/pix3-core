@@ -80,16 +80,16 @@ export class NodeBase extends Object3D {
 
   /**
    * Editor Peek mask: "the author does not want to look at this right now". Set by the editor's
-   * `PeekService` on branch ROOTS only (three.js already skips a hidden subtree at render time) and
-   * pushed into a play session via {@link import('../core/SceneRunner').SceneRunner.setEditorPeekMask}.
+   * `PeekService` on branch ROOTS only (three.js already skips a hidden subtree at render time); the
+   * game's page never sees it.
    *
    * **Never serialized.** It is per-user session state, not scene content: `SceneSaver` reads
    * `properties.visible` / {@link authoredVisible}, both of which this flag leaves untouched, so a
    * masked scene saves byte-for-byte identically to an unmasked one. It also does not survive
-   * serialize→parse, which is why a play clone has to be told the mask from outside.
+   * serialize→parse.
    *
-   * This is the ONLY Peek flag the runtime carries, and it is here for two reasons the editor
-   * cannot supply: the `visible` accessor below reads it, and a play clone has to honour it. Peek's
+   * This is the ONLY Peek flag the runtime carries, because the `visible` accessor below reads it
+   * (and `model-sheet.ts` isolates through it). Peek's
    * other channel — the "solo" fade — is editor-viewport-only and lives editor-side in
    * `src/services/viewport/peek-gating.ts`.
    */
@@ -994,8 +994,7 @@ export class NodeBase extends Object3D {
  * - **`Object3D.copy()` copies the EFFECTIVE value** (`this.visible = source.visible`), so cloning
  *   a masked node would bake the mask into the clone's authored flag. Nothing in the runtime does
  *   that today — `SceneRunner.startScene` clones by serialize→parse, which reads
- *   `properties.visible` — and the play-mode mask is therefore handed to the clone from outside
- *   (`SceneRunner.setEditorPeekMask`). New code that reaches for `clone()`/`copy()` on a live node
+ *   `properties.visible`. New code that reaches for `clone()`/`copy()` on a live node
  *   has to clear `hiddenByEditor` on the result.
  */
 Object.defineProperty(NodeBase.prototype, 'visible', {

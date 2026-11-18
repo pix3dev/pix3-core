@@ -43,7 +43,7 @@ as it always has.
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `node.visible`         | Effective: authored AND not Peek-masked. What the renderer, picking and `isVisibleInTree()` use.                    |
 | `node.authoredVisible` | The author's own flag — the value that belongs in a scene file, a state snapshot, or a report of what was authored. |
-| `node.hiddenByEditor`  | The Peek mask. Editor-owned; a play clone is told it via `SceneRunner.setEditorPeekMask(ids)`.                      |
+| `node.hiddenByEditor`  | The Peek mask. Editor-owned, viewport only: the game's page never sees it.                                          |
 
 Reach for `authoredVisible` wherever the AUTHORED value is meant; `Object3D.clone()`/`copy()` copy
 the effective value, so a clone of a masked node needs `hiddenByEditor` cleared.

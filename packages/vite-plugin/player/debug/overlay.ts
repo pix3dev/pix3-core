@@ -77,8 +77,10 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; max-height: 160p
 .tabs { display: flex; gap: 4px; margin-top: 6px; border-bottom: 1px solid rgba(255,255,255,0.12); }
 .tabs button { border-radius: 4px 4px 0 0; border-bottom: none; }
 .scene-bar { display: flex; gap: 6px; margin-top: 6px; }
-.scene-bar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: rgba(0,0,0,0.35);
+.scene-bar input[type="search"] { flex: 1; min-width: 0; font: inherit; color: inherit; background: rgba(0,0,0,0.35);
   border: 1px solid rgba(255,255,255,0.16); border-radius: 4px; padding: 1px 6px; }
+.scene-bar.draw { gap: 12px; }
+.scene-bar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .scene-count { margin: 4px 0 2px; }
 .tree { max-height: 40vh; overflow: auto; scrollbar-width: thin; border: 1px solid rgba(255,255,255,0.08);
   border-radius: 4px; padding: 2px 0; }

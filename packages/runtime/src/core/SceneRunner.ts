@@ -47,7 +47,6 @@ import type { ScriptRegistry } from './ScriptRegistry';
 import type { SceneRaycastHit } from './raycast';
 import {
   registerRuntimeSceneRoot,
-  registerRuntimeLivePropertySink,
   isPhysicsDebugEnabled,
   isDirectionAxesEnabled,
   reportScriptError,
@@ -56,7 +55,6 @@ import {
 import { PhysicsDebugOverlay } from './physics-debug-overlay';
 import { DirectionAxesOverlay } from './direction-axes-overlay';
 import { worldToCanvasLogical, worldToCanvasThroughCamera } from './world-to-canvas';
-import { getNodePropertySchema } from '../fw/property-schema-utils';
 import { GameTime } from './GameTime';
 import {
   DEFAULT_RUNTIME_TIME_CONFIG,
@@ -609,18 +607,8 @@ export class SceneRunner {
     // graph — the only place spawned objects (droppables, clusters) live.
     registerRuntimeSceneRoot(this.scene);
 
-    // Let inspector/debug property edits hot-reload into this running clone
-    // (P0.5). The sink is cleared in stop() so edits fall back to no-op in
-    // edit mode.
-    registerRuntimeLivePropertySink((nodeId, propertyPath, value) =>
-      this.applyLivePropertyUpdate(nodeId, propertyPath, value)
-    );
-
     this.runtimeGraph.rootNodes = this.stripEditorOnly(this.runtimeGraph.rootNodes);
     this.applyInitialVisibility(this.runtimeGraph.rootNodes);
-    // After initial visibility, never before: `initiallyVisible` is authored game state and must be
-    // free to say `true` for a node the author is merely not looking at.
-    this.applyEditorPeekMask(this.runtimeGraph.rootNodes);
 
     // Attach InputService to renderer
     this.inputService.attach(this.renderer.domElement);
@@ -800,7 +788,6 @@ export class SceneRunner {
     // instance BEFORE the graph is torn down — runs on every stop (incl. abnormal).
     this.teardownLocalization();
     registerRuntimeSceneRoot(null);
-    registerRuntimeLivePropertySink(null);
     if (this.physicsDebugOverlay) {
       this.physicsDebugOverlay.dispose();
       this.physicsDebugOverlay = null;
@@ -1740,8 +1727,8 @@ export class SceneRunner {
 
       // Pass 1.5: Physics collider debug overlay (world-space wireframes drawn on
       // top of the 3D pass). Pull-based: the running game publishes its collider
-      // geometry via registerPhysicsDebugSource; this only renders when the editor
-      // has toggled it on. Drawn before the 2D overlay so UI stays on top.
+      // geometry via registerPhysicsDebugSource; this only renders when the debug
+      // overlay has toggled it on. Drawn before the 2D overlay so UI stays on top.
       if (this.activeCamera && isPhysicsDebugEnabled()) {
         if (!this.physicsDebugOverlay) {
           this.physicsDebugOverlay = new PhysicsDebugOverlay();
@@ -1774,7 +1761,7 @@ export class SceneRunner {
 
   /**
    * Draw per-node local-axis gizmos for one layer (debug-only). Gated on the
-   * global axes flag the editor's toggle writes; lazily builds the overlay on
+   * global axes flag the debug overlay writes; lazily builds the overlay on
    * first use so scenes that never enable it pay nothing. `camera` must be the
    * one the matching content pass used so world-space endpoints line up.
    */
@@ -1934,81 +1921,6 @@ export class SceneRunner {
       if (found) return found;
     }
     return null;
-  }
-
-  /**
-   * Hot-reload a single property edit onto the *running clone* (P0.5). The clone
-   * is an isolated serialize→parse copy of the authored graph, so `nodeId`s match
-   * one-to-one; we apply the edit through the same property-schema `setValue`
-   * mechanism the loader uses, then mirror the 2D authored-rect capture / anchored
-   * reflow that the editor's `UpdateObjectPropertyOperation` performs, so anchored
-   * layout does not revert the change on the next frame. Returns `true` when the
-   * property was found and applied. The next render (every frame) shows the change.
-   */
-  applyLivePropertyUpdate(nodeId: string, propertyPath: string, value: unknown): boolean {
-    if (!this.isRunning || !this.runtimeGraph) {
-      return false;
-    }
-
-    const node = this.findNodeById(nodeId);
-    if (!node) {
-      return false;
-    }
-
-    const schema = getNodePropertySchema(node);
-    const propDef = schema.properties.find(p => p.name === propertyPath);
-    if (!propDef) {
-      // Defensive fallback for runtime/editor schema drift, mirroring the
-      // authored operation's opacity special-case.
-      if (propertyPath === 'opacity' && node instanceof Node2D) {
-        const next = Number(value);
-        if (!Number.isFinite(next)) {
-          return false;
-        }
-        node.opacity = Math.max(0, Math.min(1, next));
-        return true;
-      }
-      return false;
-    }
-
-    propDef.setValue(node, value);
-    this.afterLivePropertyApplied(node, propertyPath);
-    return true;
-  }
-
-  /**
-   * Mirrors {@link UpdateObjectPropertyOperation}'s `afterNodePropertyApplied`
-   * for the running clone: re-capture the authored layout rect for
-   * position/size edits and reflow anchored children of resized containers so
-   * the per-frame anchored layout keeps the edited value instead of reverting.
-   */
-  private afterLivePropertyApplied(node: NodeBase, propertyPath: string): void {
-    if (!(node instanceof Node2D)) {
-      return;
-    }
-
-    if (['position', 'width', 'height', 'size', 'radius'].includes(propertyPath)) {
-      node.captureAuthoredLayoutRectFromCurrent(true);
-    }
-
-    if (
-      ['width', 'height', 'size', 'radius', 'resolutionPreset'].includes(propertyPath) &&
-      node.isContainer
-    ) {
-      node.reflowAnchoredChildren();
-      this.captureAnchoredDescendantRects(node);
-    }
-  }
-
-  private captureAnchoredDescendantRects(parent: NodeBase): void {
-    for (const child of parent.children) {
-      if (child instanceof Node2D) {
-        child.captureAuthoredLayoutRectFromCurrent();
-      }
-      if (child instanceof NodeBase) {
-        this.captureAnchoredDescendantRects(child);
-      }
-    }
   }
 
   private bindSceneServiceDelegate(): void {
@@ -2344,51 +2256,6 @@ export class SceneRunner {
   private isEditorOnly(node: NodeBase): boolean {
     const properties = node.properties as Record<string, unknown> | undefined;
     return this.toBooleanLike(properties?.editorOnly) === true;
-  }
-
-  /**
-   * Node ids the editor's Peek mask hides, or null when nothing is masked.
-   *
-   * Handed in from outside because the mask lives nowhere a scene can carry it: `hiddenByEditor` is
-   * not serialized, and a play graph is a serialize→parse clone of the authored one, so the flags
-   * on the authored nodes cannot reach it. Kept on the runner (not applied once and forgotten) so
-   * every restart re-applies it — in Flow the stage restarts after each agent turn, and a mask that
-   * silently evaporated there would read as the agent un-hiding things.
-   */
-  private editorPeekMask: ReadonlySet<string> | null = null;
-
-  /**
-   * Tell this runner which nodes the author has Peek-hidden in the editor.
-   *
-   * Editor-only: exported games never call it (the mask does not live in any file), and it does not
-   * touch `visible` / `properties.visible`, so it cannot be mistaken for authored state.
-   * Applied immediately when a scene is already running, and on every subsequent start/restart.
-   */
-  setEditorPeekMask(nodeIds: Iterable<string> | null): void {
-    const ids = nodeIds ? new Set(nodeIds) : null;
-    this.editorPeekMask = ids && ids.size > 0 ? ids : null;
-    if (this.runtimeGraph) {
-      this.applyEditorPeekMask(this.runtimeGraph.rootNodes);
-    }
-  }
-
-  /**
-   * Stamp {@link editorPeekMask} onto a freshly built runtime graph.
-   *
-   * Every node is visited and assigned (rather than only the masked ones being set) so a mask that
-   * shrank clears the flags a previous mask left on a re-used graph.
-   */
-  private applyEditorPeekMask(nodes: readonly NodeBase[]): void {
-    const mask = this.editorPeekMask;
-    for (const node of nodes) {
-      node.hiddenByEditor = mask !== null && mask.has(node.nodeId);
-      const childNodes = node.children.filter(
-        (child): child is NodeBase => child instanceof NodeBase
-      );
-      if (childNodes.length > 0) {
-        this.applyEditorPeekMask(childNodes);
-      }
-    }
   }
 
   private applyInitialVisibility(nodes: NodeBase[]): void {
