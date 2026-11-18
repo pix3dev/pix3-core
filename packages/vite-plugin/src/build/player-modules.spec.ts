@@ -76,7 +76,7 @@ describe('devSource', () => {
   it('loads the test host and the bot policies only when asked, and never in a build', async () => {
     const options = { overlayPath: '/o', editorLinkPath: '/l', editorUrl: null };
     const dev = devSource('dev', { ...options, testHostPath: '/h/page-test-host.js' });
-    expect(dev).toContain('import(testHostPath)');
+    expect(dev).toContain('import(/* @vite-ignore */ testHostPath)');
     expect(dev).toContain("import('virtual:pix3/bot-policies')");
     expect(dev).toContain('const testHostPath = "/h/page-test-host.js"');
     expect(devSource('none')).not.toContain('bot-policies');

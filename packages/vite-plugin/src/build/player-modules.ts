@@ -378,7 +378,7 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `  if (!testHostPath) {`,
     `    return Promise.reject(new Error('The page has no test tools: @pix3/editor-core is not installed (or not built).'));`,
     `  }`,
-    `  toolsLoading ??= Promise.all([import(testHostPath), import('virtual:pix3/bot-policies')]).then(`,
+    `  toolsLoading ??= Promise.all([import(/* @vite-ignore */ testHostPath), import('virtual:pix3/bot-policies')]).then(`,
     `    ([host, policies]) => { host.installPageTools({ botPolicies: () => policies.modules }); return true; }`,
     `  );`,
     `  return toolsLoading;`,
