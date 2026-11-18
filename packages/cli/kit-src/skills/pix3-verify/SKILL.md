@@ -136,7 +136,7 @@ snapshot (`registerGameDebug`) and, with `--bot`, the verdict of `design/tests/b
 played there with real DOM pointer and key events (the same bot API as `pix3_game_run`,
 `physical-input` only; a bot's taps and swipes are `pointerType: 'mouse'` pointer events — the
 engine's input reads them like a finger, but code that branches on touch needs
-`npx pix3 bridge tap --touch` in the editor). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
+`npx pix3 bridge tap --touch` on your game page). After `npm run build`, `npx pix3 play dist --bot <name>` is the check that
 the BUILD plays — a missing asset, a classic-script error or a wrong viewport shows up here and
 nowhere else. Look at the screenshot. Exit 1 on an error, a failed bot, a page that never
 booted or one whose loop ran no frame. While a bot plays the game ticks a fixed 1/60 s per frame (the same game time on any
@@ -171,10 +171,11 @@ predicates, `watch`, `monkey`, `bot` on `physical-input` or `direct-action`, `co
 `maxFrames`, `maxWallMs`) and the same report, run by the game's own page on dev or `dist` —
 `npx pix3 play dist --config '<json>' --run '{"bot":{"name":"round"},"until":[{"kind":"gameState","path":"won","op":"eq","value":true}]}'`.
 Exit 0 only when an `until` is met or the policy's `done(true)` ends it. Read `verdict` first, as
-with the bridge. The page has no scene restart: a negative `control` there needs the game's
-`reset(seed)` (`registerGameDebug`), or it comes back `inconclusive` with `isolation: none`.
-`--bot` stays the realtime run with real pictures for `bot.screenshot`; under `--run` a
-`bot.screenshot` is a marker in the log, as in the editor. One run at a time per page.
+with the bridge. The page has no scene restart (neither has your game page under `pix3_game_run`):
+a negative `control` there needs the game's `reset(seed)` (`registerGameDebug`), or it comes back
+`inconclusive` with `isolation: none`. `--bot` stays the realtime run with real pictures for
+`bot.screenshot`; under `--run` a `bot.screenshot` is a marker in the log, as under
+`pix3_game_run`. One run at a time per page.
 
 `--tree` adds the running game's object tree at the end of the run (dev and `dist`): `pix3 tree`
 outlines the scene **file**; this is what the game built from it — nodes as `Type#id`, and the
@@ -239,12 +240,12 @@ there is no merge-log for you to read.
 Your protection is the other direction: `pix3_sync` before you read and with `expect` after you
 write (`pix3-editor` → "The loop").
 
-## 3. Run the game in the editor
+## 3. Run the game with the editor open
 
 `.claude/skills/pix3-editor/SKILL.md` is the whole procedure: `pix3 check --json` for the hashes,
-`pix3_sync` with `expect`, `pix3_play` restart, `pix3_game_run` with predicates, `pix3_errors`,
-a screenshot; taps with chrome-devtools-mcp's `click_at` at the `screen` point `pix3_scene`
-gives.
+`pix3_sync` with `expect`, `pix3_play` restart (your own game page), `pix3_game_run` with
+predicates, `pix3_errors`, a screenshot of that page; taps with chrome-devtools-mcp's `click_at`
+on that page at the `screen` point `pix3_scene {nodeId, page:"agent"}` gives.
 
 ## 4. Report honestly
 
@@ -282,8 +283,9 @@ and what you tried.
 
 ## Known gaps
 
-- `pix3_sync` confirms the open scenes and the executed scripts; a prefab or asset the game
-  loads lazily during play is only read when play (re)starts.
+- `pix3_sync` confirms the editor's open scenes and executed scripts; your game page reads the
+  files when it loads — a scene or asset change needs `pix3_play {action:"restart"}` (a run on the
+  older load answers `page_stale`).
 - `.pix3/kit-manifest.json` (how `pix3 kit --update` knows which files are still the kit's) is
   committed (the starter's `.gitignore` re-includes it); in a project whose `.gitignore` drops
   all of `.pix3/`, a fresh clone counts every kit file as edited and skips it.

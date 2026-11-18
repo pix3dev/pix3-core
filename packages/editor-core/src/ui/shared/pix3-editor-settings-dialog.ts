@@ -338,15 +338,15 @@ export class EditorSettingsDialog extends ComponentBase {
         <div class="field-head">
           <label class="toggle-row">
             <input type="checkbox" .checked=${this.playOnPage} @change=${this.onPlayHostToggle} />
-            <span>Play on the game's page (preview)</span>
+            <span>Play on the game's page</span>
           </label>
           ${this.renderInfo('play-host')}
         </div>
         ${this.renderNote(
           'play-host',
-          "Play opens the game's own page (/?debug) in a window instead of the Game tab, and the " +
-            "agent's pix3_play / pix3_game_run run on a page of its own. Each Play is a fresh load " +
-            'of the files on disk. Becomes the default in a later release.'
+          "Play opens the game's own page (/?debug) in a window, and the agent's pix3_play / " +
+            'pix3_game_run run on a page of its own. Each Play is a fresh load of the files on ' +
+            'disk. Off: the Game tab, until it is removed in the next release.'
         )}
       </div>
 

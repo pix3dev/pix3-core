@@ -62,8 +62,8 @@ import { validateProject } from './validate/validate.ts';
 import { CLI_VERSION } from './version.ts';
 import {
   BRIDGE_REASONS,
-  BRIDGE_TOOLS,
   BRIDGE_TOOL_NAMES,
+  PAGE_BRIDGE_TOOLS,
 } from '../../editor-core/src/host/bridge-tools.ts';
 
 /**
@@ -353,7 +353,8 @@ describe('kit drift', () => {
     expect(rows.map(cells => cells[0].replace(/`/g, ''))).toEqual([...BRIDGE_TOOL_NAMES]);
     const problems: string[] = [];
     for (const [name, params] of rows) {
-      const tool = BRIDGE_TOOLS.find(t => `\`${t.name}\`` === name);
+      // The table the editor serves by default: the game on its own page (plan play-in-page S5).
+      const tool = PAGE_BRIDGE_TOOLS.find(t => `\`${t.name}\`` === name);
       if (!tool) continue;
       const schema = tool.inputSchema.properties ?? {};
       // Backticked words of the params cell that look like a parameter (`name` or `name?`); the

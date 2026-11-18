@@ -310,7 +310,10 @@ export interface UIState {
   isGamePopoutOpen: boolean;
   /** Where the toolbar's Play runs the game (the last mode picked; persisted per browser). */
   playTarget: PlayTarget;
-  /** The editor's runner or the game's page (an editor setting, persisted per browser). */
+  /**
+   * The game's page (the default) or the editor's runner (an editor setting, persisted per
+   * browser; the editor's runner goes in plan play-in-page S6).
+   */
   playHost: PlayHost;
   playModeStatus: 'stopped' | 'playing' | 'paused';
   /** Most recent runtime/script failure while playing, or null when clean. */
@@ -415,7 +418,7 @@ export const createInitialAppState = (): AppState => ({
     isPlaying: false,
     isGamePopoutOpen: false,
     playTarget: 'tab',
-    playHost: 'editor',
+    playHost: 'page',
     playModeStatus: 'stopped',
     playModeError: null,
     playOwner: null,

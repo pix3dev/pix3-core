@@ -215,7 +215,7 @@ so), keep every key you do not know, and copy the style of the file.
 
 State that must outlive a scene change (score across levels, settings, a music player) is an
 autoload: one script instance per game session, built before the first scene starts, kept
-across every `changeScene`, the same in the editor's play, `npm run dev` and the build.
+across every `changeScene`, the same on the dev server (Play included) and in the build.
 
 1. `scripts/GameState.ts`: `export class GameState extends Script { … }` — the class is named
    like the file (that is how the autoload finds it).

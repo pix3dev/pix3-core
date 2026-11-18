@@ -903,9 +903,9 @@ process is dead is taken over); Chrome renders outside it. A pass publishes `she
 
 ```bash
 npx pix3 bridge sync '{"timeoutMs":15000}'            # any pix3_* tool; the pix3_ prefix is optional
-npx pix3 bridge play '{"action":"start"}'
-npx pix3 bridge scene '{"nodeId":"play-button"}'
-npx pix3 bridge screenshot --target game --aspect 9:16 --out shot.png
+npx pix3 bridge play '{"action":"start"}'             # opens your game page
+npx pix3 bridge scene '{"nodeId":"play-button","page":"agent"}'
+npx pix3 bridge screenshot --page agent --out shot.png
 npx pix3 bridge tap --node play-button --touch       # or: tap <x> <y> (page CSS px)
 npx pix3 bridge swipe --from gem-2-3 --to gem-2-4    # or: swipe <x1> <y1> <x2> <y2> [--ms 180]
 npx pix3 bridge bake '{"action":"apply"}'             # core:MergeStatic shown in the viewport
@@ -920,31 +920,32 @@ the one on the project's `editorUrl` (`.pix3/dev.json`) — with two editor tabs
 (`pix3_status` `writer: "self"`; the other refuses to drive the agent's game page) — and evaluates
 `window.__PIX3_DEBUG__.call(tool, params)` there — the tools answer exactly as through MCP; exit 1
 on `{ok:false}`, 2 when there is no editor to reach. `screenshot` brings the surface to the front
-(`pix3_screenshot`) and saves `Page.captureScreenshot` (`--aspect` sets the Game tab's frame
-first, through `pix3_play`'s `aspect`); `tap` / `swipe` dispatch real mouse or
+(`pix3_screenshot`) and saves `Page.captureScreenshot`; `tap` / `swipe` dispatch real mouse or
 `--touch` events (`Input.dispatchMouseEvent` / `dispatchTouchEvent`) at page CSS px or at a node's
-`pix3_scene` `screen` (during play, the running node on the Game tab — a node a script spawned
-included, by id or name). Before either, a pause `pix3_game_run` left on its outcome frame
+`pix3_scene` `screen` (the running node on the game page — a node a script spawned included, by id
+or name). Before either, a pause `pix3_game_run` left on its outcome frame
 (`pix3_play status` → `pausedBy: "pix3_game_run"`) is resumed and said on stderr — game18 spent a swipe
 on a frozen game; a pause someone asked for (the Pause button, `pix3_play pause`) is only warned
 about. `render` calls `pix3_render_model` with `image: true` and writes the sheet it returns
 (default `.pix3/renders/editor-<node>.png`), then prints the path and the counts. The token is
 never printed.
 
-**The game on its own page** (the editor setting "Play on the game's page", `playHost: 'page'`, a
-preview until it becomes the default; spec §6.24): the game is a CDP target of its own, so
+**The game on its own page** (the default — the editor setting "Play on the game's page",
+`playHost: 'page'`; spec §6.24): the game is a CDP target of its own, so
 `pix3 bridge` picks the target per command. `screenshot --target game [--page designer|agent]`
 captures the page `pix3_screenshot` names (the human's Play window by default while it is open,
 else the agent's page), after `Page.bringToFront` — a background target paints nothing to capture —
 with the page's debug overlay hidden for the capture (it sits over the game's top HUD);
-`--aspect` does not apply (exact sizes: `pix3 play --size`). `tap` / `swipe` go to the agent's page
+exact sizes are `pix3 play --size`. `tap` / `swipe` go to the agent's page
 only (`--page designer` is `not_your_page`; no agent page, `no_game_page`), a node's position is
 read with `pix3_scene {nodeId, page: "agent"}`, and the input is refused with `page_reloaded` when
 the page's `__PIX3_PLAYER__.loadId` is no longer the load the position came from. A
 `pix3_play start|restart` the browser refused with `popup_blocked` is opened as a new target with
 `Target.createTarget` in the Chrome `pix3 editor` owns (it waits up to 90 s for the page to tell the
 editor it is ready and answers `opened: "Target.createTarget"`); over a Remote SSH forward the
-refusal stands, with its `url`.
+refusal stands, with its `url`. With the setting off (the Game tab, until plan
+`.plans/play-in-page.md` S6) `screenshot` and `tap` use the editor tab, and `--aspect` sets the
+Game tab's frame through `pix3_play`'s `aspect`.
 Code: `src/bridge/`.
 
 ## Remote SSH — VS Code on a remote host, Chrome on your machine
@@ -1033,19 +1034,23 @@ chrome-devtools-mcp's `devtoolstooldiscovery` with the `pix3` group
 (`list_3p_developer_tools` / `execute_3p_developer_tool {toolName, params: "<JSON>"}`), and
 `window.__PIX3_DEBUG__.call(name, params)` is the same call from `evaluate_script`
 (`waitForStableDom: false`). Tools: `pix3_status`, `pix3_sync` (`{expect?, timeoutMs?}` →
-flush, rescan, barrier), `pix3_scene` (`{path?, maxDepth?, nodeId?, find?}`; during play `nodeId`
-and `find` also reach the nodes only the running game has — `runtimeOnly: true`), `pix3_play`
-(`{action: start|stop|restart|pause|resume|status, scenePath?, force?, aspect?}` — the designer's
-session is refused with `not_owner`, `force` included; `aspect` is the Game tab's preset), `pix3_game_run` (`GameTestService.run`),
-`pix3_screenshot` (`{target: game|viewport}` prepares the view; the picture is
-`take_screenshot`), `pix3_render_model` (`{nodeId?, views?, size?, lights?, background?, image?}`
+flush, rescan, barrier), `pix3_scene` (`{path?, maxDepth?, nodeId?, find?, page?}`; while a game
+page is open `nodeId` and `find` also read the running game there — `live.components`, `screen`
+on that page, the nodes only the running game has with `runtimeOnly: true`), `pix3_play`
+(`{action: start|stop|restart|pause|resume|status, scenePath?, run?, page?}` — the agent's own
+game page; the human's is `not_your_page`), `pix3_game_run` (`GameTestService.run` on the agent's
+page), `pix3_screenshot` (`{target: game|viewport, page?}` brings the page to the front; the
+picture is `take_screenshot`), `pix3_render_model` (`{nodeId?, views?, size?, lights?, background?, image?}`
 — the node, or the scene's 3D roots, drawn alone from each view with the viewport's renderer
 through the runtime's `renderModelSheet`, everything it hides restored in the same task; answers
 meshes, draw calls, triangles, size, the baked nodes; the sheet is laid over the tab, removed by
 the next call or a click, or returned as a data URL with `image`), `pix3_bake`
 (`{action?: apply|clear|status, nodeId?}` — `mergeStatic` / `unmergeStatic` from `core:MergeStatic`'s
 config on the editor's nodes, no cache, nothing written; a scene reload drops it; code
-`src/host/bridge-model.ts`), `pix3_errors` (`{since?, clear?}`). Params are validated on both paths;
+`src/host/bridge-model.ts`), `pix3_errors` (`{since?, clear?, page?}`). The game runs on its own
+page by default — the tools' page table is `PAGE_BRIDGE_TOOLS` (executed in `src/host/bridge-play-page.ts`,
+spec §6.24 "Play on the game's page"); with the editor setting off, `BRIDGE_TOOLS` — the Game
+tab, play ownership (`not_owner`) and `aspect` — until plan `.plans/play-in-page.md` S6 removes it. Params are validated on both paths;
 every refusal is `{ok:false, reason, detail}`. `pix3 check`, `pix3 smoke` and `vite build`
 flush the editor through `POST /__pix3/api/flush` (the CLI side is `src/editor-sync.ts`),
 without the bridge. The kit's `pix3-editor` skill is held to the table by `src/kit.spec.ts`.

@@ -1,6 +1,6 @@
 ---
 name: pix3-editor
-description: How to drive the open Pix3 editor tab through Chrome DevTools MCP (the `pix3-browser` server) — find the tab, list the page's `pix3_*` tools, the sync → read → edit → sync loop, what a not-ok `pix3_sync` means (`expect_mismatch`, `stale` with a play owner, `gesture_in_progress`), play ownership, `pix3_game_run`, screenshots, the inline `evaluate_script` fallback when `list_3p_developer_tools` is missing, and sync before a build. Use whenever you run, test or inspect the game in the editor, after every batch of file edits, and before `npm run build`.
+description: How to drive the open Pix3 editor tab through Chrome DevTools MCP (the `pix3-browser` server) — find the tab, list the page's `pix3_*` tools, the sync → read → edit → sync loop, what a not-ok `pix3_sync` means (`expect_mismatch`, `gesture_in_progress`), your own game page and the human's (`not_your_page`), `pix3_game_run`, screenshots of the game page, the inline `evaluate_script` fallback when `list_3p_developer_tools` is missing, and sync before a build. Use whenever you run, test or inspect the game in the editor, after every batch of file edits, and before `npm run build`.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -47,11 +47,19 @@ Do not write your own CDP or MCP client.
    **No such page** (the human closed it, or Chrome was started without it) → `npm run editor`
    again: it checks the tab through the proxy and opens it when missing; or open it yourself with
    chrome-devtools-mcp's `new_page` on that URL. Then `list_pages` again. Open one tab only: a
-   second editor tab on the same project competes for the writer.
+   second editor tab on the same project competes for the writer. With two open, use the one
+   whose `pix3_status` says `writer: "self"` — the other answers `not_your_page` to `pix3_play`.
 3. `list_3p_developer_tools {pageId}` → the `pix3` group with the nine `pix3_*` tools below. **Call it
    again after every `select_page` and after any page reload** — the registration lives in the
    page, and `execute_3p_developer_tool` answers `Tool … not found` until it is listed again in
    the same MCP process.
+
+The game does not run in the editor tab. `pix3_play start` opens **your game page**, a second
+page in the same Chrome (`<dev server>/?debug&role=agent&mute…`, window `pix3-agent-play`); the
+human's Play window is another (`…?debug&role=designer…`). `list_pages` shows them. The `pix3_*`
+tools stay on the editor tab (`select_page` it for every `execute_3p_developer_tool`); only
+`take_screenshot`, `click_at` and `press_key` go to a game page — `select_page` the one whose URL
+the answer named (`page.url`), then select the editor tab again.
 
 Call a tool with `execute_3p_developer_tool {pageId: <id>, toolName: "pix3_sync", params: "{\"timeoutMs\": 15000}"}`
 — `params` is a **JSON string** (escape the quotes). The answer is JSON text; every refusal is
@@ -64,21 +72,23 @@ error: pageId: expected number" means it was left out.
 
 | Tool | Params | Does |
 | --- | --- | --- |
-| `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playing, playOwner, startedAt}`, `errorCount` |
+| `pix3_status` | — | versions, `activeScene`, `scriptsStatus`, `writer` (`self` = this tab saves), `dirty` scenes, `pending` unsaved keys per scene, `gestureInProgress`, `pendingExternal`, `play` `{playHost: "page", pages: [{role, url, loadId, rev, scene, status, paused, pausedBy?}]}` — the game pages open now: `designer` = the human's, `agent` = yours — `errorCount` |
 | `pix3_sync` | `expect?` `{path: sha256}`, `timeoutMs?` | flush the editor's unsaved edits to disk, rescan, wait until the editor runs the files on disk; `{ok, rev, changed, expectMismatch}` |
-| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (origin on the page in CSS px — `click_at {x, y}` taps it; during play it is the running node on the Game tab's canvas, and `live.components` gives that node's components' play-time state — `node.components` is the editor's, as authored); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). **During play** both also reach nodes only the running game has — spawned by a script, or in the scene `changeScene` went to: they carry `runtimeOnly: true` and no `saved`, and `nodeId` may then be the node's name. Read-only |
-| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `force?`, `aspect?` | play mode; `start` records you as the owner; `restart` = stop → apply held file changes → start (just a start when nothing plays); `pause` / `resume` set that state (no-op when already in it); `run` `{seed?, config?}` with `start` / `restart` sets up a test run (`scene.random` seed, component config by node id → component id → keys, before the first `onStart`; kept for the session's restarts, cleared on stop); `aspect` `free\|16:9\|9:16\|4:3` frames the Game tab with any action (it stays; the answer says the current one) — `9:16` for a phone-shaped run and screenshot; exact phone sizes: `npx pix3 play --size` |
-| `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the running game until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first |
-| `pix3_screenshot` | `target` `game\|viewport` | brings that surface to the front; the picture itself is chrome-devtools-mcp's `take_screenshot` (the tool never returns image data) |
+| `pix3_scene` | `path?`, `maxDepth?`, `nodeId?`, `find?`, `page?` | the scene tree as the editor holds it (each node's `properties` = what the file gets, unsaved inspector edits included); with `nodeId` the answer is `{ok, node, saved, screen}` — `node` (with `components`), and **beside it, not inside it**, `saved` (the node as the file gets it) and `screen` (its origin in the editor tab, CSS px); the inline short form `node(id)` returns the node with `saved` merged in; with `find` the nodes whose name/type contains it, `{ok, path, matches: [{nodeId, type, name}]}` (no properties: read one with `nodeId`). **While a game page is open** `nodeId` / `find` also read the running game there: `live.components` (that node's components' play-time state) and `screen` are live — `node` stays the editor's, as authored (a label's `text`, a transform), so read play-time values from `live.components` or the game's snapshot (`pix3_game_run` → `game.snapshot`, your page only); `screen` (origin in CSS px **of that page** — `click_at {x, y}` there, not in the editor tab) and `page {role, loadId}`; `page` `designer\|agent` picks it (default: the human's while it is open, else yours). Both also reach nodes only the running game has — spawned by a script, or in the scene `changeScene` went to: they carry `runtimeOnly: true` and no `saved`, and `nodeId` may then be the node's name. Read-only |
+| `pix3_play` | `action` `start\|stop\|restart\|pause\|resume\|status`, `scenePath?`, `run?`, `page?` | your game page: `start` writes the editor's unsaved edits and loads the page fresh with the active scene (or `scenePath`), and answers `page {role, url, loadId, rev, scene}` once it is ready; `run` `{seed?, config?}` with `start` / `restart` sets up a test run (`scene.random` seed, component config by node id → component id → keys, before the first `onStart`); `restart` = a fresh load with the last start's scene and `run`; `stop` closes the page; `pause` / `resume` set that state (no-op when already in it); `status` lists the pages. `page: "designer"` (the human's) is always `not_your_page`. Exact phone sizes: `npx pix3 play --size` |
+| `pix3_game_run` | `until?`, `fail?`, `watch?`, `maxFrames?`, `maxWallMs?`, `settleMs?`, `bot?` | step the game on your page until a predicate holds or fails (an `until` is required, except that a policy ends its own run); read `verdict` first; after a `pix3_sync` that reloaded the page it waits for the new load; the answer carries `page` |
+| `pix3_screenshot` | `target` `game\|viewport`, `page?` | `game`: brings a game page to the front (`page`; default the human's while it is open, else yours) and answers its `page {role, url, loadId}` — `select_page` that one for `take_screenshot`; `viewport`: the editor tab. The tool never returns image data |
 | `pix3_render_model` | `nodeId?`, `views?`, `size?`, `lights?`, `background?`, `image?` | a node of the active scene (default: its 3D roots) as the editor holds it — unsaved edits and a `pix3_bake` included — alone on a plain background, from each view (`iso,front,right,top` by default; `all`, or `az:el`), in one labelled sheet laid over the editor until your next `pix3_*` call or a click: `take_screenshot` shows it. Answers `meshes`, `drawCalls`, `triangles`, `size`, `center`, `lights`, `baked` (merged nodes under it), `look` (as `pix3 render`'s: luminance, near-black, saturation, a `note` like "reads dark"). `image: true` returns the PNG data URL instead (the shell's `bridge render` uses it) |
 | `pix3_bake` | `action?` `apply\|clear\|status`, `nodeId?` | `apply` (default) runs `core:MergeStatic`'s merge and light bake on every node that carries it (or on `nodeId`, with its settings or the defaults) so the viewport shows what play shows; `clear` shows the parts again; per node `merged` parts, `meshes`, `vertices`, `ms`. Writes nothing; a scene reload drops it — apply again after editing the model |
-| `pix3_errors` | `since?` (epoch ms), `clear?` | captured console / runtime errors, newest last |
+| `pix3_errors` | `since?` (epoch ms), `clear?`, `page?` | captured console / runtime errors of the editor and the game pages, newest last, each with `origin` (`editor`, `designer`, `agent`) and a page's `loadId` |
 
 Scenes and scripts are changed as **files** (`pix3-scene-format`, `pix3-scripts`). There is no
 tool that sets a property, creates a node or writes a file, and no input tool: tap or drag the
-running game with chrome-devtools-mcp's own `click_at {x, y}` / `press_key` at the `screen`
-coordinates `pix3_scene {nodeId}` gives (the game runs in the editor's Game tab —
-`pix3_screenshot {target:"game"}` brings it to the front first).
+running game with chrome-devtools-mcp's `click_at {x, y}` / `press_key` **on your game page** at
+the `screen` `pix3_scene {nodeId, page: "agent"}` gives — coordinates of the human's page or of an
+older load of yours land nowhere. To prove a tap did something: `pix3_game_run` a few frames (its
+`game.snapshot` is the before), tap, `pix3_game_run` a few frames again and compare the snapshots —
+`gameStateChanged` counts only inside one run, and a tap lands between two.
 
 ## 3. The loop after you decide to change something
 
@@ -92,9 +102,9 @@ coordinates `pix3_scene {nodeId}` gives (the game runs in the editor's Game tab 
 3. **`pix3_sync` with `expect`** = `{ "<path>": "<sha256>", … }` of the files you wrote. `ok:true`
    = the editor runs exactly those bytes; its open scenes are reloaded, your script edits are
    executed (`changed` lists what the rescan found).
-4. **Then verify**: `npm run check` (`pix3 check`), and in the editor `pix3_play {action:"restart"}`
-   or `start` → `pix3_game_run` with predicates → `pix3_errors` → `pix3_screenshot` +
-   `take_screenshot`.
+4. **Then verify**: `npm run check` (`pix3 check`), and `pix3_play {action:"restart"}` (or
+   `start`) → `pix3_game_run` with predicates → `pix3_errors` → `pix3_screenshot {target:"game",
+   page:"agent"}` + `take_screenshot` of that page.
 
 ## 4. A not-ok sync is not a barrier
 
@@ -105,22 +115,43 @@ Read `reason`; nothing happened on the editor side until a sync answers `ok:true
 | `gesture_in_progress` | the designer is mid-drag; nothing is written during a gesture | call again (the flush waits up to `timeoutMs` for pointerup) |
 | `stale_modules` | a changed script has not been re-executed by the tab yet (`paths`) | call again |
 | `expect_mismatch` | `expectMismatch` lists files whose sha256 on disk is not the one you passed: the designer or another writer changed them after your write | re-read those files, redo your edit on top of what is there, sync with the new hashes |
-| `stale`, `playing: "agent"` | play is running and external changes are deferred until it stops; **an agent** started it (any agent thread) | `pix3_play {action:"restart"}` (stop → apply the deferred changes → start), or `stop`, then sync again |
-| `stale`, `playing: "designer"` | the designer pressed Play; their session is theirs | do **not** stop it — wait and poll, or ask the human; `stop` and `restart` answer `not_owner` even with `force:true` |
 | `external_change`, `write_failed` | the flush itself could not write (`conflicts` / `failed`) | read the listed scenes, then sync again |
 
 `expectMismatch` is also present on an `ok:true` answer when you passed `expect` for files that
-match — an empty array. Never paste a `rev` or hash into a report.
+match — an empty array. Never paste a `rev` or hash into a report. A game page never holds a sync
+back.
 
-## 5. Play ownership
+The game pages answer with their own reasons:
 
-`pix3_play start` records `playOwner: "agent"` in the page, not in your connection: a new thread,
-a new MCP process, another agent — all may `stop` / `restart` it. A session started from the
-editor's toolbar is `playOwner: "designer"`: `stop`, `restart` and `pause` refuse it with
-`reason: "not_owner"`, `force` included. `pix3_play {action:"status"}` (or `pix3_status.play`)
-tells you which it is before you act.
+| `reason` | Meaning | Do |
+| --- | --- | --- |
+| `not_your_page` | you aimed `start`/`restart`/`stop`/`pause`/`resume`/`pix3_game_run`/input at the human's page, or called from a read-only editor tab | read it with `page:"designer"`; drive your own page, from the tab whose `pix3_status` says `writer: "self"` |
+| `no_game_page` | that page is not open (or did not answer) | `pix3_play {action:"start"}` |
+| `popup_blocked` | the browser refused the window; the answer has `url` | open `url` with `new_page`, then `pix3_play` again (`npx pix3 bridge` does it itself) |
+| `flush_failed` | the editor could not write its unsaved edits; nothing started | `pix3_status`, `pix3_sync`, then start again |
+| `page_reloaded` | your page reloaded during the call (a script or bot-policy change does that) | run again |
+| `page_stale` | your page is older than the last `pix3_sync` and did not reload by itself (a scene or asset changed) | `pix3_play {action:"restart"}`, then run |
 
-`pix3_game_run` needs a running session (`not_playing` otherwise). It steps the game far faster
+## 5. Your game page and the human's
+
+The human plays in their own window; you play on yours. Everything that changes a game —
+`start`, `restart`, `stop`, `pause`, `resume`, `pix3_game_run`, `click_at`, `npx pix3 bridge
+tap/swipe` — goes to your page; aimed at the human's it is `not_your_page`, whatever you pass.
+Reading works on both: `pix3_scene`, `pix3_screenshot`, `pix3_errors` take `page:"designer"` to
+look at the game exactly as the human has it. The whole running tree and the game's snapshot of the
+human's page are not bridge tools: with MCP, `evaluate_script` `__PIX3_PLAYER__.debug.tree()` (or
+`window.__PIX3_GAME_DEBUG__.snapshot()`) on that page; from the shell, ask the human (their page's
+**Scene** tab shows the tree) or reproduce on yours. When the human found a bug,
+they press **Show agent** on their page: the game pauses there and they paste you a message with
+the page, its `loadId`, the scene, the frame and the latest errors — read that page as it is, then
+reproduce on yours.
+
+Each `start`/`restart` is a new load of the files on disk (`page.loadId` changes; `run` puts its
+seed and config into the URL). A script or bot-policy change you sync reloads every game page by
+itself — the human's too — so read their page before you change a script. Your page closes after
+10 idle minutes; `start` opens it again.
+
+`pix3_game_run` needs your page (`no_game_page` otherwise; `pix3_play start` first). It steps the game far faster
 than real time: a game whose `onStart` awaits something real (assets, a WASM module, a fetch)
 needs `settleMs` (e.g. `2000`) first, and a readiness predicate before the one you care about.
 The same holds for a `changeScene` the game starts **during** a run: the async load is starved
@@ -156,15 +187,16 @@ to publish world coordinates and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
 saves a picture of that frame under `pix3 play --bot` and is only a log marker here. `args` (one
 JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
-specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Policy state between runs:** in the
-editor the policy module stays evaluated until its file changes (and a `pix3_sync` re-imports it),
-so **module-level variables carry over** from one `pix3_game_run` to the next while the game keeps
-its own state too; `pix3 play` loads it fresh every time. For state that starts fresh every run,
+specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Policy state between runs:** on
+your page the policy module stays evaluated until the page loads again (`start`, `restart`, or a
+`pix3_sync` of the policy, which reloads it), so **module-level variables carry over** from one
+`pix3_game_run` to the next while the game keeps its own state too; `pix3 play` loads it fresh
+every time. For state that starts fresh every run,
 export a factory — `export default (() => ({ name, tick(bot) { … } })) satisfies () => BotPolicy`,
 with the state as locals of the factory — or reset it in `start(bot)`. A policy that spans runs
 reads where the game is (`bot.gameState()`, `bot.nodes()`) instead of remembering it. The same policy plays
 the game's own page — the build too — with `npx pix3 play [dev|dist] --bot <name>` (no editor;
-`pix3-verify` → "`pix3 play`"). A policy written or changed during play needs only `pix3_sync`, not a restart.
+`pix3-verify` → "`pix3 play`"). A policy written or changed while your page is open needs only `pix3_sync`, not a restart: the page reloads, and the next `pix3_game_run` waits for it.
 
 A tap-tap game (select a gem, then its neighbour) taps twice with a gap — a tap holds its finger
 for 3 ticks and the next `tapAt` must not start while it is down — and reads the game's state
@@ -265,15 +297,17 @@ async () => await window.__PIX3_DEBUG__.call('pix3_sync', { timeoutMs: 15000 })
 
 Short forms exist for the common calls: `status()`, `sync({expect, timeoutMs})`, `scene(depth)`,
 `node(id)`, `find(text)`, `screen(id)`, `play.start()` / `play.stop()` / `play.restart()` /
-`play.pause()` / `play.resume()` / `play.status()`, `errors()`. One tool per `evaluate_script` call: a refusal of one must not take
+`play.pause()` / `play.resume()` / `play.status()` (`{playHost, pages}`), `errors()`. One tool per `evaluate_script` call: a refusal of one must not take
 the others with it. The answers are the same objects the 3p path returns.
 
 ## 8. Keepalive
 
 The tab is in the background while you work, and Chrome would throttle it. `pix3 editor` starts
-Chrome with throttling off, and every bridge call keeps the editor's own loops running for 60 s
-(a play session you started, until it stops). Nothing to do on your side; a tab that was opened
-by hand in another Chrome may still pause when hidden.
+Chrome with throttling off, and every bridge call keeps the editor's own loops running for 60 s.
+Your game page keeps ticking while it is hidden for as long as a run or `watch` holds it (frames
+from a worker). The Chrome `pix3 editor` started also lets the editor open your page without a
+click (`--disable-popup-blocking`). Nothing to do on your side; a tab that was opened by hand in
+another Chrome may still pause when hidden.
 
 ## 9. Without MCP: `npx pix3 bridge`
 
@@ -287,17 +321,17 @@ quotes; the answer is the tool's JSON (exit 1 on `ok:false`).
 | `pix3_status` | `npx pix3 bridge status` |
 | `pix3_sync {expect, timeoutMs}` | `npx pix3 bridge sync '{"expect":{"scenes/main.pix3scene":"<sha256>"},"timeoutMs":15000}'` |
 | `pix3_scene {nodeId}` / `{find}` | `npx pix3 bridge scene '{"nodeId":"hud"}'`, `npx pix3 bridge scene '{"find":"gem"}'` |
-| `pix3_play {action, aspect?}` | `npx pix3 bridge play '{"action":"start","aspect":"9:16"}'` (`restart` — a plain start when nothing plays — `stop`, `resume`, `status`) |
+| `pix3_play {action}` | `npx pix3 bridge play '{"action":"start"}'` (`restart`, `stop`, `resume`, `status`); a blocked window is opened by the CLI itself |
 | `pix3_game_run {…}` | `npx pix3 bridge pix3_game_run '{"bot":{"name":"full-round"},"maxFrames":10800,"maxWallMs":180000}'` |
 | `pix3_errors` | `npx pix3 bridge errors` |
 | `pix3_render_model` + `take_screenshot` | `npx pix3 bridge render [--node <id>] [--views iso,front,right,top\|all\|az:el] [--size 384] [--out f.png]` — prints the PNG path and the counts; open the PNG |
 | `pix3_bake {action}` | `npx pix3 bridge bake '{"action":"apply"}'` (`clear`, `status`, `nodeId`) |
-| `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--target game\|viewport] [--aspect 9:16] [--out f.png]` — then open the PNG |
-| `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) |
+| `pix3_screenshot` + `take_screenshot` | `npx pix3 bridge screenshot [--page designer\|agent] [--target viewport] [--out f.png]` — captures that game page without its debug overlay (or the editor); default file `.pix3/screenshots/<target>-<time>.png` in the project; then open the PNG |
+| `click_at` at a `screen` | `npx pix3 bridge tap --node <id or name> [--touch]` or `tap <x> <y>` (page CSS px) — your page only, refused (`page_reloaded`) when the page reloaded since the node was read |
 | a drag | `npx pix3 bridge swipe --from <id> --to <id> [--touch] [--ms 180]` or four page CSS px |
 
 **`pix3_game_run` leaves the game paused on its outcome frame** (`pix3_play status` says
-`pausedBy: "pix3_game_run"`). `npx pix3 bridge tap` / `swipe` resume that pause before they send the input
+`pausedBy: "pix3_game_run"` on your page). `npx pix3 bridge tap` / `swipe` resume that pause before they send the input
 and say so on stderr, so the gesture lands in a running game. A pause someone asked for — the Pause
 button, `pix3_play pause` — stays: the CLI warns and the input reaches a frozen game, so
 `npx pix3 bridge play '{"action":"resume"}'` first. The game's own page without the editor: `npx pix3 play`

@@ -141,9 +141,10 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
 4. **Run `pix3 check` after every batch of edits** and fix every error before you say "done".
    It checks YAML, node types, properties, `res://` paths, prefabs, components, and
    type-checks your scripts. Then run the game: with the editor open, `pix3_sync` with `expect`
-   and `pix3_play` / `pix3_game_run` / `pix3_errors` / a screenshot (`pix3-editor`); without it,
-   `pix3 smoke <the scene you changed>` — the game, not the menu, which never presses PLAY
-   headless (`pix3-verify`). A sync that is not `ok` is not green, and a green smoke means
+   and `pix3_play` / `pix3_game_run` / `pix3_errors` / a screenshot of **your game page**
+   (`pix3-editor`: the game runs on its own page; the human's Play window you read, never
+   drive); without it, `pix3 smoke <the scene you changed>` — the game, not the menu, which never
+   presses PLAY headless (`pix3-verify`). A sync that is not `ok` is not green, and a green smoke means
    nothing threw, not that it plays — so tell the human what to press and what they should see.
 5. **Art: placeholder → SVG → a generated image, never emoji.** Placeholder = `ColorRect2D`, or
    a near-white PNG in `sprites/` tinted with a `core:tint` effect. Better art = an SVG you
@@ -289,7 +290,7 @@ A project made by `npm create pix3` has them as npm scripts: `npm run dev` (Vite
 - `.claude/skills/pix3-scene-format/SKILL.md` — full YAML format, prefabs, overlays; `.pix3anim` flipbooks and `pix3 character-compile` in `pix3anim.md` beside it; file and project operations the editor does not do in `project-files.md` beside it
 - `.claude/skills/pix3-nodes/SKILL.md` — 2D node properties (Group2D, ColorRect2D, Sprite2D, Label2D, Button2D, Bar2D, CanvasLayer2D, PostProcess); every 2D node in `reference.md` beside it, 3D in `reference-3d.md`
 - `.claude/skills/pix3-scripts/SKILL.md` — Script API: lifecycle, schema, scene/input/juice/tween/audio/physics, `core:` components, traps
-- `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, play ownership, `pix3_game_run`, screenshots, inline fallback
+- `.claude/skills/pix3-editor/SKILL.md` — the editor bridge: find the tab, `pix3_sync` with `expect`, your game page and the human's, `pix3_game_run`, screenshots, inline fallback
 - `.claude/skills/pix3-verify/SKILL.md` — `pix3 check` / `validate` / `smoke`, the diagnostic codes, how to report what was verified
 - `.claude/skills/pix3-model/SKILL.md` — building a 3D model from `GeometryMesh` parts as a model job: stages, `pix3 render --job`, the human's feedback from the 3D Asset Generator panel
 

@@ -55,6 +55,9 @@ describe('agent bridge', () => {
 
   beforeEach(async () => {
     resetAppState();
+    // The game in the editor's Game tab (until plan play-in-page S6); the page host is
+    // `bridge-play-page.spec.ts`.
+    appState.ui.playHost = 'editor';
     host = new FakeHost({
       files: {
         'pix3project.yaml': 'version: 1.0.0\nmetadata:\n  projectId: p-bridge\n',

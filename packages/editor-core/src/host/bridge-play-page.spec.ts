@@ -70,7 +70,9 @@ afterEach(async () => {
 });
 
 describe('the bridge on the game page (playHost: page)', () => {
-  it('is off by default: the editor tools, no page param', async () => {
+  it('is on by default; off, the editor tools, no page param', async () => {
+    expect(appState.ui.playHost).toBe('page');
+    appState.ui.playHost = 'editor';
     expect(schemaOf('pix3_play')).toEqual(
       BRIDGE_TOOLS.find(t => t.name === 'pix3_play')?.inputSchema
     );

@@ -116,22 +116,22 @@ describe('UpdateEditorSettingsOperation', () => {
     expect(state.ui.keepEditorRunningForAgent).toBe(true);
   });
 
-  it('persists playHost (default editor: the game on its page is a preview) and supports undo', async () => {
+  it('persists playHost (default page: the game on its own page, plan play-in-page S5) and supports undo', async () => {
     const state = createInitialAppState();
-    expect(state.ui.playHost).toBe('editor');
+    expect(state.ui.playHost).toBe('page');
     const context = {
       state,
       snapshot: structuredClone(state),
       container: {} as OperationContext['container'],
       requestedAt: Date.now(),
     } as OperationContext;
-    const result = await operationWith(context, { playHost: 'page' });
-    expect(state.ui.playHost).toBe('page');
-    expect(loadEditorSettings()?.playHost).toBe('page');
+    const result = await operationWith(context, { playHost: 'editor' });
+    expect(state.ui.playHost).toBe('editor');
+    expect(loadEditorSettings()?.playHost).toBe('editor');
     localStorage.setItem(EDITOR_SETTINGS_STORAGE_KEY, JSON.stringify({ playHost: 'tab' }));
     expect(loadEditorSettings()?.playHost).toBeUndefined();
     if (!result.didMutate || !result.commit) throw new Error('expected a mutation');
     await result.commit.undo();
-    expect(state.ui.playHost).toBe('editor');
+    expect(state.ui.playHost).toBe('page');
   });
 });

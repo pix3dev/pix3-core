@@ -441,12 +441,14 @@ Reference it from a scene or script as res://<path inside the project>.
   <pix3_tool>    pix3_status, pix3_sync, pix3_scene, pix3_play, pix3_game_run, pix3_errors, … (the
                  pix3_ prefix may be dropped); params as one JSON object. Prints the tool's JSON
                  answer; exit 1 when it is {ok:false}.
-  screenshot     bring the game (default) or the viewport to the front and save a PNG of the tab
-                 (default .pix3/screenshots/<target>-<time>.png); prints the path. --aspect sets
-                 the Game tab's frame first (it stays; also pix3_play's "aspect" param) — exact
-                 phone sizes: pix3 play --size
-  tap            a press and release at page CSS px, or at a node's origin (pix3_scene's screen —
-                 during play, where the running node is on the Game tab)
+  screenshot     bring a game page (default) or the editor's viewport to the front and save a PNG
+                 (default .pix3/screenshots/<target>-<time>.png); prints the path. The game page:
+                 --page designer (the human's Play window; the default while it is open) or agent
+                 (yours), its debug overlay hidden for the capture. Exact phone sizes: pix3 play
+                 --size
+  tap            a press and release on your game page at its CSS px, or at a node's origin
+                 (pix3_scene's screen on that page); refused (page_reloaded) when the page
+                 reloaded since the node was read, and never on the human's page (not_your_page)
   swipe          a drag between two page points or two nodes, over --ms milliseconds
   render         pix3_render_model to a PNG: the node (default: the scene's 3D roots) of the
                  active scene as the editor holds it — unsaved edits and a pix3_bake included —
@@ -456,12 +458,11 @@ Reference it from a scene or script as res://<path inside the project>.
                  see core:MergeStatic's bake (pix3_bake: apply | clear | status, nodeId?)
   --touch        touch events (a phone finger) instead of the mouse
 
-  When the editor plays on the game's own page (Editor Settings → "Play on the game's page",
-  a preview): screenshot captures the game page pix3_screenshot names — --page designer (the
-  human's Play window) or agent (yours; the default when the human's is closed); tap and swipe
-  go to your page only and refuse coordinates read from an older load of it (page_reloaded);
-  --aspect does not apply (exact sizes: pix3 play --size). A pix3_play start the browser's popup
-  blocker refuses is opened as a new tab in the Chrome 'pix3 editor' started.
+  The game runs on its own page: pix3_play start opens yours. A pix3_play start the browser's
+  popup blocker refuses is opened as a new tab in the Chrome 'pix3 editor' started. With two
+  editor tabs open the CLI talks to the writer. With Editor Settings → "Play on the game's page"
+  off (the Game tab, until it is removed): screenshot and tap use the editor tab, and --aspect
+  sets the Game tab's frame (pix3_play's "aspect").
 `,
   model: `Usage: pix3 model new <id> --target <scene|prefab|res://…> [--node <id>] [--title <text>]
                        [--reference <image> [--reference-background <hex>]]
