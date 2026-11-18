@@ -5,6 +5,9 @@ import type { HostService } from '@/host/HostService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import type { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
+import { ServiceContainer } from '@/fw/di';
+import { fakeGamePage, type FakeGamePage } from '@/host/testing/fake-game-page';
+import { PLAY_PAGES_CHANNEL, PlayPageLink } from '@/services/play/PlayPageLink';
 import type { FlushService } from '@/services/project/FlushService';
 import { appState, getAppStateSnapshot } from '@/state';
 
@@ -166,12 +169,31 @@ describe('Play', () => {
   });
 });
 
-describe("Play on the game's page (playHost: page, plan play-in-page D1, D2)", () => {
-  /** The window as the click opened it (blank), navigated after the flush. */
+describe("Play on the game's page (playHost: page, plan play-in-page D1, D2, S5b)", () => {
+  let link: PlayPageLink;
+  let stopLink: () => void;
+  const fakes: FakeGamePage[] = [];
+
+  beforeEach(() => {
+    const container = ServiceContainer.getInstance();
+    link = container.getService<PlayPageLink>(container.getOrCreateToken(PlayPageLink));
+    stopLink = link.start();
+    appState.ui.playHost = 'page';
+  });
+
+  afterEach(() => {
+    for (const fake of fakes.splice(0)) fake.close();
+    stopLink();
+  });
+
+  /** The editor with the link in its container; `opened` are the `window.open` calls. */
   const pageSetup = (flushOk = true) => {
     const editor = setup();
-    const game = { location: { href: 'about:blank' }, close: vi.fn() };
-    const opened: { url: string; name: string; features?: string; at: number }[] = [];
+    const opened: { url: string; name: string; features?: string }[] = [];
+    const container = editor.context().container;
+    const services = container as unknown as { getService: (token: unknown) => unknown };
+    const base = services.getService.bind(services);
+    services.getService = token => (token === PlayPageLink ? link : base(token));
     editor.deps = {
       ...editor.deps,
       flush: {
@@ -182,34 +204,76 @@ describe("Play on the game's page (playHost: page, plan play-in-page D1, D2)", (
       } as unknown as FlushService,
       openWindow: (url, name, features) => {
         editor.order.push('open-page');
-        opened.push({ url, name, features, at: editor.order.length });
-        return game as unknown as Window;
+        opened.push({ url, name, features });
+        return null; // `noopener`: never a handle
       },
     };
-    return { ...editor, game, opened };
+    return { ...editor, opened };
   };
 
-  it('opens pix3-play with an empty URL in the click, then loads the page after the flush', async () => {
-    const { deps, context, opened, order, game, dispatched } = pageSetup();
-    appState.ui.playHost = 'page';
+  /** The page the gated window became: it asks at its gate, and says what the editor answered. */
+  const gatedPage = (url: string) => {
+    const gate = new URL(url).searchParams.get('gate');
+    const channel = new BroadcastChannel(PLAY_PAGES_CHANNEL);
+    const answer = new Promise<boolean>(resolve => {
+      channel.onmessage = event => {
+        const frame = event.data as Record<string, unknown>;
+        if (frame.type === 'gate' && frame.gate === gate) resolve(frame.go === true);
+      };
+    });
+    channel.postMessage({ type: 'wait', gate });
+    return answer.finally(() => channel.close());
+  };
+
+  it('no Play window yet: opens one noopener in the click, gated until the flush says go', async () => {
+    const { deps, context, opened, order, dispatched } = pageSetup();
     appState.ui.playTarget = 'tab'; // any mode: every Play is the page
     await new PlayCommand(deps).execute(context());
     expect(order).toEqual(['open-page', 'flush']);
-    // Empty, not `about:blank`: an open game window keeps its name (and the next Play finds it).
-    expect(opened[0]).toMatchObject({ url: '', name: 'pix3-play' });
-    expect(game.location.href).toBe(
-      `${window.location.origin}/?debug&role=designer&scene=scenes%2Flevel.pix3scene`
+    expect(opened[0].name).toBe('_blank');
+    expect(opened[0].features).toContain('noopener');
+    expect(opened[0].url).toMatch(
+      new RegExp(
+        `^${window.location.origin}/\\?debug&role=designer&scene=scenes%2Flevel\\.pix3scene&gate=[\\w-]+$`
+      )
     );
+    // The page asks late (it loads after the flush): the decided gate still answers.
+    expect(await gatedPage(opened[0].url)).toBe(true);
     expect(dispatched).toEqual([]);
     expect(appState.ui.isPlaying).toBe(false);
   });
 
-  it('a failed flush closes the window: the page would play an older file', async () => {
-    const { deps, context, game } = pageSetup(false);
-    appState.ui.playHost = 'page';
+  it('a failed flush tells the gated page no: it closes itself, the files are older', async () => {
+    const { deps, context, opened } = pageSetup(false);
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await new PlayEntryCommand(deps).execute(context());
-    expect(game.close).toHaveBeenCalled();
-    expect(game.location.href).toBe('about:blank');
+    expect(await gatedPage(opened[0].url)).toBe(false);
+  });
+
+  it('a Play window open: the second Play flushes, then tells it to load the URL, no new window', async () => {
+    const { deps, context, opened, order } = pageSetup();
+    const designer = fakeGamePage('designer');
+    fakes.push(designer);
+    await link.until(() => link.page('designer') !== null, 1_000);
+    await new PlayCommand(deps).execute(context());
+    expect(opened).toEqual([]);
+    expect(order).toEqual(['flush']);
+    expect(designer.calls.map(call => call.tool)).toEqual(['navigate']);
+    expect(designer.calls[0].params.url).toBe(
+      `${window.location.origin}/?debug&role=designer&scene=scenes%2Flevel.pix3scene`
+    );
+  });
+
+  it('a second Play while the first window still loads waits for its hello and reuses it', async () => {
+    const { deps, context, opened } = pageSetup();
+    const first = new PlayCommand(deps).execute(context());
+    await first;
+    expect(opened).toHaveLength(1);
+    const second = new PlayCommand(deps).execute(context());
+    const designer = fakeGamePage('designer', { status: 'booting' });
+    fakes.push(designer);
+    await second;
+    expect(opened).toHaveLength(1);
+    expect(designer.calls.map(call => call.tool)).toEqual(['navigate']);
   });
 });

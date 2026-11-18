@@ -12,7 +12,8 @@ import { ServiceContainer } from '@/fw/di';
 import { FlushService } from '@/services/project/FlushService';
 import {
   gamePageUrl,
-  PAGE_WINDOW_NAMES,
+  isReady,
+  OPEN_WAIT_MS,
   pageWindowFeatures,
   PlayPageLink,
   type PageAnswer,
@@ -28,7 +29,7 @@ import { HostService } from './HostService';
  * `playHost: 'page'` setting — `debug-bridge.ts` picks these over the in-editor ones):
  *
  * - control (`pix3_play` start/restart/stop/pause/resume, `pix3_game_run`) goes to the agent's own
- *   page `pix3-agent-play` only; aimed at the human's page it is `not_your_page` (D7). A read-only
+ *   page (`role=agent`, opened `noopener`: a process of its own, S5b) only; aimed at the human's page it is `not_your_page` (D7). A read-only
  *   editor tab does not drive it either: the writer tab owns the agent's page.
  * - `start` / `restart` = flush + a fresh load of the page (`?run=` carries the test run) + the
  *   readiness barrier: the answer comes when the new load says hello with a revision no older
@@ -79,24 +80,30 @@ const readOnlyTab = (): PageAnswer | null =>
 
 const pageRef = (page: PageInfo) => ({ role: page.role, url: page.url, loadId: page.loadId });
 
+/** The page of `role` once it has booted the game; a page still loading reads as not open. */
+const readyPage = (role: PageRole): PageInfo | null => {
+  const page = link().page(role);
+  return page && isReady(page) ? page : null;
+};
+
 /**
  * The page a read goes to: `requested`, else the human's page when it is open, else the agent's
  * (D7). A refusal when the one asked for (or any) is not open.
  */
 const readPage = (requested: unknown): PageInfo | PageAnswer => {
-  const pages = link();
   if (requested === 'designer' || requested === 'agent') {
+    const loading = link().page(requested) ? ' (it is still loading the game)' : '';
     return (
-      pages.page(requested) ??
+      readyPage(requested) ??
       refuse(
         'no_game_page',
-        `No ${requested} game page is open${requested === 'agent' ? ' (pix3_play start opens it)' : ''}.`
+        `No ${requested} game page is open${loading || (requested === 'agent' ? ' (pix3_play start opens it)' : '')}.`
       )
     );
   }
   return (
-    pages.page('designer') ??
-    pages.page('agent') ??
+    readyPage('designer') ??
+    readyPage('agent') ??
     refuse('no_game_page', 'No game page is open: pix3_play {action:"start"} opens yours.')
   );
 };
@@ -185,22 +192,27 @@ export const runOverridesProblem = (run: RunOverrides): string | null => {
   return null;
 };
 
-/** Open `url` in the agent's window, or load it in the agent's page when one is open. */
+/**
+ * Load `url` in the agent's page: the open page navigates itself; with none open, a window opened
+ * `noopener` (S5b) — `window.open` then returns null whatever happens, so a window whose page has
+ * not said hello within {@link OPEN_WAIT_MS} was blocked.
+ */
 const loadAgentPage = async (url: string, current: PageInfo | null): Promise<PageAnswer | null> => {
+  const pages = link();
   if (current) {
-    const navigated = await link().call('agent', 'navigate', { url });
+    const navigated = await pages.call('agent', 'navigate', { url });
     if (navigated.ok !== false) return null;
   }
-  const opened = window.open(
-    url,
-    PAGE_WINDOW_NAMES.agent,
-    pageWindowFeatures(appState.project.manifest?.viewportBaseSize)
-  );
+  window.open(url, '_blank', pageWindowFeatures(appState.project.manifest?.viewportBaseSize));
+  const opened = await pages.until(() => {
+    const page = pages.page('agent');
+    return !!page && page.loadId !== current?.loadId;
+  }, OPEN_WAIT_MS);
   return opened
     ? null
     : refuse(
         'popup_blocked',
-        `The browser blocked the agent's game window. Open ${url} in a new tab (chrome-devtools-mcp new_page; \`pix3 bridge\` does it by itself in the Chrome \`pix3 editor\` started), then call pix3_play again.`,
+        `The agent's game window did not open within ${OPEN_WAIT_MS / 1000} s (a popup blocker?). Open ${url} in a new tab (chrome-devtools-mcp new_page; \`pix3 bridge\` does it by itself in the Chrome \`pix3 editor\` started), then call pix3_play again.`,
         { url }
       );
 };
@@ -236,9 +248,15 @@ const startAgentPage = async (params: Params, restart: boolean): Promise<PageAns
     const blocked = await loadAgentPage(url, asked);
     if (blocked) return blocked;
     const before = asked?.loadId;
+    // Another load (a reload of the old URL) is navigated as soon as it speaks; ours is awaited
+    // until it has booted, from files no older than the last sync.
     const ready = await pages.until(() => {
       const next = pages.page('agent');
-      return !!next && next.loadId !== before && (next.url !== url || pages.isFresh(next));
+      return (
+        !!next &&
+        next.loadId !== before &&
+        (next.url !== url || (isReady(next) && pages.isFresh(next)))
+      );
     }, deadline - Date.now());
     const next = pages.page('agent');
     if (!ready || !next) {
@@ -294,7 +312,14 @@ const freshAgentPage = async (): Promise<PageInfo | PageAnswer> => {
   if (pages.isReloading('agent', RELOADING_MS)) {
     await pages.until(() => pages.page('agent') !== null, LOAD_WAIT_MS);
   }
-  const current = pages.page('agent');
+  const booting = pages.page('agent');
+  if (booting && !isReady(booting)) {
+    await pages.until(() => {
+      const page = pages.page('agent');
+      return !page || isReady(page);
+    }, LOAD_WAIT_MS);
+  }
+  const current = readyPage('agent');
   if (!current) {
     return refuse('no_game_page', 'Your game page is not open: pix3_play {action:"start"} first.');
   }
@@ -308,9 +333,9 @@ const freshAgentPage = async (): Promise<PageInfo | PageAnswer> => {
   }
   await pages.until(() => {
     const page = pages.page('agent');
-    return !!page && pages.isFresh(page);
+    return !!page && isReady(page) && pages.isFresh(page);
   }, LOAD_WAIT_MS);
-  const page = pages.page('agent');
+  const page = readyPage('agent');
   return page && pages.isFresh(page)
     ? page
     : refuse('no_game_page', 'Your game page reloaded after the sync and did not report ready.');

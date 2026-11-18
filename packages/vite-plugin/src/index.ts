@@ -146,6 +146,11 @@ const EDITOR_LINK_ENTRY = fileURLToPath(
   )
 );
 
+/** The game page's early editor link (`?role=` pages, plan play-in-page S5b), put into its HTML. */
+const PAGE_LINK_ENTRY = fileURLToPath(
+  new URL(FROM_SOURCE ? '../player/dev/page-link.ts' : './player/dev/page-link.js', import.meta.url)
+);
+
 /**
  * `@pix3/editor-core`'s game-page test host (`dist/page-test-host.js`, plan play-in-page D10), by
  * real path as Vite serves it (`fs.allow` holds the editor-core directory); null without one.
@@ -407,9 +412,11 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
 
     /**
      * Dev, with the editor: stamp the file revision into the game's page (`devPageRev`, plan
-     * play-in-page D6) — the files it reads are at least this new. The editor page is raw HTML
-     * served by the plugin, so this reaches only the game's pages. A change the watcher is still
-     * settling counts: Vite reloads the page on the same watch event.
+     * play-in-page D6) — the files it reads are at least this new — and load the page's early
+     * editor link (`player/dev/page-link`, S5b) ahead of the game's modules: a page the editor
+     * opened says hello and obeys `navigate` / `close` / the Play gate while the game still loads.
+     * The editor page is raw HTML served by the plugin, so this reaches only the game's pages. A
+     * change the watcher is still settling counts: Vite reloads the page on the same watch event.
      */
     async transformIndexHtml(_html, context) {
       if (!context.server || !editor) return;
@@ -418,6 +425,15 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
         {
           tag: 'meta',
           attrs: { name: PAGE_REV_META, content: String(editor.files.currentSeq) },
+          injectTo: 'head-prepend',
+        },
+        {
+          tag: 'script',
+          attrs: {
+            type: 'module',
+            src: `${baseUrl()}@fs/${normalizePath(PAGE_LINK_ENTRY).replace(/^\//, '')}`,
+          },
+          // Before the game's own module script: module scripts run in document order.
           injectTo: 'head-prepend',
         },
       ];

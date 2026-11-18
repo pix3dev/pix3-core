@@ -323,6 +323,9 @@ export interface DevSourceOptions {
  *   "Play in Browser Tab / with Profiler" asks for; the player checks it against its scene list;
  * - `devPageRev()` is the file revision the plugin stamped into the page's HTML
  *   (`<meta name="pix3-rev">`, {@link PAGE_REV_META}), the player's `__PIX3_PLAYER__.rev`;
+ * - `devPageLink()` is the editor link `player/dev/page-link.ts` opened while a page the editor
+ *   opened was loading (the plugin injects it into the HTML): the player's `loadId` and the Play
+ *   gate it waits at before booting;
  * - `installDevTools(context)` imports the debug overlay when the URL has `debug`, otherwise the
  *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
  *   module and `/?clean` none. It also sets `__PIX3_PLAYER__.loadTools()`, which imports the
@@ -343,6 +346,7 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
       'export function devSceneOverride() { return null; }',
       'export function devRunOverrides() { return globalThis.__PIX3_RUN__ ?? null; }',
       'export function devPageRev() { return null; }',
+      'export function devPageLink() { return null; }',
       'export function installDevTools() {}',
       '',
     ].join('\n');
@@ -367,6 +371,7 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `  const rev = Number.parseInt(meta ? meta.getAttribute('content') : '', 10);`,
     `  return Number.isNaN(rev) ? null : rev;`,
     `}`,
+    `export function devPageLink() { return window.__PIX3_PAGE_LINK__ ?? null; }`,
     `const testHostPath = ${JSON.stringify(options.testHostPath)};`,
     `let toolsLoading = null;`,
     `function loadTools() {`,

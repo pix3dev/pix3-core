@@ -458,8 +458,9 @@ Reference it from a scene or script as res://<path inside the project>.
                  see core:MergeStatic's bake (pix3_bake: apply | clear | status, nodeId?)
   --touch        touch events (a phone finger) instead of the mouse
 
-  The game runs on its own page: pix3_play start opens yours. A pix3_play start the browser's
-  popup blocker refuses is opened as a new tab in the Chrome 'pix3 editor' started. With two
+  The game runs on its own page, in a process of its own: pix3_play start opens yours. A
+  pix3_play start whose window does not open (popup_blocked) is opened as a new tab in the
+  Chrome 'pix3 editor' started. With two
   editor tabs open the CLI talks to the writer. With Editor Settings → "Play on the game's page"
   off (the Game tab, until it is removed): screenshot and tap use the editor tab, and --aspect
   sets the Game tab's frame (pix3_play's "aspect").

@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { installEditorRpc, pageRole, PLAY_PAGES_CHANNEL, type RpcPage } from './editor-rpc';
+import {
+  installEditorRpc,
+  openPageLink,
+  pageRole,
+  PLAY_PAGES_CHANNEL,
+  type RpcPage,
+} from './editor-rpc';
 
 /**
- * The game page's end of the editor link (plan play-in-page D6, D8): `hello` once booted, calls
+ * The game page's end of the editor link (plan play-in-page D6, D8, S5b): `hello` as the link opens
+ * and again once booted, the Play gate, calls
  * addressed by role and `loadId`, `page_reloaded` for a call meant for another load, the page's
  * errors and "Show in editor" as frames. The editor's end is editor-core's `PlayPageLink`.
  */
@@ -95,13 +102,16 @@ describe('editor-rpc (the game page end of the editor link)', () => {
     expect(pageRole('?debug')).toBeNull();
   });
 
-  it('says hello once the game booted and the tools loaded, and again to who', async () => {
+  it('says hello booting at once, ready once the game booted and the tools loaded, and to who', async () => {
     editor = listen();
     const { page, state } = fakePage({ status: 'booting' });
     const rpc = installEditorRpc(page, 'agent');
     disposers.push(() => rpc?.dispose());
     await settle(150);
-    expect(frames.some(frame => frame.type === 'hello')).toBe(false);
+    expect(frames.filter(frame => frame.type === 'hello').map(frame => frame.page)).toEqual([
+      expect.objectContaining({ loadId: 'load-1', status: 'booting' }),
+    ]);
+    frames.length = 0;
     state.status = 'running';
     const hello = await waitFrame(frame => frame.type === 'hello');
     expect(state.loadTools).toHaveBeenCalled();
@@ -114,6 +124,77 @@ describe('editor-rpc (the game page end of the editor link)', () => {
     frames.length = 0;
     editor.postMessage({ type: 'who' });
     await waitFrame(frame => frame.type === 'hello');
+  });
+
+  it('opens before the game: hello, navigate and close while booting; the rest waits for the game', async () => {
+    editor = listen();
+    const win = Object.assign(new EventTarget(), {
+      location: {
+        href: 'http://localhost/?debug&role=agent',
+        search: '?debug&role=agent',
+        replace: vi.fn(),
+      },
+      close: vi.fn(),
+      focus: vi.fn(),
+    });
+    const link = openPageLink('agent', win as unknown as Window, 'load-1');
+    disposers.push(() => link?.dispose());
+    expect(link?.gate).toBeNull();
+    expect((await waitFrame(frame => frame.type === 'hello')).page).toMatchObject({
+      role: 'agent',
+      loadId: 'load-1',
+      status: 'booting',
+      rev: null,
+    });
+    expect(await call('status')).toMatchObject({ ok: true, page: { status: 'booting' } });
+    expect(await call('live_node')).toMatchObject({ ok: false, reason: 'no_game_page' });
+    expect(await call('navigate', { url: '/?debug&role=agent&start=2' })).toEqual({ ok: true });
+    expect(await call('close')).toEqual({ ok: true });
+    await settle();
+    expect(win.location.replace).toHaveBeenCalledWith('/?debug&role=agent&start=2');
+    expect(win.close).toHaveBeenCalled();
+    // The booted page joins the same link and load.
+    const fake = fakePage();
+    window.__PIX3_PAGE_LINK__ = link ?? undefined;
+    disposers.push(() => delete window.__PIX3_PAGE_LINK__);
+    const rpc = installEditorRpc(fake.page, 'agent');
+    expect(rpc?.info()).toMatchObject({ loadId: 'load-1' });
+    expect(await call('live_node', { nodeId: 'ship' })).toEqual({ ok: true, tool: 'live_node' });
+  });
+
+  it('a gated page waits for the editor: go boots it (and drops ?gate=), no closes it', async () => {
+    editor = listen();
+    const gatedWin = () =>
+      Object.assign(new EventTarget(), {
+        location: {
+          href: 'http://localhost/?debug&role=designer&gate=g1',
+          pathname: '/',
+          search: '?debug&role=designer&gate=g1',
+          hash: '',
+        },
+        history: { state: null, replaceState: vi.fn() },
+        close: vi.fn(),
+      });
+    const win = gatedWin();
+    const link = openPageLink('designer', win as unknown as Window, 'load-1');
+    disposers.push(() => link?.dispose());
+    expect(await waitFrame(frame => frame.type === 'wait')).toEqual({ type: 'wait', gate: 'g1' });
+    let opened = false;
+    void link?.gate?.then(() => (opened = true));
+    editor.postMessage({ type: 'gate', gate: 'other', go: true });
+    await settle();
+    expect(opened).toBe(false);
+    editor.postMessage({ type: 'gate', gate: 'g1', go: true });
+    await settle();
+    expect(opened).toBe(true);
+    expect(win.history.replaceState).toHaveBeenCalledWith(null, '', '/?debug&role=designer');
+
+    const refused = gatedWin();
+    const second = openPageLink('designer', refused as unknown as Window, 'load-2');
+    disposers.push(() => second?.dispose());
+    editor.postMessage({ type: 'gate', gate: 'g1', go: false });
+    await settle();
+    expect(refused.close).toHaveBeenCalled();
   });
 
   it('answers a call for its role and load; another load is page_reloaded, another role silence', async () => {

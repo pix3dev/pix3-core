@@ -186,6 +186,15 @@ describe('editor page and discovery', () => {
     expect(await (await p.fetch('/__pix3/')).text()).not.toContain('pix3-rev');
   });
 
+  it("loads the early editor link in the game's page, ahead of the game's own script", async () => {
+    const p = await start({ 'scenes/main.pix3scene': SCENE });
+    const html = await (await p.fetch('/')).text();
+    const link = /<script type="module" src="([^"]*\/player\/dev\/page-link\.ts)"/.exec(html);
+    expect(link?.[1]).toMatch(/^\/@fs\//);
+    expect(html.indexOf(link?.[1] ?? '?')).toBeLessThan(html.indexOf('/src/main.ts'));
+    expect((await p.fetch(link?.[1] ?? '')).status).toBe(200);
+  });
+
   it('stamps a change the watcher is still settling (Vite reloads the page on the same event)', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE });
     const before = Number((await json(await p.fetch('/__pix3/api/hello'))).seq);
@@ -200,9 +209,11 @@ describe('editor page and discovery', () => {
     expect(stamped).toBe(Number((await json(await p.fetch('/__pix3/api/hello'))).seq));
   });
 
-  it('stamps no revision without the editor', async () => {
+  it('stamps no revision and loads no editor link without the editor', async () => {
     const p = await start({ 'scenes/main.pix3scene': SCENE }, { editor: false });
-    expect(await (await p.fetch('/')).text()).not.toContain('pix3-rev');
+    const html = await (await p.fetch('/')).text();
+    expect(html).not.toContain('pix3-rev');
+    expect(html).not.toContain('page-link');
   });
 
   it('answers hello with the revision, seq and versions', async () => {

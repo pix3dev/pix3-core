@@ -19,8 +19,8 @@ export const CHROME_FLAGS: readonly string[] = [
   '--disable-background-timer-throttling',
   '--disable-renderer-backgrounding',
   '--disable-backgrounding-occluded-windows',
-  // The agent's game page (plan play-in-page D9): the editor opens it with `window.open` from a
-  // bridge call, which carries no click.
+  // The agent's game page (plan play-in-page D9): the editor opens it with `window.open` (no
+  // opener, S5b) from a bridge call, which carries no click.
   '--disable-popup-blocking',
 ];
 

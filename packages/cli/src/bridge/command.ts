@@ -111,6 +111,8 @@ interface GamePage {
   readonly role: string;
   readonly url: string;
   readonly loadId: string;
+  /** `booting` while the page is still loading the game (its early hello). */
+  readonly status?: string;
   readonly paused?: boolean;
   readonly pausedBy?: string;
 }
@@ -164,8 +166,9 @@ const NEW_PAGE_WAIT_MS = 90_000;
 
 /**
  * `pix3_play start|restart` answered `popup_blocked` (D9): in the Chrome `pix3 editor` owns, open
- * the URL as a new target and wait for the editor to see the page; elsewhere (a forwarded Chrome
- * over SSH) the refusal stands — it carries the URL.
+ * the URL as a new target — unless a window of the agent's page is there after all, only slower
+ * than the editor waited — and wait for the page to boot; elsewhere (a forwarded Chrome over SSH)
+ * the refusal stands — it carries the URL.
  */
 const openBlockedPage = async (
   endpoint: ProxyEndpoint,
@@ -174,11 +177,17 @@ const openBlockedPage = async (
 ): Promise<Record<string, unknown>> => {
   if (answer.reason !== 'popup_blocked' || typeof answer.url !== 'string') return answer;
   if (endpoint.kind !== 'local') return answer;
-  await proxyCall(endpoint.port, endpoint.token, 'Target.createTarget', { url: answer.url });
+  const late = (await listPages(endpoint)).some(target => target.url === answer.url);
+  if (!late) {
+    await proxyCall(endpoint.port, endpoint.token, 'Target.createTarget', { url: answer.url });
+  }
   const deadline = Date.now() + NEW_PAGE_WAIT_MS;
   while (Date.now() < deadline) {
-    const agent = (await gamePages(editor))?.find(page => page.role === 'agent');
-    if (agent) return { ok: true, page: agent, opened: 'Target.createTarget' };
+    const agent = (await gamePages(editor))?.find(
+      page => page.role === 'agent' && page.status !== 'booting'
+    );
+    if (agent)
+      return { ok: true, page: agent, opened: late ? 'window.open' : 'Target.createTarget' };
     await new Promise(resolve => setTimeout(resolve, 1_000));
   }
   return {

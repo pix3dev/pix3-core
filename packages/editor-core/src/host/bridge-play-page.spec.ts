@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoadSceneCommand } from '@/features/scene/LoadSceneCommand';
 import { ServiceContainer } from '@/fw/di';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
-import { PlayPageLink } from '@/services/play/PlayPageLink';
+import { OPEN_WAIT_MS, PlayPageLink } from '@/services/play/PlayPageLink';
 import { appState, resetAppState } from '@/state';
 
 import { BRIDGE_TOOLS, PAGE_BRIDGE_TOOLS } from './bridge-tools';
@@ -143,20 +143,29 @@ describe('the bridge on the game page (playHost: page)', () => {
     });
   });
 
-  it('starts the agent page as a fresh load and answers once it says hello', async () => {
+  it('starts the agent page as a fresh load and answers once it has booted', async () => {
     appState.ui.playHost = 'page';
     let agent: FakeGamePage | null = null;
+    // `noopener`: no handle ever; the page speaks while booting, then once ready.
     const open = vi.spyOn(window, 'open').mockImplementation(url => {
-      agent = page('agent', { url: String(url) });
-      return {} as Window;
+      const booting = page('agent', { url: String(url), status: 'booting' });
+      agent = booting;
+      setTimeout(() => {
+        booting.info = { ...booting.info, status: 'running' };
+        booting.hello();
+      }, 20);
+      return null;
     });
     const started = await callBridgeTool('pix3_play', { action: 'start', run: { seed: 8 } });
     expect(open).toHaveBeenCalledWith(
       expect.stringContaining('?debug&role=agent&mute&scene=scenes%2Fmain.pix3scene&run='),
-      'pix3-agent-play',
-      expect.any(String)
+      '_blank',
+      expect.stringContaining('noopener')
     );
-    expect(started).toMatchObject({ ok: true, page: { role: 'agent', loadId: 'agent-load-0' } });
+    expect(started).toMatchObject({
+      ok: true,
+      page: { role: 'agent', loadId: 'agent-load-0' },
+    });
     // A restart navigates the open page (no new window) with the same run.
     agent!.answer = (tool, params) => {
       if (tool === 'navigate') setTimeout(() => agent!.reload({ url: String(params.url) }), 0);
@@ -166,15 +175,43 @@ describe('the bridge on the game page (playHost: page)', () => {
     expect(restarted).toMatchObject({ ok: true, page: { loadId: 'agent-load-1' } });
     expect(open).toHaveBeenCalledTimes(1);
     expect(agent!.calls[0].params.url).toContain(`run=${encodeURIComponent('{"seed":8}')}`);
-    // A blocked window says so, with the URL to open.
+    // A blocked window never says hello: popup_blocked, with the URL to open.
     agent!.close();
     await vi.waitFor(() => expect(service(PlayPageLink).page('agent')).toBeNull());
-    open.mockReturnValue(null);
-    expect(await callBridgeTool('pix3_play', { action: 'start' })).toMatchObject({
+    open.mockImplementation(() => null);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const blocked = callBridgeTool('pix3_play', { action: 'start' });
+      await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+      await vi.advanceTimersByTimeAsync(OPEN_WAIT_MS);
+      expect(await blocked).toMatchObject({
+        ok: false,
+        reason: 'popup_blocked',
+        url: expect.stringContaining('role=agent'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a page still loading is not read, and game_run waits for it to boot', async () => {
+    appState.ui.playHost = 'page';
+    const agent = page('agent', { status: 'booting' });
+    await service(PlayPageLink).discover(50);
+    expect(await callBridgeTool('pix3_scene', { nodeId: 'hero', page: 'agent' })).toMatchObject({
       ok: false,
-      reason: 'popup_blocked',
-      url: expect.stringContaining('role=agent'),
+      reason: 'no_game_page',
+      detail: expect.stringContaining('still loading'),
     });
+    setTimeout(() => {
+      agent.info = { ...agent.info, status: 'running' };
+      agent.hello();
+    }, 30);
+    expect(await callBridgeTool('pix3_game_run', { until: [] })).toMatchObject({
+      ok: true,
+      page: { loadId: 'agent-load-0' },
+    });
+    expect(agent.calls.map(call => call.tool)).toEqual(['game_run']);
   });
 
   it('a start whose navigation a full reload overtook navigates that load again', async () => {

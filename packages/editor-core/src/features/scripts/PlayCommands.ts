@@ -9,7 +9,12 @@ import { HostService } from '@/host/HostService';
 import { CommandDispatcher } from '@/services/core/CommandDispatcher';
 import { OperationService } from '@/services/core/OperationService';
 import { GamePlaySessionService } from '@/services/play/GamePlaySessionService';
-import { gamePageUrl, PAGE_WINDOW_NAMES, pageWindowFeatures } from '@/services/play/PlayPageLink';
+import {
+  gamePageUrl,
+  OPEN_WAIT_MS,
+  pageWindowFeatures,
+  PlayPageLink,
+} from '@/services/play/PlayPageLink';
 import { FlushService } from '@/services/project/FlushService';
 import type { PlayTarget } from '@/state/AppState';
 
@@ -102,15 +107,19 @@ const service = <T>(context: CommandContext, token: new (...args: never[]) => T)
   context.container.getService<T>(context.container.getOrCreateToken(token));
 
 /**
- * Play on the game's page (D1, D2): the window `pix3-play` opens in the click, before the flush
- * (the flush is async, and a browser's popup blocker honours a click only for a few seconds), then
- * loads `/?debug&role=designer[&scene=…]` — a fresh load every time (D5). A failed flush closes
- * the window: the page would play an older file.
+ * Play on the game's page (D1, D2, S5b): a fresh load of `/?debug&role=designer[&scene=…]` (D5)
+ * after a flush — the page must play the files as edited.
  *
- * The window is opened with an empty URL: a new one starts blank, an open one is returned as it
- * is. Navigating an open game window to `about:blank` instead puts it in another browsing context
- * group (the editor's COOP is `same-origin-allow-popups`, the game's none): Chrome clears its
- * name, and the next Play opened a second window.
+ * The page lives in a window opened `noopener` (its own renderer process: a busy game does not
+ * stall the editor), so the editor holds no handle on it and cannot navigate it later:
+ *
+ * - no Play window yet: open it in the click (a popup blocker honours a click only for a few
+ *   seconds, and the flush is async) straight onto the game's URL with `&gate=<id>`; the page
+ *   waits at the gate, and the flush's outcome opens it (`go`) or closes the page;
+ * - a Play window open (it said hello): flush, then tell it to load the URL (`navigate`).
+ *
+ * With `noopener` `window.open` returns null whatever happens; a page that never says hello was
+ * blocked, and the console says where to open it.
  */
 async function launchPagePlay(
   context: CommandContext,
@@ -118,29 +127,40 @@ async function launchPagePlay(
   deps: PlayDependencies
 ): Promise<void> {
   const open = deps.openWindow ?? ((href, name, features) => window.open(href, name, features));
-  const game = open(
-    '',
-    PAGE_WINDOW_NAMES.designer,
-    pageWindowFeatures(context.state.project.manifest?.viewportBaseSize)
-  );
+  const link = service(context, PlayPageLink);
   const url = gamePageUrl(
     deps.host.info.base,
     'designer',
     scope === 'scene' ? activeScenePath(context) : null
   );
+  const features = pageWindowFeatures(context.state.project.manifest?.viewportBaseSize);
+  // A second Play while the first window is still loading addresses that window, not a new one.
+  if (link.isOpening('designer')) {
+    await link.until(() => link.page('designer') !== null, OPEN_WAIT_MS);
+  }
+  const gate = link.page('designer') ? null : link.openGate('designer');
+  if (gate) open(`${url}&gate=${gate}`, '_blank', features);
   const flushed = await deps.flush.flushDirty(0);
+  if (gate) link.releaseGate(gate, flushed.ok);
   if (!flushed.ok) {
-    game?.close();
     console.warn(
       `[Pix3] Play stopped: the editor could not write its unsaved edits (${String(flushed.reason)}).`
     );
     return;
   }
-  if (!game) {
+  const blocked = (): void =>
     console.warn(`[Pix3] The browser blocked the game window; open ${url} yourself.`);
+  if (gate) {
+    void link
+      .until(() => link.page('designer') !== null, OPEN_WAIT_MS)
+      .then(seen => {
+        if (!seen) blocked();
+      });
     return;
   }
-  game.location.href = url;
+  const navigated = await link.call('designer', 'navigate', { url });
+  // The window went away meanwhile: a new one (outside the click, so a blocker may refuse it).
+  if (navigated.ok === false) open(url, '_blank', features);
 }
 
 /** Run the game in `target`: the active scene (`scene`) or the project's entry scene (`entry`). */

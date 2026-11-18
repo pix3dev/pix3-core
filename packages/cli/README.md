@@ -939,11 +939,14 @@ with the page's debug overlay hidden for the capture (it sits over the game's to
 exact sizes are `pix3 play --size`. `tap` / `swipe` go to the agent's page
 only (`--page designer` is `not_your_page`; no agent page, `no_game_page`), a node's position is
 read with `pix3_scene {nodeId, page: "agent"}`, and the input is refused with `page_reloaded` when
-the page's `__PIX3_PLAYER__.loadId` is no longer the load the position came from. A
-`pix3_play start|restart` the browser refused with `popup_blocked` is opened as a new target with
-`Target.createTarget` in the Chrome `pix3 editor` owns (it waits up to 90 s for the page to tell the
-editor it is ready and answers `opened: "Target.createTarget"`); over a Remote SSH forward the
-refusal stands, with its `url`. With the setting off (the Game tab, until plan
+the page's `__PIX3_PLAYER__.loadId` is no longer the load the position came from. The game pages
+are opened `noopener` (each in a renderer process of its own, so a run on the agent's page does not
+stall the editor or the human's page), so the editor sees a blocked window only by its silence: a
+`pix3_play start|restart` whose window has not said hello within 10 s is `popup_blocked`, and is
+opened as a new target with `Target.createTarget` in the Chrome `pix3 editor` owns — unless a target
+with that URL is there after all, only late (it waits up to 90 s for the page to boot and answers
+`opened: "Target.createTarget"` or `"window.open"`); over a Remote SSH forward the refusal stands,
+with its `url`. With the setting off (the Game tab, until plan
 `.plans/play-in-page.md` S6) `screenshot` and `tap` use the editor tab, and `--aspect` sets the
 Game tab's frame through `pix3_play`'s `aspect`.
 Code: `src/bridge/`.

@@ -6,7 +6,8 @@ import { SceneTab } from './scene-tab';
 import type { DebugSession, DebugSnapshot } from './session';
 
 /**
- * The debug overlay's DOM: a panel over the game's top-right corner, in a shadow root so the
+ * The debug overlay's DOM: a panel over the game's top-right corner (collapsed, a chip in the
+ * bottom-left one), in a shadow root so the
  * game's CSS cannot reach it (and its CSS cannot reach the game). Two tabs: **Profiler**, whose
  * chart repaints at 8 Hz and text at 2 Hz (each text refresh closes an averaging window), from
  * timers rather than the game's frame listener, so a slow page shows a slow overlay instead of a
@@ -34,11 +35,18 @@ const STYLE = `
   border-radius: 6px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   user-select: text;
 }
-.panel.collapsed { width: auto; }
-.panel.collapsed .body { display: none; }
-/* Collapsed = a chip (D1): it sits over the game's top corner, where HUDs live. */
+/* Collapsed = a small chip in the bottom-left corner (D1, S5b): top corners are where HUDs live. */
+.panel.collapsed {
+  width: auto; max-width: calc(100vw - 16px); top: auto; right: auto; padding: 2px 4px;
+  bottom: max(6px, env(safe-area-inset-bottom, 0px)); left: max(6px, env(safe-area-inset-left, 0px));
+  background: rgba(18, 18, 20, 0.72);
+}
+.panel.collapsed .body, .panel.collapsed .role { display: none; }
 .panel.collapsed [data-action="step"], .panel.collapsed [data-action="editor"],
 .panel.collapsed.has-role .title { display: none; }
+.panel.collapsed header { gap: 3px; }
+.panel.collapsed .fps { min-width: 0; }
+.panel.collapsed button { padding: 0 4px; }
 .panel.wide { width: min(380px, calc(100vw - 16px)); }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .title { font-weight: 600; color: #ffcf33; margin-right: auto; white-space: nowrap; }
@@ -288,14 +296,12 @@ export class DebugOverlay {
     );
   }
 
-  /** The Scene tab's "Show in editor": the editor selects the node, and its window comes forward. */
+  /**
+   * The Scene tab's "Show in editor": the editor selects the node and asks for focus itself — the
+   * page was opened with `noopener` (S5b) and holds no handle on the editor's window.
+   */
   private showInEditor(nodeId: string): void {
     this.rpc?.select(nodeId);
-    try {
-      window.opener?.focus();
-    } catch {
-      // A severed opener: the editor still selects the node.
-    }
   }
 
   private readonly onClick = (event: Event): void => {

@@ -13,9 +13,16 @@ import { appState } from '@/state';
  * page's end is `@pix3/vite-plugin`'s `player/dev/editor-rpc.ts`; keep the frames in step.
  *
  * The editor holds no play state (D4): what it knows of a page is the last `hello` it said. A page
- * says `hello {page}` when it is ready (and to `who`), `bye {reloading?}` on `pagehide`; a call
- * carries the `loadId` it was meant for, and a call whose page went away (or reloaded) is
- * answered `page_reloaded`, never by another document.
+ * says `hello {page}` as soon as it starts loading (`status: 'booting'`), again when it is ready
+ * ({@link isReady}) and to `who`, `bye {reloading?}` on `pagehide`; a call carries the `loadId` it
+ * was meant for, and a call whose page went away (or reloaded) is answered `page_reloaded`, never
+ * by another document.
+ *
+ * The pages are opened with `noopener` (S5b, {@link pageWindowFeatures}): each runs in a renderer
+ * process of its own, so a game busy rendering does not stall the editor or the other page. The
+ * editor keeps no `Window` for them; loading another URL and closing go through the link
+ * (`navigate`, `close`), and a page opened in a click before the flush waits at a gate
+ * ({@link openGate}) for the flush's outcome.
  */
 
 /** Keep in step with `PLAY_PAGES_CHANNEL` in the plugin's `player/dev/editor-rpc.ts`. */
@@ -47,12 +54,6 @@ export interface PageError {
 
 export type PageAnswer = Record<string, unknown>;
 
-/** The window each role's page lives in: a second Play reloads it instead of stacking windows. */
-export const PAGE_WINDOW_NAMES: Readonly<Record<PageRole, string>> = {
-  designer: 'pix3-play',
-  agent: 'pix3-agent-play',
-};
-
 /**
  * A run of the game's page (D1, D5): `<base>?debug&role=…` — `mute` on the agent's page — with the
  * scene and the test run's seed and config (`?run=`) a load starts with.
@@ -73,19 +74,35 @@ export const gamePageUrl = (
   return new URL(`${base}?${params.join('&')}`, window.location.origin).href;
 };
 
-/** `window.open` features: the project's viewport, scaled down to fit the screen (D2). */
+/**
+ * `window.open` features: a popup the size of the project's viewport, scaled down to fit the
+ * screen (D2), opened `noopener` — Chrome gives a page without an opener a renderer process of
+ * its own (S5b), and `window.open` returns null for it.
+ */
 export const pageWindowFeatures = (
   viewport: { width: number; height: number } | null | undefined
 ): string => {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return 'popup';
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return 'popup,noopener';
   const room = { width: screen.availWidth * 0.9, height: screen.availHeight * 0.9 };
   const scale = Math.min(1, room.width / viewport.width, room.height / viewport.height);
-  return `popup,width=${Math.round(viewport.width * scale)},height=${Math.round(viewport.height * scale)}`;
+  return `popup,noopener,width=${Math.round(viewport.width * scale)},height=${Math.round(viewport.height * scale)}`;
 };
+
+/** A page that has booted the game (or failed to) and loaded its tools: what calls may wait for. */
+export const isReady = (page: PageInfo): boolean => page.status !== 'booting';
+
+/**
+ * How long a page `window.open` asked for gets to say its first hello (the page's early link
+ * speaks right after the HTML, long before the game has loaded). No hello by then: the browser
+ * blocked the window — with `noopener` there is no other sign of it.
+ */
+export const OPEN_WAIT_MS = 10_000;
 
 /** The agent's page closes after this long without a call (never during one, D7). */
 const AGENT_IDLE_MS = 10 * 60_000;
 const MAX_ERRORS = 100;
+/** A decided gate is kept this long for a page that asks late (it retries every second). */
+const GATE_KEEP_MS = 60_000;
 
 const isRole = (value: unknown): value is PageRole => value === 'designer' || value === 'agent';
 
@@ -119,6 +136,8 @@ export class PlayPageLink {
   private control: Promise<unknown> = Promise.resolve();
   private agentCalls = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pages opened in a click and waiting for the flush: `go` once it is decided. */
+  private readonly gates = new Map<string, { role: PageRole; at: number; go: boolean | null }>();
 
   /** Open the channel and ask the pages already open (an editor reload finds them again). */
   start(): () => void {
@@ -142,6 +161,7 @@ export class PlayPageLink {
     this.idleTimer = null;
     this.left.clear();
     this.closing.clear();
+    this.gates.clear();
     this.errorList.length = 0;
     this.syncRev = -1;
   }
@@ -239,6 +259,33 @@ export class PlayPageLink {
     return at !== undefined && !this.pages.has(role) && Date.now() - at <= ms;
   }
 
+  /**
+   * A gate for a page of `role` about to be opened before the flush that must precede its load:
+   * the page (`?gate=<id>`) waits for {@link releaseGate} — boots on `go`, closes itself without.
+   */
+  openGate(role: PageRole): string {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    this.gates.set(id, { role, at: Date.now(), go: null });
+    return id;
+  }
+
+  releaseGate(id: string, go: boolean): void {
+    const gate = this.gates.get(id);
+    if (!gate) return;
+    gate.go = go;
+    this.channel?.postMessage({ type: 'gate', gate: id, go });
+    setTimeout(() => this.gates.delete(id), GATE_KEEP_MS);
+  }
+
+  /** True while a page of `role` opened in the last {@link OPEN_WAIT_MS} has not said hello yet. */
+  isOpening(role: PageRole): boolean {
+    if (this.pages.has(role)) return false;
+    const since = Date.now() - OPEN_WAIT_MS;
+    return [...this.gates.values()].some(
+      gate => gate.role === role && gate.at >= since && gate.go !== false
+    );
+  }
+
   /** Run control actions (start, restart, stop) one after another (D8). */
   serial<T>(work: () => Promise<T>): Promise<T> {
     const run = this.control.then(work, work);
@@ -317,6 +364,13 @@ export class PlayPageLink {
           where: error.where,
           loadId: error.loadId,
         });
+        return;
+      }
+      case 'wait': {
+        const gate = typeof frame.gate === 'string' ? this.gates.get(frame.gate) : undefined;
+        if (gate && gate.go !== null) {
+          this.channel?.postMessage({ type: 'gate', gate: frame.gate, go: gate.go });
+        }
         return;
       }
       case 'select':

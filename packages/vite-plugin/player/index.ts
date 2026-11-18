@@ -10,7 +10,13 @@ import {
   SceneRunner,
   ScriptRegistry,
 } from '@pix3/runtime';
-import { devPageRev, devRunOverrides, devSceneOverride, installDevTools } from 'virtual:pix3/dev';
+import {
+  devPageLink,
+  devPageRev,
+  devRunOverrides,
+  devSceneOverride,
+  installDevTools,
+} from 'virtual:pix3/dev';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
 import { modules as projectScriptModules } from 'virtual:pix3/project-scripts';
@@ -32,6 +38,7 @@ import 'virtual:pix3/spine';
 import 'virtual:pix3/postprocessing';
 
 import type { Pix3PlayerDebug } from './debug/index';
+import { newLoadId } from './load-id';
 
 /**
  * `@pix3/vite-plugin/player` (plan §B.5): the game's entry. A project's `src/main.ts` is
@@ -87,20 +94,13 @@ export interface StartGameOptions {
 const describe = (error: unknown): string =>
   error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
-/** `crypto.randomUUID` needs a secure context; a phone on the LAN IP of the dev server is not. */
-const newLoadId = (): string =>
-  typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte =>
-        byte.toString(16).padStart(2, '0')
-      ).join('');
-
 const installState = (): Pix3PlayerState => {
   const existing = window.__PIX3_PLAYER__;
   if (existing) return existing;
   const state: Pix3PlayerState = {
     status: 'booting',
-    loadId: newLoadId(),
+    // The editor link the page opened while loading (dev, a page the editor opened) named it.
+    loadId: devPageLink()?.loadId ?? newLoadId(),
     rev: devPageRev(),
     frames: 0,
     errors: [],
@@ -161,6 +161,8 @@ export async function startGame(
 ): Promise<SceneRunner> {
   const state = installState();
   try {
+    // A Play window opened before the editor's flush waits for its word (dev only).
+    await devPageLink()?.gate;
     const app = typeof target === 'string' ? document.querySelector<HTMLElement>(target) : target;
     if (!app) throw new Error(`Missing ${typeof target === 'string' ? target : 'mount'} container`);
 

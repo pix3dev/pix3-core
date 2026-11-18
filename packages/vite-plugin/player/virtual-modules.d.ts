@@ -70,6 +70,14 @@ declare module 'virtual:pix3/dev' {
   /** Dev with the editor: the file revision the server stamped into the page; else null. */
   export function devPageRev(): number | null;
   /**
+   * Dev, a page the editor opened (`?role=`): the editor link `player/dev/page-link.ts` opened
+   * while the page loaded — its `loadId`, and the Play `gate` the player waits at. Else null.
+   */
+  export function devPageLink(): {
+    readonly loadId: string;
+    readonly gate: Promise<void> | null;
+  } | null;
+  /**
    * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link, and
    * `state.loadTools` (the test host). Build: a no-op.
    * The argument is `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot

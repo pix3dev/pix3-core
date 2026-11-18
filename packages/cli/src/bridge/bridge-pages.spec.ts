@@ -16,7 +16,7 @@ import { runBridgeCli } from './command.ts';
  * bringing it to the front), tap / swipe go to the agent's page and never the human's
  * (`not_your_page`), coordinates read from an older load are refused (`page_reloaded`), and a
  * `pix3_play start` the popup blocker refused is opened with `Target.createTarget` in the owned
- * Chrome.
+ * Chrome (unless the window turned up late).
  */
 
 const TOKEN = newCdpToken();
@@ -231,5 +231,21 @@ describe('pix3 bridge on the game page (playHost: page)', () => {
       opened: 'Target.createTarget',
       page: { role: 'agent', loadId: 'load-a' },
     });
+  });
+
+  it('opens no second page when the window was only slower than the editor waited', async () => {
+    targets = targets.map(target =>
+      target.id === 'agent' ? { ...target, url: `${AGENT_URL}&start=3` } : target
+    );
+    tools.pix3_play = () => ({
+      ok: false,
+      reason: 'popup_blocked',
+      detail: 'blocked',
+      url: `${AGENT_URL}&start=3`,
+    });
+    const run = io();
+    expect(await runBridgeCli(['play', '{"action":"start"}'], run.io)).toBe(0);
+    expect(createdUrl).toBeNull();
+    expect(JSON.parse(run.out.join(''))).toMatchObject({ ok: true, opened: 'window.open' });
   });
 });
