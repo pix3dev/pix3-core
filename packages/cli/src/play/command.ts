@@ -25,6 +25,8 @@ interface PlayArgs {
   readonly scale: number;
   readonly scene?: string;
   readonly bot?: string;
+  /** `--run '<json>'`: one `pix3_game_run` on the page (its params, as JSON). */
+  readonly gameRun: Record<string, unknown> | null;
   /** Emulated `env(safe-area-inset-*)` in CSS px (a notch and a home indicator). */
   readonly safeArea: { top: number; right: number; bottom: number; left: number } | null;
   /** Shade the unsafe bands on the pictures (default with --safe-area; --no-safe-area-overlay). */
@@ -60,6 +62,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let scale: number | undefined;
   let scene: string | undefined;
   let bot: string | undefined;
+  let gameRun: Record<string, unknown> | null = null;
   let botArgs: Record<string, unknown> = {};
   let seed: number | undefined;
   let safeArea: PlayArgs['safeArea'] = null;
@@ -89,7 +92,20 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     } else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
-    else if (flag === '--safe-area') {
+    else if (flag === '--run') {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(value() ?? '');
+      } catch {
+        parsed = undefined;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return {
+          error: `--run takes the params of pix3_game_run as one JSON object, e.g. --run '{"until":[{"kind":"frames","n":60}]}'`,
+        };
+      }
+      gameRun = parsed as Record<string, unknown>;
+    } else if (flag === '--safe-area') {
       const parts = (value() ?? '').split(',').map(Number);
       if (parts.length !== 4 || !parts.every(n => Number.isFinite(n) && n >= 0)) {
         return {
@@ -134,14 +150,20 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     else if (target === undefined) target = arg;
     else return { error: `one target at a time (got ${target} and ${arg})` };
   }
+  if (bot && gameRun) {
+    return {
+      error: '--bot and --run are two runs: give one (a policy in --run is {"bot":{"name":…}})',
+    };
+  }
+  const driven = bot !== undefined || gameRun !== null;
   // A bot run paints every frame: at DPR 3 a headless page took 5–6 minutes a round
   // (core-tests/game13), so a bot defaults to 2; --scale 3 for the final pictures.
-  scale ??= bot ? 2 : 3;
+  scale ??= driven ? 2 : 3;
   if (!Number.isFinite(scale) || scale <= 0) return { error: '--scale takes a positive number' };
   // With a bot the budget is game frames: a headless page at --scale 3 paints ~8 fps, and 60 wall
   // seconds were ~8 s of a fixed-tick game — a round never finished (core-tests/game9). Seconds
   // stay as the wall-clock safety net.
-  const budget = seconds ?? (bot ? DEFAULT_BOT_WALL_SECONDS : 3);
+  const budget = seconds ?? (driven ? DEFAULT_BOT_WALL_SECONDS : 3);
   if (!Number.isFinite(budget) || budget <= 0)
     return { error: '--seconds takes a positive number' };
   const frameBudget = frames ?? DEFAULT_BOT_FRAMES;
@@ -154,6 +176,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     scale,
     scene,
     bot,
+    gameRun,
     botArgs,
     safeArea,
     safeAreaOverlay,
@@ -244,6 +267,8 @@ interface PlayReport {
   readonly frames: number;
   readonly errors: string[];
   readonly bot?: Record<string, unknown>;
+  /** `--run`: the page's `game_run` answer — the same report `pix3_game_run` gives. */
+  readonly run?: Record<string, unknown>;
   readonly game: unknown;
   readonly screenshot?: string;
   /** The sounds the game asked for: how many, and the last ones with their frames. */
@@ -279,26 +304,15 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     io.stderr(`pix3 play: ${url.error}\n`);
     return 2;
   }
-  let policyScript: string | null = null;
-  if (args.bot) {
-    const file = join(root ?? io.cwd, 'design', 'tests', 'bots', `${args.bot}.ts`);
-    const esbuild = resolveEsbuild();
-    if (!existsSync(file)) {
-      io.stderr(`pix3 play: no bot policy ${file}\n`);
-      return 2;
-    }
-    if (!esbuild) {
-      io.stderr(
-        'pix3 play: esbuild is not installed (npm install), so the policy cannot compile\n'
-      );
-      return 2;
-    }
-    try {
-      policyScript = await (await import('./bundle.ts')).compilePolicy(esbuild, file);
-    } catch (error) {
-      io.stderr(`pix3 play: the policy does not compile: ${(error as Error).message}\n`);
-      return 1;
-    }
+  // The policy a run plays: checked here, compiled only for a page that cannot import it itself
+  // (a build — the dev page takes it from `virtual:pix3/bot-policies`, as the editor does).
+  const policyName = args.bot ?? botNameOf(args.gameRun);
+  const policyFile = policyName
+    ? join(root ?? io.cwd, 'design', 'tests', 'bots', `${policyName}.ts`)
+    : null;
+  if (policyFile && !existsSync(policyFile)) {
+    io.stderr(`pix3 play: no bot policy ${policyFile}\n`);
+    return 2;
   }
   const chromePath = findChrome(env);
   if (!chromePath) {
@@ -387,8 +401,9 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     let botReport: Record<string, unknown> | undefined;
     let profile: PlayReport['profile'];
     const shots: { name: string; frame: number; path: string }[] = [];
+    const driven = status === 'running' && (args.bot !== undefined || args.gameRun !== null);
     const pageScripts =
-      status === 'running' && (args.profile || args.tree || (policyScript !== null && args.bot))
+      status === 'running' && (args.profile || args.tree || driven)
         ? await withCommandBundle(
             'play',
             'page-debug.js',
@@ -423,13 +438,66 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       // The page reloaded under the run (Vite's full reload): the profile went with it.
       profile ??= { error: 'the page reloaded during the run and took the profile with it' };
     };
-    if (status === 'running' && policyScript !== null && args.bot && pageScripts) {
+    /**
+     * `__PIX3_PLAYER__.tools` on the page: the dev page imports the test host itself
+     * (`loadTools()`); a build gets the CLI's IIFE and the policy compiled here. A sentence when
+     * the page cannot have them.
+     */
+    const installTools = async (): Promise<string | null> => {
+      const answer = String(
+        await chrome.evaluate(
+          session,
+          `(async () => { const p = window.__PIX3_PLAYER__; if (p.tools) return 'ok'; if (!p.loadTools) return 'inject'; try { await p.loadTools(); return 'ok'; } catch (error) { return 'error: ' + ((error && error.message) || error); } })()`,
+          60_000
+        )
+      );
+      if (answer === 'ok') return null;
+      if (answer !== 'inject') return answer.replace(/^error: /, '');
+      if (!pageScripts) return 'the page tools could not be built';
+      let policy = '';
+      if (policyFile) {
+        const esbuild = resolveEsbuild();
+        if (!esbuild) return 'esbuild is not installed (npm install), so the policy cannot compile';
+        try {
+          policy = await (await import('./bundle.ts')).compilePolicy(esbuild, policyFile);
+        } catch (error) {
+          return `the policy does not compile: ${(error as Error).message}`;
+        }
+      }
       await chrome.evaluate(session, pageScripts.host);
-      await chrome.evaluate(session, policyScript);
+      if (policy) await chrome.evaluate(session, policy);
+      const key = JSON.stringify(`/design/tests/bots/${policyName}.ts`);
       await chrome.evaluate(
         session,
-        `window.__PIX3_PAGE_BOT_HOST__.startPageBot(${JSON.stringify(args.bot)}, window.__PIX3_BOT_POLICY__, ${JSON.stringify(args.botArgs)}), true`
+        `window.__PIX3_PAGE_TEST_HOST__.installPageTools({ botPolicies: () => (window.__PIX3_BOT_POLICY__ ? { [${key}]: window.__PIX3_BOT_POLICY__ } : {}) }), true`
       );
+      return null;
+    };
+    const toolsError = driven ? await installTools() : null;
+    /** One page tool call, its answer as plain JSON; a throw becomes a refusal. */
+    const callTool = async (name: string, params: unknown): Promise<Record<string, unknown>> =>
+      (await chrome.evaluate(
+        session,
+        `window.__PIX3_PLAYER__.tools.call(${JSON.stringify(name)}, ${JSON.stringify(params)}).then(r => JSON.parse(JSON.stringify(r)), e => ({ ok: false, reason: 'error', detail: String((e && e.message) || e) }))`,
+        60_000
+      )) as Record<string, unknown>;
+    let runReport: Record<string, unknown> | undefined;
+    const started = Date.now();
+    if (toolsError && args.bot) {
+      botReport = { name: args.bot, error: { message: toolsError } };
+    } else if (toolsError) {
+      runReport = { ok: false, reason: 'no_tools', detail: toolsError };
+    }
+    const botStart =
+      !toolsError && driven && args.bot
+        ? await callTool('bot_start', { name: args.bot, args: args.botArgs })
+        : null;
+    if (botStart && botStart.ok !== true) {
+      botReport = {
+        name: args.bot,
+        error: { message: String(botStart.detail ?? 'did not start') },
+      };
+    } else if (botStart) {
       await startProfile();
       // One evaluate per poll: whether the policy is done, and the next picture it asked for
       // (`bot.screenshot`) — the page holds the game paused on that frame until `resume()`.
@@ -445,7 +513,6 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       );
       let gone = false;
       let lastProgress = Date.now();
-      const started = Date.now();
       for (const deadline = Date.now() + args.seconds * 1000; Date.now() < deadline; ) {
         await sleep(POLL_MS);
         const poll = (await chrome.evaluate(
@@ -494,7 +561,59 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
             string,
             unknown
           >);
-    } else if (status === 'running') {
+    } else if (!toolsError && driven && args.gameRun) {
+      // Started without waiting on it: a run lasts minutes, and the page may reload under it.
+      await chrome.evaluate(
+        session,
+        `(() => { window.__PIX3_PAGE_RUN__ = { done: false }; window.__PIX3_PLAYER__.tools.call('game_run', ${JSON.stringify(args.gameRun)}).then(result => { window.__PIX3_PAGE_RUN__ = { done: true, result: JSON.parse(JSON.stringify(result)) }; }, error => { window.__PIX3_PAGE_RUN__ = { done: true, result: { ok: false, reason: 'error', detail: String((error && error.stack) || error) } }; }); return true; })()`
+      );
+      await startProfile();
+      let lastProgress = Date.now();
+      const poll = async (): Promise<{ gone?: boolean; done?: boolean; result?: unknown }> =>
+        ((await chrome
+          .evaluate(
+            session,
+            '(() => { const r = window.__PIX3_PAGE_RUN__; return r ? { done: r.done, result: r.done ? r.result : undefined } : { gone: true }; })()'
+          )
+          .catch(() => ({ gone: true }))) ?? { gone: true }) as {
+          gone?: boolean;
+          done?: boolean;
+          result?: unknown;
+        };
+      let last: Awaited<ReturnType<typeof poll>> = {};
+      for (const deadline = Date.now() + args.seconds * 1000; Date.now() < deadline; ) {
+        await sleep(POLL_MS);
+        last = await poll();
+        if (last.gone || last.done) break;
+        if (Date.now() - lastProgress >= PROGRESS_MS) {
+          lastProgress = Date.now();
+          io.stderr(
+            `pix3 play: game_run running (${Math.round((Date.now() - started) / 1000)} s)\n`
+          );
+        }
+      }
+      if (!last.gone && !last.done) {
+        // Out of wall time: cancel, so the page lets go of its input and pause, then read it.
+        await callTool('game_cancel', {}).catch(() => null);
+        for (let tries = 0; tries < 40 && !last.done && !last.gone; tries += 1) {
+          await sleep(POLL_MS);
+          last = await poll();
+        }
+      }
+      if (!last.gone) await stopProfile();
+      runReport = last.gone
+        ? {
+            ok: false,
+            reason: 'page_reloaded',
+            detail:
+              'the page reloaded during the run and took it with it — Vite reloads the dev page when a project file changes (or the page navigated); run again once the files are quiet, or play dist',
+          }
+        : ((last.result as Record<string, unknown> | undefined) ?? {
+            ok: false,
+            reason: 'timeout',
+            detail: `the run did not end within --seconds ${args.seconds}`,
+          });
+    } else if (status === 'running' && !driven) {
       await startProfile();
       await sleep(args.seconds * 1000);
       await stopProfile();
@@ -565,6 +684,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       frames,
       errors,
       ...(botReport ? { bot: botReport } : {}),
+      ...(runReport ? { run: runReport } : {}),
       game,
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
       ...(shots.length > 0 ? { screenshots: shots } : {}),
@@ -575,15 +695,42 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
     const botFailed =
       botReport !== undefined && (done?.pass !== true || botReport.error !== undefined);
+    const runFailed = runReport !== undefined && !runPassed(runReport);
     if (args.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
     else io.stdout(formatPlayHuman(report));
-    return status !== 'running' || errors.length > 0 || botFailed ? 1 : 0;
+    return status !== 'running' || errors.length > 0 || botFailed || runFailed ? 1 : 0;
   } catch (error) {
     io.stderr(`pix3 play: ${(error as Error).message}\n`);
     return 1;
   } finally {
     await chrome.close();
   }
+};
+
+/** The policy a `--run` plays, if any (`{"bot": {"name": …}}`). */
+const botNameOf = (gameRun: Record<string, unknown> | null): string | undefined => {
+  const bot = gameRun?.bot as { name?: unknown } | undefined;
+  return typeof bot?.name === 'string' && bot.name.trim() ? bot.name.trim() : undefined;
+};
+
+/** Outcomes that pass a run: a met `until`, or the policy's own `done(true)`. */
+const PASSING_OUTCOMES = new Set(['until', 'bot-pass']);
+
+const runPassed = (run: Record<string, unknown>): boolean =>
+  run.ok === true && PASSING_OUTCOMES.has(String((run.outcome as { kind?: unknown })?.kind));
+
+const formatRunHuman = (run: Record<string, unknown>): string[] => {
+  if (run.ok !== true) {
+    return [`run: REFUSED ${String(run.reason ?? '')} — ${String(run.detail ?? run.error ?? '')}`];
+  }
+  const outcome = run.outcome as { kind?: string; frame?: number } | undefined;
+  const lines = [
+    `run: ${runPassed(run) ? 'PASS' : 'FAIL'} (${outcome?.kind ?? '?'} at frame ${outcome?.frame ?? '?'}) — ${String(run.verdict ?? '')}`,
+  ];
+  for (const note of ((run.notes as string[] | undefined) ?? []).slice(0, 6)) {
+    lines.push(`  note: ${note}`);
+  }
+  return lines;
 };
 
 const formatPlayHuman = (report: PlayReport): string => {
@@ -605,6 +752,7 @@ const formatPlayHuman = (report: PlayReport): string => {
     for (const entry of log.slice(-12))
       lines.push(`  [${entry.frame}] ${entry.kind}: ${entry.message}`);
   }
+  if (report.run) lines.push(...formatRunHuman(report.run));
   if (report.game !== null && report.game !== undefined) {
     lines.push(`game: ${JSON.stringify(report.game)}`);
   }

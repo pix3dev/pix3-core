@@ -309,6 +309,11 @@ export interface DevSourceOptions {
   readonly editorLinkPath: string;
   /** `<base>__pix3/` when the plugin serves the editor, else null (no link). */
   readonly editorUrl: string | null;
+  /**
+   * `@pix3/editor-core`'s `dist/page-test-host.js` (the game page's test host, plan play-in-page
+   * S3), as a file path; null when editor-core is not installed — the page then has no tools.
+   */
+  readonly testHostPath: string | null;
 }
 
 /**
@@ -320,7 +325,9 @@ export interface DevSourceOptions {
  *   (`<meta name="pix3-rev">`, {@link PAGE_REV_META}), the player's `__PIX3_PLAYER__.rev`;
  * - `installDevTools(context)` imports the debug overlay when the URL has `debug`, otherwise the
  *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
- *   module and `/?clean` none.
+ *   module and `/?clean` none. It also sets `__PIX3_PLAYER__.loadTools()`, which imports the
+ *   test host and the project's bot policies (`virtual:pix3/bot-policies`) and installs
+ *   `__PIX3_PLAYER__.tools` — called by `?debug` and by `pix3 play`, nothing else.
  *
  * In a build both are no-ops and nothing of the overlay or the link is bundled (a single-file
  * HTML cannot fetch a chunk anyway). The modules are imported by file path, not by a package
@@ -360,12 +367,25 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `  const rev = Number.parseInt(meta ? meta.getAttribute('content') : '', 10);`,
     `  return Number.isNaN(rev) ? null : rev;`,
     `}`,
+    `const testHostPath = ${JSON.stringify(options.testHostPath)};`,
+    `let toolsLoading = null;`,
+    `function loadTools() {`,
+    `  if (!testHostPath) {`,
+    `    return Promise.reject(new Error('The page has no test tools: @pix3/editor-core is not installed (or not built).'));`,
+    `  }`,
+    `  toolsLoading ??= Promise.all([import(testHostPath), import('virtual:pix3/bot-policies')]).then(`,
+    `    ([host, policies]) => { host.installPageTools({ botPolicies: () => policies.modules }); return true; }`,
+    `  );`,
+    `  return toolsLoading;`,
+    `}`,
     `export function installDevTools(context) {`,
+    `  context.state.loadTools = loadTools;`,
     `  if (params.has('debug')) {`,
     `    import(${JSON.stringify(options.overlayPath)}).then(`,
     `      overlay => overlay.mountDebugOverlay(context, { editorUrl }),`,
     `      failed('debug overlay')`,
     `    );`,
+    `    loadTools().catch(failed('test host'));`,
     `    return;`,
     `  }`,
     `  if (!editorUrl || window.top !== window || params.has('clean')) return;`,

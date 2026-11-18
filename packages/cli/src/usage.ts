@@ -308,31 +308,41 @@ Reference it from a scene or script as res://<path inside the project>.
   --json      machine-readable (the catalog; or {family, weight, copied, registered})
 `,
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
-                 [--bot <name>] [--bot-args '<json>'] [--seed N] [--config '<json>'] [--frames N]
+                 [--run '<json>' | --bot <name> [--bot-args '<json>']] [--seed N] [--config '<json>']
+                 [--frames N]
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
   when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
-  optionally played by a bot policy. No editor, no MCP: an agent's way to check the real page,
-  the build included, with real input at a device size.
+  optionally driven by a test run or a bot policy. No editor, no MCP: an agent's way to check the
+  real page, the build included, with real input at a device size.
 
   dev | dist     the running dev server (?clean, no editor link) or dist/index.html (file://);
                  a URL or a folder holding index.html works too
   --size WxH     the viewport in CSS px (default 390x844, a phone); --scale the device pixel ratio
-                 (default 3, 2 with --bot: every frame is painted, and DPR 3 is a slow round)
+                 (default 3, 2 with --run/--bot: every frame is painted, and DPR 3 is a slow round)
   --safe-area    emulate a notch and a home indicator: top,right,bottom,left CSS px (an iPhone 14:
                  47,0,34,0) — the page's env(safe-area-inset-*), what layout.safeArea nodes avoid.
                  Every picture shades those bands in translucent magenta with a dashed edge, so a
                  screenshot shows what would sit under the notch or the home indicator;
                  --no-safe-area-overlay takes the shading off (the page itself never has it)
   --scene path   boot another scene (dev server only)
-  --bot name     run design/tests/bots/<name>.ts on the page: the editor's bot API (tap, swipe,
+  --run json     one pix3_game_run on the page, its params as JSON: until/fail predicates, watch,
+                 monkey, bot (physical-input or direct-action), control, maxFrames, pauseOnOutcome…
+                 '{"until":[{"kind":"frames","n":120}],"bot":{"name":"menu"}}'. The page's own test
+                 host runs it (the editor's code; on dev imported by the page with the policies Vite
+                 serves, on dist injected with the policy compiled here) and the report is the one
+                 the bridge returns ("run" in --json). Differences from the editor: a negative
+                 control restores state only through the game's reset(seed) (no scene restart on
+                 the page), and reach proofs last only as long as the page
+  --bot name     run design/tests/bots/<name>.ts on the page in real time: the editor's bot API (tap, swipe,
                  press, axis, moveTo, command, nodes, gameState, done) on DOM input events —
                  physical-input only. Ends at done() or after --frames game frames (default 7200,
                  two minutes of game time, however slowly the page paints); --seconds is the
-                 wall-clock limit (default 300 with a bot; without one, how long the page runs: 3).
+                 wall-clock limit (default 300 with --run or a bot; without one, how long the page
+                 runs: 3).
                  The game ticks a fixed 1/60 s per frame while a bot plays, so a frame number means
                  the same game time on any machine, and it stays paused on the frame of done()
   --seed N       seed scene.random for this run (dev and dist: injected into the page), so a
@@ -363,8 +373,10 @@ Reference it from a scene or script as res://<path inside the project>.
                  __PIX3_PLAYER__.debug.tree()
   --json         machine-readable report (with --tree: "tree" {count, truncated, roots})
 
-  Exit 0 = the page ran frames, nothing threw, the bot passed; 1 = errors, a failed or crashed
-  bot, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome, nothing to play, no such policy).
+  Exit 0 = the page ran frames, nothing threw, the bot or the run passed (an until met, or the
+  policy's done(true)); 1 = errors, a failed or crashed bot, a run that failed, timed out or was
+  refused, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome,
+  nothing to play, no such policy).
 `,
   render: `Usage: pix3 render <scene.pix3scene|res://…> [--node <id>] [--views <list>] [--size 512]
                    [--out <file.png>] [--lights auto|studio|scene] [--background '#8f9aa6']

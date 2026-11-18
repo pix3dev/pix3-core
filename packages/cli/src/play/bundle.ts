@@ -6,26 +6,28 @@ import type { Plugin } from 'esbuild';
 /**
  * The scripts `pix3 play` evaluates in the game's page:
  *
- * - the **host** — `BotSession` and the page world from editor-core
- *   (`src/services/game-test/page-bot-host.ts`), as one IIFE that sets
- *   `window.__PIX3_PAGE_BOT_HOST__`. Published package: prebuilt into
- *   `dist/play/prebuilt/page-bot-host.js` at `prepack` (`scripts/build-play.mjs`); a repo checkout
- *   builds it into a temp folder from the editor-core sources;
+ * - the **test host** for a built page — editor-core's `src/services/game-test/page-test-host.ts`
+ *   (what `pix3_game_run` does, plus the realtime `--bot` run), as one IIFE that sets
+ *   `window.__PIX3_PAGE_TEST_HOST__`. A dev page imports the same host itself, prebuilt by
+ *   editor-core (`__PIX3_PLAYER__.loadTools()`), so this one is only for pages without it.
+ *   Published package: prebuilt into `dist/play/prebuilt/page-test-host.js` at `prepack`
+ *   (`scripts/build-play.mjs`); a repo checkout builds it into a temp folder from the sources;
  * - the **debug** script (`--profile`, `--tree`) — `FrameProfile` and `liveTree` from the player's
  *   debug sources (`packages/vite-plugin/player/debug/profile.ts`, `tree.ts`), one IIFE that sets
  *   `window.__PIX3_PAGE_DEBUG_HOST__`; built beside the host, so a built page is profiled and its
  *   tree read without the player shipping any of it;
- * - the **policy** — the project's `design/tests/bots/<name>.ts`, compiled at run time with the
- *   project's esbuild into an IIFE that sets `window.__PIX3_BOT_POLICY__`.
+ * - the **policy** for a built page — the project's `design/tests/bots/<name>.ts`, compiled at run
+ *   time with the project's esbuild into an IIFE that sets `window.__PIX3_BOT_POLICY__`.
  *
- * Neither carries `@pix3/runtime`: the page already runs one, and a second copy would make every
- * `instanceof NodeBase` false. Both get a shim whose `NodeBase` recognises the page's nodes by
- * shape — the only runtime value the bot world needs.
+ * None carries `@pix3/runtime`: the page already runs one, and a second copy would make every
+ * `instanceof NodeBase` false. They get a shim instead: a `NodeBase` that recognises the page's
+ * nodes by shape, and — for the host — the few runtime values it calls (`HOST_RUNTIME_SHIM`).
+ * `three` is bundled into the host as a second copy: it does vector math there, nothing renders.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export const PAGE_BOT_HOST_FILE = 'page-bot-host.js';
+export const PAGE_TEST_HOST_FILE = 'page-test-host.js';
 export const PAGE_DEBUG_FILE = 'page-debug.js';
 
 /** `@pix3/runtime` for code that runs beside the page's own runtime. */
@@ -36,17 +38,41 @@ const RUNTIME_SHIM = `export class NodeBase {
 }
 `;
 
-const runtimeShim = (): Plugin => ({
+const RUNTIME_SRC = resolve(here, '..', '..', '..', 'runtime', 'src');
+
+/**
+ * `@pix3/runtime` for the test host: the shape `NodeBase` and every other value the host imports.
+ * `game-debug.ts` is the runtime's own (its state lives on `globalThis`, so the page's game and the
+ * host meet there), as is the renderability lint (its `NodeBase` redirected to the shape one); the
+ * rest is two lines each. A new runtime value import in the host fails the build here.
+ */
+const HOST_RUNTIME_SHIM = `export { NodeBase } from './nodes/NodeBase';
+export * from './core/game-debug';
+export { collectRenderabilityIssues } from './core/renderability-lint';
+export const DEFAULT_FIXED_DELTA_SEC = 1 / 60;
+export function isInteractive(value) {
+  return typeof value === 'object' && value !== null &&
+    typeof value.getInteractions === 'function' && typeof value.invokeInteraction === 'function';
+}
+`;
+
+const runtimeShim = (host = false): Plugin => ({
   name: 'pix3-play-runtime-shim',
   setup(build) {
     build.onResolve({ filter: /^@pix3\/runtime$/ }, () => ({
+      path: host ? 'host-runtime-shim' : 'runtime-shim',
+      namespace: 'pix3-play',
+    }));
+    // The runtime's own modules the host shim re-exports reach `NodeBase` by a relative path.
+    build.onResolve({ filter: /\/nodes\/NodeBase$/ }, () => ({
       path: 'runtime-shim',
       namespace: 'pix3-play',
     }));
-    build.onLoad({ filter: /.*/, namespace: 'pix3-play' }, () => ({
-      contents: RUNTIME_SHIM,
-      loader: 'js',
-    }));
+    build.onLoad({ filter: /.*/, namespace: 'pix3-play' }, args =>
+      args.path === 'host-runtime-shim'
+        ? { contents: HOST_RUNTIME_SHIM, loader: 'js', resolveDir: RUNTIME_SRC }
+        : { contents: RUNTIME_SHIM, loader: 'js' }
+    );
   },
 });
 
@@ -60,13 +86,13 @@ export const buildPlayBundle = async (
   await esbuild.build({
     stdin: {
       contents:
-        "import { startPageBot } from '@/services/game-test/page-bot-host';\n" +
-        'window.__PIX3_PAGE_BOT_HOST__ = { startPageBot };\n',
+        "import { installPageTools } from '@/services/game-test/page-test-host';\n" +
+        'window.__PIX3_PAGE_TEST_HOST__ = { installPageTools };\n',
       resolveDir: editorCoreSrc,
-      sourcefile: 'page-bot-host-entry.ts',
+      sourcefile: 'page-test-host-entry.ts',
       loader: 'ts',
     },
-    outfile: join(outdir, PAGE_BOT_HOST_FILE),
+    outfile: join(outdir, PAGE_TEST_HOST_FILE),
     bundle: true,
     format: 'iife',
     platform: 'browser',
@@ -75,7 +101,7 @@ export const buildPlayBundle = async (
     minify: options.minify === true,
     legalComments: 'none',
     logLevel: 'warning',
-    plugins: [runtimeShim()],
+    plugins: [runtimeShim(true)],
   });
   const playerDebugSrc = resolve(here, '..', '..', '..', 'vite-plugin', 'player', 'debug');
   await esbuild.build({
@@ -100,9 +126,9 @@ export const buildPlayBundle = async (
   });
 };
 
-/** The host script's text from a bundle folder. */
+/** The test host script's text from a bundle folder. */
 export const readPlayHost = (bundleDir: string): string =>
-  readFileSync(join(bundleDir, PAGE_BOT_HOST_FILE), 'utf8');
+  readFileSync(join(bundleDir, PAGE_TEST_HOST_FILE), 'utf8');
 
 /** The debug script's text from a bundle folder. */
 export const readPlayDebug = (bundleDir: string): string =>

@@ -15,13 +15,13 @@
   "ignoreIssues": {
     // `export default pix3` beside `export { pix3 }`: the usual default of a Vite plugin
     // (`import pix3 from '@pix3/vite-plugin'`); the starters use the named one.
-    "packages/vite-plugin/src/index.ts": ["duplicates"]
+    "packages/vite-plugin/src/index.ts": ["duplicates"],
   },
   "workspaces": {
     ".": {
       "entry": ["scripts/*.mjs"],
       // `docs/example-scripts/*.ts` are documentation linked from docs/nodes-and-systems.md.
-      "project": ["scripts/*.mjs", "*.{js,ts}"]
+      "project": ["scripts/*.mjs", "*.{js,ts}"],
     },
     "packages/runtime": {
       // package.json `exports` (`.`, `./testing`, `./node`) are found from the manifest. The wire
@@ -31,8 +31,8 @@
       "project": [
         "src/**/*.ts!",
         // the scene corpus the loader / saver / patch / validate / smoke goldens run over
-        "!src/node/scene-corpus.ts!"
-      ]
+        "!src/node/scene-corpus.ts!",
+      ],
     },
     "packages/cli": {
       "entry": [
@@ -46,7 +46,7 @@
         "src/render/page-host.ts!",
         "src/tree/defaults.ts!",
         "src/validate/bundle-main.ts!",
-        "src/{smoke,validate}/bundle-entries/*.ts!"
+        "src/{smoke,validate}/bundle-entries/*.ts!",
       ],
       "project": [
         "src/**/*.ts!",
@@ -54,8 +54,8 @@
         // the in-memory Chrome the editor / proxy specs drive over a pipe
         "!src/editor/fake-chrome.ts!",
         // the 1.x tool names the kit's drift spec keeps out of the kit
-        "!src/kit/retired-editor-tools.ts!"
-      ]
+        "!src/kit/retired-editor-tools.ts!",
+      ],
     },
     "packages/vite-plugin": {
       // `src/client/index.ts`: the editor page's client, served by path (`/@fs/…`, CLIENT_ENTRY).
@@ -67,37 +67,38 @@
         "player/index.ts!",
         "player/debug/index.ts!",
         "player/debug/profile.ts!",
-        "player/dev/editor-link.ts!"
+        "player/dev/editor-link.ts!",
       ],
       "project": [
         "src/**/*.ts!",
         "player/**/*.ts!",
         // the build / plugin specs' project fixtures and dev-server harness
-        "!src/test-support/**!"
-      ]
+        "!src/test-support/**!",
+      ],
     },
     "packages/editor-core": {
       // `src/index.ts`: the library entry `vite.config.ts` builds into `dist/index.js` (the
       // published `exports` name only the built file; no consumer compiles against the sources).
-      // `page-bot-host.ts`: bundled by the CLI's `pix3 play` (`packages/cli/src/play/bundle.ts`,
-      // by path through esbuild's stdin) into the page script that runs a bot policy on a game's
-      // own page; nothing in the editor imports it.
-      "entry": ["src/index.ts!", "scripts/*.mjs!", "src/services/game-test/page-bot-host.ts!"],
+      // `page-test-host.ts`: the game page's test host — built into `dist/page-test-host.js` by
+      // `vite.page-test-host.config.ts` (imported by path from `virtual:pix3/dev`) and bundled by
+      // the CLI's `pix3 play` for a built page (`packages/cli/src/play/bundle.ts`, through
+      // esbuild's stdin); nothing in the editor imports it.
+      "entry": ["src/index.ts!", "scripts/*.mjs!", "src/services/game-test/page-test-host.ts!"],
       "project": [
         "src/**/*.ts!",
         "scripts/*.mjs!",
         // the in-memory EditorHost, storage and ticker fakes the specs mount the editor on
         "!src/host/testing/**!",
         "!src/**/*.test-helpers.ts!",
-        "!src/**/*.spec-helper.ts!"
+        "!src/**/*.spec-helper.ts!",
       ],
       // golden-layout's CJS `main` (what Node-side vitest resolves) requires tslib without
       // declaring it.
-      "ignoreDependencies": ["tslib"]
+      "ignoreDependencies": ["tslib"],
     },
     "packages/create-pix3": {
       "entry": ["src/create.js!"],
-      "project": ["src/**/*.{js,ts}!"]
-    }
-  }
+      "project": ["src/**/*.{js,ts}!"],
+    },
+  },
 }

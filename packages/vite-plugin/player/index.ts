@@ -64,6 +64,13 @@ export interface Pix3PlayerState {
   renderer: RuntimeRenderer | null;
   /** Debug mode only (`/?debug` in dev): the overlay's numbers, live scene and controls. */
   debug?: Pix3PlayerDebug;
+  /**
+   * The page's test tools (`pix3_game_run` and friends, plan play-in-page S3), once loaded: by
+   * `?debug` or {@link loadTools} on the dev server, injected by `pix3 play` on a build.
+   */
+  tools?: { call(name: string, params?: unknown): Promise<unknown> };
+  /** Dev only: load {@link tools} (the test host from `@pix3/editor-core` and the bot policies). */
+  loadTools?: () => Promise<boolean>;
 }
 
 declare global {

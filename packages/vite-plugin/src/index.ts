@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,7 +49,7 @@ import {
 import { normalizeResRoot } from './build/project-manifest.ts';
 import type { StripOption } from './build/strip-decision.ts';
 import { buildStrippedModuleSource } from './build/strippable-runtime-modules.ts';
-import { installedVersion, pluginVersion } from './dev-info.ts';
+import { findPackageDir, installedVersion, pluginVersion } from './dev-info.ts';
 import { startEditorServer, type EditorServer } from './dev-server.ts';
 import { EDITOR_HOST_ID, editorHostSource, SPINE_LOADER_ID } from './editor-page.ts';
 import { fileOf } from './module-paths.ts';
@@ -145,6 +145,16 @@ const EDITOR_LINK_ENTRY = fileURLToPath(
     import.meta.url
   )
 );
+
+/**
+ * `@pix3/editor-core`'s game-page test host (`dist/page-test-host.js`, plan play-in-page D10), by
+ * real path as Vite serves it (`fs.allow` holds the editor-core directory); null without one.
+ */
+const pageTestHostEntry = (projectRoot: string): string | null => {
+  const dir = findPackageDir(projectRoot, '@pix3/editor-core');
+  const file = dir ? join(realpathSync.native(dir), 'dist', 'page-test-host.js') : null;
+  return file && existsSync(file) ? normalizePath(file) : null;
+};
 
 export function pix3(options: Pix3Options = {}): Plugin[] {
   const settings = {
@@ -359,6 +369,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                 overlayPath: normalizePath(DEBUG_OVERLAY_ENTRY),
                 editorLinkPath: normalizePath(EDITOR_LINK_ENTRY),
                 editorUrl: settings.editor ? `${baseUrl()}__pix3/` : null,
+                testHostPath: pageTestHostEntry(root()),
               })
             : devSource('none');
         default:

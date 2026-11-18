@@ -70,7 +70,8 @@ declare module 'virtual:pix3/dev' {
   /** Dev with the editor: the file revision the server stamped into the page; else null. */
   export function devPageRev(): number | null;
   /**
-   * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link. Build: a no-op.
+   * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link, and
+   * `state.loadTools` (the test host). Build: a no-op.
    * The argument is `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot
    * import it).
    */
@@ -83,6 +84,7 @@ declare module 'virtual:pix3/dev' {
       errors: string[];
       scene: string | null;
       debug?: { snapshot(): unknown };
+      loadTools?: () => Promise<boolean>;
     };
   }): void;
 }
