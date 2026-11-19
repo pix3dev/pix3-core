@@ -1281,6 +1281,29 @@ describe('ViewportRendererService', () => {
     expect(Object.keys(orbitControls._pointerPositions)).toHaveLength(0);
   });
 
+  it('keeps orbit off while the 3D gizmo drags, even when a ui change re-syncs navigation', () => {
+    resetAppState();
+    appState.ui.navigationMode = '3d';
+
+    const service = new ViewportRendererService();
+    const orbitControls = { enabled: false };
+    const transformControls = { dragging: true };
+    Object.defineProperty(service, 'orbitControls', { value: orbitControls, configurable: true });
+    Object.defineProperty(service, 'transformControls', {
+      value: transformControls,
+      configurable: true,
+    });
+    const syncNavigationMode = () =>
+      (service as unknown as { syncNavigationMode: () => void }).syncNavigationMode();
+
+    syncNavigationMode();
+    expect(orbitControls.enabled).toBe(false);
+
+    transformControls.dragging = false;
+    syncNavigationMode();
+    expect(orbitControls.enabled).toBe(true);
+  });
+
   it('applies the padded 2D default on first resize even before entering 2D navigation', () => {
     resetAppState();
     appState.ui.navigationMode = '3d';

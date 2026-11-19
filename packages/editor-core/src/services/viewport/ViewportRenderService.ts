@@ -955,7 +955,10 @@ export class ViewportRendererService {
 
   private setOrbitEnabled(enabled: boolean): void {
     if (!this.orbitControls) return;
-    if (enabled && appState.ui.navigationMode === '2d') {
+    // Any appState.ui change re-runs syncNavigationMode() → setOrbitEnabled(true). During a
+    // gizmo drag that would wake OrbitControls, which already entered ROTATE on the same
+    // pointerdown, and the camera would spin along with the dragged object.
+    if (enabled && (appState.ui.navigationMode === '2d' || this.transformControls?.dragging)) {
       this.orbitControls.enabled = false;
       return;
     }
