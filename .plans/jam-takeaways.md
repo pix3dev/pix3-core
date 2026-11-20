@@ -81,12 +81,32 @@ MRAID/DAPI — плейбл-реклама), `trackSafeArea` (проба `env()`
 - Тесты: дубли событий, bfcache, удерживаемый указатель при фоне, пустой стек «назад» — обычная
   навигация. Восстановление аудио на iOS — ручная проверка на устройстве, отметить в записи.
 
+**Сделано (2026-11-21).** `core/AppLifecycle.ts` (синглтон страницы, DOM-слушатели только пока есть
+подписчики; `blur` = фокус потерян независимо от `hasFocus()`), `core/AppApi.ts` = `scene.app`. Audio и
+Input переведены на него; Input сбрасывает указатели на потерю фокуса и на уход в фон. Runner: множество
+`RunnerPauseReason` (`host`/`background`/`ad`, `setPauseReason`, `getPauseReasons`; `paused` = только
+`host`, как читают GameTestService/page-test-host), `MAX_REALTIME_DELTA_SEC = 0.1`, 0 с на первом тике
+после возврата, снятие паузы изнутри тика не делает вложенный тик. Хост держит игру `active` через
+`runner.setBackgroundHeld` (в `setBackgroundTicks`). Назад: `pushBack` → `pop`, `window.__pix3Back`,
+history-guard по `runtimeBackButton` (`app.backButton` в манифесте плагина и редактора; без ключа — только
+zip на верхнем уровне). `bot.background(ms)` — синхронный круг через `simulateBackground`.
+Отклонения: **владелец — явный первый аргумент** (`onBackground(this, cb)`, `pushBack(this, h)`):
+`SceneService` один на всех, угадать вызывающего нельзя; отписка идёт через индекс signal-target-links,
+поэтому срабатывают все готовые страховки (detach, `removeComponent`, автолоады). `HeadlessGameOptions`
+не тронут: в Node жизненный цикл инертен. Не проверено: восстановление аудио на iOS (устройство).
+Для игр: пересобрать vite-plugin (плеер). Хук для B1: `runner.setPauseReason('ad', …)`.
+
 ### A2. Отступы от нативной оболочки (S, независим от A1)
 
 `env(safe-area-inset-*)` в WKWebView под Capacitor отдавал 0 (catstd). В плеере:
 `window.__pix3SetInsets(top, right, bottom, left)` (CSS px) — переопределяет пробу `env()` до
 следующего вызова; пере-проба `env()` также на `orientationchange` и `visualViewport.resize`.
 Обновить формулировку пункта safe area в `.plans/TODO.md` (устарела: `trackSafeArea` есть).
+
+**Сделано (2026-11-21).** `window.__pix3SetInsets(t, r, b, l)` в `trackSafeArea` (вызов без чисел —
+назад к пробе `env()`), пере-проба на `orientationchange` и `visualViewport.resize`; пункт TODO
+переписан на проверку в настоящей Capacitor-оболочке. Тест плеера не добавлен: у `player/index.ts` нет
+spec (он грузит `virtual:pix3/*`); остаётся ручной/e2e проверкой.
 
 ### A3. Сохранения: `scene.storage` (M)
 

@@ -20,6 +20,9 @@ interface FakeRunner {
   resume(): void;
   subscribeFrameStats(listener: () => void): () => void;
   setFrameScheduler(scheduler: unknown): void;
+  /** `setBackgroundHeld`: the run keeps the game `active` on a hidden page. */
+  held: boolean;
+  setBackgroundHeld(held: boolean): void;
   getLiveRootNodes(): never[];
   getLiveNodeById(): null;
   findLiveNodeByName(): null;
@@ -62,6 +65,10 @@ const makeRunner = (): FakeRunner => {
     },
     setFrameScheduler: scheduler => {
       runner.schedulers.push(scheduler);
+    },
+    held: false,
+    setBackgroundHeld: held => {
+      runner.held = held;
     },
     getLiveRootNodes: () => [],
     getLiveNodeById: () => null,
@@ -222,6 +229,7 @@ describe('the run contract', () => {
     await new Promise(resolve => setTimeout(resolve, 20));
     // Worker frames while the run holds the page (a hidden page gets no rAF).
     expect(player.runner.schedulers).toHaveLength(1);
+    expect(player.runner.held).toBe(true);
     window.dispatchEvent(new Event('pagehide'));
     expect(await run).toMatchObject({ ok: false, reason: 'cancelled' });
 
@@ -230,8 +238,9 @@ describe('the run contract', () => {
     // pauseOnOutcome does not hold a cancelled run's game: it was running before, it runs after.
     expect(player.runner.paused).toBe(false);
     expect(player.runner.getTimeMode().mode).toBe('realtime');
-    // Back on rAF, still counting the player's frames.
+    // Back on rAF, still counting the player's frames; the page's lifecycle counts again.
     expect(player.runner.schedulers).toHaveLength(2);
+    expect(player.runner.held).toBe(false);
     const restored = player.runner.schedulers[1] as {
       request(callback: (time: number) => void): number;
     };

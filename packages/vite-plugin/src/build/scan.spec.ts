@@ -337,8 +337,11 @@ describe('parseProjectManifest', () => {
       fonts: [],
       localization: null,
       autoloads: [],
+      backButton: null,
     });
     expect(parseProjectManifest(':::bad', 'x').projectName).toBe('x');
+    expect(parseProjectManifest('app: { backButton: true }', 'x').backButton).toBe(true);
+    expect(parseProjectManifest('app: { backButton: yes-please }', 'x').backButton).toBeNull();
   });
 });
 

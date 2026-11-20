@@ -6,7 +6,8 @@ import type { SceneGraph } from './SceneManager';
 import type { SceneManager } from './SceneManager';
 import type { InputService } from './InputService';
 import type { SceneService } from './SceneService';
-import { SceneRunner, type SceneRunnerFrameSample } from './SceneRunner';
+import { MAX_REALTIME_DELTA_SEC, SceneRunner, type SceneRunnerFrameSample } from './SceneRunner';
+import type { AppLifecycleChange } from './AppLifecycle';
 import { AssetLoader } from './AssetLoader';
 import { ResourceManager } from './ResourceManager';
 import { Script } from './ScriptComponent';
@@ -88,7 +89,7 @@ interface RunnerInternals {
   sceneService: SceneService;
   inputService: InputService;
   isRunning: boolean;
-  isPaused: boolean;
+  onAppLifecycle: (change: AppLifecycleChange) => void;
   animationFrameId: number | null;
   fixedTimeAccumulator: number;
   frameNumber: number;
@@ -584,5 +585,97 @@ describe('SceneRunner frame scheduler', () => {
     runner.setFrameScheduler(null);
     runner.resume();
     expect(raf).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('SceneRunner realtime dt cap and the background pause', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const background: AppLifecycleChange = { state: 'background', stateChanged: true, awayMs: 0 };
+  const foreground = (awayMs: number): AppLifecycleChange => ({
+    state: 'active',
+    stateChanged: true,
+    awayMs,
+  });
+
+  it('caps a realtime tick at MAX_REALTIME_DELTA_SEC — a 30 s hitch is not 30 s of game time', () => {
+    const { internals, script } = createHarness();
+    vi.mocked(internals.clock.getDelta).mockReturnValue(30);
+
+    internals.tick();
+
+    expect(MAX_REALTIME_DELTA_SEC).toBe(0.1);
+    expect(script.received).toEqual([MAX_REALTIME_DELTA_SEC]);
+  });
+
+  it('halts on background, ignores a host resume meanwhile, and plays 0 s on the first tick back', () => {
+    const { runner, internals, script, audio, raf, caf } = createHarness();
+    const getDelta = vi.mocked(internals.clock.getDelta);
+    internals.tick();
+    script.received.length = 0;
+    const away: number[] = [];
+    const owner = {};
+    internals.sceneService.app.onForeground(owner, ({ awayMs }) => away.push(awayMs));
+
+    internals.onAppLifecycle(background);
+    expect(caf).toHaveBeenCalledWith(7);
+    expect(audio.setPaused).toHaveBeenLastCalledWith(true);
+    expect(runner.getPauseReasons()).toEqual(['background']);
+
+    // A host pause/resume cycle while hidden starts nothing: time runs only when no reason holds.
+    runner.pause();
+    runner.resume();
+    expect(runner.getPauseReasons()).toEqual(['background']);
+    raf.mockClear();
+    expect(script.received).toEqual([]);
+
+    getDelta.mockReturnValue(60);
+    internals.onAppLifecycle(foreground(60_000));
+    expect(away).toEqual([60_000]);
+    expect(audio.setPaused).toHaveBeenLastCalledWith(false);
+    expect(script.received).toEqual([0]);
+    expect(raf).toHaveBeenCalledTimes(1);
+
+    internals.tick();
+    expect(script.received).toEqual([0, MAX_REALTIME_DELTA_SEC]);
+  });
+
+  it('a host pause that outlives the background keeps the loop halted', () => {
+    const { runner, internals, script } = createHarness();
+    runner.pause();
+    internals.onAppLifecycle(background);
+    internals.onAppLifecycle(foreground(1000));
+
+    expect(runner.paused).toBe(true);
+    expect(runner.getPauseReasons()).toEqual(['host']);
+    expect(script.received).toEqual([]);
+  });
+
+  it('a background round trip from inside a tick (a bot policy) does not run a nested tick', () => {
+    const { runner, internals, script } = createHarness();
+    const unsubscribe = runner.subscribeFrameStats(() => {
+      unsubscribe();
+      internals.onAppLifecycle(background);
+      internals.onAppLifecycle(foreground(500));
+    });
+
+    internals.tick();
+
+    expect(script.received).toHaveLength(1);
+    expect(runner.getPauseReasons()).toEqual([]);
+    internals.tick();
+    expect(script.received).toEqual([1 / 30, 0]);
+  });
+
+  it('`ad` is one more reason: closing it in a hidden tab starts nothing', () => {
+    const { runner, internals, script } = createHarness();
+    runner.setPauseReason('ad', true);
+    internals.onAppLifecycle(background);
+    runner.setPauseReason('ad', false);
+
+    expect(runner.getPauseReasons()).toEqual(['background']);
+    expect(script.received).toEqual([]);
   });
 });

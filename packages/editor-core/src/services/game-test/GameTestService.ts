@@ -1126,6 +1126,11 @@ export class GameTestService {
       requestScreenshot: (name, frame) =>
         `screenshot "${name}" at frame ${frame}: a marker here — the editor saves no picture mid-run (pix3 play --bot does); pix3_screenshot shows the frame a run ends on.`,
 
+      sendToBackground: awayMs => {
+        runner.simulateBackground(awayMs);
+        return null;
+      },
+
       releaseAll: () => {
         if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
         swipeDown = null;

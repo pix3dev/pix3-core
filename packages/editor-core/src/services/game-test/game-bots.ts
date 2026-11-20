@@ -397,6 +397,12 @@ export interface Pix3TestBot {
    * marker only (the editor writes no files — take `pix3_screenshot` after the run).
    */
   screenshot(name: string): void;
+  /**
+   * Send the app to the background and bring it back `ms` later (default 3000), at once: the
+   * game's `scene.app.onBackground` / `onForeground({ awayMs })` run, held pointers are dropped
+   * and the next tick plays no time — a drag held across an app switch, a pause screen, a save.
+   */
+  background(ms?: number): void;
 
   // -- protocol --------------------------------------------------------------
 
@@ -514,6 +520,8 @@ export interface BotWorld {
    * sentence saying why not here — logged, not counted as a refusal (a picture is not input).
    */
   requestScreenshot(name: string, frame: number): string | null;
+  /** Background round trip of `awayMs` (`bot.background`): `null`, or a sentence on refusal. */
+  sendToBackground(awayMs: number): string | null;
   /** Drop everything still held. Called once, from the session's teardown. */
   releaseAll(): void;
 }
@@ -764,6 +772,7 @@ export class BotSession {
       swipe: (from, to, frames, pointer) => this.doSwipe(from, to, frames, pointer),
       command: (name, args) => this.doCommand(name, args),
       screenshot: name => this.doScreenshot(name),
+      background: ms => this.doBackground(ms),
       log: event => this.record('policy', String(event)),
       done: (pass, reason) => this.doDone(pass, reason),
     };
@@ -901,6 +910,17 @@ export class BotSession {
     if (!safe) return this.refuse('screenshot() needs a name, e.g. screenshot("result-card").');
     const note = this.world.requestScreenshot(safe, this.currentFrame);
     this.record('harness', note ?? `screenshot "${safe}" at frame ${this.currentFrame}`);
+  }
+
+  private doBackground(ms?: number): void {
+    const awayMs = ms === undefined ? 3000 : Number(ms);
+    if (!Number.isFinite(awayMs) || awayMs < 0) {
+      return this.refuse('background(ms) needs a time in ms >= 0, e.g. background(3000).');
+    }
+    const refusal = this.world.sendToBackground(Math.round(awayMs));
+    if (refusal) return this.refuse(refusal);
+    this.sent += 1;
+    this.record('harness', `background for ${Math.round(awayMs)} ms at frame ${this.currentFrame}`);
   }
 
   private doCommand(name: string, args?: Record<string, unknown>): boolean {

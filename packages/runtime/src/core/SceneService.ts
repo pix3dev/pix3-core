@@ -14,6 +14,7 @@ import { JuiceApi } from './JuiceApi';
 import { TweenApi, type TweenEndReason } from './TweenApi';
 import { AudioApi } from './AudioApi';
 import { CutsceneApi } from './CutsceneApi';
+import { AppApi } from './AppApi';
 import type { InputService } from './InputService';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
@@ -258,6 +259,14 @@ export class SceneService {
    * there is none (desktop, iOS Safari, a headless test, a hidden tab); never throws. One call
    * instead of each game reaching past the engine for `navigator` (core-tests/game15).
    */
+  /**
+   * The app's lifecycle and back button: `state` (`'active' | 'background'`),
+   * `onBackground(this, cb)` / `onForeground(this, ({ awayMs }) => …)` — save, show a pause
+   * screen — and `pushBack(this, () => handled)` → `pop()` for popups. Subscriptions die with their
+   * owner (a detached script, a disposed autoload). Inert in Node and in tests.
+   */
+  readonly app = new AppApi();
+
   readonly haptics = {
     vibrate(pattern: number | readonly number[]): boolean {
       const nav = typeof navigator === 'undefined' ? null : navigator;

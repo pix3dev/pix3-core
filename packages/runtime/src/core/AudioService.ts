@@ -1,3 +1,5 @@
+import { appLifecycle } from './AppLifecycle';
+
 export interface AudioPlayback {
   stop: () => void;
   ended: Promise<void>;
@@ -98,6 +100,7 @@ export class AudioService {
    * up where the pause caught it.
    */
   private pausedByHost = false;
+  private disposeLifecycle: (() => void) | null = null;
   /** Whether the browser has ever permitted this context to run (autoplay unlock has happened). */
   private unlockedByGesture = false;
   private warnedSuspendedPlay = false;
@@ -156,12 +159,8 @@ export class AudioService {
     window.addEventListener('pointerdown', this.unlockFromPointerDown);
     window.addEventListener('keydown', this.unlockFromKeydown);
 
-    // Auto-mute on focus loss
-    window.addEventListener('blur', this.handleActivityChange);
-    window.addEventListener('focus', this.handleActivityChange);
-    window.addEventListener('pageshow', this.handleActivityChange);
-    window.addEventListener('pagehide', this.handleActivityChange);
-    document.addEventListener('visibilitychange', this.handleActivityChange);
+    // Auto-mute while the page is hidden or unfocused.
+    this.disposeLifecycle = appLifecycle.subscribe(this.handleActivityChange);
     // The reconciler's feedback edge: every completed suspend/resume re-runs it, so a transition
     // that landed after the intent behind it had already changed is corrected instead of sticking.
     this.context.addEventListener?.('statechange', this.handleContextStateChange);
@@ -290,9 +289,7 @@ export class AudioService {
   }
 
   private handleActivityChange = (): void => {
-    const isVisible = document.visibilityState === 'visible';
-    const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-    this.pageActive = isVisible && hasFocus;
+    this.pageActive = appLifecycle.visible && appLifecycle.focused;
     this.updateWantsAudible();
   };
 
@@ -590,11 +587,8 @@ export class AudioService {
   dispose(): void {
     window.removeEventListener('pointerdown', this.unlockFromPointerDown);
     window.removeEventListener('keydown', this.unlockFromKeydown);
-    window.removeEventListener('blur', this.handleActivityChange);
-    window.removeEventListener('focus', this.handleActivityChange);
-    window.removeEventListener('pageshow', this.handleActivityChange);
-    window.removeEventListener('pagehide', this.handleActivityChange);
-    document.removeEventListener('visibilitychange', this.handleActivityChange);
+    this.disposeLifecycle?.();
+    this.disposeLifecycle = null;
     this.context?.removeEventListener?.('statechange', this.handleContextStateChange);
 
     this.stopAll();

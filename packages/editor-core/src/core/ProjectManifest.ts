@@ -72,6 +72,11 @@ export interface ProjectManifest {
   /** i18n/l10n settings; absent ⇒ localization inert (backward compatible). */
   localization?: LocalizationSettings;
   /**
+   * The app shell: `backButton` — whether `scene.app.pushBack` arms a history entry for the
+   * browser / Android back (absent: only on a zip build's own page; the player decides).
+   */
+  app?: { backButton?: boolean };
+  /**
    * Web fonts the project ships, registered as `FontFace`s before the first frame.
    *
    * Without this a scene could name any family it liked and the canvas quietly drew Arial —
@@ -293,6 +298,11 @@ export const withProjectId = (manifest: ProjectManifest, projectId: string): Pro
   metadata: { ...(manifest.metadata ?? {}), [PROJECT_ID_METADATA_KEY]: projectId },
 });
 
+const normalizeApp = (input: unknown): Pick<ProjectManifest, 'app'> => {
+  const backButton = (input as { backButton?: unknown } | null)?.backButton;
+  return typeof backButton === 'boolean' ? { app: { backButton } } : {};
+};
+
 export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
   if (!input || typeof input !== 'object') {
     return createDefaultProjectManifest();
@@ -319,6 +329,7 @@ export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
     quality: normalizeQualitySettings(record.quality, targetPlatform),
     localization: normalizeLocalization(record.localization),
     fonts: normalizeFonts(record.fonts),
+    ...normalizeApp(record.app),
     metadata:
       record.metadata && typeof record.metadata === 'object'
         ? (record.metadata as Record<string, unknown>)

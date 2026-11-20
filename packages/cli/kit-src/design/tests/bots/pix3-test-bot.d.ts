@@ -114,6 +114,12 @@ declare interface Pix3TestBot {
    * pix3_game_run (the editor, or pix3 play --run) it is only a log marker.
    */
   screenshot(name: string): void;
+  /**
+   * Send the app to the background and bring it back ms later (default 3000), at once: the game's
+   * scene.app.onBackground / onForeground({ awayMs }) run, held pointers are dropped, the next
+   * tick plays no time. Checks a drag held across an app switch, a pause screen, a save.
+   */
+  background(ms?: number): void;
 
   // -- protocol --------------------------------------------------------------
 

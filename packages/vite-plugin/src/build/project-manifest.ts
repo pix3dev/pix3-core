@@ -50,6 +50,8 @@ export interface ProjectManifestInfo {
   readonly localization: LocalizationSettings | null;
   /** The `autoloads:` list, read as the runtime's `normalizeAutoloads` reads it. */
   readonly autoloads: readonly AutoloadEntry[];
+  /** `app.backButton`: a history entry for `scene.app.pushBack`; null = the build decides. */
+  readonly backButton: boolean | null;
 }
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 } as const;
@@ -214,6 +216,10 @@ export const parseProjectManifest = (text: string, fallbackName: string): Projec
     fonts: normalizeFonts(record.fonts),
     localization: normalizeLocalization(record.localization),
     autoloads: normalizeAutoloads(record.autoloads),
+    backButton:
+      isRecord(record.app) && typeof record.app.backButton === 'boolean'
+        ? record.app.backButton
+        : null,
   };
 };
 

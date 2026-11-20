@@ -324,6 +324,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                 localization: build.scan.localization,
                 netKindPrefabs: build.scan.netKindPrefabs,
                 resourceBase: './',
+                format: build.format,
               })
             : devSceneManifestSource({
                 root: root(),

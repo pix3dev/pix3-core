@@ -219,6 +219,10 @@ const buildPageWorld = (
       shots.push({ name, frame });
       return null;
     },
+    sendToBackground: awayMs => {
+      runner.simulateBackground(awayMs);
+      return null;
+    },
     releaseAll: () => {
       if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
       swipeDown = null;
@@ -285,6 +289,8 @@ let backgroundTicker: BackgroundTicker | null = null;
 const setBackgroundTicks = (player: PagePlayer, on: boolean): void => {
   const runner = player.runner;
   if (!runner || on === (backgroundTicker !== null)) return;
+  // The run keeps the game `active`: no background pause, no `scene.app.onBackground`.
+  runner.setBackgroundHeld(on);
   const counted =
     (callback: (time: number) => void) =>
     (time: number): void => {

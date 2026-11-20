@@ -209,6 +209,7 @@ so), keep every key you do not know, and copy the style of the file.
 | `localization` | `{ defaultLocale, fallbackLocale?, locales }` — above |
 | `fonts` | `[{ family, path, weight, style, unicodeRange? }]` — font files registered before the first frame; `path` without `res://` |
 | `autoloads` | `[{ singleton, scriptPath, enabled }]` — game-wide script singletons that survive `changeScene` (recipe below); `[]` when there are none |
+| `app` | `{ backButton: true \| false }` — whether `scene.app.pushBack` handlers get the browser / Android back through a history entry; absent = only on a zip build's own page (never in an html playable, an iframe or the dev server) |
 | `metadata` | the editor's and `pix3 kit`'s bookkeeping (`projectId`, `agentKit`) — do not edit |
 
 ### An autoload (state or a service for the whole game)

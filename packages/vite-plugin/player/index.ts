@@ -9,6 +9,7 @@ import {
   SceneManager,
   SceneRunner,
   ScriptRegistry,
+  type Node2DSafeInsets,
 } from '@pix3/runtime';
 import {
   devPageLink,
@@ -24,6 +25,7 @@ import {
   activeScenePath,
   resourceBase,
   runtimeAutoloads,
+  runtimeBackButton,
   runtimeFonts,
   runtimeLocalization,
   runtimeQuality,
@@ -83,6 +85,10 @@ export interface Pix3PlayerState {
 declare global {
   interface Window {
     __PIX3_PLAYER__?: Pix3PlayerState;
+    /** For a native shell: the safe area in CSS px, overriding the `env()` probe. */
+    __pix3SetInsets?: (top?: number, right?: number, bottom?: number, left?: number) => void;
+    /** For a native shell: a back press; false = nobody handled it, the shell decides. */
+    __pix3Back?: () => boolean;
   }
 }
 
@@ -132,7 +138,12 @@ const requestedScene = (): string | null => {
   return null;
 };
 
-/** Feed the runner `env(safe-area-inset-*)` through a hidden probe, now and on every resize. */
+/**
+ * Feed the runner the screen's safe area: `env(safe-area-inset-*)` through a hidden probe, now and
+ * on every resize, rotation and visual-viewport change — or what a native shell reports through
+ * `window.__pix3SetInsets(top, right, bottom, left)` (CSS px; WKWebView under Capacitor reads `env()`
+ * as 0), which wins until the next call; a call without numbers goes back to the probe.
+ */
 const trackSafeArea = (runner: SceneRunner): void => {
   const probe = document.createElement('div');
   probe.setAttribute('aria-hidden', 'true');
@@ -141,7 +152,12 @@ const trackSafeArea = (runner: SceneRunner): void => {
     'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) ' +
     'env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
   document.body.append(probe);
+  let shellInsets: Node2DSafeInsets | null = null;
   const read = (): void => {
+    if (shellInsets) {
+      runner.setSafeAreaInsets(shellInsets);
+      return;
+    }
     const style = getComputedStyle(probe);
     runner.setSafeAreaInsets({
       top: Number.parseFloat(style.paddingTop) || 0,
@@ -150,8 +166,31 @@ const trackSafeArea = (runner: SceneRunner): void => {
       left: Number.parseFloat(style.paddingLeft) || 0,
     });
   };
+  const inset = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+  window.__pix3SetInsets = (...values: unknown[]): void => {
+    const [top, right, bottom, left] = [0, 1, 2, 3].map(index => inset(values[index]));
+    shellInsets = values.some(value => typeof value === 'number')
+      ? { top, right, bottom, left }
+      : null;
+    read();
+  };
   read();
   window.addEventListener('resize', read);
+  window.addEventListener('orientationchange', read);
+  window.visualViewport?.addEventListener('resize', read);
+};
+
+/**
+ * The native shell's back button (`window.__pix3Back()` → handled) and, where the project lets it,
+ * a history entry that routes the browser's / Android's back to `scene.app.pushBack` handlers.
+ */
+const installBackButton = (runner: SceneRunner): void => {
+  window.__pix3Back = () => runner.handleBack();
+  const topLevel = window.self === window.top;
+  runner.setHistoryBackGuard(
+    runtimeBackButton === true || (runtimeBackButton === 'top-level' && topLevel)
+  );
 };
 
 /** Boot the game into `target` (a selector or an element; `#app` by default). */
@@ -225,6 +264,7 @@ export async function startGame(
     // it. Measured from `env(safe-area-inset-*)` (the page has `viewport-fit=cover`), again on
     // every resize — a phone turned sideways moves the notch.
     trackSafeArea(runner);
+    installBackButton(runner);
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {
       runner.setLocalizationConfig({

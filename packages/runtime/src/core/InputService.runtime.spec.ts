@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InputService } from '@pix3/runtime';
+import { appLifecycle, InputService } from '@pix3/runtime';
 
 describe('InputService pointer ownership', () => {
   let input: InputService;
@@ -393,6 +393,18 @@ describe('InputService pointer cancellation', () => {
     ]);
     expect(released).toEqual([1, 2]);
     expect(input.pointerDownCount).toBe(0);
+    expect(input.getButton('Action_Primary')).toBe(false);
+  });
+
+  it('cancels a held pointer when the app goes to the background (a drag across an app switch)', () => {
+    // A phone's app switch hides the page; there may be no blur and never a pointerup.
+    dispatch('pointerdown', 1);
+    frameEvents();
+
+    appLifecycle.simulateBackground(5000);
+
+    expect(frameEvents()).toEqual([{ type: 'cancel', pointerId: 1, x: 30, y: 40 }]);
+    expect(input.isPointerDown).toBe(false);
     expect(input.getButton('Action_Primary')).toBe(false);
   });
 

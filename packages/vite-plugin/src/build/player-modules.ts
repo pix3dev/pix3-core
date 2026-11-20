@@ -55,6 +55,8 @@ export interface SceneManifestModel {
   readonly netKindPrefabs: readonly string[];
   /** `ResourceManager` base: `/<resRoot>/` in dev, `./` for a build. */
   readonly resourceBase: string;
+  /** The page served: the dev server's, or a build's. */
+  readonly format: 'dev' | 'html' | 'zip';
 }
 
 const json = (value: unknown): string => JSON.stringify(value, null, 2);
@@ -67,6 +69,11 @@ export const sceneManifestSource = (model: SceneManifestModel): string =>
     `export const projectName = ${json(model.manifest.projectName)};`,
     `export const runtimeViewportBaseSize = ${json(model.manifest.viewportBaseSize)};`,
     `export const runtimeQuality = ${json(model.manifest.quality)};`,
+    // `app.backButton` as written, else a history guard only on a zip build's own top-level page:
+    // never in a single-file playable (an ad container owns its history) or on the dev server.
+    `export const runtimeBackButton = ${json(
+      model.manifest.backButton ?? (model.format === 'zip' ? 'top-level' : false)
+    )};`,
     `export const runtimeFonts = ${json(model.manifest.fonts)};`,
     `export const runtimeLocalization = ${json(model.localization)};`,
     // Autoloads (`pix3project.yaml` `autoloads:`): the player hands them to the runner, which

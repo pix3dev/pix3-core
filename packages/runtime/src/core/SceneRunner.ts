@@ -63,6 +63,7 @@ import {
   type RuntimeTimeConfig,
 } from './runtime-time';
 import { playable } from './PlayableSdk';
+import { appLifecycle, type AppLifecycleChange } from './AppLifecycle';
 import { disconnectSignalTargetEverywhere } from './signal-target-links';
 
 /** The frame source of {@link SceneRunner}'s loop — `requestAnimationFrame`'s contract. */
@@ -148,6 +149,20 @@ function normalizeScenePath(path: string): string {
     .replace(/^res:\/\//i, '')
     .replace(/^\/+/, '');
 }
+
+/**
+ * The longest realtime tick, seconds. A frame that took longer (a hitch, a debugger stop, rAF
+ * resuming after the page was hidden while held) is played as this much time, so tweens, scripts
+ * and ECS never get the whole gap at once. Fixed and manual ticks are exact and not capped.
+ */
+export const MAX_REALTIME_DELTA_SEC = 0.1;
+
+/**
+ * Why the runner's loop is halted; time and audio run only while none holds. `host` is
+ * {@link SceneRunner.pause} (a host, the bot's screenshot, the debug overlay), `background` the
+ * page being hidden (`AppLifecycle`), `ad` a full-screen ad.
+ */
+export type RunnerPauseReason = 'host' | 'background' | 'ad';
 
 /**
  * Wall-clock deltas for realtime ticks — `THREE.Clock`'s `start`/`stop`/`getDelta`, without its
@@ -693,6 +708,10 @@ export class SceneRunner {
     this.sceneService.handleSceneStarted();
 
     this.clock.start();
+    if (!this.disposeLifecycle) {
+      this.disposeLifecycle = appLifecycle.subscribe(this.onAppLifecycle);
+      this.setPauseReason('background', appLifecycle.state === 'background');
+    }
     if (this.timeConfig.mode === 'manual') {
       // No rAF is ever scheduled in manual mode, so paint the loaded scene once
       // — otherwise a session that arms manual before Play stares at a stale
@@ -758,7 +777,15 @@ export class SceneRunner {
     this.previousActiveLocalization = null;
   }
 
-  private isPaused: boolean = false;
+  /** Every reason the loop is halted for (see {@link RunnerPauseReason}). */
+  private readonly pauseReasons = new Set<RunnerPauseReason>();
+  /** The first realtime tick after a return from the background plays no time. */
+  private zeroNextRealtimeDelta = false;
+  private disposeLifecycle: (() => void) | null = null;
+
+  private get isPaused(): boolean {
+    return this.pauseReasons.size > 0;
+  }
 
   /**
    * Bumped by every {@link stop}, so a start that is still awaiting its graph can tell that its
@@ -773,6 +800,11 @@ export class SceneRunner {
   stop(): void {
     this.stopScene();
     this.autoloads.stop();
+    this.disposeLifecycle?.();
+    this.disposeLifecycle = null;
+    this.sceneService.app.clear();
+    this.pauseReasons.clear();
+    this.audioService.setPaused(false);
   }
 
   /** Tear the running scene down; what outlives a scene change (autoloads, network) stays. */
@@ -832,10 +864,10 @@ export class SceneRunner {
     this.elapsedTime = 0;
     this.frameNumber = 0;
     this.ticksSinceRender = 0;
-    this.isPaused = false;
-    // Stopping while paused must not leave the shared AudioService singleton suspended: it also
-    // serves the editor's own audio previews.
-    this.audioService.setPaused(false);
+    // A host pause ends with its scene; the page's own reasons (`background`, `ad`) outlive a
+    // scene change, and the session's end (`stop`) drops them.
+    this.pauseReasons.delete('host');
+    this.audioService.setPaused(this.isPaused);
     this.gameTime.reset();
     this.currentFrameProfilerActivities = NO_FRAME_PROFILER_ACTIVITIES;
     // Reset the AO-suppression memo so the NEXT scene always re-applies its
@@ -923,33 +955,88 @@ export class SceneRunner {
     if (armed) this.scheduleNextFrame();
   }
 
+  /** Halt the loop for the host ({@link RunnerPauseReason} `host`); {@link resume} lifts it. */
   pause(): void {
-    if (!this.isRunning || this.isPaused) return;
-    this.isPaused = true;
-    // A frozen scene playing on over its own music reads as a hang. Suspending the context (rather
-    // than stopping the playbacks) means resume picks every buffer up where the pause caught it.
-    this.audioService.setPaused(true);
-    if (this.animationFrameId !== null) {
-      this.frameScheduler.cancel(this.animationFrameId);
-      this.animationFrameId = null;
-    }
+    if (!this.isRunning) return;
+    this.setPauseReason('host', true);
   }
 
   resume(): void {
-    if (!this.isRunning || !this.isPaused) return;
-    this.isPaused = false;
-    this.audioService.setPaused(false);
+    if (!this.isRunning) return;
+    this.setPauseReason('host', false);
+  }
+
+  /**
+   * Hold or lift one reason to halt the loop. Time and audio run only while no reason holds:
+   * closing an ad in a hidden tab starts nothing. Leaving the halt drains the wall clock and
+   * resumes the loop (a manual runner un-freezes `stepFrames`, it does not tick).
+   */
+  setPauseReason(reason: RunnerPauseReason, paused: boolean): void {
+    if (paused === this.pauseReasons.has(reason)) return;
+    const wasPaused = this.isPaused;
+    if (paused) this.pauseReasons.add(reason);
+    else this.pauseReasons.delete(reason);
+    if (wasPaused === this.isPaused) return;
+    // A frozen scene playing on over its own music reads as a hang. Suspending the context (rather
+    // than stopping the playbacks) means resume picks every buffer up where the pause caught it.
+    this.audioService.setPaused(this.isPaused);
+    if (this.isPaused) {
+      if (this.animationFrameId !== null) {
+        this.frameScheduler.cancel(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      return;
+    }
     // Consume the time elapsed during pause so the next tick gets a fresh delta.
     this.clock.getDelta();
-    // Pause/resume are orthogonal to the time mode: resuming a manual runner
-    // un-freezes `stepFrames`, it does not tick or start an rAF loop.
-    if (this.timeConfig.mode === 'manual') return;
+    // Lifted from inside a tick (`bot.background` in a policy): the running loop goes on and
+    // re-arms itself; a nested tick would run a frame inside a frame.
+    if (!this.isRunning || this.timeConfig.mode === 'manual' || this.inTick) return;
     this.tick();
   }
 
-  /** True while the loop is halted by {@link pause} (focus loss / host request). */
+  /** The reasons the loop is halted for now (empty while it runs). */
+  getPauseReasons(): RunnerPauseReason[] {
+    return [...this.pauseReasons];
+  }
+
+  private readonly onAppLifecycle = (change: AppLifecycleChange): void => {
+    if (!change.stateChanged) return;
+    const background = change.state === 'background';
+    if (!background) this.zeroNextRealtimeDelta = true;
+    this.sceneService.app.notify(change);
+    this.setPauseReason('background', background);
+  };
+
+  /**
+   * Go to the background and come back `awayMs` later, in one call (`bot.background`): the game's
+   * `onBackground` / `onForeground`, held pointers dropped, the first tick after it plays no time.
+   */
+  simulateBackground(awayMs: number): void {
+    appLifecycle.simulateBackground(awayMs);
+  }
+
+  /**
+   * Keep the game `active` on a hidden page (a host stepping it from worker frames during an
+   * agent's run): no background pause, no `onBackground`.
+   */
+  setBackgroundHeld(held: boolean): void {
+    appLifecycle.setHeld(held);
+  }
+
+  /** A back press from the shell (`window.__pix3Back`): true when a game handler consumed it. */
+  handleBack(): boolean {
+    return this.sceneService.app.handleBack();
+  }
+
+  /** Let `scene.app.pushBack` arm a history entry (browser / Android back). Off by default. */
+  setHistoryBackGuard(enabled: boolean): void {
+    this.sceneService.app.setHistoryGuard(enabled);
+  }
+
+  /** True while the host holds the loop by {@link pause} (see {@link getPauseReasons} for all). */
   get paused(): boolean {
-    return this.isPaused;
+    return this.pauseReasons.has('host');
   }
 
   /** True while a scene is loaded and the loop is (or can be) ticking. */
@@ -1244,10 +1331,14 @@ export class SceneRunner {
     if (mode === 'manual') return; // nothing schedules us; defensive against a late frame
 
     if (mode === 'realtime') {
-      this.runOneTick(this.clock.getDelta());
+      const wallDelta = this.clock.getDelta();
+      const dt = this.zeroNextRealtimeDelta ? 0 : Math.min(wallDelta, MAX_REALTIME_DELTA_SEC);
+      this.zeroNextRealtimeDelta = false;
+      this.runOneTick(dt);
     } else {
       // Drain the wall clock even though the batch ignores it — see setTimeMode.
       this.clock.getDelta();
+      this.zeroNextRealtimeDelta = false;
       for (let i = 0; i < ticksPerFrame; i += 1) {
         if (!this.isRunning || this.isPaused) break;
         this.runOneTick(fixedDeltaSec);

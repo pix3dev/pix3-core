@@ -33,6 +33,7 @@ export const devSceneManifestSource = async (options: {
     // As the build and the editor: the manifest's block, else the tables `locales/` has.
     localization: manifest.localization ?? discoverLocalization(new Set(resPaths)),
     netKindPrefabs: [],
+    format: 'dev',
     resourceBase: `${options.base}${resRoot === '.' ? '' : `${resRoot}/`}`,
   });
 };

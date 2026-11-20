@@ -1,5 +1,7 @@
 import { Vector2 } from 'three';
 
+import { appLifecycle, type AppLifecycleChange } from './AppLifecycle';
+
 export interface InputPointerFrameEvent {
   /**
    * `'cancel'` is deliberately NOT folded into `'up'`: a pointer that was taken
@@ -596,7 +598,8 @@ export class InputService {
     window.addEventListener('keyup', this.onKeyUp);
     // Alt-tab / app switch / OS notification: the press never gets a pointerup,
     // so without this every finger held at that moment stays down forever.
-    window.addEventListener('blur', this.onWindowBlur);
+    this.hadFocus = appLifecycle.focused;
+    this.disposeLifecycle = appLifecycle.subscribe(this.onLifecycleChange);
 
     // Prevent context menu on right click for better game experience
     element.addEventListener('contextmenu', this.onContextMenu);
@@ -618,7 +621,8 @@ export class InputService {
 
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
-    window.removeEventListener('blur', this.onWindowBlur);
+    this.disposeLifecycle?.();
+    this.disposeLifecycle = null;
 
     // Release captures before the element goes away. No frame events: nobody is
     // left to read them and the queues are emptied right below.
@@ -742,7 +746,14 @@ export class InputService {
     this.endPointer(event, 'cancel');
   };
 
-  private onWindowBlur = (): void => {
+  private disposeLifecycle: (() => void) | null = null;
+  private hadFocus = true;
+
+  /** Focus lost or the app sent to the background (also `bot.background`): drop held pointers. */
+  private onLifecycleChange = (change: AppLifecycleChange): void => {
+    const lostFocus = this.hadFocus && !appLifecycle.focused;
+    this.hadFocus = appLifecycle.focused;
+    if (!lostFocus && !(change.stateChanged && change.state === 'background')) return;
     if (this.activePointers.size === 0) {
       return;
     }

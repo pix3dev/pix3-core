@@ -717,7 +717,9 @@ and a page that reloads under the bot ends the run with that reason), the runner
 frames per painted one (a picture or the verdict paints its own tick), and the game stays paused on the
 frame of `done()` (what `--screenshot` then shows). `bot.screenshot(name)` pauses the runner on the
 policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next picture) captures
-`<name>.png` into `--shots <dir>` and resumes it. `--bot-args '<json>'` is the policy's `bot.args`.
+`<name>.png` into `--shots <dir>` and resumes it. `bot.background(ms)` sends the game to the
+background and back in one call (`scene.app` handlers, held pointers dropped, a 0 s first tick).
+`--bot-args '<json>'` is the policy's `bot.args`.
 `--safe-area T,R,B,L` emulates the page's `env(safe-area-inset-*)` (CSS px) through
 `Emulation.setSafeAreaInsetsOverride`, dev or `dist`, for `layout.safeArea` nodes. With it, every
 picture (`--screenshot`, `bot.screenshot`) shades the unsafe bands in translucent magenta with a

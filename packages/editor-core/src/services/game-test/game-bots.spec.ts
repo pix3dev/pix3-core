@@ -72,6 +72,10 @@ function makeWorld(
       calls.push(`screenshot:${name}@${frame}`);
       return null;
     },
+    sendToBackground: awayMs => {
+      calls.push(`background:${awayMs}`);
+      return null;
+    },
     releaseAll: () => {
       calls.push('releaseAll');
     },
@@ -450,6 +454,26 @@ describe('BotSession actuators', () => {
     expect(session.report().refused).toBe(1); // the nameless one
     expect(session.report().log.map(entry => entry.message)).toContain(
       'screenshot "Result-card" at frame 2'
+    );
+  });
+
+  it('background(ms) asks the world for a background round trip; 3000 ms by default', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.background(1500.4);
+        if (bot.frame === 2) bot.background();
+        if (bot.frame === 3) bot.background(-1);
+      }),
+      world
+    );
+    run(session, 3);
+    expect(world.calls).toEqual(['background:1500', 'background:3000']);
+    expect(session.report().sent).toBe(2);
+    expect(session.report().refused).toBe(1);
+    expect(session.report().log.map(entry => entry.message)).toContain(
+      'background for 1500 ms at frame 1'
     );
   });
 

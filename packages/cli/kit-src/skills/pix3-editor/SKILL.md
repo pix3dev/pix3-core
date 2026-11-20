@@ -186,7 +186,9 @@ point, not a node:** `bot.pointIn('board', x, y)` turns a position in the board 
 `bot.swipe(bot.pointIn('board', x, y), bot.pointIn('board', x + cell, y))` — no need for the game
 to publish world coordinates and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
-saves a picture of that frame under `pix3 play --bot` and is only a log marker here. `args` (one
+saves a picture of that frame under `pix3 play --bot` and is only a log marker here;
+`bot.background(ms)` sends the app to the background and back (the game's `scene.app` handlers
+run, held pointers drop — the stuck drag after an app switch). `args` (one
 JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
 specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Policy state between runs:** on
 your page the policy module stays evaluated until the page loads again (`start`, `restart`, or a

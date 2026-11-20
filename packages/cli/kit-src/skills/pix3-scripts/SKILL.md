@@ -262,6 +262,11 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `scene.physics2d.getBody(node)` → `setVelocity`, `applyImpulse`, `teleport`. Never
   hand-write a 2D solver, never import rapier for 2D. (A game that already runs its own
   solver keeps it — do not add engine physics on top of it.)
+- App switch and back button: `this.scene.app.onBackground(this, () => save())`,
+  `onForeground(this, ({ awayMs }) => …)`, `pushBack(this, () => { closePopup(); return true; })`
+  → `pop()` when the popup closes. The engine pauses the game while it is hidden and caps a
+  tick's `dt` at 0.1 s; never listen to `visibilitychange` / `popstate` yourself. A native shell
+  calls `window.__pix3Back()` and `window.__pix3SetInsets(t, r, b, l)`.
 - Phone vibration: `this.scene.haptics.vibrate(30)` / `vibrate([20, 40, 20])` / `stop()` — a quiet
   `false` where there is none (desktop, iOS Safari, a hidden tab); never `navigator.vibrate` directly.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A

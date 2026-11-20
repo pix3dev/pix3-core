@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { devSource } from './player-modules.ts';
+import { devSource, sceneManifestSource, type SceneManifestModel } from './player-modules.ts';
+import { parseProjectManifest } from './project-manifest.ts';
 
 /** `virtual:pix3/dev`: a test run's `?run=` exists on the dev server only (core-tests/game10). */
 describe('devSource', () => {
@@ -87,5 +88,28 @@ describe('devSource', () => {
       state,
     });
     await expect(state.loadTools?.()).rejects.toThrow('@pix3/editor-core is not installed');
+  });
+});
+
+describe('sceneManifestSource: runtimeBackButton', () => {
+  const backButton = (format: SceneManifestModel['format'], yaml = ''): string => {
+    const source = sceneManifestSource({
+      scenePaths: [],
+      entryScenePath: '',
+      manifest: parseProjectManifest(yaml, 'x'),
+      localization: null,
+      netKindPrefabs: [],
+      resourceBase: './',
+      format,
+    });
+    return /export const runtimeBackButton = (.*);/.exec(source)?.[1] ?? '';
+  };
+
+  it('arms the history guard only on a zip build page unless the project says otherwise', () => {
+    expect(backButton('zip')).toBe('"top-level"');
+    expect(backButton('html')).toBe('false');
+    expect(backButton('dev')).toBe('false');
+    expect(backButton('html', 'app: { backButton: true }')).toBe('true');
+    expect(backButton('zip', 'app: { backButton: false }')).toBe('false');
   });
 });

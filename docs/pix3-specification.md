@@ -639,7 +639,7 @@ drawn in the substituted face. The editor registers the same list on project ope
 missing file is a warning — the caption falls back to a system face and the game
 still starts.
 
-The project manifest (`pix3project.yaml`) additionally stores `projectType`, `targetPlatform` (`mobile`|`desktop`|`universal`) and `quality` (`antialias`, `shadows`, `maxPixelRatio`; defaults derived from the platform). The player (`runtimeQuality` of `virtual:pix3/scene-manifest`, the page Play opens too) applies the preset. The editor never writes the manifest (except backfilling `metadata.projectId`); its keys are listed in the kit's `pix3-scene-format/project-files.md` → "`pix3project.yaml`".
+The project manifest (`pix3project.yaml`) additionally stores `projectType`, `targetPlatform` (`mobile`|`desktop`|`universal`) and `quality` (`antialias`, `shadows`, `maxPixelRatio`; defaults derived from the platform). The player (`runtimeQuality` of `virtual:pix3/scene-manifest`, the page Play opens too) applies the preset. `app.backButton` (`true` | `false`) decides whether `scene.app.pushBack` arms a history entry for the browser / Android back (`runtimeBackButton`; absent = only on a zip build's top-level page — never in an html build, an iframe or on the dev server). The editor never writes the manifest (except backfilling `metadata.projectId`); its keys are listed in the kit's `pix3-scene-format/project-files.md` → "`pix3project.yaml`".
 
 The 1.x manifest's `export:` block (`pruneUnusedAssets`, `extraRootScenePaths`, `includeGlobs`, `excludeGlobs`) is gone: no 2.x build reads it, the editor's manifest model drops it, and `pix3 validate` warns `W_MANIFEST_EXPORT` where one is left. Build options are `pix3({ … })` in `vite.config.ts` (`packages/vite-plugin/README.md`), and what a build shipped and why is `dist/<name>.report.json`.
 
@@ -1343,7 +1343,10 @@ migration command: a project moves over file by file as the editor saves them. O
 
 **Safe area** (`layout.safeArea: true`, inspector "Safe Area", schema `layoutSafeArea`). The
 player measures the screen's `env(safe-area-inset-*)` (the starter's `index.html` has
-`viewport-fit=cover`) through a hidden probe, again on every resize, and hands it to
+`viewport-fit=cover`) through a hidden probe, again on every resize, `orientationchange` and
+`visualViewport` resize — or takes what a native shell reports with
+`window.__pix3SetInsets(top, right, bottom, left)` (CSS px; WKWebView under Capacitor reads `env()`
+as 0), which wins until the next call (a call without numbers returns to the probe) — and hands it to
 `SceneRunner.setSafeAreaInsets` in CSS px; `reflowRoot2DNodes` converts it into the roots' design
 units. A node with the flag whose reference is the whole screen — a root, or a child of a root
 stretched over the screen with zero margins — lays out in the screen minus the insets: an anchored

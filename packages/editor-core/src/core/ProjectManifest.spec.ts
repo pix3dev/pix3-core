@@ -17,6 +17,13 @@ describe('ProjectManifest', () => {
     expect('export' in manifest).toBe(false);
   });
 
+  it('keeps app.backButton when it is a boolean, and no app block otherwise', () => {
+    expect(normalizeProjectManifest({ app: { backButton: false } }).app).toEqual({
+      backButton: false,
+    });
+    expect('app' in normalizeProjectManifest({ app: { backButton: 'yes' } })).toBe(false);
+  });
+
   it('normalizes default export scene path from resource path input', () => {
     const manifest = normalizeProjectManifest({
       ...createDefaultProjectManifest(),

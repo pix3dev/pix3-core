@@ -10,6 +10,12 @@ declare module 'virtual:pix3/scene-manifest' {
   export const resourceBase: string;
   export const projectName: string;
   export const runtimeViewportBaseSize: { readonly width: number; readonly height: number };
+  /**
+   * `pix3project.yaml` `app.backButton`, resolved for this page: `true` / `false` as written, else
+   * `'top-level'` in a zip build (on unless the page is framed) and `false` in an html build and
+   * on the dev server.
+   */
+  export const runtimeBackButton: boolean | 'top-level';
   export const runtimeQuality: {
     readonly antialias: boolean;
     readonly shadows: boolean;
