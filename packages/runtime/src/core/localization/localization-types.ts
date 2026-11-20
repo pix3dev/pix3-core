@@ -17,7 +17,12 @@ export interface LocaleTable {
   strings: Record<string, string>;
   /** Sprite key → localized `res://` texture path. */
   sprites: Record<string, string>;
-  meta?: { name?: string; direction?: 'ltr' | 'rtl' };
+  meta?: {
+    name?: string;
+    direction?: 'ltr' | 'rtl';
+    /** Keys whose text equals the default locale's on purpose (`pix3 validate`, `W_LOCALE_UNTRANSLATED`). */
+    sameAsDefault?: string[];
+  };
 }
 
 /** Interpolation parameters for `tr(key, params)` — `{name}` tokens are replaced. */

@@ -904,12 +904,16 @@ function parseTableFile(locale: string, text: string): LocaleTable {
 
 /** Serialize a table to the on-disk format: `$meta` + sorted `strings`/`sprites`. */
 function serializeTableFile(table: LocaleTable): string {
+  // Keys the editor does not edit (`direction`, `sameAsDefault` for `pix3 validate`) round-trip;
+  // `locale` is always the table's own, wherever the file was copied from.
+  const meta: Record<string, unknown> = {
+    locale: table.locale,
+    name: table.meta?.name ?? LOCALE_DISPLAY_NAMES[table.locale] ?? table.locale.toUpperCase(),
+    ...table.meta,
+  };
+  meta.locale = table.locale;
   const payload: Record<string, unknown> = {
-    $meta: {
-      locale: table.locale,
-      name: table.meta?.name ?? LOCALE_DISPLAY_NAMES[table.locale] ?? table.locale.toUpperCase(),
-      ...(table.meta?.direction ? { direction: table.meta.direction } : {}),
-    },
+    $meta: meta,
     strings: sortRecord(table.strings),
     sprites: sortRecord(table.sprites),
   };

@@ -86,6 +86,15 @@ describe('LocalizationEditorService — writes', () => {
     expect(strings()).toEqual({ bye: 'Bye', hello: 'Hi' });
   });
 
+  it('keeps the $meta keys it does not edit (sameAsDefault for pix3 validate); locale is the table', async () => {
+    const DE = 'locales/de.json';
+    const de = `${JSON.stringify({ $meta: { locale: 'en', name: 'Deutsch', sameAsDefault: ['brand'] }, strings: { brand: 'Pix3' }, sprites: {} })}\n`;
+    const loc = await boot({ [EN]: file({ brand: 'Pix3' }), [DE]: de });
+    await loc.setEntry('de', 'play', 'Spielen');
+    const meta = (JSON.parse(host.text(DE) ?? '{}') as { $meta?: unknown }).$meta;
+    expect(meta).toEqual({ locale: 'de', name: 'Deutsch', sameAsDefault: ['brand'] });
+  });
+
   it("an agent's key written before the editor's edit: both survive (412 → merge → write)", async () => {
     const loc = await boot({ [EN]: file({ hello: 'Hello' }) });
     // The agent's write; the editor has not followed it yet.

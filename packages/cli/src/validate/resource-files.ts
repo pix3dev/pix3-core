@@ -175,6 +175,8 @@ export const localeTablePath = (locale: string): string => `locales/${locale}.js
 export interface LocaleEntries {
   readonly strings: Readonly<Record<string, string>>;
   readonly sprites: Readonly<Record<string, string>>;
+  /** `$meta.sameAsDefault`: keys whose text is meant to equal the default locale's (a brand name). */
+  readonly sameAsDefault: ReadonlySet<string>;
 }
 export type LoadedLocales = ReadonlyMap<string, LocaleEntries>;
 
@@ -297,7 +299,11 @@ export const checkLocaleTables = (
         );
       }
     }
-    strings.set(locale, { strings: kept, sprites: keptSprites });
+    strings.set(locale, {
+      strings: kept,
+      sprites: keptSprites,
+      sameAsDefault: readSameAsDefault(data, table, lineOf, diagnostics),
+    });
   }
   return { diagnostics, tables: strings };
 };
@@ -340,12 +346,240 @@ const checkLocaleSpriteImage = (
   );
 };
 
+/**
+ * `$meta.sameAsDefault` of a table: a list of keys. Anything else is a `W_LOCALE_JSON` in every
+ * locale — the runtime never reads it, so the game is unaffected; only the parity check loses it.
+ */
+const readSameAsDefault = (
+  data: Record<string, unknown>,
+  table: string,
+  lineOf: (path: DocPath) => number | undefined,
+  diagnostics: Diagnostic[]
+): ReadonlySet<string> => {
+  const meta = data.$meta;
+  const list = isRecord(meta) ? meta.sameAsDefault : undefined;
+  if (list === undefined) return new Set();
+  if (Array.isArray(list) && list.every(key => typeof key === 'string')) return new Set(list);
+  const at: DocPath = ['$meta', 'sameAsDefault'];
+  diagnostics.push(
+    diagnostic({
+      code: 'W_LOCALE_JSON',
+      file: table,
+      path: formatPath(at),
+      line: lineOf(at),
+      message: `"$meta.sameAsDefault" of ${table} must be a list of keys; pix3 validate ignores it.`,
+      fix: '"$meta": { "sameAsDefault": ["brand.name"] }',
+    })
+  );
+  return new Set();
+};
+
+// --- locale parity -------------------------------------------------------------------------------
+
+const PLURAL_KEY = /^(.+)\.(zero|one|two|few|many|other)$/;
+
+/**
+ * The CLDR plural categories `trPlural` picks (`Intl.PluralRules`, as the runtime) for a count from
+ * 0 to 1000 in `locale`: `es` / `fr` / `it` have a `many` only for millions, which their `.other`
+ * covers as well.
+ */
+const pluralCategoriesOf = (locale: string): readonly string[] => {
+  let rules: Intl.PluralRules;
+  try {
+    rules = new Intl.PluralRules(locale);
+  } catch {
+    return ['other'];
+  }
+  const used = new Set<string>(['other']);
+  for (let count = 0; count <= 1000; count++) used.add(rules.select(count));
+  return rules.resolvedOptions().pluralCategories.filter(category => used.has(category));
+};
+
+/**
+ * The plurals of one table: a prefix with a non-empty `<prefix>.<category>` for a category other
+ * than `other` that the locale's plural rules use (`level.two` is not an English plural form) →
+ * the categories it has.
+ */
+const pluralsOf = (
+  strings: Readonly<Record<string, string>>,
+  locale: string
+): Map<string, Set<string>> => {
+  const used = new Set(pluralCategoriesOf(locale));
+  const groups = new Map<string, Set<string>>();
+  for (const [key, value] of Object.entries(strings)) {
+    const match = PLURAL_KEY.exec(key);
+    if (!match || !value || !used.has(match[2])) continue;
+    groups.set(match[1], (groups.get(match[1]) ?? new Set()).add(match[2]));
+  }
+  for (const [prefix, categories] of groups) {
+    if (categories.size === 1 && categories.has('other')) groups.delete(prefix);
+  }
+  return groups;
+};
+
+/** Unicode scripts (`\p{Script=…}` values) a locale writes in, from its likely script. */
+const scriptsOf = (locale: string): readonly string[] => {
+  let script: string | undefined;
+  try {
+    script = new Intl.Locale(locale).maximize().script;
+  } catch {
+    return [];
+  }
+  switch (script) {
+    case undefined:
+      return [];
+    case 'Jpan':
+      return ['Hani', 'Hira', 'Kana'];
+    case 'Kore':
+      return ['Hang', 'Hani'];
+    case 'Hans':
+    case 'Hant':
+      return ['Hani'];
+    default:
+      return [script];
+  }
+};
+
+const scriptPattern = (script: string): RegExp | null => {
+  try {
+    return new RegExp(`\\p{Script=${script}}`, 'u');
+  } catch {
+    return null;
+  }
+};
+
+const languageOf = (locale: string): string => {
+  try {
+    return new Intl.Locale(locale).language;
+  } catch {
+    return locale;
+  }
+};
+
+/** A text without its `{param}` tokens. */
+const withoutParams = (text: string): string => text.replace(/\{[^{}]*\}/g, '');
+const letterCount = (text: string): number => text.match(/\p{L}/gu)?.length ?? 0;
+const wordCount = (text: string): number =>
+  text.split(/\s+/).filter(word => /\p{L}/u.test(word)).length;
+
+/**
+ * Every other locale against the default one, on whole-project runs (warnings — the game falls
+ * back, it does not break):
+ *
+ * - `W_LOCALE_KEY_MISSING` — a key the default table has text for and the other has not (or has
+ *   empty): that locale shows the fallback locale's text. A plural is compared by the categories
+ *   the other locale uses (`ru` needs `few` and `many`, `ja` only `other`).
+ * - `W_LOCALE_PLURAL_OTHER` — in any table, a plural with neither `<key>.other` nor `<key>`: a
+ *   count with no form of its own falls through `trPlural` to another locale's text or the key.
+ * - `W_LOCALE_UNTRANSLATED` — the text is the default's, word for word, in at least two words
+ *   (one word is too often the same in both languages: Taxi, Radio, Hammer), or it is written in
+ *   the default locale's script and not in its own (Cyrillic in `en`). Keys listed in the table's
+ *   `$meta.sameAsDefault` are skipped.
+ *
+ * Literal text a script draws without `tr()` is not seen.
+ */
+export const checkLocaleParity = (
+  project: ProjectFiles,
+  plan: LocalizationPlan,
+  tables: LoadedLocales
+): Diagnostic[] => {
+  const base = tables.get(plan.defaultLocale);
+  if (!base) return [];
+  const out: Diagnostic[] = [];
+  const basePlurals = pluralsOf(base.strings, plan.defaultLocale);
+  const baseScripts = scriptsOf(plan.defaultLocale);
+  for (const [locale, entries] of tables) {
+    const table = localeTablePath(locale);
+    const lineOf = lineFinder(project.readText(table));
+    const report = (code: DiagnosticCode, key: string, message: string, fix?: string): void => {
+      const at: DocPath = ['strings', key];
+      out.push(
+        diagnostic({ code, file: table, path: formatPath(at), line: lineOf(at), message, fix })
+      );
+    };
+    const strings = entries.strings;
+    for (const [prefix, categories] of pluralsOf(strings, locale)) {
+      if (strings[`${prefix}.other`] || strings[prefix]) continue;
+      const first = [...categories][0];
+      report(
+        'W_LOCALE_PLURAL_OTHER',
+        `${prefix}.${first}`,
+        `"${prefix}" is a plural (${[...categories].map(c => `.${c}`).join(', ')}) with no "${prefix}.other" in ${table}: trPlural('${prefix}', n) for a count none of them covers shows ${locale === plan.fallbackLocale ? `"${prefix}"` : `the ${plan.fallbackLocale} text or "${prefix}"`}.`,
+        `add "${prefix}.other": "…" (the form for any other count)`
+      );
+    }
+    if (locale === plan.defaultLocale) continue;
+    const consequence =
+      locale === plan.fallbackLocale
+        ? 'the game shows the key itself in this locale'
+        : `the game shows the ${plan.fallbackLocale} text in this locale`;
+    const categories = pluralCategoriesOf(locale);
+    for (const [prefix] of basePlurals) {
+      const has = categories.filter(c => strings[`${prefix}.${c}`]);
+      if (has.length === 0 && !strings[prefix]) {
+        report(
+          'W_LOCALE_KEY_MISSING',
+          `${prefix}.other`,
+          `plural "${prefix}" has text in ${localeTablePath(plan.defaultLocale)} but no form in ${table}: ${consequence}.`,
+          `add ${categories.map(c => `"${prefix}.${c}"`).join(', ')} to "strings" of ${table}`
+        );
+        continue;
+      }
+      for (const category of categories) {
+        if (category === 'other' || strings[`${prefix}.${category}`]) continue;
+        report(
+          'W_LOCALE_KEY_MISSING',
+          `${prefix}.${category}`,
+          `plural "${prefix}" has no "${category}" form in ${table} (${locale} uses ${categories.join(', ')}): such a count takes "${prefix}.other".`,
+          `add "${prefix}.${category}": "…" to "strings" of ${table}`
+        );
+      }
+    }
+    const ownScripts = scriptsOf(locale);
+    const patterns = (scripts: readonly string[]): RegExp[] =>
+      scripts.map(scriptPattern).filter((re): re is RegExp => re !== null);
+    const foreign = patterns(baseScripts.filter(script => !ownScripts.includes(script)));
+    const own = patterns(ownScripts);
+    const sameLanguage = languageOf(locale) === languageOf(plan.defaultLocale);
+    for (const [key, source] of Object.entries(base.strings)) {
+      if (!source) continue;
+      const plural = PLURAL_KEY.exec(key);
+      if (plural && basePlurals.has(plural[1])) continue;
+      const text = strings[key];
+      if (!text) {
+        report(
+          'W_LOCALE_KEY_MISSING',
+          key,
+          `"${key}" has text in ${localeTablePath(plan.defaultLocale)} but ${text === '' ? 'is empty' : 'not'} in ${table}: ${consequence}.`,
+          `add "${key}": "<${locale} text>" to "strings" of ${table}`
+        );
+        continue;
+      }
+      if (entries.sameAsDefault.has(key)) continue;
+      const words = withoutParams(text);
+      if (letterCount(words) <= 3) continue;
+      const copied = !sameLanguage && text === source && wordCount(words) >= 2;
+      const wrongScript = foreign.some(re => re.test(words)) && !own.some(re => re.test(words));
+      if (!copied && !wrongScript) continue;
+      report(
+        'W_LOCALE_UNTRANSLATED',
+        key,
+        copied
+          ? `"${key}" in ${table} is the ${plan.defaultLocale} text word for word ("${text}"): not translated?`
+          : `"${key}" in ${table} is written in the ${plan.defaultLocale} script, not ${locale}'s ("${text}"): not translated?`,
+        `translate it, or list "${key}" in "$meta": { "sameAsDefault": [...] } of ${table} when it is meant to stay`
+      );
+    }
+  }
+  return out;
+};
+
 /** Whether a key has a non-empty entry in the default or the fallback table (`LocalizationService`'s
  *  chain); null when the default table did not load — that is its own error, nothing more is said. */
 const lookup = (
   plan: LocalizationPlan,
   tables: LoadedLocales,
-  section: keyof LocaleEntries
+  section: 'strings' | 'sprites'
 ): ((key: string) => boolean) | null => {
   const primary = tables.get(plan.defaultLocale)?.[section];
   if (!primary) return null;

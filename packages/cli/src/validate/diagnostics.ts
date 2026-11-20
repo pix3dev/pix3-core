@@ -178,6 +178,24 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'a non-string value in another locale table (the runtime drops it; the text falls back)',
   },
+  W_LOCALE_KEY_MISSING: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      "a key the default locale has text for and another locale has not (a plural: a form that locale's plural rules use) — that locale shows the fallback text",
+  },
+  W_LOCALE_PLURAL_OTHER: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'a plural (<key>.one, .few, …) with neither <key>.other nor <key> — a count no form covers shows another locale or the key',
+  },
+  W_LOCALE_UNTRANSLATED: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      "another locale's text equals the default's word for word (two words or more), or is in the default's script and not its own; $meta.sameAsDefault lists the keys meant to stay",
+  },
   E_LOCALE_KEY: {
     severity: 'error',
     level: 1,

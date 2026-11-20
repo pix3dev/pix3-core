@@ -184,6 +184,12 @@ a `labelKey` the default locale has no text for (`E_LOCALE_KEY`: the node would 
 itself), a key a script passes as a literal — `tr('menu.play')`, `setTextKey('…')`,
 `trPlural('…')` — with no text (`E_LOCALE_SCRIPT_KEY`), and a `textureKey` /
 `stateTextureKeys` / `trSprite('…')` key with no `sprites` entry (`E_`/`W_LOCALE_SPRITE_KEY`).
+Against the default table it warns about a key another locale lacks (`W_LOCALE_KEY_MISSING`; a
+plural needs the forms that language uses — `ru` `one`/`few`/`many`/`other`), a plural with no
+`<key>.other` (`W_LOCALE_PLURAL_OTHER`) and a text left in the default language
+(`W_LOCALE_UNTRANSLATED`: the same two or more words, or the default's script). A text that stays
+the same on purpose — a brand name — is listed in that table's
+`"$meta": { "locale": "de", "sameAsDefault": ["menu.title"] }`.
 A key the script builds at run time (`` tr(`shop.${id}`) ``, `tr(key)`) is not checked — read
 those back yourself (or look at the running game).
 

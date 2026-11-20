@@ -24,6 +24,7 @@ import {
   ANIMATION_EXTENSION,
   checkAnimationFile,
   checkLabelKeys,
+  checkLocaleParity,
   checkLocaleTables,
   checkScriptKeys,
   checkSpriteKeys,
@@ -257,6 +258,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     // on whole-project runs (as W_UNUSED_ASSET); the keys of the scenes checked on every run.
     if (wholeProject) {
       diagnostics.push(...tables.diagnostics);
+      diagnostics.push(...checkLocaleParity(project, localization, tables.tables));
       diagnostics.push(...checkScriptKeys(project, localization, tables.tables));
     }
     const all = [...results.values()];

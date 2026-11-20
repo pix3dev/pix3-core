@@ -1248,12 +1248,95 @@ describe('level 1: locale tables and labelKey', () => {
       {
         'pix3project.yaml': declared('  defaultLocale: en\n  locales: [en, de]\n'),
         'locales/en.json': table({ 'menu.play': 'Play' }),
-        'locales/de.json': table({ 'menu.play': '' }),
+        'locales/de.json': table({ 'menu.play': 'Spielen' }),
         'scenes/a.pix3scene': labels('menu.play'),
       },
       { hydrate: false }
     );
     expect(codesOf(withBlock)).toEqual([]);
+  });
+
+  it('W_LOCALE_KEY_MISSING / _PLURAL_OTHER / _UNTRANSLATED: another locale against the default', async () => {
+    const report = await run(
+      {
+        'locales/en.json': table({
+          'menu.play': 'Play',
+          'menu.quit': 'Quit',
+          'menu.title': 'Pixel Pass',
+          'hud.level': 'LEVEL {n}',
+          'hud.taxi': 'Taxi',
+          'coins.one': '{count} coin',
+          'coins.other': '{count} coins',
+          'lives.one': '{count} life',
+        }),
+        'locales/de.json': `${JSON.stringify(
+          {
+            $meta: { locale: 'de', sameAsDefault: ['menu.title'] },
+            strings: {
+              'menu.play': 'Play the game',
+              'menu.quit': '',
+              'menu.title': 'Pixel Pass',
+              'hud.level': 'LEVEL {n}',
+              'hud.taxi': 'Taxi',
+              'coins.one': '{count} Münze',
+              'coins.other': '{count} Münzen',
+              'lives.other': '{count} Leben',
+            },
+          },
+          null,
+          2
+        )}\n`,
+        'locales/ru.json': table({
+          'menu.play': 'Играть',
+          'menu.quit': 'Quit the game',
+          'menu.title': 'Pixel Pass',
+          'hud.level': 'УРОВЕНЬ {n}',
+          'hud.taxi': 'Такси',
+          'coins.one': '{count} монета',
+          'coins.few': '{count} монеты',
+          'lives.one': '{count} жизнь',
+          'lives.few': '{count} жизни',
+          'lives.many': '{count} жизней',
+          'lives.other': '{count} жизни',
+        }),
+        'locales/ja.json': table({
+          'menu.play': 'プレイ',
+          'menu.quit': '終了',
+          'menu.title': 'Pixel Pass',
+          'hud.level': 'レベル {n}',
+          'hud.taxi': 'タクシー',
+          'coins.other': '{count} コイン',
+          'lives.other': '{count} ライフ',
+        }),
+      },
+      { hydrate: false }
+    );
+    const at = (code: string): string[] => find(report, code).map(d => `${d.file} ${d.path}`);
+    expect(at('W_LOCALE_KEY_MISSING')).toEqual([
+      'locales/de.json strings.lives.one',
+      'locales/de.json strings.menu.quit',
+      'locales/ru.json strings.coins.many',
+    ]);
+    expect(at('W_LOCALE_PLURAL_OTHER')).toEqual([
+      'locales/en.json strings.lives.one',
+      'locales/ru.json strings.coins.one',
+    ]);
+    // "Play the game" is English but not the default's text; one word ("Taxi") and a word with a
+    // param ("LEVEL {n}") are too often the same in both languages.
+    expect(at('W_LOCALE_UNTRANSLATED')).toEqual([
+      'locales/ja.json strings.menu.title',
+      'locales/ru.json strings.menu.quit',
+      'locales/ru.json strings.menu.title',
+    ]);
+    expect(find(report, 'W_LOCALE_UNTRANSLATED')[0].fix).toContain('sameAsDefault');
+    const badList = await run(
+      {
+        'locales/en.json': table({ a: 'A' }),
+        'locales/de.json': '{ "$meta": { "sameAsDefault": "a" }, "strings": { "a": "A" } }',
+      },
+      { hydrate: false }
+    );
+    expect(find(badList, 'W_LOCALE_JSON').map(d => d.path)).toEqual(['$meta.sameAsDefault']);
   });
 
   it('E_LOCALE_MISSING for the default / fallback locale, W_LOCALE_MISSING for another, at its line', async () => {
