@@ -267,8 +267,13 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   → `pop()` when the popup closes. The engine pauses the game while it is hidden and caps a
   tick's `dt` at 0.1 s; never listen to `visibilitychange` / `popstate` yourself. A native shell
   calls `window.__pix3Back()` and `window.__pix3SetInsets(t, r, b, l)`.
-- Phone vibration: `this.scene.haptics.vibrate(30)` / `vibrate([20, 40, 20])` / `stop()` — a quiet
-  `false` where there is none (desktop, iOS Safari, a hidden tab); never `navigator.vibrate` directly.
+- Touch feedback: `this.scene.haptics.play('light')` — kinds `selection` / `light` / `medium` /
+  `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table. A
+  pulse no heavier than one under 60 ms ago is dropped (a burst of hits is one buzz). Raw
+  `vibrate(30)` / `vibrate([20, 40, 20])` / `stop()`; `setEnabled(false)` for the player's settings
+  toggle; `available`. A quiet `false` where nothing buzzes (desktop, iOS Safari, a hidden tab) —
+  iOS needs a native shell that calls `setHapticsAdapter({ play(kind), vibrate(pattern) })`
+  (Capacitor Haptics); never `navigator.vibrate` directly.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A
   handler that cannot do it (a swap that matches nothing) returns `false`: `dispatch` — and a
   bot's `bot.command()` — answers `false`.

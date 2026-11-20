@@ -15,6 +15,7 @@ import { TweenApi, type TweenEndReason } from './TweenApi';
 import { AudioApi } from './AudioApi';
 import { CutsceneApi } from './CutsceneApi';
 import { AppApi } from './AppApi';
+import { HapticsApi } from './HapticsApi';
 import type { InputService } from './InputService';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
@@ -249,17 +250,6 @@ export class SceneService {
   // ── Time scale & juice ────────────────────────────────────────────────────
 
   /**
-   * Global time-scale controller for hitstop / slow-motion (P0.3). Scales the
-   * per-frame delta fed to all gameplay. Example: `this.scene.time.hitstop(80)`.
-   * Falls back to an inert controller when no scene is running.
-   */
-  /**
-   * Phone vibration (`navigator.vibrate`): `vibrate(ms | [on, off, on…])` — a short buzz on a
-   * match, a pattern on a win — and `stop()`. Nothing happens, and `vibrate` answers false, where
-   * there is none (desktop, iOS Safari, a headless test, a hidden tab); never throws. One call
-   * instead of each game reaching past the engine for `navigator` (core-tests/game15).
-   */
-  /**
    * The app's lifecycle and back button: `state` (`'active' | 'background'`),
    * `onBackground(this, cb)` / `onForeground(this, ({ awayMs }) => …)` — save, show a pause
    * screen — and `pushBack(this, () => handled)` → `pop()` for popups. Subscriptions die with their
@@ -267,22 +257,13 @@ export class SceneService {
    */
   readonly app = new AppApi();
 
-  readonly haptics = {
-    vibrate(pattern: number | readonly number[]): boolean {
-      const nav = typeof navigator === 'undefined' ? null : navigator;
-      if (!nav || typeof nav.vibrate !== 'function') return false;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
-      const value = typeof pattern === 'number' ? Math.max(0, pattern) : [...pattern];
-      try {
-        return nav.vibrate(value);
-      } catch {
-        return false;
-      }
-    },
-    stop(): void {
-      this.vibrate(0);
-    },
-  };
+  /**
+   * Touch feedback: `play(kind)` (`'selection' | 'light' | 'medium' | 'heavy' | 'success' |
+   * 'warning' | 'error'`, throttled), raw `vibrate(ms | [on, off, on…])` / `stop()`,
+   * `setEnabled(on)`, `available`. `navigator.vibrate` unless the shell set `setHapticsAdapter`;
+   * quiet false where nothing buzzes (iOS Safari, Node, a hidden tab); never throws.
+   */
+  readonly haptics = new HapticsApi();
 
   /**
    * The game's random numbers (`next`, `int`, `range`, `pick`, `shuffle`, `fork`), seeded per run:
@@ -298,6 +279,11 @@ export class SceneService {
 
   private fallbackRandom: SeededRandom | null = null;
 
+  /**
+   * Global time-scale controller for hitstop / slow-motion (P0.3). Scales the
+   * per-frame delta fed to all gameplay. Example: `this.scene.time.hitstop(80)`.
+   * Falls back to an inert controller when no scene is running.
+   */
   get time(): GameTime {
     const fromDelegate = this.delegate?.getGameTime();
     if (fromDelegate) {

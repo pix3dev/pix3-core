@@ -141,6 +141,14 @@ spec (он грузит `virtual:pix3/*`); остаётся ручной/e2e п�
 `setHapticsAdapter({ play, vibrate })` (Capacitor Haptics, SDK портала). Без адаптера на iOS молчит —
 так и документируем. Карта «событие → вид» — игре.
 
+**Сделано (2026-11-21).** `core/HapticsApi.ts` (класс вместо литерала в `SceneService`), экспорт
+`HapticKind`, `HapticsAdapter`, `setHapticsAdapter`. Веса и паттерны — по catstd (без его `rumble`:
+вне списка плана); `selection` без адаптера не играется (мотору слишком коротко, как в catstd).
+Троттлинг по `performance.now()`, считается только сыгранный импульс. Адаптер — на всю страницу
+(модульный), `setEnabled` — на экземпляр `scene.haptics` (`SceneService` один на страницу); выключение
+делает `stop()`. Сверх плана: `isEnabled`. Не стрипаемый: модуль крошечный, `scene.haptics` и так
+всегда был в плеере. Проверка на устройстве (Android-вибро, iOS через Capacitor) — ручная, в H.
+
 ### A5. «Меньше движения» (XS)
 
 `scene.app.reducedMotion` (из `prefers-reduced-motion`, переопределяемо игрой и

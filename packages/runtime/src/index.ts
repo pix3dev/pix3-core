@@ -33,6 +33,7 @@ export * from './core/seeded-random';
 export * from './core/GameCommands';
 export * from './core/JuiceApi';
 export * from './core/AppApi';
+export * from './core/HapticsApi';
 export * from './core/AppLifecycle';
 export * from './core/juice-transients';
 export * from './core/trail-2d';
