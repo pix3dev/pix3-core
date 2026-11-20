@@ -325,6 +325,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                 netKindPrefabs: build.scan.netKindPrefabs,
                 resourceBase: './',
                 format: build.format,
+                storageStripped: build.stripped.has('core/GameStorage'),
               })
             : devSceneManifestSource({
                 root: root(),

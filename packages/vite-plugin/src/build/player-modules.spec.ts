@@ -113,3 +113,26 @@ describe('sceneManifestSource: runtimeBackButton', () => {
     expect(backButton('zip', 'app: { backButton: false }')).toBe('false');
   });
 });
+
+describe('sceneManifestSource: runtimeStorageNamespace', () => {
+  const namespace = (yaml: string, storageStripped = false): string => {
+    const source = sceneManifestSource({
+      scenePaths: [],
+      entryScenePath: '',
+      manifest: parseProjectManifest(yaml, 'My Game!'),
+      localization: null,
+      netKindPrefabs: [],
+      resourceBase: './',
+      format: 'zip',
+      storageStripped,
+    });
+    return /export const runtimeStorageNamespace = (.*);/.exec(source)?.[1] ?? '';
+  };
+
+  it('is storage.namespace, else the project name as a slug, and null when stripped', () => {
+    expect(namespace('storage: { namespace: cats-x7k2 }')).toBe('"cats-x7k2"');
+    expect(namespace('')).toBe('"my-game"');
+    expect(namespace('storage: { namespace: "bad:name" }')).toBe('"my-game"');
+    expect(namespace('storage: { namespace: cats-x7k2 }', true)).toBe('null');
+  });
+});

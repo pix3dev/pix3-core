@@ -61,7 +61,7 @@ Usage:
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
-        [--reduced-motion]
+        [--reduced-motion] [--storage memory|'<json>'|<file>]
         [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
@@ -313,6 +313,7 @@ Reference it from a scene or script as res://<path inside the project>.
                  [--run '<json>' | --bot <name> [--bot-args '<json>']] [--seed N] [--config '<json>']
                  [--frames N]
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay] [--reduced-motion]
+                 [--storage memory|'<json>'|<file>]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--project <dir>]
 
@@ -354,6 +355,9 @@ Reference it from a scene or script as res://<path inside the project>.
                  a wrong node, component or key is an error
   --reduced-motion  scene.app.reducedMotion true for this run (dev and dist), whatever the
                  system or the game's own toggle says: shakes a quarter as far, no flash
+  --storage      the save scene.storage plays with, in memory (dev and dist; the real save is
+                 never read or written): memory = empty, or a snapshot as scene.storage.export()
+                 returns it, '{"version":1,"data":{"best":10}}', inline or in a file
   --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,
                  several variants
   --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)

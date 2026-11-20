@@ -52,7 +52,26 @@ export interface ProjectManifestInfo {
   readonly autoloads: readonly AutoloadEntry[];
   /** `app.backButton`: a history entry for `scene.app.pushBack`; null = the build decides. */
   readonly backButton: boolean | null;
+  /**
+   * `storage.namespace`: the save's key is `pix3:<namespace>:save`. Without one (`pix3 validate`
+   * warns, `W_STORAGE_NAMESPACE`), the project name as a slug.
+   */
+  readonly storageNamespace: string;
 }
+
+/** What `storage.namespace` may be (`pix3 validate` checks the same rule). */
+const STORAGE_NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const storageNamespaceOf = (input: unknown, projectName: string): string => {
+  const namespace = isRecord(input) ? input.namespace : undefined;
+  if (typeof namespace === 'string' && STORAGE_NAMESPACE_PATTERN.test(namespace)) return namespace;
+  return (
+    projectName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'pix3-game'
+  );
+};
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 } as const;
 const MIN_VIEWPORT = 64;
@@ -205,11 +224,12 @@ export const parseProjectManifest = (text: string, fallbackName: string): Projec
     typeof record.defaultExportScenePath === 'string' && record.defaultExportScenePath.trim()
       ? stripRes(record.defaultExportScenePath.trim())
       : null;
+  const projectName =
+    typeof metadata.projectName === 'string' && metadata.projectName.trim()
+      ? metadata.projectName.trim()
+      : fallbackName;
   return {
-    projectName:
-      typeof metadata.projectName === 'string' && metadata.projectName.trim()
-        ? metadata.projectName.trim()
-        : fallbackName,
+    projectName,
     defaultScenePath: defaultScene,
     viewportBaseSize: normalizeViewport(record.viewportBaseSize),
     quality: normalizeQuality(record.quality, platform.toLowerCase()),
@@ -220,6 +240,7 @@ export const parseProjectManifest = (text: string, fallbackName: string): Projec
       isRecord(record.app) && typeof record.app.backButton === 'boolean'
         ? record.app.backButton
         : null,
+    storageNamespace: storageNamespaceOf(record.storage, projectName),
   };
 };
 

@@ -205,6 +205,10 @@ describe('pix3 new', () => {
       });
       expect((manifest.metadata as Record<string, unknown>).projectId).toBe(project.projectId);
       expect(project.projectId).toMatch(/^[0-9a-f-]{36}$/);
+      // The save's namespace: the name as a slug + a random suffix (two "My Game"s never share).
+      expect((manifest.storage as { namespace: string }).namespace).toMatch(
+        /^my-game-[0-9a-f]{4}$/
+      );
 
       const scene = parse(readFileSync(join(dir, 'scenes/main.pix3scene'), 'utf8')) as {
         root: { type: string; components?: unknown[]; children?: { type: string }[] }[];

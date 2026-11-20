@@ -1,6 +1,7 @@
 import { AssetLoader } from '../core/AssetLoader';
 import { AudioService } from '../core/AudioService';
 import type { GameCommandArgs, GameCommandRegistry } from '../core/GameCommands';
+import type { StorageRunMode } from '../core/GameStorage';
 import { getGameDebug, registerScriptErrorSink, type ScriptErrorInfo } from '../core/game-debug';
 import { ResourceManager, type EmbeddedResourceMap } from '../core/ResourceManager';
 import type { RuntimeRenderer } from '../core/RuntimeRenderer';
@@ -89,6 +90,12 @@ export interface HeadlessGameOptions {
 
   /** Seconds of game time per {@link HeadlessGame.step}. Defaults to 1/60. */
   readonly fixedDeltaSec?: number;
+
+  /**
+   * The save `scene.storage` starts from: `'memory'` (the default, empty) or `{ snapshot }` — a
+   * `scene.storage.export()` snapshot. Always in memory; read it back with `scene.storage.export()`.
+   */
+  readonly storage?: StorageRunMode;
 }
 
 export interface HeadlessGame {
@@ -288,6 +295,7 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
   const renderer = createNullRenderer(viewport.width, viewport.height);
   const runner = new SceneRunner(sceneManager, renderer, audioService, assetLoader, viewport);
   runner.setAutoloads(options.autoloads ?? [], scriptRegistry);
+  runner.setStorage({ namespace: 'headless', mode: options.storage ?? 'memory' });
 
   const errors: ScriptErrorInfo[] = [];
   const releaseErrorSink = registerScriptErrorSink(error => {

@@ -77,6 +77,11 @@ export interface ProjectManifest {
    */
   app?: { backButton?: boolean };
   /**
+   * The game's save: `namespace` keys it (`pix3:<namespace>:save`). Kept verbatim so the editor's
+   * rewrite of the manifest never drops it; the player reads it (`pix3 new` writes one).
+   */
+  storage?: { namespace: string };
+  /**
    * Web fonts the project ships, registered as `FontFace`s before the first frame.
    *
    * Without this a scene could name any family it liked and the canvas quietly drew Arial —
@@ -303,6 +308,11 @@ const normalizeApp = (input: unknown): Pick<ProjectManifest, 'app'> => {
   return typeof backButton === 'boolean' ? { app: { backButton } } : {};
 };
 
+const normalizeStorage = (input: unknown): Pick<ProjectManifest, 'storage'> => {
+  const namespace = (input as { namespace?: unknown } | null)?.namespace;
+  return typeof namespace === 'string' && namespace.trim() ? { storage: { namespace } } : {};
+};
+
 export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
   if (!input || typeof input !== 'object') {
     return createDefaultProjectManifest();
@@ -330,6 +340,7 @@ export const normalizeProjectManifest = (input: unknown): ProjectManifest => {
     localization: normalizeLocalization(record.localization),
     fonts: normalizeFonts(record.fonts),
     ...normalizeApp(record.app),
+    ...normalizeStorage(record.storage),
     metadata:
       record.metadata && typeof record.metadata === 'object'
         ? (record.metadata as Record<string, unknown>)

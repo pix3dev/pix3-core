@@ -238,6 +238,12 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'pix3project.yaml has the 1.x export: block (prune / include / exclude globs), which no 2.x build reads',
   },
+  W_STORAGE_NAMESPACE: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'pix3project.yaml has no valid storage.namespace while a script uses scene.storage — the save is keyed by the project name, which another game on the same origin can share',
+  },
   W_LEGACY_VERSION: {
     severity: 'warning',
     level: 1,

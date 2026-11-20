@@ -320,6 +320,17 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     lazyValueImporters: ['core/JuiceApi'],
   },
 
+  // --- the save ---
+  {
+    // `SceneService.storage` constructs it lazily. `SceneRunner` reaches it (`openStorage`) only
+    // when the player hands it a namespace, and a build that strips this module hands it none
+    // (`runtimeStorageNamespace` is null); `testing/headless-game` never ships in a player. So a
+    // project that never says `storage` cannot reach it.
+    modulePath: 'core/GameStorage',
+    keepWhenMentioned: ['storage', 'GameStorage'],
+    lazyValueImporters: ['core/SceneService', 'core/SceneRunner', 'testing/headless-game'],
+  },
+
   // --- multiplayer ---
   {
     // ~59 KiB with its protocol tree. `SceneService.network` is a getter that constructs one

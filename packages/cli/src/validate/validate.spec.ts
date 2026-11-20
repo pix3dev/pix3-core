@@ -672,6 +672,27 @@ describe('level 1: references and prefabs', () => {
     expect(codesOf(await run({}))).not.toContain('W_MANIFEST_EXPORT');
   });
 
+  it('W_STORAGE_NAMESPACE: a script saves and the manifest names no valid namespace', async () => {
+    const saves = {
+      'scripts/Save.ts': 'export const best = (s: any) => s.storage.get("best", 0);\n',
+    };
+    const found = find(await run(saves), 'W_STORAGE_NAMESPACE');
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ file: 'pix3project.yaml', path: 'storage' });
+    expect(found[0].fix).toMatch(/^storage:\n {2}namespace: [a-z0-9-]+-[0-9a-f]{4}$/);
+    // No script saves: nothing to share, nothing to say.
+    expect(codesOf(await run({}))).not.toContain('W_STORAGE_NAMESPACE');
+    const root = makeProject(saves);
+    writeFileSync(join(root, 'pix3project.yaml'), `${MANIFEST}storage:\n  namespace: "a:b"\n`);
+    expect(find(await validateProject({ projectRoot: root }), 'W_STORAGE_NAMESPACE')).toMatchObject(
+      [{ path: 'storage.namespace' }]
+    );
+    writeFileSync(join(root, 'pix3project.yaml'), `${MANIFEST}storage:\n  namespace: cats-x7k2\n`);
+    expect(codesOf(await validateProject({ projectRoot: root }))).not.toContain(
+      'W_STORAGE_NAMESPACE'
+    );
+  });
+
   it('W_UNUSED_ASSET: whole-project runs only', async () => {
     const files = {
       'sprites/used.png': PNG,

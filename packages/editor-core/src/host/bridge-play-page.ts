@@ -177,11 +177,17 @@ const activeScene = (): string | null => {
   return (id && appState.scenes.descriptors[id]?.filePath) || null;
 };
 
-/** Why `run` is not `{seed?: integer, config?: {nodeId: {componentId: {…}}}}`, or null. */
+/** Why `run` is not `{seed?: integer, storage?, config?: {nodeId: {componentId: {…}}}}`, or null. */
 export const runOverridesProblem = (run: RunOverrides): string | null => {
   if (run.seed !== undefined && !Number.isInteger(run.seed)) return 'run.seed must be an integer';
   const isObject = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (run.storage !== undefined && run.storage !== 'memory') {
+    const snapshot = isObject(run.storage) ? run.storage.snapshot : undefined;
+    if (!isObject(snapshot) || !isObject(snapshot.data)) {
+      return 'run.storage must be "memory" or {"snapshot": {"version": N, "data": {…}}}';
+    }
+  }
   if (run.config === undefined) return null;
   if (!isObject(run.config)) return 'run.config must be {"<nodeId>": {"<componentId>": {…}}}';
   for (const [nodeId, components] of Object.entries(run.config)) {

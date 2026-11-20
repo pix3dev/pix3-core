@@ -69,6 +69,21 @@ describe('pix3 play', () => {
       reducedMotion: true,
     });
     expect((await run(['--config', '[1]'])).err).toContain('--config takes one JSON object');
+    const runOf = (argv: string[]) => {
+      const parsed = parsePlayArgs(argv);
+      return typeof parsed === 'object' && 'run' in parsed ? parsed.run : parsed;
+    };
+    expect(runOf(['dist', '--storage', 'memory'])).toEqual({ storage: 'memory' });
+    const snapshot = { version: 2, data: { best: 10 } };
+    expect(runOf(['dist', `--storage=${JSON.stringify(snapshot)}`])).toEqual({
+      storage: { snapshot },
+    });
+    writeFileSync(join(root, 'save.json'), JSON.stringify(snapshot));
+    expect(runOf(['dist', '--storage', join(root, 'save.json')])).toEqual({
+      storage: { snapshot },
+    });
+    expect((await run(['--storage', '{"best":10}'])).err).toContain('--storage takes memory');
+    expect((await run(['--storage', join(root, 'nope.json')])).err).toContain('(no file');
     expect((await run(['--safe-area', '47,0,34'])).err).toContain(
       '--safe-area takes top,right,bottom,left'
     );

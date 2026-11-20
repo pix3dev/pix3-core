@@ -57,6 +57,8 @@ export interface SceneManifestModel {
   readonly resourceBase: string;
   /** The page served: the dev server's, or a build's. */
   readonly format: 'dev' | 'html' | 'zip';
+  /** A build that stubbed `core/GameStorage` (nothing mentions `storage`): the player reads no save. */
+  readonly storageStripped?: boolean;
 }
 
 const json = (value: unknown): string => JSON.stringify(value, null, 2);
@@ -73,6 +75,10 @@ export const sceneManifestSource = (model: SceneManifestModel): string =>
     // never in a single-file playable (an ad container owns its history) or on the dev server.
     `export const runtimeBackButton = ${json(
       model.manifest.backButton ?? (model.format === 'zip' ? 'top-level' : false)
+    )};`,
+    // The save's namespace (`storage.namespace`), null when the build stripped the store.
+    `export const runtimeStorageNamespace = ${json(
+      model.storageStripped ? null : model.manifest.storageNamespace
     )};`,
     `export const runtimeFonts = ${json(model.manifest.fonts)};`,
     `export const runtimeLocalization = ${json(model.localization)};`,

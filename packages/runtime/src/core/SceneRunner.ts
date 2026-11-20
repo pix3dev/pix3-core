@@ -64,6 +64,7 @@ import {
 } from './runtime-time';
 import { playable } from './PlayableSdk';
 import { appLifecycle, type AppLifecycleChange } from './AppLifecycle';
+import type { StorageOpenOptions, StorageRunMode } from './GameStorage';
 import { disconnectSignalTargetEverywhere } from './signal-target-links';
 
 /** The frame source of {@link SceneRunner}'s loop — `requestAnimationFrame`'s contract. */
@@ -284,6 +285,8 @@ export class SceneRunner {
   private readonly random = new SeededRandom();
   /** Per-run test settings (`setRunOverrides`); null = the game as authored. */
   private runOverrides: RunOverrides | null = null;
+  /** `setStorage`: whose save `scene.storage` reads before the first `onStart`; null = none. */
+  private storageOptions: StorageOpenOptions | null = null;
   /** The project's web fonts (`ProjectManifest.fonts`), injected by the host before
    *  `startScene`; null = nothing to register. */
   private projectFonts: readonly ProjectFontFaceSpec[] | null = null;
@@ -412,6 +415,7 @@ export class SceneRunner {
   /**
    * Settings for a test run, applied to every scene this runner starts until cleared (`null`):
    * `seed` restarts `scene.random`, `reducedMotion` forces `scene.app.reducedMotion` (at once, page-wide),
+   * `storage` is the save the first start reads instead of the real one ({@link setStorage}),
    * `config` overrides component config —
    * `{ "<nodeId>": { "<componentId>": { key: value } } }`, set through the component's schema like
    * the scene file's `config:` — before the first `onStart`. Hosts pass them only in development
@@ -422,6 +426,16 @@ export class SceneRunner {
   setRunOverrides(overrides: RunOverrides | null): void {
     this.runOverrides = overrides;
     appLifecycle.setReducedMotion('run', overrides?.reducedMotion ?? null);
+  }
+
+  /**
+   * The game's save (`scene.storage`): read before the first `onStart` of the next start, from
+   * `pix3:<namespace>:save` — or, with `mode` (or a run's `RunOverrides.storage`, which wins), from
+   * memory. Null (the default, and a build that stripped the store): nothing is read and
+   * `scene.storage`, if touched, is memory only.
+   */
+  setStorage(options: StorageOpenOptions | null): void {
+    this.storageOptions = options;
   }
 
   private applyRunOverrides(graph: { nodeMap: Map<string, NodeBase> }): void {
@@ -673,6 +687,14 @@ export class SceneRunner {
     // unfocused session freezes on that frame).
     await this.setupLocalization(this.runtimeGraph.rootNodes);
 
+    // The save, read before the autoloads' `onAttach` (where migrations are registered) and any
+    // `onStart`; only the first start reads, later ones re-arm the background flush. A run's
+    // storage mode wins over the host's.
+    if (this.storageOptions) {
+      const mode = this.runOverrides?.storage ?? this.storageOptions.mode ?? null;
+      await this.sceneService.openStorage({ ...this.storageOptions, mode });
+    }
+
     this.ecsService.beginScene(this.sceneService, this.inputService);
 
     // Marked running BEFORE the pre-roll tick, because that tick is where every
@@ -802,6 +824,7 @@ export class SceneRunner {
   stop(): void {
     this.stopScene();
     this.autoloads.stop();
+    this.sceneService.closeStorage();
     this.disposeLifecycle?.();
     this.disposeLifecycle = null;
     this.sceneService.app.clear();
@@ -2511,5 +2534,7 @@ export interface RunOverrides {
   seed?: number;
   /** Force `scene.app.reducedMotion` (`pix3 play --reduced-motion`), whatever the system or the game says. */
   reducedMotion?: boolean;
+  /** The save a test run plays with (`pix3 play --storage`): `'memory'` or `{ snapshot }`. */
+  storage?: StorageRunMode;
   config?: Record<string, Record<string, Record<string, unknown>>>;
 }

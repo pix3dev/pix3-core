@@ -16,6 +16,7 @@ import { AudioApi } from './AudioApi';
 import { CutsceneApi } from './CutsceneApi';
 import { AppApi } from './AppApi';
 import { HapticsApi } from './HapticsApi';
+import { GameStorage, type StorageOpenOptions } from './GameStorage';
 import type { InputService } from './InputService';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
@@ -161,6 +162,7 @@ export class SceneService {
   private audioApi: AudioApi | null = null;
   private inertLocalization: LocalizationService | null = null;
   private cutsceneApi: CutsceneApi | null = null;
+  private gameStorage: GameStorage | null = null;
   private collision2dService: Collision2DService | null = null;
   private physics2dService: Physics2DService | null = null;
   /** Scene-scoped named intents; see {@link commands}. Cleared by the runner on stop. */
@@ -229,6 +231,7 @@ export class SceneService {
     this.changeScenePromise = null;
     this.cutsceneApi?.dispose();
     this.cutsceneApi = null;
+    this.closeStorage();
     this.clearTweens();
     this.collision2dService = null;
     this.commandRegistry?.clear();
@@ -264,6 +267,27 @@ export class SceneService {
    * quiet false where nothing buzzes (iOS Safari, Node, a hidden tab); never throws.
    */
   readonly haptics = new HapticsApi();
+
+  /**
+   * The game's save: `get(key, fallback)` (a copy), `set` / `remove` / `clear`, `await flush()`,
+   * `export()` / `import(json)`, `persistent`, `version` + `migrate(from, to, fn)` (register in an
+   * autoload's `onAttach`). Read before the first `onStart`, written a moment after each change and
+   * when the app goes to the background. Constructed on first touch, so a project that never says
+   * the word ships without it (`strippable-runtime-modules.ts`).
+   */
+  get storage(): GameStorage {
+    return (this.gameStorage ??= new GameStorage());
+  }
+
+  /** The runner, before the first `onStart`: read the save (see {@link GameStorage.open}). */
+  openStorage(options: StorageOpenOptions): Promise<void> {
+    return this.storage.open(options);
+  }
+
+  /** The runner, at session end: write what is pending, without constructing a store. */
+  closeStorage(): void {
+    void this.gameStorage?.close();
+  }
 
   /**
    * The game's random numbers (`next`, `int`, `range`, `pick`, `shuffle`, `fork`), seeded per run:

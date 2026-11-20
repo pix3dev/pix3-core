@@ -36,6 +36,21 @@ const qualityFor = (platform: TargetPlatform) => {
 export const createProjectId = (): string => randomUUID();
 
 /**
+ * `storage.namespace` of a new project: the name as a slug plus a short random suffix, so two
+ * games with the same name on one origin (a portal) never share a save (`pix3:<namespace>:save`).
+ */
+export const createStorageNamespace = (projectName: string): string => {
+  const slug =
+    projectName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .replace(/-+$/, '') || 'pix3-game';
+  return `${slug}-${randomUUID().slice(0, 4)}`;
+};
+
+/**
  * The manifest of a new project from `template`, in the key order and format the editor's
  * `ProjectService.saveProjectManifest` writes (`stringify(..., { indent: 2 })`), so the editor's
  * one rewrite of it (the `projectId` backfill, never needed here) would not reorder a line.
@@ -56,6 +71,7 @@ export const buildManifestPayload = (
   projectType: template.projectType,
   targetPlatform: template.targetPlatform,
   quality: qualityFor(template.targetPlatform),
+  storage: { namespace: createStorageNamespace(options.projectName) },
   metadata: {
     projectName: options.projectName,
     templateId: template.id,

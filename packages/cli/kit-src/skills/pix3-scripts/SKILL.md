@@ -271,6 +271,17 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `scene.app.setReducedMotion(on | null)` from your settings toggle). The engine already shakes a
   quarter as far and skips `flash`; tweens are yours — skip a decorative one when it is true.
   `pix3 play --reduced-motion` checks the game that way.
+- Save: `this.scene.storage` — `get('best', 0)` (a copy: change it, then `set` it back),
+  `set('best', 12)`, `remove`, `clear`; values are JSON. It is read before the first `onStart`
+  and written a moment after each change and when the app goes to the background — never call
+  `localStorage` yourself. `await flush()` → `{ ok, error? }` before something that may close the
+  page (a store link); `export()` / `import(json)` for a "transfer save" screen. A save shape that
+  changes between releases: register `scene.storage.migrate(1, 2, data => ({ …data, gems: 0 }))`
+  in an autoload's `onAttach` (before anything reads). Test a returning player with
+  `pix3 play --storage '{"version":2,"data":{"best":40}}'` (or a file; `--storage memory` = a new
+  player); the real save is untouched. A native shell / portal cloud save:
+  `setStorageAdapter({ read(key), write(key, snapshot) })` before `startGame` (merging a cloud
+  snapshot with the local one is the adapter's job, in `read`).
 - Touch feedback: `this.scene.haptics.play('light')` — kinds `selection` / `light` / `medium` /
   `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table. A
   pulse no heavier than one under 60 ms ago is dropped (a burst of hits is one buzz). Raw

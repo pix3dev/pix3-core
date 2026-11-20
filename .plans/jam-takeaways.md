@@ -133,6 +133,27 @@ spec (он грузит `virtual:pix3/*`); остаётся ручной/e2e п�
 - Тесты: холодный старт, квота, сбой миграции, изменение во время `flush`, повреждённый импорт.
 - Вне объёма: облачное слияние — рецепт в ките по `pixeldrop/src/core/cloudMerge.js`.
 
+**Сделано (2026-11-21).** `core/GameStorage.ts` = `scene.storage` (ленивый геттер, стрипаемый:
+`keepWhenMentioned: ['storage', 'GameStorage']`; при стрипе сборка отдаёт `runtimeStorageNamespace = null`
+и плеер ничего не читает). Снимок — один JSON `{version, data}` под `pix3:<namespace>:save`.
+`SceneRunner.setStorage({ namespace, mode? })`; чтение ждётся в `runGraph` после шрифтов и локалей, до
+`onAttach` автолоадов и любого `onStart`; повторный старт только пере-подписывает flush. Форма миграций:
+`migrate(from, to, fn)` в `onAttach` автолоада, сейв мигрируется лениво при первом доступе (поэтому нет
+гонки с первым `get`), `version` = максимальный `to`; поздняя регистрация — `console.error`. Сбой/дыра
+миграции: сейв на диске не трогается, сессия из памяти (`persistent=false`); нечитаемый снимок —
+пусто и перезапись. Запись: 250 мс, очередь из одной записи, ошибка оставляет `dirty`; flush на
+переходе в фон и на `visible=false` (через `AppLifecycle`), на `runner.stop()`. Плеер: `:editor` — когда
+страницу открыл редактор (`devPageLink()`). `pix3 new` пишет `storage.namespace` (слаг + 4 hex),
+`W_STORAGE_NAMESPACE`, `pix3 play --storage memory|json|file`, `HeadlessGameOptions.storage` (по
+умолчанию `memory`), smoke — `memory`; `run.storage` проверяется в мосту.
+Отклонения: адаптер получает ключ — `read(key)`, `write(key, snapshot)` (иначе Capacitor Preferences не
+знает, куда писать, и `:editor` не работал бы); `W_STORAGE_NAMESPACE` только если скрипт проекта говорит
+`storage` (или значение невалидно) — иначе предупреждение у каждой старой игры без сейва; `MemoryStorage`
+в dom-shim оставлен для скриптов, что ходят в `localStorage` сами — движок туда не ходит. Попутно:
+редактор при перезаписи манифеста (бэкфилл `projectId`) терял `app` из A1 — теперь пишет и `app`, и
+`storage`. Рецепт облачного слияния — одна строка в `pix3-scripts` (слияние в `read` адаптера), полный —
+в H. Для игр: пересобрать vite-plugin (плеер изменён).
+
 ### A4. Хаптика: виды, троттлинг, адаптер (S)
 
 Расширяем `scene.haptics` (`vibrate`/`stop` остаются): `play(kind)`, `kind ∈ 'selection' | 'light' |

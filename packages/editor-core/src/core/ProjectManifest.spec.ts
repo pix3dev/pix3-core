@@ -24,6 +24,13 @@ describe('ProjectManifest', () => {
     expect('app' in normalizeProjectManifest({ app: { backButton: 'yes' } })).toBe(false);
   });
 
+  it('keeps storage.namespace verbatim, and no storage block without one', () => {
+    expect(normalizeProjectManifest({ storage: { namespace: 'cats-x7k2' } }).storage).toEqual({
+      namespace: 'cats-x7k2',
+    });
+    expect('storage' in normalizeProjectManifest({ storage: { namespace: 3 } })).toBe(false);
+  });
+
   it('normalizes default export scene path from resource path input', () => {
     const manifest = normalizeProjectManifest({
       ...createDefaultProjectManifest(),

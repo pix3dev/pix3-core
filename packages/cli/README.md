@@ -39,8 +39,9 @@ install).
 `pix3 new` is what `npm create pix3` runs: the `base` layer of `packages/create-pix3/templates/`
 (package.json, vite.config.ts with `pix3()`, index.html, src/main.ts, tsconfig.json, gitignore,
 README.md) plus the `2d` or `3d` layer (one empty entry scene), `{{PROJECT_NAME}}` /
-`{{PACKAGE_NAME}}` / `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated, then the agent
-kit. Nothing in it plays a game. Record: `.plans/done/templates.md`.
+`{{PACKAGE_NAME}}` / `{{PIX3_VERSION}}` substituted, `pix3project.yaml` generated (with
+`storage.namespace`: the name as a slug plus four random hex digits — the key of the game's save,
+`pix3:<namespace>:save`), then the agent kit. Nothing in it plays a game. Record: `.plans/done/templates.md`.
 
 Two things a first run trips on: **2.0.0-alpha packages are not published yet** — a new
 project's `npm install` fails until they are; the starter's README says how to link a pix3-core
@@ -194,6 +195,7 @@ file. A disabled entry is not checked.
 | Code | Severity | When |
 | --- | --- | --- |
 | `E_AUTOLOAD` | error | an autoload that would never run: no `singleton`/`scriptPath`, a repeated singleton, a script that is missing, outside the script folders, not an entry, or exporting no class named like the file (level 1, by text); at level 2, the class named like the file is not a `Script` |
+| `W_STORAGE_NAMESPACE` | warning | `storage.namespace` is missing while a project script says `storage`, or is not `[A-Za-z0-9][A-Za-z0-9._-]*`: the save falls back to the project name as a slug, which another game on the same origin can share; the fix carries a fresh namespace |
 
 ## `pix3 sfx` — sound effects without the editor
 
@@ -311,7 +313,8 @@ Stubbed: rendering (a null renderer; post-processing never loads), audio (no Web
 input (no events), network (`scene.network` is null). Textures resolve empty, glTF models and
 Spine skeletons referenced by nodes are not built; images a script loads through three's
 `TextureLoader` "load" as blank 1×1 pictures (so preloaders finish). A small browser shim provides
-`window` / `document` / canvas / `localStorage` / `matchMedia` / `requestAnimationFrame`; any other
+`window` / `document` / canvas / `localStorage` / `matchMedia` / `requestAnimationFrame` (the
+engine's own save, `scene.storage`, runs in memory and never touches that `localStorage`); any other
 browser property a script reads is recorded, and an error right after such a read is
 `E_SMOKE_DOM` with the read attached (`domAccess`).
 
@@ -731,7 +734,11 @@ after, so the game never sees them — which makes "nothing under the notch" a t
 (core-tests/game18 worked it out by arithmetic); `--no-safe-area-overlay` takes them off.
 `--reduced-motion` forces `scene.app.reducedMotion` for the run (`RunOverrides.reducedMotion`): a
 quarter of every shake, no `flash` — what a player with the system setting sees.
-`--seed N` / `--config '<json>'` / `--reduced-motion` are injected before the page loads
+`--storage memory | '<json>' | <file>` is the save `scene.storage` plays with (`RunOverrides.storage`):
+`memory` starts empty, a snapshot (`{"version":1,"data":{…}}`, what `scene.storage.export()`
+returns; inline or a file) starts from it — in memory either way, so a run never reads or writes
+the page's real save. A returning player, a broken save, a migration: one flag each.
+`--seed N` / `--config '<json>'` / `--reduced-motion` / `--storage` are injected before the page loads
 (`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
 player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
 global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.

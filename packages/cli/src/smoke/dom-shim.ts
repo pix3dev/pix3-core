@@ -87,6 +87,10 @@ const recording = <T extends object>(
     },
   });
 
+/**
+ * `localStorage` / `sessionStorage` for scripts that use them directly. The engine's own save
+ * (`scene.storage`) never comes here: smoke runs it in memory (`SceneRunner.setStorage`).
+ */
 class MemoryStorage {
   private readonly data = new Map<string, string>();
   get length(): number {

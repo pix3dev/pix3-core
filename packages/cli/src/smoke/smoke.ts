@@ -491,6 +491,9 @@ export const runSmokeJob = async (
     });
     // `--seed` / `--config`: the same per-run overrides the player takes from `?run=`.
     runner.setRunOverrides(job.run ? { ...job.run } : null);
+    // `scene.storage` as the player reads it, but from memory: a smoke run never sees or writes a
+    // real save (the shim's `localStorage` is only for scripts that go around `scene.storage`).
+    runner.setStorage({ namespace: 'smoke', mode: 'memory' });
     // The project's autoloads run here as in the player and the editor's play mode.
     runner.setAutoloads(normalizeAutoloads(job.autoloads), registry);
     // The locales the player loads (the plugin's rule: the manifest's block, else locales/*.json).

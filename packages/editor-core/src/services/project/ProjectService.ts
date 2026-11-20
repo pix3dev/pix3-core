@@ -246,6 +246,7 @@ export class ProjectService {
         shadows: normalized.quality.shadows,
         maxPixelRatio: normalized.quality.maxPixelRatio,
       },
+      ...(normalized.storage ? { storage: { namespace: normalized.storage.namespace } } : {}),
       // Only emit the block when localization is configured (absent ⇒ inert).
       ...(normalized.localization
         ? {
@@ -270,6 +271,7 @@ export class ProjectService {
             })),
           }
         : {}),
+      ...(normalized.app ? { app: { ...normalized.app } } : {}),
       metadata: normalized.metadata ?? {},
       autoloads: normalized.autoloads.map(entry => ({
         scriptPath: entry.scriptPath,

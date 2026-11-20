@@ -21,6 +21,11 @@ declare module 'virtual:pix3/scene-manifest' {
     readonly shadows: boolean;
     readonly maxPixelRatio: number;
   };
+  /**
+   * `pix3project.yaml` `storage.namespace` (else the project name as a slug): `scene.storage` keeps
+   * the save under `pix3:<namespace>:save`. Null in a build that stripped the store.
+   */
+  export const runtimeStorageNamespace: string | null;
   export const runtimeFonts: readonly {
     readonly family: string;
     readonly path: string;
@@ -71,7 +76,7 @@ declare module 'virtual:pix3/dev' {
   import type { AudioService, RuntimeRenderer, SceneRunner } from '@pix3/runtime';
   /** Dev: the URL's `?scene=` (`res://` stripped), or null. Build: always null. */
   export function devSceneOverride(): string | null;
-  /** `?run=<json>` on the dev server — a test run's `RunOverrides` (`seed`, `reducedMotion`, `config`); null in a build. */
+  /** `?run=<json>` on the dev server — a test run's `RunOverrides` (`seed`, `reducedMotion`, `storage`, `config`); null in a build. */
   export function devRunOverrides(): import('@pix3/runtime').RunOverrides | null;
   /** Dev with the editor: the file revision the server stamped into the page; else null. */
   export function devPageRev(): number | null;

@@ -29,6 +29,7 @@ import {
   runtimeFonts,
   runtimeLocalization,
   runtimeQuality,
+  runtimeStorageNamespace,
   runtimeViewportBaseSize,
   scenePaths,
 } from 'virtual:pix3/scene-manifest';
@@ -265,6 +266,14 @@ export async function startGame(
     // every resize — a phone turned sideways moves the notch.
     trackSafeArea(runner);
     installBackButton(runner);
+    // The save (`scene.storage`), read before the first `onStart`. The editor's Play keeps its own,
+    // so playing from the editor never touches the player's save on this origin.
+    if (runtimeStorageNamespace !== null) {
+      const editorPlay = devPageLink() !== null;
+      runner.setStorage({
+        namespace: editorPlay ? `${runtimeStorageNamespace}:editor` : runtimeStorageNamespace,
+      });
+    }
     runner.setProjectFonts(runtimeFonts.length > 0 ? runtimeFonts : null);
     if (runtimeLocalization) {
       runner.setLocalizationConfig({

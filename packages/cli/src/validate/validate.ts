@@ -33,6 +33,7 @@ import {
 import { scanUserScripts } from './user-scripts.ts';
 import { checkAutoloads, checkAutoloadTypes } from './autoloads.ts';
 import { checkManifestExport } from './manifest-export.ts';
+import { checkStorageNamespace } from './storage-namespace.ts';
 
 export interface ValidateOptions {
   /** Project folder (the one holding `pix3project.yaml`, or any folder `res://` is relative to). */
@@ -272,6 +273,7 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
   const autoloadDiagnostics = checkAutoloads(project);
   diagnostics.push(...autoloadDiagnostics);
   diagnostics.push(...checkManifestExport(project));
+  diagnostics.push(...checkStorageNamespace(project));
 
   const usesUserComponents = [...results.values()].some(result => result.usesUserComponents);
   const notes: string[] = [];
