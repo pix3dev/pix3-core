@@ -41,6 +41,8 @@ export class AppLifecycle {
   /** What listeners last heard, so a duplicate event is not a second transition. */
   private lastVisible = true;
   private lastFocused = true;
+  private runReducedMotion: boolean | null = null;
+  private gameReducedMotion: boolean | null = null;
 
   /** The page is on screen (not hidden, not unloaded into the bfcache, not frozen). */
   get visible(): boolean {
@@ -64,6 +66,28 @@ export class AppLifecycle {
       return this.computeState();
     }
     return this.stateNow;
+  }
+
+  /**
+   * Fewer, smaller movements: a test run's {@link setReducedMotion run} value, else the game's
+   * (its settings toggle), else the system's `prefers-reduced-motion: reduce`. False in Node.
+   */
+  get reducedMotion(): boolean {
+    if (this.runReducedMotion !== null) return this.runReducedMotion;
+    if (this.gameReducedMotion !== null) return this.gameReducedMotion;
+    try {
+      return typeof matchMedia === 'function'
+        ? matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Override {@link reducedMotion}: `'run'` from `RunOverrides`, `'game'` from `scene.app`; null clears. */
+  setReducedMotion(source: 'run' | 'game', value: boolean | null): void {
+    if (source === 'run') this.runReducedMotion = value;
+    else this.gameReducedMotion = value;
   }
 
   /** Hear every change of {@link visible}, {@link focused} or {@link state}. Returns the unsubscribe. */

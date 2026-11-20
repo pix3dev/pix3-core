@@ -5,7 +5,7 @@ import { NodeBase } from '../NodeBase';
 import type { PropertySchema } from '../../fw/property-schema';
 import { defineProperty, mergeSchemas } from '../../fw/property-schema';
 import { clampRange, dampingAlpha, deadzoneGoal } from '../../core/camera-math';
-import { shakeNoise, type ShakeOptions } from '../../behaviors/ShakeBehavior';
+import { shakeMotionScale, shakeNoise, type ShakeOptions } from '../../behaviors/ShakeBehavior';
 
 /** Default configuration values for a freshly created 2D camera. */
 export const CAMERA2D_DEFAULTS = {
@@ -240,7 +240,7 @@ export class Camera2D extends Node2D {
 
     const progress = duration > 0 ? this.shakeElapsed / duration : 0;
     const damp = Math.pow(Math.max(0, 1 - progress), this.shakeDecayValue);
-    const amp = this.shakeAmplitudeValue * damp;
+    const amp = this.shakeAmplitudeValue * damp * shakeMotionScale();
     const phase = this.shakeElapsed * this.shakeFrequencyValue;
     this.shakeOffset.set(shakeNoise(phase, 0) * amp, shakeNoise(phase, 100) * amp);
   }

@@ -411,7 +411,8 @@ export class SceneRunner {
    */
   /**
    * Settings for a test run, applied to every scene this runner starts until cleared (`null`):
-   * `seed` restarts `scene.random`, `config` overrides component config —
+   * `seed` restarts `scene.random`, `reducedMotion` forces `scene.app.reducedMotion` (at once, page-wide),
+   * `config` overrides component config —
    * `{ "<nodeId>": { "<componentId>": { key: value } } }`, set through the component's schema like
    * the scene file's `config:` — before the first `onStart`. Hosts pass them only in development
    * (`pix3 play --config/--seed` on the dev server, `pix3 smoke`, the editor's play), never in a
@@ -420,6 +421,7 @@ export class SceneRunner {
    */
   setRunOverrides(overrides: RunOverrides | null): void {
     this.runOverrides = overrides;
+    appLifecycle.setReducedMotion('run', overrides?.reducedMotion ?? null);
   }
 
   private applyRunOverrides(graph: { nodeMap: Map<string, NodeBase> }): void {
@@ -2504,8 +2506,10 @@ function repaintLabels(roots: readonly NodeBase[]): void {
   for (const root of roots) visit(root);
 }
 
-/** {@link SceneRunner.setRunOverrides}: a test run's seed and component config. */
+/** {@link SceneRunner.setRunOverrides}: a test run's seed, reduced motion and component config. */
 export interface RunOverrides {
   seed?: number;
+  /** Force `scene.app.reducedMotion` (`pix3 play --reduced-motion`), whatever the system or the game says. */
+  reducedMotion?: boolean;
   config?: Record<string, Record<string, Record<string, unknown>>>;
 }

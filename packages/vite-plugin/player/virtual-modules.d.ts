@@ -71,7 +71,7 @@ declare module 'virtual:pix3/dev' {
   import type { AudioService, RuntimeRenderer, SceneRunner } from '@pix3/runtime';
   /** Dev: the URL's `?scene=` (`res://` stripped), or null. Build: always null. */
   export function devSceneOverride(): string | null;
-  /** `?run=<json>` on the dev server — a test run's `{seed?, config?}`; null in a build. */
+  /** `?run=<json>` on the dev server — a test run's `RunOverrides` (`seed`, `reducedMotion`, `config`); null in a build. */
   export function devRunOverrides(): import('@pix3/runtime').RunOverrides | null;
   /** Dev with the editor: the file revision the server stamped into the page; else null. */
   export function devPageRev(): number | null;

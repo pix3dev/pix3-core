@@ -155,6 +155,17 @@ spec (он грузит `virtual:pix3/*`); остаётся ручной/e2e п�
 `RunOverrides.reducedMotion`, CLI `pix3 play --reduced-motion`). `scene.juice.shake` ×0.25, `flash`
 без вспышки на весь экран; `tween` не трогаем.
 
+**Сделано (2026-11-21).** Состояние — в `AppLifecycle` (на страницу): `RunOverrides.reducedMotion` →
+выбор игры (`scene.app.setReducedMotion(on | null)`, сбрасывается в `app.clear()` на конце сессии) →
+`matchMedia('(prefers-reduced-motion: reduce)')` (читается при каждом обращении, без кэша; в Node —
+false). Прогон сильнее игры: тест форсирует, даже если автолоад игры восстановил свой тумблер.
+Отклонение: ×0.25 применяется не в `juice.shake`, а при проигрывании (`shakeMotionScale()` в
+`ShakeBehavior` и `Camera2D`) — `shake` пишет амплитуду в config и следующий вызов без неё
+уменьшал бы ещё раз; заодно гасятся авторские `core:Shake`. `flash` под reduced motion не делает
+ничего. CLI: `pix3 play --reduced-motion` пишет в `__PIX3_RUN__` (dev и dist); `smoke` флаг не
+получил — в Node нечего смотреть. Для игр: пересобрать vite-plugin (плеер не менялся, но рантайм
+идёт через его prebundle).
+
 ---
 
 ## Этап B. Портал (M)

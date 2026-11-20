@@ -729,7 +729,9 @@ picture (`--screenshot`, `bot.screenshot`) shades the unsafe bands in translucen
 dashed edge — fixed, pointer-transparent divs added to the page for the capture and removed right
 after, so the game never sees them — which makes "nothing under the notch" a thing to look at
 (core-tests/game18 worked it out by arithmetic); `--no-safe-area-overlay` takes them off.
-`--seed N` / `--config '<json>'` are injected before the page loads
+`--reduced-motion` forces `scene.app.reducedMotion` for the run (`RunOverrides.reducedMotion`): a
+quarter of every shake, no `flash` — what a player with the system setting sees.
+`--seed N` / `--config '<json>'` / `--reduced-motion` are injected before the page loads
 (`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
 player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
 global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.

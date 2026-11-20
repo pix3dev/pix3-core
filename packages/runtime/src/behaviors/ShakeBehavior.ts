@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { appLifecycle } from '../core/AppLifecycle';
 import { Script } from '../core/ScriptComponent';
 import { Node3D } from '../nodes/Node3D';
 import type { PropertySchema } from '../fw/property-schema';
@@ -183,7 +184,7 @@ export class ShakeBehavior extends Script {
 
     const progress = duration > 0 ? this.elapsed / duration : 0;
     const damp = Math.pow(Math.max(0, 1 - progress), this.getDecay());
-    const amp = this.getAmplitude() * damp;
+    const amp = this.getAmplitude() * damp * shakeMotionScale();
     const phase = this.elapsed * this.getFrequency();
     const is3D = this.node instanceof Node3D;
 
@@ -269,4 +270,12 @@ export function shakeNoise(t: number, seed: number): number {
     Math.sin(t * 2.917 + seed * 7.233) * 0.3 +
     Math.sin(t * 5.109 + seed * 19.19) * 0.2
   );
+}
+
+/** How far a shake moves under `scene.app.reducedMotion`: a quarter (`core:Shake`, `Camera2D`). */
+export const REDUCED_MOTION_SHAKE_SCALE = 0.25;
+
+/** The amplitude factor every shake applies while it plays. */
+export function shakeMotionScale(): number {
+  return appLifecycle.reducedMotion ? REDUCED_MOTION_SHAKE_SCALE : 1;
 }

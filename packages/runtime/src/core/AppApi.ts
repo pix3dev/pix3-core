@@ -43,6 +43,20 @@ export class AppApi implements SignalLinkHost {
     return appLifecycle.state;
   }
 
+  /**
+   * Fewer, smaller movements (`prefers-reduced-motion`, a game's settings toggle, a test run's
+   * `reducedMotion`): `juice.shake` and `core:Shake` move a quarter as far, `flash` does not flash
+   * the screen. Tweens are untouched — read this to skip a decorative one yourself.
+   */
+  get reducedMotion(): boolean {
+    return appLifecycle.reducedMotion;
+  }
+
+  /** The game's own choice (its settings toggle); null follows the system again. A test run's wins. */
+  setReducedMotion(value: boolean | null): void {
+    appLifecycle.setReducedMotion('game', value);
+  }
+
   /** `cb({ awayMs: 0 })` when the app goes to the background. Returns the unsubscribe. */
   onBackground(owner: object, cb: AppLifecycleCallback): () => void {
     return this.subscribe('background', owner, cb);
@@ -120,6 +134,7 @@ export class AppApi implements SignalLinkHost {
     }
     for (const pop of Array.from(this.backPops)) pop();
     this.disarmHistoryGuard();
+    appLifecycle.setReducedMotion('game', null);
   }
 
   /** @internal `SignalLinkHost`: an owner detached. */

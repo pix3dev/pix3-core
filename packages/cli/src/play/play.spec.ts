@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runPlayCli, safeAreaOverlayScript } from './command.ts';
+import { parsePlayArgs, runPlayCli, safeAreaOverlayScript } from './command.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 import { formatTreeHuman } from './tree-report.ts';
 
@@ -63,6 +63,11 @@ describe('pix3 play', () => {
     const devSeed = await run(['dev', '--seed', '7']);
     expect(devSeed.err).toContain('no dev server is running');
     expect((await run(['--seed', 'x'])).err).toContain('--seed takes a whole number');
+    const motion = parsePlayArgs(['dist', '--reduced-motion', '--seed', '3']);
+    expect(typeof motion === 'object' && 'run' in motion ? motion.run : null).toEqual({
+      seed: 3,
+      reducedMotion: true,
+    });
     expect((await run(['--config', '[1]'])).err).toContain('--config takes one JSON object');
     expect((await run(['--safe-area', '47,0,34'])).err).toContain(
       '--safe-area takes top,right,bottom,left'

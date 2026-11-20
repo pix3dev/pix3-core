@@ -6,6 +6,7 @@ import { InputService } from './InputService';
 import { Camera3D } from '../nodes/3D/Camera3D';
 import { Camera2D } from '../nodes/2D/Camera2D';
 import { ShakeBehavior } from '../behaviors/ShakeBehavior';
+import { appLifecycle } from './AppLifecycle';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
 import type { ResourceManager } from './ResourceManager';
@@ -188,5 +189,43 @@ describe('JuiceApi / 2D camera shake targets', () => {
   it("'camera2d' returns null when no Camera2D is active", () => {
     const service = makeService({ active3D: null, active2D: null });
     expect(service.juice.shake('camera2d')).toBeNull();
+  });
+});
+
+describe('reduced motion (scene.app.reducedMotion)', () => {
+  const offsetAfter = (service: SceneService, camera: Camera3D): number => {
+    const before = camera.position.clone();
+    const shake = service.juice.shake('camera', { amplitude: 10, frequency: 7, duration: 1 });
+    shake?.onUpdate(0.05);
+    const moved = camera.position.distanceTo(before);
+    shake?.stop();
+    return moved;
+  };
+
+  it('shakes a quarter as far and does not flash; a run override beats the game, the game the system', () => {
+    const query = { matches: true } as MediaQueryList;
+    vi.stubGlobal('matchMedia', () => query);
+    const { service, camera, parent } = makeHarness();
+    try {
+      appLifecycle.setReducedMotion('game', false);
+      expect(service.app.reducedMotion).toBe(false);
+      const full = offsetAfter(service, camera);
+      expect(full).toBeGreaterThan(0);
+      service.app.setReducedMotion(null); // the system's prefers-reduced-motion again
+      expect(service.app.reducedMotion).toBe(true);
+      expect(offsetAfter(service, camera)).toBeCloseTo(full * 0.25, 6);
+      service.flash({ intensity: 1 });
+      expect(parent.querySelector('div')).toBeNull();
+      service.app.setReducedMotion(false);
+      appLifecycle.setReducedMotion('run', true);
+      expect(service.app.reducedMotion).toBe(true);
+      service.app.clear(); // a session's end forgets the game's choice, not the run's
+      appLifecycle.setReducedMotion('run', null);
+      expect(service.app.reducedMotion).toBe(true);
+    } finally {
+      appLifecycle.setReducedMotion('run', null);
+      appLifecycle.setReducedMotion('game', null);
+      vi.unstubAllGlobals();
+    }
   });
 });

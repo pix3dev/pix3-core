@@ -31,8 +31,8 @@ interface PlayArgs {
   readonly safeArea: { top: number; right: number; bottom: number; left: number } | null;
   /** Shade the unsafe bands on the pictures (default with --safe-area; --no-safe-area-overlay). */
   readonly safeAreaOverlay: boolean;
-  /** A test run's `{seed?, config?}` for the game (`?run=`, dev server only). */
-  readonly run: { seed?: number; config?: Record<string, unknown> } | null;
+  /** A test run's `RunOverrides` for the game, injected as `__PIX3_RUN__` (dev and dist). */
+  readonly run: { seed?: number; reducedMotion?: boolean; config?: Record<string, unknown> } | null;
   /** `bot.args` for the policy, as one JSON object. */
   readonly botArgs: Record<string, unknown>;
   readonly seconds: number;
@@ -55,7 +55,8 @@ const DEFAULT_BOT_FRAMES = 7200;
 /** A bot run's wall-clock safety net. */
 const DEFAULT_BOT_WALL_SECONDS = 300;
 
-const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
+/** Exported for the spec. */
+export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
   let target: string | undefined;
   let width = DEFAULT_SIZE.width;
   let height = DEFAULT_SIZE.height;
@@ -68,6 +69,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
   let safeArea: PlayArgs['safeArea'] = null;
   let safeAreaOverlay = true;
   let config: Record<string, unknown> | undefined;
+  let reducedMotion = false;
   let seconds: number | undefined;
   let frames: number | undefined;
   let screenshot: string | undefined;
@@ -114,6 +116,7 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
       }
       safeArea = { top: parts[0], right: parts[1], bottom: parts[2], left: parts[3] };
     } else if (flag === '--no-safe-area-overlay') safeAreaOverlay = false;
+    else if (flag === '--reduced-motion') reducedMotion = true;
     else if (flag === '--seed') {
       seed = Number(value());
       if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
@@ -181,8 +184,12 @@ const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 
     safeArea,
     safeAreaOverlay,
     run:
-      seed !== undefined || config !== undefined
-        ? { ...(seed !== undefined ? { seed } : {}), ...(config ? { config } : {}) }
+      seed !== undefined || config !== undefined || reducedMotion
+        ? {
+            ...(seed !== undefined ? { seed } : {}),
+            ...(reducedMotion ? { reducedMotion } : {}),
+            ...(config ? { config } : {}),
+          }
         : null,
     seconds: budget,
     frames: frameBudget,
@@ -205,7 +212,7 @@ const resolveTarget = (
     value === undefined
       ? url
       : `${url}${url.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}`;
-  // --seed / --config are injected into the page before it loads (`__PIX3_RUN__`), dev and dist
+  // --seed / --config / --reduced-motion are injected into the page before it loads (`__PIX3_RUN__`), dev and dist
   // alike — not in the URL.
   const withScene = (url: string): string => withParam(url, 'scene', args.scene);
   const dist = root ? join(root, 'dist', 'index.html') : null;

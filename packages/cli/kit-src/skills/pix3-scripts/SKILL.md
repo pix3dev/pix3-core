@@ -267,6 +267,10 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   → `pop()` when the popup closes. The engine pauses the game while it is hidden and caps a
   tick's `dt` at 0.1 s; never listen to `visibilitychange` / `popstate` yourself. A native shell
   calls `window.__pix3Back()` and `window.__pix3SetInsets(t, r, b, l)`.
+- Reduced motion: `this.scene.app.reducedMotion` (the system's `prefers-reduced-motion`, or
+  `scene.app.setReducedMotion(on | null)` from your settings toggle). The engine already shakes a
+  quarter as far and skips `flash`; tweens are yours — skip a decorative one when it is true.
+  `pix3 play --reduced-motion` checks the game that way.
 - Touch feedback: `this.scene.haptics.play('light')` — kinds `selection` / `light` / `medium` /
   `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table. A
   pulse no heavier than one under 60 ms ago is dropped (a burst of hits is one buzz). Raw

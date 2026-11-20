@@ -1210,6 +1210,7 @@ export class SceneService {
    * plays while the game is frozen by a hitstop — exactly what an impact needs — yet stops with a
    * pause and steps with fixed ticks: on wall-clock time it was gone before a bot's picture of
    * that frame was taken (core-tests/game14). Without a runner it falls back to wall-clock time.
+   * Nothing at all under `app.reducedMotion`.
    */
   flash(options: FlashOptions = {}): void {
     const color =
@@ -1217,6 +1218,8 @@ export class SceneService {
     const intensity = Math.max(0, Math.min(1, options.intensity ?? 1));
     const durationSec = Math.max(0, options.durationSec ?? 0.2);
 
+    // Reduced motion: no full-screen flash at all (a photosensitivity trigger, not just motion).
+    if (this.app.reducedMotion) return;
     this.ensureFlashOverlay();
     const overlay = this.flashOverlay;
     if (!overlay) {

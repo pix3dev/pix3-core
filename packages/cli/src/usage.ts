@@ -61,6 +61,7 @@ Usage:
         [--screenshot <f.png>]     a bot's bot.screenshot(name) pictures go to --shots
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
+        [--reduced-motion]
         [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
@@ -311,7 +312,7 @@ Reference it from a scene or script as res://<path inside the project>.
   play: `Usage: pix3 play [dev|dist|<url>|<dir>] [--size 390x844] [--scale 3] [--scene <res path>]
                  [--run '<json>' | --bot <name> [--bot-args '<json>']] [--seed N] [--config '<json>']
                  [--frames N]
-                 [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay]
+                 [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay] [--reduced-motion]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--project <dir>]
 
@@ -351,6 +352,8 @@ Reference it from a scene or script as res://<path inside the project>.
   --config json  override component config for this run (dev and dist):
                  '{"<nodeId>": {"<componentId>": {"moves": 3}}}' — a short round, a set target;
                  a wrong node, component or key is an error
+  --reduced-motion  scene.app.reducedMotion true for this run (dev and dist), whatever the
+                 system or the game's own toggle says: shakes a quarter as far, no flash
   --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,
                  several variants
   --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)
