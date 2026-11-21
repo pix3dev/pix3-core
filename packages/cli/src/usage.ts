@@ -36,6 +36,7 @@ Usage:
         [--changed | --all]        script throws with frame + stack, console errors, missing
         [--frames N] [--timeout S] res:// (exit 1 on errors, 2 when it cannot run). No scene =
         [--project <dir>]          the scenes git changes reach, else every top-level scene
+        [--seed N] [--ads <outcomes>]
         [--seed N] [--config '<json>'] a test run: scene.random seeded, component config overridden
   pix3 tree [scene] [--json]       One line per node (type#id, pos, size, layout, components,
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
@@ -62,6 +63,7 @@ Usage:
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
         [--reduced-motion] [--storage memory|'<json>'|<file>]
+        [--ads reward|skip|unavailable|<list>]
         [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
@@ -158,7 +160,8 @@ export const COMMAND_USAGE = {
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `,
   smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
-                  [--seed N] [--config '<json>'] [--timeout S] [--json] [--no-sync] [--project <dir>]
+                  [--seed N] [--config '<json>'] [--ads <outcomes>] [--timeout S] [--json] [--no-sync]
+                  [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -183,6 +186,9 @@ export const COMMAND_USAGE = {
   --seed N       seed scene.random, so the same run replays (the same board, the same spawns)
   --config json  override component config for the run: '{"<nodeId>": {"<componentId>":
                  {"moves": 3}}}' — set before the first onStart; a wrong address is an error
+  --ads o        what every platform ad show does: reward | skip | unavailable, or a list by show
+                 order (reward,skip); without it every show is unavailable, as in a build with no
+                 portal adapter
   --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
   --json         machine-readable report
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
@@ -313,7 +319,7 @@ Reference it from a scene or script as res://<path inside the project>.
                  [--run '<json>' | --bot <name> [--bot-args '<json>']] [--seed N] [--config '<json>']
                  [--frames N]
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay] [--reduced-motion]
-                 [--storage memory|'<json>'|<file>]
+                 [--storage memory|'<json>'|<file>] [--ads reward|skip|unavailable|<a,b,…>]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--project <dir>]
 
@@ -358,6 +364,10 @@ Reference it from a scene or script as res://<path inside the project>.
   --storage      the save scene.storage plays with, in memory (dev and dist; the real save is
                  never read or written): memory = empty, or a snapshot as scene.storage.export()
                  returns it, '{"version":1,"data":{"best":10}}', inline or in a file
+  --ads          what every platform ad show does (dev and dist), whatever adapter the game has:
+                 reward | skip | unavailable, or a list by show order (reward,skip,unavailable —
+                 unavailable after it). Without it the dev page shows its placeholder (a few
+                 seconds of real time) and a build answers unavailable
   --bot-args     one JSON object the policy reads as bot.args ('{"target":"lose"}'): one policy,
                  several variants
   --screenshot   save a PNG of the page at the end (with a bot: the frame of its verdict)

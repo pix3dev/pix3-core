@@ -65,6 +65,7 @@ import {
 import { playable } from './PlayableSdk';
 import { appLifecycle, type AppLifecycleChange } from './AppLifecycle';
 import type { StorageOpenOptions, StorageRunMode } from './GameStorage';
+import { platformHost, type AdRunOutcome, type PlatformHost } from './platform-host';
 import { disconnectSignalTargetEverywhere } from './signal-target-links';
 
 /** The frame source of {@link SceneRunner}'s loop — `requestAnimationFrame`'s contract. */
@@ -189,7 +190,7 @@ class WallClock {
   }
 }
 
-export class SceneRunner {
+export class SceneRunner implements PlatformHost {
   private readonly sceneManager: SceneManager;
   private readonly renderer: RuntimeRenderer;
   private readonly assetLoader: AssetLoader;
@@ -285,6 +286,8 @@ export class SceneRunner {
   private readonly random = new SeededRandom();
   /** Per-run test settings (`setRunOverrides`); null = the game as authored. */
   private runOverrides: RunOverrides | null = null;
+  /** How many ad shows took their outcome from `runOverrides.ads`. */
+  private adRunOutcomesTaken = 0;
   /** `setStorage`: whose save `scene.storage` reads before the first `onStart`; null = none. */
   private storageOptions: StorageOpenOptions | null = null;
   /** The project's web fonts (`ProjectManifest.fonts`), injected by the host before
@@ -416,7 +419,7 @@ export class SceneRunner {
    * Settings for a test run, applied to every scene this runner starts until cleared (`null`):
    * `seed` restarts `scene.random`, `reducedMotion` forces `scene.app.reducedMotion` (at once, page-wide),
    * `storage` is the save the first start reads instead of the real one ({@link setStorage}),
-   * `config` overrides component config —
+   * `ads` decides every ad show (`platform`), `config` overrides component config —
    * `{ "<nodeId>": { "<componentId>": { key: value } } }`, set through the component's schema like
    * the scene file's `config:` — before the first `onStart`. Hosts pass them only in development
    * (`pix3 play --config/--seed` on the dev server, `pix3 smoke`, the editor's play), never in a
@@ -425,6 +428,7 @@ export class SceneRunner {
    */
   setRunOverrides(overrides: RunOverrides | null): void {
     this.runOverrides = overrides;
+    this.adRunOutcomesTaken = 0;
     appLifecycle.setReducedMotion('run', overrides?.reducedMotion ?? null);
   }
 
@@ -436,6 +440,17 @@ export class SceneRunner {
    */
   setStorage(options: StorageOpenOptions | null): void {
     this.storageOptions = options;
+  }
+
+  /**
+   * @internal `platform`: the next show's outcome from `RunOverrides.ads` — one value for every
+   * show, or a list by show order (`'unavailable'` past its end); null when the run sets none.
+   */
+  takeAdRunOutcome(): AdRunOutcome | null {
+    const ads = this.runOverrides?.ads;
+    if (ads === undefined) return null;
+    if (typeof ads === 'string') return ads;
+    return ads[this.adRunOutcomesTaken++] ?? 'unavailable';
   }
 
   private applyRunOverrides(graph: { nodeMap: Map<string, NodeBase> }): void {
@@ -718,6 +733,8 @@ export class SceneRunner {
     // config a component reads there. Every graph this runner starts gets them (a `changeScene`
     // from the menu to the game included).
     this.applyRunOverrides(this.runtimeGraph);
+    // The page's session from here: an `onStart` may already show an ad (`platform`).
+    platformHost.activate(this);
 
     // The session's autoloads, once: their `onStart` runs in the pre-roll tick below, before any
     // scene component's.
@@ -828,6 +845,7 @@ export class SceneRunner {
     this.disposeLifecycle?.();
     this.disposeLifecycle = null;
     this.sceneService.app.clear();
+    platformHost.deactivate(this);
     this.pauseReasons.clear();
     this.audioService.setPaused(false);
   }
@@ -836,6 +854,8 @@ export class SceneRunner {
   private stopScene(): void {
     this.stopEpoch += 1;
     this.isRunning = false;
+    // An ad on screen belonged to this scene: it settles `unavailable` and rewards nobody.
+    platformHost.sceneEnded(this);
     // Tear down any active cutscene FIRST — while the graph is still live — so
     // its player.stop() targets real nodes and its rAF handles, letterbox DOM,
     // skip listeners and input lock are all released before we detach scripts
@@ -2529,12 +2549,17 @@ function repaintLabels(roots: readonly NodeBase[]): void {
   for (const root of roots) visit(root);
 }
 
-/** {@link SceneRunner.setRunOverrides}: a test run's seed, reduced motion and component config. */
+/** {@link SceneRunner.setRunOverrides}: a test run's seed, reduced motion, save, ad outcomes and component config. */
 export interface RunOverrides {
   seed?: number;
   /** Force `scene.app.reducedMotion` (`pix3 play --reduced-motion`), whatever the system or the game says. */
   reducedMotion?: boolean;
   /** The save a test run plays with (`pix3 play --storage`): `'memory'` or `{ snapshot }`. */
   storage?: StorageRunMode;
+  /**
+   * Ad outcomes (`platform.showRewarded` / `showInterstitial`), whatever adapter the game has: one
+   * for every show, or one per show in order (`'unavailable'` after the list). `pix3 play --ads`.
+   */
+  ads?: AdRunOutcome | readonly AdRunOutcome[];
   config?: Record<string, Record<string, Record<string, unknown>>>;
 }

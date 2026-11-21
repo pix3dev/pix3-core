@@ -215,6 +215,20 @@ false). Прогон сильнее игры: тест форсирует, да�
   вкладка при закрытии. Адаптеры конкретных порталов (MY.GAMES JAM, RH, CrazyGames) — вне pix3-core;
   в ките рецепт «адаптер за 30 строк».
 
+**Сделано (2026-11-21).** `core/platform.ts` (`platform`, `setPlatformAdapter`, `AdShow` с сигналами
+`started/rewarded/closed/failed`, `AD_CLOSE_TIMEOUT_MS`), стрипаемый (`keepWhenMentioned: ['platform']`
++ его экспорты). Раннер его не импортирует: связь через крошечный нестрипаемый `core/platform-host.ts`
+(раннер регистрируется до пре-ролл тика — `onStart` уже может показать рекламу; `stopScene` сообщает
+о конце сцены; `takeAdRunOutcome` читает `RunOverrides.ads`). Заглушка dev — `player/dev/ad-placeholder.ts`
+(лист с ▶ и кольцом-таймером, ✕ закрывает раньше; SVG, без текста), ставится как fallback-адаптер:
+свой адаптер игры всегда сильнее, `RunOverrides.ads` сильнее обоих. Уточнения контракта: исход —
+только про закрытие (`'closed'`/`'skipped'`/`'unavailable'`), награда — только `onReward`; ранняя
+награда и потом сбой/таймаут/смена сцены → `'unavailable'`, награда остаётся выданной; `started`
+перезапускает таймаут; interstitial при `skip` → `'closed'`; список `ads` за концом → `'unavailable'`.
+Сверх плана: `pix3 smoke --ads`, `run.ads` у моста (`pix3_play`), `HeadlessGameOptions.ads`,
+`platform.showing`. Рецепт адаптера — в `pix3-scripts/SKILL.md` («Ads and level events»). Для игр:
+пересобрать vite-plugin (новый dev-модуль плеера).
+
 ### B2. Фасад аналитики: `scene.analytics` (S)
 
 `track(name, props?)`, `setUserProps`, `addSink(sink)`; буфер до первого sink — ограниченный (500

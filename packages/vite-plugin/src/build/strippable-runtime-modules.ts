@@ -331,6 +331,14 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     lazyValueImporters: ['core/SceneService', 'core/SceneRunner', 'testing/headless-game'],
   },
 
+  // --- the portal: ads and level events ---
+  {
+    // Page-level, reached only by `import { platform }` (its value exports keep it too). The runner
+    // never imports it: it talks to the module through `core/platform-host`, which stays.
+    modulePath: 'core/platform',
+    keepWhenMentioned: ['platform'],
+  },
+
   // --- multiplayer ---
   {
     // ~59 KiB with its protocol tree. `SceneService.network` is a getter that constructs one

@@ -68,6 +68,8 @@ export * from './core/spine/SpineSkeletonView';
 export * from './core/game-debug';
 export * from './core/world-to-canvas';
 export * from './core/PlayableSdk';
+export * from './core/platform';
+export type { AdRunOutcome } from './core/platform-host';
 
 // Nodes
 export * from './nodes/NodeBase';

@@ -304,6 +304,62 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `pix3 smoke`, `pix3_play {run: {seed}}`) then replays the same board and spawns; `Math.random`
   cannot be seeded.
 
+## Ads and level events (`platform`)
+
+`import { platform } from '@pix3/runtime'` — a module, not `this.scene`. A rewarded ad:
+
+```ts
+const { outcome } = await platform.showRewarded('revive', { onReward: () => this.revive() });
+// 'closed' | 'skipped' | 'unavailable' — the reward is onReward (at most once, maybe before the
+// close), never the outcome. Hide the button when the answer is 'unavailable'.
+```
+
+`platform.showInterstitial('level-end')` the same without a reward; `platform.levelStart(id)` /
+`levelComplete(id, result)` tell the portal. The engine pauses the game (time, audio) for the show
+and resumes it before the promise resolves; a scene change during the show ends it
+`'unavailable'` and drops its reward; a second call during a show is `'unavailable'`. Never pause
+or mute around a show yourself. Without an adapter the dev page shows a placeholder sheet and a
+build answers `'unavailable'`. Test every branch: `pix3 play --ads reward` / `skip` /
+`unavailable`, or a list by show order (`--ads reward,unavailable`); `pix3 smoke --ads …` the same.
+
+**A portal adapter in 30 lines** — one file of the game (`src/portal.ts`), imported by
+`src/main.ts` before `startGame`. The SDK names below are a made-up portal; map yours:
+
+```ts
+import { setPlatformAdapter, type AdShow } from '@pix3/runtime';
+
+interface PortalSdk {
+  showAd(kind: 'rewarded' | 'midgame', callbacks: {
+    onStart(): void; onReward(): void; onClose(): void; onError(e: unknown): void;
+  }): void;
+  gameplayStart(level: string): void;
+  gameplayStop(level: string, result: unknown): void;
+}
+
+const sdk = (globalThis as { PortalSDK?: PortalSdk }).PortalSDK;
+
+const show = (kind: 'rewarded' | 'midgame') => (ad: AdShow) =>
+  sdk!.showAd(kind, {
+    onStart: () => ad.started(),
+    onReward: () => ad.rewarded(),
+    onClose: () => ad.closed(),
+    onError: error => ad.failed(error),
+  });
+
+if (sdk) {
+  setPlatformAdapter({
+    showRewarded: show('rewarded'),
+    showInterstitial: show('midgame'),
+    levelStart: id => sdk.gameplayStart(id),
+    levelComplete: (id, result) => sdk.gameplayStop(id, result),
+  });
+}
+```
+
+Call the `AdShow` signals as the SDK reports them — in any order, any number of times; the engine
+keeps the first that counts (a reward after the close is ignored, no close in 60 s is
+`'unavailable'`). A `showAd` that throws or rejects is `'unavailable'`.
+
 ## `this.input`
 
 - Per frame: `input.pointerEvents` → `{ type: 'down' | 'move' | 'up' | 'cancel', pointerId, x, y, pointerType, button }[]`

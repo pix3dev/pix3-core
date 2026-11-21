@@ -7,7 +7,7 @@ import { ResourceManager, type EmbeddedResourceMap } from '../core/ResourceManag
 import type { RuntimeRenderer } from '../core/RuntimeRenderer';
 import { SceneLoader } from '../core/SceneLoader';
 import { SceneManager } from '../core/SceneManager';
-import { SceneRunner } from '../core/SceneRunner';
+import { SceneRunner, type RunOverrides } from '../core/SceneRunner';
 import type { SceneService } from '../core/SceneService';
 import type { AutoloadConfig } from '../core/ProjectManifest';
 import { ScriptRegistry, type ComponentTypeInfo } from '../core/ScriptRegistry';
@@ -96,6 +96,13 @@ export interface HeadlessGameOptions {
    * `scene.storage.export()` snapshot. Always in memory; read it back with `scene.storage.export()`.
    */
   readonly storage?: StorageRunMode;
+
+  /**
+   * What every `platform.showRewarded` / `showInterstitial` does (`RunOverrides.ads`): one outcome
+   * for all, or one per show in order. Without it every show is `'unavailable'`, as in a build with
+   * no portal adapter.
+   */
+  readonly ads?: RunOverrides['ads'];
 }
 
 export interface HeadlessGame {
@@ -296,6 +303,7 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
   const runner = new SceneRunner(sceneManager, renderer, audioService, assetLoader, viewport);
   runner.setAutoloads(options.autoloads ?? [], scriptRegistry);
   runner.setStorage({ namespace: 'headless', mode: options.storage ?? 'memory' });
+  if (options.ads !== undefined) runner.setRunOverrides({ ads: options.ads });
 
   const errors: ScriptErrorInfo[] = [];
   const releaseErrorSink = registerScriptErrorSink(error => {

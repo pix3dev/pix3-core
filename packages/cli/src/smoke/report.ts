@@ -191,13 +191,15 @@ export interface SmokeJob {
   readonly fallbackResolveDir?: string;
   /** `--command`: game commands to dispatch, each before its frame. */
   readonly commands?: readonly SmokeCommand[];
-  /** `--seed` / `--config`: `SceneRunner.setRunOverrides` for the run. */
+  /** `--seed` / `--config` / `--ads`: `SceneRunner.setRunOverrides` for the run. */
   readonly run?: SmokeRunOverrides;
 }
 
-/** A smoke run's test settings: the `scene.random` seed and component config overrides. */
+/** A smoke run's test settings: the `scene.random` seed, ad outcomes and component config overrides. */
 export interface SmokeRunOverrides {
   readonly seed?: number;
+  /** `RunOverrides.ads`: what every `platform` ad show does (`--ads reward,skip`). */
+  readonly ads?: 'reward' | 'skip' | 'unavailable' | readonly ('reward' | 'skip' | 'unavailable')[];
   readonly config?: Record<string, Record<string, Record<string, unknown>>>;
 }
 

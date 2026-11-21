@@ -23,6 +23,7 @@ import {
   type SmokeRunOverrides,
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
+import { parseAdsArg } from '../play/command.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
 
@@ -109,6 +110,12 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
             '--command needs name[@frame] [json args], e.g. --command restart@60 or --command \'swap@30 {"x":2}\'',
         };
       commands.push(parsed);
+    } else if (name === '--ads') {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      const parsed = parseAdsArg(value);
+      if ('error' in parsed) return parsed;
+      run = { ...run, ads: parsed.ads };
     } else if (name === '--seed' || name === '--config') {
       const { value, next } = valueOf(arg, i);
       i = next;

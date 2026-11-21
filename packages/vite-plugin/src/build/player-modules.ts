@@ -320,6 +320,8 @@ export interface DevSourceOptions {
   readonly overlayPath: string;
   /** This package's `player/dev/editor-link` (the "Pix3 editor" link), as a file path. */
   readonly editorLinkPath: string;
+  /** This package's `player/dev/ad-placeholder` (`platform`'s ads without an adapter), as a file path. */
+  readonly adPlaceholderPath: string;
   /** `<base>__pix3/` when the plugin serves the editor, else null (no link). */
   readonly editorUrl: string | null;
   /**
@@ -339,7 +341,8 @@ export interface DevSourceOptions {
  * - `devPageLink()` is the editor link `player/dev/page-link.ts` opened while a page the editor
  *   opened was loading (the plugin injects it into the HTML): the player's `loadId` and the Play
  *   gate it waits at before booting;
- * - `installDevTools(context)` imports the debug overlay when the URL has `debug`, otherwise the
+ * - `installDevTools(context)` installs the ads placeholder (`player/dev/ad-placeholder.ts`, what
+ *   `platform.showRewarded` plays while the game has no portal adapter), imports the debug overlay when the URL has `debug`, otherwise the
  *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
  *   module and `/?clean` none. It also sets `__PIX3_PLAYER__.loadTools()`, which imports the
  *   test host and the project's bot policies (`virtual:pix3/bot-policies`) and installs
@@ -398,6 +401,11 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `}`,
     `export function installDevTools(context) {`,
     `  context.state.loadTools = loadTools;`,
+    // Ads without a portal adapter: a placeholder sheet instead of \`'unavailable'\` (a build's answer).
+    `  import(${JSON.stringify(options.adPlaceholderPath)}).then(`,
+    `    placeholder => placeholder.installAdPlaceholder(),`,
+    `    failed('ad placeholder')`,
+    `  );`,
     `  if (params.has('debug')) {`,
     `    import(${JSON.stringify(options.overlayPath)}).then(`,
     `      overlay => overlay.mountDebugOverlay(context, { editorUrl }),`,

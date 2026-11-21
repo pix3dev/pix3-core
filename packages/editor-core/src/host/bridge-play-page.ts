@@ -177,7 +177,7 @@ const activeScene = (): string | null => {
   return (id && appState.scenes.descriptors[id]?.filePath) || null;
 };
 
-/** Why `run` is not `{seed?: integer, storage?, config?: {nodeId: {componentId: {…}}}}`, or null. */
+/** Why `run` is not `{seed?: integer, storage?, ads?, config?: {nodeId: {componentId: {…}}}}`, or null. */
 export const runOverridesProblem = (run: RunOverrides): string | null => {
   if (run.seed !== undefined && !Number.isInteger(run.seed)) return 'run.seed must be an integer';
   const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -186,6 +186,12 @@ export const runOverridesProblem = (run: RunOverrides): string | null => {
     const snapshot = isObject(run.storage) ? run.storage.snapshot : undefined;
     if (!isObject(snapshot) || !isObject(snapshot.data)) {
       return 'run.storage must be "memory" or {"snapshot": {"version": N, "data": {…}}}';
+    }
+  }
+  if (run.ads !== undefined) {
+    const outcomes: unknown[] = Array.isArray(run.ads) ? run.ads : [run.ads];
+    if (!outcomes.every(o => o === 'reward' || o === 'skip' || o === 'unavailable')) {
+      return 'run.ads must be "reward" | "skip" | "unavailable" or a list of them by show order';
     }
   }
   if (run.config === undefined) return null;

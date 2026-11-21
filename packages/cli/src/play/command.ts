@@ -36,6 +36,7 @@ interface PlayArgs {
     seed?: number;
     reducedMotion?: boolean;
     storage?: 'memory' | { snapshot: Record<string, unknown> };
+    ads?: AdRunOutcome | AdRunOutcome[];
     config?: Record<string, unknown>;
   } | null;
   /** `bot.args` for the policy, as one JSON object. */
@@ -89,6 +90,26 @@ const parseStorageArg = (
     : { error: STORAGE_HINT };
 };
 
+type AdRunOutcome = 'reward' | 'skip' | 'unavailable';
+const AD_OUTCOMES: readonly string[] = ['reward', 'skip', 'unavailable'];
+
+/**
+ * `--ads reward | skip | unavailable | <a,b,…>` → `RunOverrides.ads` (one for every show, or one per
+ * show in order), or the error line. Shared with `pix3 smoke`.
+ */
+export const parseAdsArg = (
+  value: string | undefined
+): { ads: AdRunOutcome | AdRunOutcome[] } | { error: string } => {
+  const parts = (value ?? '').split(',').map(part => part.trim());
+  if (parts.some(part => !AD_OUTCOMES.includes(part))) {
+    return {
+      error: '--ads takes reward, skip or unavailable, or a list by show order: reward,skip',
+    };
+  }
+  const outcomes = parts as AdRunOutcome[];
+  return { ads: outcomes.length === 1 ? outcomes[0] : outcomes };
+};
+
 /** Exported for the spec. */
 export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
   let target: string | undefined;
@@ -105,6 +126,7 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   let config: Record<string, unknown> | undefined;
   let reducedMotion = false;
   let storage: NonNullable<PlayArgs['run']>['storage'];
+  let ads: NonNullable<PlayArgs['run']>['ads'];
   let seconds: number | undefined;
   let frames: number | undefined;
   let screenshot: string | undefined;
@@ -156,6 +178,10 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       const parsed = parseStorageArg(value() ?? '');
       if ('error' in parsed) return parsed;
       storage = parsed.storage;
+    } else if (flag === '--ads') {
+      const parsed = parseAdsArg(value());
+      if ('error' in parsed) return parsed;
+      ads = parsed.ads;
     } else if (flag === '--seed') {
       seed = Number(value());
       if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
@@ -223,11 +249,16 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     safeArea,
     safeAreaOverlay,
     run:
-      seed !== undefined || config !== undefined || reducedMotion || storage !== undefined
+      seed !== undefined ||
+      config !== undefined ||
+      reducedMotion ||
+      storage !== undefined ||
+      ads !== undefined
         ? {
             ...(seed !== undefined ? { seed } : {}),
             ...(reducedMotion ? { reducedMotion } : {}),
             ...(storage !== undefined ? { storage } : {}),
+            ...(ads !== undefined ? { ads } : {}),
             ...(config ? { config } : {}),
           }
         : null,

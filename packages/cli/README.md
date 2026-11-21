@@ -307,7 +307,9 @@ stopped by `--timeout` (default 20 s).
 `--seed N` and `--config '{"<nodeId>": {"<componentId>": {"moves": 3}}}'` set the run up through
 `SceneRunner.setRunOverrides`: `scene.random` seeded (the same board every run), component config
 overridden through the schema before the first `onStart`; a node, component or key the scene does
-not have is a `console.error`, so an error of the run.
+not have is a `console.error`, so an error of the run. `--ads reward | skip | unavailable` (or a
+list by show order, `reward,skip`) decides every `platform` ad show (`RunOverrides.ads`); without it
+a show is `unavailable`, as in a build with no portal adapter.
 
 Stubbed: rendering (a null renderer; post-processing never loads), audio (no Web Audio in Node),
 input (no events), network (`scene.network` is null). Textures resolve empty, glTF models and
@@ -738,7 +740,12 @@ quarter of every shake, no `flash` — what a player with the system setting see
 `memory` starts empty, a snapshot (`{"version":1,"data":{…}}`, what `scene.storage.export()`
 returns; inline or a file) starts from it — in memory either way, so a run never reads or writes
 the page's real save. A returning player, a broken save, a migration: one flag each.
-`--seed N` / `--config '<json>'` / `--reduced-motion` / `--storage` are injected before the page loads
+`--ads reward | skip | unavailable | <a,b,…>` decides every `platform.showRewarded` /
+`showInterstitial` (`RunOverrides.ads`; one outcome for all shows, or one per show in order,
+`unavailable` past the list), whatever adapter the game installed — without it the dev page shows
+its placeholder sheet (a few seconds of real time; the game stands paused) and a build answers
+`unavailable`.
+`--seed N` / `--config '<json>'` / `--reduced-motion` / `--storage` / `--ads` are injected before the page loads
 (`Page.addScriptToEvaluateOnNewDocument` → `globalThis.__PIX3_RUN__`), dev and `dist` alike; the
 player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — the build reads the
 global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.

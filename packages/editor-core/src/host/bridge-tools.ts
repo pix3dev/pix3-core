@@ -116,7 +116,8 @@ export const BRIDGE_TOOLS: readonly BridgeToolSpec[] = [
         run: {
           type: 'object',
           description:
-            'With start / restart: {seed?: integer (scene.random), config?: ' +
+            'With start / restart: {seed?: integer (scene.random), ads?: "reward" | "skip" | ' +
+            '"unavailable" or a list by show order (platform ad outcomes), config?: ' +
             '{"<nodeId>": {"<componentId>": {key: value}}}} applied before the first onStart; ' +
             'restart repeats the last one.',
         },

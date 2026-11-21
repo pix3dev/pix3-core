@@ -146,6 +146,14 @@ const EDITOR_LINK_ENTRY = fileURLToPath(
   )
 );
 
+/** …and the ads placeholder (`platform` with no portal adapter). */
+const AD_PLACEHOLDER_ENTRY = fileURLToPath(
+  new URL(
+    FROM_SOURCE ? '../player/dev/ad-placeholder.ts' : './player/dev/ad-placeholder.js',
+    import.meta.url
+  )
+);
+
 /** The game page's early editor link (`?role=` pages, plan play-in-page S5b), put into its HTML. */
 const PAGE_LINK_ENTRY = fileURLToPath(
   new URL(FROM_SOURCE ? '../player/dev/page-link.ts' : './player/dev/page-link.js', import.meta.url)
@@ -375,6 +383,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
             ? devSource('dev', {
                 overlayPath: normalizePath(DEBUG_OVERLAY_ENTRY),
                 editorLinkPath: normalizePath(EDITOR_LINK_ENTRY),
+                adPlaceholderPath: normalizePath(AD_PLACEHOLDER_ENTRY),
                 editorUrl: settings.editor ? `${baseUrl()}__pix3/` : null,
                 testHostPath: pageTestHostEntry(root()),
               })

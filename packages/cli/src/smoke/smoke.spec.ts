@@ -345,6 +345,38 @@ export class Spawner extends Script {
     expect(typo.errors.map(e => e.message).join('\n')).toContain('no config key "mvoes"');
   });
 
+  it('--ads decides what a platform ad show does headless; without it a show is unavailable', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Ads')),
+      'scripts/Ads.ts': `import { Script, platform, type PropertySchema } from '@pix3/runtime';
+
+export class Ads extends Script {
+  static getPropertySchema(): PropertySchema {
+    return { nodeType: 'Ads', properties: [] };
+  }
+  onStart(): void {
+    void platform
+      .showRewarded('revive', { onReward: () => console.log('rewarded') })
+      .then(result => console.log('ad ' + result.outcome));
+  }
+}
+`,
+    });
+    const lines = async (ads?: 'reward') =>
+      asReport(
+        await runSmoke({
+          projectRoot: root,
+          scene: MAIN,
+          frames: 3,
+          ...(ads ? { run: { ads } } : {}),
+        })
+      ).logs.lines.join('\n');
+    const rewarded = await lines('reward');
+    expect(rewarded).toContain('rewarded');
+    expect(rewarded).toContain('ad closed');
+    expect(await lines()).toContain('ad unavailable');
+  });
+
   it('scene.audio.play of an existing file runs silent headless (no error, no warning)', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:Sound')),

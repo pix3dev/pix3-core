@@ -84,6 +84,11 @@ describe('pix3 play', () => {
     });
     expect((await run(['--storage', '{"best":10}'])).err).toContain('--storage takes memory');
     expect((await run(['--storage', join(root, 'nope.json')])).err).toContain('(no file');
+    expect(runOf(['dist', '--ads', 'reward'])).toEqual({ ads: 'reward' });
+    expect(runOf(['dist', '--ads=reward,skip,unavailable'])).toEqual({
+      ads: ['reward', 'skip', 'unavailable'],
+    });
+    expect((await run(['--ads', 'reward,maybe'])).err).toContain('--ads takes reward');
     expect((await run(['--safe-area', '47,0,34'])).err).toContain(
       '--safe-area takes top,right,bottom,left'
     );
