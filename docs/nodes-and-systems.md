@@ -731,6 +731,29 @@ state and go with the scene. An entry that does not resolve is a script error at
 and `E_AUTOLOAD` in `pix3 validate`/`check`. Spec: `pix3-specification.md` → "Autoload
 Scripts".
 
+### App lifecycle, save, haptics, analytics (`scene.app`, `scene.storage`, `scene.haptics`, `scene.analytics`)
+
+What a phone or a portal game otherwise writes by hand, all on `this.scene` (full contracts in §5):
+`scene.app` — background / foreground with the runner paused (pause reasons, the 0.1 s realtime
+`dt` cap, a 0 s first tick back), the back-button stack (`pushBack`, a native shell's
+`window.__pix3Back()`), reduced motion; the player's safe area also takes a native shell's
+`window.__pix3SetInsets(t, r, b, l)`. `scene.storage` — the game's save, read before the first
+`onStart`, debounced writes, migrations, `setStorageAdapter` for a native store or a cloud merge.
+`scene.haptics` — `play(kind)` throttled by weight, `setHapticsAdapter` for iOS through a shell.
+`scene.analytics` — `track` into sinks the game adds, a run's events in `pix3 play` / `pix3 smoke
+--json`. A game never listens to `visibilitychange` / `popstate` or calls `localStorage` /
+`navigator.vibrate` itself. Wiring a Capacitor shell, a cloud-save merge, texture budgets: the
+kit's `pix3-mobile` skill.
+
+### Run recording and replay (`.pix3replay`)
+
+A run kept as its outside inputs per tick (pointer and key events, external commands, background,
+blur, ad outcomes) plus checkpoints of the game's `registerGameDebug` snapshot, and played back
+to the first divergence: `pix3 smoke <scene> --record` / `--replay` (Node, deterministic),
+`pix3 play --record` / `--replay` (dev server, best effort, a picture at the divergence).
+`commands.dispatchExternal` marks a command as an input (§ "Game commands"). Code
+`core/RunTape.ts`, `SceneRunner.setRunTap`; format: `pix3-specification.md` → "Replay files".
+
 ### Playable SDK (store CTA / game end / viewport)
 
 `import { playable } from '@pix3/runtime'` — `playable.openStore(url?)` opens the

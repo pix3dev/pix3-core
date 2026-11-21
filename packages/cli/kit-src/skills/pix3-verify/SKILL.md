@@ -1,6 +1,6 @@
 ---
 name: pix3-verify
-description: How to check a Pix3 change — `pix3 check` / `pix3 validate` / `pix3 smoke` / `pix3 tree`, the diagnostic codes, what the editor does with a file you wrote (key-level merge, no merge-log), and how to report what was and was not verified. Running the game in the open editor is `pix3-editor`. Use after every batch of edits to .pix3scene or scripts/*.ts, and before telling the user a change is done.
+description: How to check a Pix3 change — `pix3 check` / `pix3 validate` / `pix3 smoke` / `pix3 tree`, the diagnostic codes, goldens, replays, the run grid and the screen gallery of `pix3 play`, what the editor does with a file you wrote (key-level merge, no merge-log), and how to report what was and was not verified. Running the game in the open editor is `pix3-editor`. Use after every batch of edits to .pix3scene or scripts/*.ts, and before telling the user a change is done.
 ---
 
 <!-- Pix3 agent kit {{version}} -->

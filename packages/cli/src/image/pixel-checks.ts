@@ -4,7 +4,7 @@ import type { PixelFacts, Side } from './pixel-facts.ts';
  * The pixel warnings of `pix3 validate`, decided from {@link PixelFacts}. Each was tuned until it
  * stayed silent on real art (Skyways' sprites, the jam games' sprites, frames `pix3 slice` cuts
  * from Codex sheets) while firing on the slicing mistakes it names — see the plan
- * `.plans/jam-takeaways.md` E2 for the numbers.
+ * `.plans/done/jam-takeaways.md` E2 for the numbers.
  */
 
 export type PixelCode = 'W_SPRITE_NO_ALPHA' | 'W_FRAME_CLIPPED' | 'W_FRAME_BLEED';

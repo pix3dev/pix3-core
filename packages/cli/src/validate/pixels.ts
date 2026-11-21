@@ -15,7 +15,7 @@ import { formatPath, isRecord } from './yaml-doc.ts';
 
 /**
  * The pixel warnings of `pix3 validate` (`W_SPRITE_NO_ALPHA`, `W_FRAME_CLIPPED`,
- * `W_FRAME_BLEED`; plan `.plans/jam-takeaways.md` E2), only for PNGs a scene or a `.pix3anim`
+ * `W_FRAME_BLEED`; plan `.plans/done/jam-takeaways.md` E2), only for PNGs a scene or a `.pix3anim`
  * uses. Each PNG is decoded once and its {@link PixelFacts} kept in `.pix3/cache/pixels.json`
  * by modification time and size, so a re-run decodes only what changed. `--no-pixels` skips it.
  */

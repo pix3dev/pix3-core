@@ -5,15 +5,41 @@ moves to its own file.
 
 - **C1 dogfood** (gate P1, `.plans/pix3-core.md` §G.2): the remaining scenarios in Codex,
   plus the "Not yet" list in `CLAUDE.md` → Status.
-- **Safe area on a real device**: the runtime has it (`layout.safeArea`, the player's `env()` probe
-  re-read on resize / `orientationchange` / `visualViewport`, `window.__pix3SetInsets` for a native
-  shell whose WebView reads `env()` as 0 — `.plans/jam-takeaways.md` A2). Left: check
-  `__pix3SetInsets` in a real Capacitor shell on iOS and Android.
 - **Codex skill discovery**: `pix3 kit` installs skills only under `.claude/skills/`; Codex reads
   `.agents/skills/`. Change `packages/cli/src/kit/generate.ts` + `kit --migrate`.
 - **Upstream**: a `pix3project.yaml` fingerprint ahead of the three.js row in
   gamedev-skills/awesome-gamedev-agent-skills' router (owner's call — external PR).
 - **itch.io note**: `build: 'zip'` → `butler push`, five lines in the kit, if anyone ships there.
+
+From `.plans/done/jam-takeaways.md` (2026-11-21):
+
+- **On a real device, in a Capacitor shell (iOS and Android)** — none of it was run on hardware:
+  `window.__pix3SetInsets` and `window.__pix3Back` from the shell (the kit's `pix3-mobile`
+  `src/shell.ts`), haptics through Capacitor Haptics and Android's `navigator.vibrate`,
+  `visibilitychange` / `pagehide` firing in the shell's WebView on home / lock, the save through
+  Preferences surviving a kill. The player's shell hooks have no spec (`player/index.ts` imports
+  `virtual:pix3/*`); an e2e row would cover them.
+- **Dead AudioContext on iOS**: after a lock / unlock or a call iOS can hand back a context whose
+  `state` is `running` and whose clock does not advance. `AudioService` resumes on foreground and
+  on a touch but does not detect that; detect by `currentTime` not moving across a foreground and
+  rebuild the context. Reproduce on a device first.
+- **`--check-determinism` in Chrome**: the number of realtime ticks before the bot starts drifts
+  (206–215), so a snapshot that carries a tick count is "not same-twice". Start the bot on a fixed
+  tick (or the first fixed-step tick) instead of teaching the CLI which path to ignore.
+- **Replay gaps**: a resize is recorded but not replayed; the page's locale is not replayed in
+  Chrome (Node does); a node whose position its `layout` owns is re-laid out at render, which Node
+  does not do, so a script moving such a node diverges in Node; no record / replay on `dist`
+  (the recorder is not in a build).
+- **Pixel warnings**: the facts cache has no override flag; spritesheet-mode `.pix3anim` frames
+  (UV rects) and `AnimatedSprite3D.frames` are not measured.
+- **`pix3 slice`**: half-transparent shadows near the key colour partly show through; frames of a
+  clip that shrank are not deleted.
+- **Quality tier `scene.quality`** (out of the plan): no weak-device telemetry, a first-frames
+  probe is noisy (shader warm-up), `maxPixelRatio` is fixed at renderer creation. `runtimeQuality`
+  through `RunOverrides` is enough for now.
+- **The game's doc discipline** (`verify-docs`, `codemap-audit`) and `pix3 kit --with …` — on the
+  owner's request.
+- **A promo video** (`pix3 play --record` as video) and server time.
 
 From `.plans/done/play-in-page.md` (S6, 2026-11-18):
 

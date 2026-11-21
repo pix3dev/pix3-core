@@ -1,5 +1,16 @@
 # Наследие геймджема: база из catstd и Pixel Drop
 
+**Итог (2026-11-21, план закрыт).** Сделано всё: A1–A5 (`scene.app`, пауза по причинам и потолок
+`dt`, кнопка «назад», `__pix3SetInsets`, хаптика с адаптером, `scene.storage`, reduced motion),
+B1–B2 (`platform`, `scene.analytics`), C (запись/повтор `.pix3replay`), D1–D3 (`--golden`, сетка
+прогонов в Chrome и Node, `bot.pinch`), G (галерея экранов), F (паритет локалей), E1–E2
+(`pix3 slice`, пиксельные предупреждения), H (рецепт кита `pix3-mobile` с облачным слиянием,
+сверка кита и доков). **Не проверено:** всё на устройстве — восстановление аудио на iOS («мёртвый»
+AudioContext движок не ловит), хаптика и отступы/«назад» в настоящей Capacitor-оболочке; в Chrome
+`--check-determinism` видит дрейф realtime-тиков до старта бота; повтор не воспроизводит resize и
+локаль страницы, записи на `dist` нет. Все хвосты — в `.plans/TODO.md` («From
+`.plans/done/jam-takeaways.md`»).
+
 **Источник (2026-11-20).** Обзор двух джем-проектов — `~/projects/catstd` (TS, Capacitor, ~46k строк)
 и `~/projects/goldcrest/games/rh-game-pixeldrop-source` (JS, Canvas/Pixi, Capacitor, ~81k строк) —
 на то, что каждая игра дописывала руками, а Pix3 мог бы дать из коробки. Отбор по правилам владельца:
@@ -512,6 +523,21 @@ catstd + Pixel Drop как спрайты — 1 `NO_ALPHA` (`catstd/art/teaser/q
 AudioContext на iOS, чеклист Capacitor-оболочки (`__pix3SetInsets`, `__pix3Back`, адаптеры A3/A4,
 `platform`), бюджеты памяти текстур. Каждый этап обновляет кит сам; H — итоговая сверка.
 
+**Сделано (2026-11-21).** Новый скилл кита `pix3-mobile` (`kit-src/skills/pix3-mobile/SKILL.md`), а
+не раздел `pix3-scripts`: тот — API скрипта и уже 460+ строк при лимите 500, а оболочка — файлы
+игры вне скриптов (`src/main.ts`, `src/shell.ts`). В нём: что движок уже делает (не повторять),
+`scene.app` в игре, `src/shell.ts` для Capacitor (адаптеры Preferences и Haptics до `startGame`,
+`backButton` → `__pix3Back` → `minimizeApp`, вставки через плагин safe-area после него,
+`app.backButton: false`), облачное слияние — чистая `mergeSaves` над двумя `{version, data}` с
+таблицей правил по ключам (max / union / max по ключам / новее), сброс и свежая установка, время
+сохранения — побочный ключ адаптера, таймаут облака в `read`; аудио iOS (движок не ловит — проверка
+на устройстве и `pix3 gap`), бюджеты текстур, чеклист оболочки. `pix3-scripts` ссылается на него.
+Сверка: в `docs/nodes-and-systems.md` §4 добавлены записи каталога «App lifecycle, save, haptics,
+analytics» и «Run recording and replay» (было только в §5); описания `pix3-scripts`/`pix3-verify` и
+список скиллов в `AGENTS.md` кита дополнены; таблица `pix3 kit` в README называла 5 скиллов из 7 и
+не знала `design/tests/screens.ts`; флаги этапов в `usage.ts` и README совпадают; строки роутера
+CLAUDE.md — пути и символы существуют, добавлена строка про телефон/оболочку. Хвосты плана — в TODO.
+
 ---
 
 ## Порядок и зависимости
@@ -525,7 +551,7 @@ AudioContext на iOS, чеклист Capacitor-оболочки (`__pix3SetInse
 7. **E1** → **E2**.
 8. **H** — итоговая сверка кита.
 
-## В TODO (не в этом плане)
+## В TODO (не в этом плане; перенесено в `.plans/TODO.md`)
 
 - Тир качества `scene.quality`: нет телеметрии слабых устройств, проба первых кадров шумит
   (прогрев шейдеров), `maxPixelRatio` задаётся при создании рендерера. Пока достаточно

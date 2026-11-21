@@ -201,7 +201,7 @@ so a re-run decodes only what changed; a cache it cannot write is ignored. `--no
 | `W_FRAME_CLIPPED` | warning | in a clip of three frames or more, a frame's art runs into an edge (a solid run of 3 px and 8% of the side) that two thirds of the clip's frames keep clear: a pose that reached out of its grid cell. Art that touches the edge in most frames — a bust, a ground line — is the design |
 | `W_FRAME_BLEED` | warning | a frame holds, besides its picture, a shape under a quarter of the picture's size lying along an edge (60% of its extent on the edge line): a piece of the neighbour the cut took. A part of the picture that only touches the edge (a tail tip) does not count |
 
-Tuned on real art before they were enabled (plan `.plans/jam-takeaways.md` E2): silent on
+Tuned on real art before they were enabled (plan `.plans/done/jam-takeaways.md` E2): silent on
 Skyways (its 23 scene PNGs and all 104 sprites), on the 273 sprite PNGs of the two jam games but
 one opaque QR code, and on 394 frames `pix3 slice --blobs` cut from Codex and Skyways sheets;
 firing on grids cut across the fixture sheets (`validate.spec.ts`). Spritesheet-mode frames (UV
@@ -601,7 +601,8 @@ upgrade); `pix3 new` runs the same step. What lands in the project:
 | --- | --- |
 | `AGENTS.md` | Root rules (read by Codex, Cursor, …). If the project already has its own, it is kept and the kit goes to `AGENTS.pix3.md` (the command prints the line to add). |
 | `CLAUDE.md` | `@AGENTS.md` (plus `@AGENTS.pix3.md` in that case). A `CLAUDE.md` of the project's own is never touched — the command prints the line to add. |
-| `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format |
+| `.claude/skills/pix3-{scene-format,nodes,scripts,verify,editor,model,mobile}/SKILL.md` + `reference.md` | Skills loaded on demand; the `reference.md` files are generated from `docs/` and the runtime's registry; `pix3-scene-format/pix3anim.md` is the `.pix3anim` format; `pix3-mobile` is the phone and native-shell recipe (Capacitor adapters, a cloud-save merge, texture budgets) |
+| `design/tests/screens.ts` | The screen gallery's list of states (`pix3 play --screens`), a one-state starter |
 | `design/tests/bots/pix3-test-bot.d.ts` | Global types for bot policies (`Pix3TestBot`, `BotPolicy`, …): a policy is `export default { name, tick(bot) { … } } satisfies BotPolicy`, and the starter's `tsconfig.json` includes `design/tests`, so `pix3 check` type-checks it. The editor writes no project files; this is where the 1.x editor-written declaration went |
 | `.gitignore` | `.pix3/*` with `!.pix3/kit-manifest.json` and `!.pix3/template.json` appended when no line ignores `.pix3` yet; existing content kept |
 | `tsconfig.json`, `.pix3/tsconfig.check.json`, `.pix3/types/` | Only without a `tsconfig.json` of the project's own (see below) |

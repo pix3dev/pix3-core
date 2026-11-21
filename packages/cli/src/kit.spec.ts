@@ -177,6 +177,7 @@ describe('kit drift', () => {
         '.claude/skills/pix3-verify/SKILL.md',
         '.claude/skills/pix3-editor/SKILL.md',
         '.claude/skills/pix3-model/SKILL.md',
+        '.claude/skills/pix3-mobile/SKILL.md',
         'design/tests/bots/pix3-test-bot.d.ts',
         'design/tests/screens.ts',
       ])

@@ -1,6 +1,6 @@
 ---
 name: pix3-scripts
-description: How to write a Pix3 game script (scripts/*.ts, `export class X extends Script`, attached as `user:X`) — lifecycle, the required getPropertySchema, config, node lookup, signals, transforms, spawning, input, juice/tweens/audio, 2D physics, scene changes, the built-in core:* components and their config keys (reference.md), and the traps that compile clean and break at runtime. Use BEFORE writing or editing any file in scripts/ or attaching a core: component.
+description: How to write a Pix3 game script (scripts/*.ts, `export class X extends Script`, attached as `user:X`) — lifecycle, the required getPropertySchema, config, node lookup, signals, transforms, spawning, input, juice/tweens/audio, 2D physics, scene changes, the app lifecycle and back button (scene.app), the save (scene.storage), haptics, analytics, portal ads (platform), the built-in core:* components and their config keys (reference.md), and the traps that compile clean and break at runtime. Use BEFORE writing or editing any file in scripts/ or attaching a core: component.
 ---
 
 <!-- Pix3 agent kit {{version}} -->
@@ -281,14 +281,14 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `pix3 play --storage '{"version":2,"data":{"best":40}}'` (or a file; `--storage memory` = a new
   player); the real save is untouched. A native shell / portal cloud save:
   `setStorageAdapter({ read(key), write(key, snapshot) })` before `startGame` (merging a cloud
-  snapshot with the local one is the adapter's job, in `read`).
+  snapshot with the local one is the adapter's job, in `read` — `pix3-mobile` → "A cloud save").
 - Touch feedback: `this.scene.haptics.play('light')` — kinds `selection` / `light` / `medium` /
   `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table. A
   pulse no heavier than one under 60 ms ago is dropped (a burst of hits is one buzz). Raw
   `vibrate(30)` / `vibrate([20, 40, 20])` / `stop()`; `setEnabled(false)` for the player's settings
   toggle; `available`. A quiet `false` where nothing buzzes (desktop, iOS Safari, a hidden tab) —
   iOS needs a native shell that calls `setHapticsAdapter({ play(kind), vibrate(pattern) })`
-  (Capacitor Haptics); never `navigator.vibrate` directly.
+  (Capacitor Haptics, `pix3-mobile`); never `navigator.vibrate` directly.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A
   handler that cannot do it (a swap that matches nothing) returns `false`: `dispatch` — and a
   bot's `bot.command()` — answers `false`.
