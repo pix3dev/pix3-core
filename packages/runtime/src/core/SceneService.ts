@@ -84,6 +84,8 @@ export interface SceneServiceDelegate {
    * skip it; the registry then stamps `0`.
    */
   getFrameNumber?(): number;
+  /** `commands.dispatchExternal` was called (a run recording keeps it as input). Optional. */
+  noteExternalCommand?(name: string, args?: Record<string, unknown>): void;
   /**
    * False while frames are stepped by hand (`pix3 smoke`, `pix3_game_run`, a headless test) —
    * then wall-clock overlays such as `changeScene`'s fade would outlast the run. Optional: a
@@ -459,7 +461,10 @@ export class SceneService {
    */
   get commands(): GameCommandRegistry {
     if (!this.commandRegistry) {
-      this.commandRegistry = new GameCommandRegistry(() => this.delegate?.getFrameNumber?.() ?? 0);
+      this.commandRegistry = new GameCommandRegistry(
+        () => this.delegate?.getFrameNumber?.() ?? 0,
+        (name, args) => this.delegate?.noteExternalCommand?.(name, args)
+      );
     }
     return this.commandRegistry;
   }

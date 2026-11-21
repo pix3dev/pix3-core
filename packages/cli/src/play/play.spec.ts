@@ -129,6 +129,33 @@ describe('pix3 play', () => {
     expect(runPolicy.err).toContain(join('design', 'tests', 'bots', 'gone.ts'));
   });
 
+  it('refuses a recording or a replay it cannot make before a browser starts', async () => {
+    const runOf = (argv: string[]) => {
+      const parsed = parsePlayArgs(argv);
+      return typeof parsed === 'object' && 'run' in parsed ? parsed.run : parsed;
+    };
+    expect(runOf(['dev', '--record', 'r.pix3replay', '--every', '5'])).toEqual({
+      record: { every: 5 },
+    });
+    expect(runOf(['dev', '--record', 'r.pix3replay'])).toEqual({ record: {} });
+    expect((await run(['--every', '2'])).err).toContain('--every sets the checkpoints');
+    expect((await run(['--record', 'a', '--replay', 'b'])).err).toContain('two runs');
+    expect((await run(['--replay', 'r.pix3replay', '--bot', 'x', '--seed', '2'])).err).toContain(
+      "--replay plays the recording's scene, settings, inputs and screen: drop --bot, --seed"
+    );
+    const missing = await run(['--replay', 'gone.pix3replay']);
+    expect(missing.code).toBe(2);
+    expect(missing.err).toContain('no file');
+    writeFileSync(join(root, 'bad.pix3replay'), '{"type":"end","tick":0}\n');
+    expect((await run(['--replay', 'bad.pix3replay'])).err).toContain('is not a Pix3 recording');
+    // A build carries no recorder: the dev server records and replays.
+    mkdirSync(join(root, 'dist'));
+    writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
+    const onDist = await run(['dist', '--record', 'r.pix3replay']);
+    expect(onDist.code).toBe(2);
+    expect(onDist.err).toContain('--record needs the dev server');
+  });
+
   it('shades the unsafe bands for a picture and takes them off again (core-tests/game18)', async () => {
     const { Window } = await import('happy-dom');
     const window = new Window();

@@ -4,8 +4,12 @@ import {
   getGameDebug,
   NodeBase,
   normalizeAutoloads,
+  parseRunTape,
   registerBuiltInScripts,
   registerScriptErrorSink,
+  replayRunTape,
+  RunRecorder,
+  runTapeOverrides,
   SceneLoader,
   SceneManager,
   SceneRunner,
@@ -13,6 +17,8 @@ import {
   ScriptRegistry,
   setPostprocessingModuleLoader,
   Sprite2D,
+  type RunTape,
+  type RunTapeReplayResult,
   type RuntimeRenderer,
   type ScriptErrorInfo,
 } from '@pix3/runtime';
@@ -36,6 +42,7 @@ import type {
   SmokeErrorCode,
   SmokeJob,
   SmokeOutcome,
+  SmokeReplay,
   SmokeReport,
   SmokeWarning,
   SmokeWarningCode,
@@ -173,11 +180,24 @@ export const runSmokeJob = async (
   imports: ScriptImportMap
 ): Promise<SmokeOutcome> => {
   const startedAt = performance.now();
+  let tape: RunTape | null = null;
+  if (job.replay !== undefined) {
+    const parsed = parseRunTape(job.replay);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        code: 'E_SMOKE_REPLAY_FILE',
+        reason: `not a recording this engine replays: ${parsed.errors.join('; ')}`,
+        scene: job.scene,
+      };
+    }
+    tape = parsed.tape;
+  }
   let frame = 0;
   const errors: SmokeError[] = [];
   const warningsByKey = new Map<string, { warning: SmokeWarning; count: number }>();
   const notes: string[] = [];
-  const dom = installDomShim(job.viewport);
+  const dom = installDomShim(job.canvas ?? job.viewport);
 
   const addError = (error: Omit<SmokeError, 'frame' | 'domAccess'> & { frame?: number }): void => {
     const recent = dom.takeRecentMissing();
@@ -221,7 +241,7 @@ export const runSmokeJob = async (
       );
       return;
     }
-    if (!commands.dispatch(name, args as Parameters<typeof commands.dispatch>[1])) {
+    if (!commands.dispatchExternal(name, args as Parameters<typeof commands.dispatch>[1])) {
       addWarning('W_SMOKE_COMMAND', `--command ${name}: the handler refused it or threw.`);
     } else {
       keepLog(`--command ${name} dispatched`);
@@ -328,6 +348,8 @@ export const runSmokeJob = async (
   let executed = 0;
   let started = false;
   let registered: readonly string[] = [];
+  let recorder: RunRecorder | null = null;
+  let replay: RunTapeReplayResult | null = null;
 
   const finish = (): SmokeOutcome => {
     const sorted = [...stepTimes].sort((a, b) => a - b);
@@ -396,6 +418,8 @@ export const runSmokeJob = async (
       game,
       logs: { count: logCount, lines: logs },
       ...(analytics ? { analytics } : {}),
+      ...(recorder ? { recording: recorder.finish() } : {}),
+      ...(replay ? { replay: replay as SmokeReplay } : {}),
     };
   };
 
@@ -498,8 +522,9 @@ export const runSmokeJob = async (
       renderEveryNTicks: NEVER_RENDER,
       muteAudio: true,
     });
-    // `--seed` / `--config`: the same per-run overrides the player takes from `?run=`.
-    runner.setRunOverrides(job.run ? { ...job.run } : null);
+    // `--seed` / `--config`: the same per-run overrides the player takes from `?run=`; a replay's
+    // come from its recording.
+    runner.setRunOverrides(tape ? runTapeOverrides(tape) : job.run ? { ...job.run } : null);
     // `scene.storage` as the player reads it, but from memory: a smoke run never sees or writes a
     // real save (the shim's `localStorage` is only for scripts that go around `scene.storage`).
     runner.setStorage({ namespace: 'smoke', mode: 'memory' });
@@ -509,8 +534,12 @@ export const runSmokeJob = async (
     const localization = resolveLocalization(project);
     if (localization) {
       const { defaultLocale, fallbackLocale, locales } = localization;
-      runner.setLocalizationConfig({ defaultLocale, fallbackLocale, locales });
+      runner.setLocalizationConfig(
+        { defaultLocale, fallbackLocale, locales },
+        tape?.header.locale ?? null
+      );
     }
+    if (job.record) recorder = new RunRecorder(runner, job.record);
 
     // --- Frame 0: load + onAttach/onStart ------------------------------------------------------
     const loadStart = performance.now();
@@ -536,12 +565,26 @@ export const runSmokeJob = async (
     nodesStart = countNodes(runner.getLiveRootNodes());
 
     // --- Frames 1..N ----------------------------------------------------------------------------
-    for (let next = 1; next <= job.frames; next += 1) {
+    if (tape) {
+      replay = await replayRunTape(runner, tape, {
+        flush: () => flushPending(),
+        onTick: tick => {
+          frame = tick;
+          dom.takeRecentMissing();
+        },
+      });
+      executed = replay.ticks;
+    }
+    for (let next = 1; !tape && next <= job.frames; next += 1) {
       frame = next;
       // Only reads made during this frame are attached to this frame's errors.
       dom.takeRecentMissing();
       for (const command of job.commands ?? []) {
         if (command.frame === next) dispatchSmokeCommand(runner, command.name, command.args);
+      }
+      // A recording lets loads land before the next frame, as its replay will.
+      for (let turns = 0; recorder && runner.pendingLoads > 0 && turns < 2000; turns += 1) {
+        await flushPending();
       }
       const stepStart = performance.now();
       const ran = runner.stepFrames(1);
@@ -569,7 +612,7 @@ export const runSmokeJob = async (
       );
     }
     notes.push(
-      'Audio is silent (no Web Audio in Node); input receives no events; nothing is rendered.'
+      `Audio is silent (no Web Audio in Node); input ${tape ? 'comes only from the recording' : 'receives no events'}; nothing is rendered.`
     );
     return finish();
   } catch (thrown) {

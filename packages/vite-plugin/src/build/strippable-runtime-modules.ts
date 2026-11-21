@@ -328,7 +328,14 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     // project that never says `storage` cannot reach it.
     modulePath: 'core/GameStorage',
     keepWhenMentioned: ['storage', 'GameStorage'],
-    lazyValueImporters: ['core/SceneService', 'core/SceneRunner', 'testing/headless-game'],
+    // `core/RunTape` reads the starting save (`SceneRunner.describeRunStart`) only for a run
+    // recording, which a player build never carries (the dev page and the CLI import it).
+    lazyValueImporters: [
+      'core/SceneService',
+      'core/SceneRunner',
+      'testing/headless-game',
+      'core/RunTape',
+    ],
   },
 
   // --- analytics ---

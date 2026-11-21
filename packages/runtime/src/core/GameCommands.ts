@@ -212,7 +212,11 @@ export class GameCommandRegistry {
    * journal line is stamped with the frame it happened on. Defaults to `0` for
    * registries created outside a running scene.
    */
-  constructor(private readonly frameProvider: () => number = () => 0) {}
+  constructor(
+    private readonly frameProvider: () => number = () => 0,
+    /** Told of every {@link dispatchExternal} first (the runner's run recording). */
+    private readonly externalTap: (name: string, args?: GameCommandArgs) => void = () => {}
+  ) {}
 
   /**
    * Register an intent under `name`.
@@ -340,6 +344,16 @@ export class GameCommandRegistry {
     } finally {
       this.depth -= 1;
     }
+  }
+
+  /**
+   * {@link dispatch} from OUTSIDE the game — a test, a bot's direct action, the bridge, `pix3 smoke
+   * --command`. A run recording keeps these as input; a command the game dispatches itself (a
+   * button's handler) is its own behaviour and is checked as a result, never replayed twice.
+   */
+  dispatchExternal(name: string, args?: GameCommandArgs): boolean {
+    this.externalTap(name, args);
+    return this.dispatch(name, args);
   }
 
   /**

@@ -106,6 +106,7 @@ declare interface Pix3TestBot {
   /**
    * Dispatch one of the game's scene.commands ('restart', …): proves the handler, not a button.
    * true when it ran and did not decline (a handler returns false to decline, e.g. a dead swap).
+   * A command from outside the game: `pix3 play --record` keeps it as an input of the replay.
    */
   command(name: string, args?: Record<string, unknown>): boolean;
   /**

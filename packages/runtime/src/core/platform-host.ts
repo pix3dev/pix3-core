@@ -12,6 +12,8 @@ export interface PlatformHost {
   setPauseReason(reason: 'ad', paused: boolean): void;
   /** The next show's outcome from `RunOverrides.ads`, or null when the run does not set it. */
   takeAdRunOutcome(): AdRunOutcome | null;
+  /** How a show that took a run outcome slot ended, as that outcome (a run recording keeps it). */
+  noteAdOutcome(outcome: AdRunOutcome): void;
 }
 
 type SceneEndListener = (host: PlatformHost) => void;

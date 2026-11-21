@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -34,6 +34,14 @@ import {
   settleGolden,
   type GoldenArgs,
 } from '../golden.ts';
+import {
+  formatReplayHuman,
+  projectHash,
+  readReplayFile,
+  settleReplay,
+  stampBuild,
+  type ReplayReport,
+} from '../replay-file.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
 
@@ -63,6 +71,10 @@ interface SmokeArgs {
   readonly run?: SmokeRunOverrides;
   /** `--golden <file> [--write] [--tolerance …]`: the run's end pinned in a file (`golden.ts`). */
   readonly golden: GoldenArgs | null;
+  /** `--record <file> [--every N]`: write the run as a `.pix3replay`. */
+  readonly record?: { readonly file: string; readonly every?: number };
+  /** `--replay <file>`: play a recording back instead of a scene. */
+  readonly replay?: string;
 }
 
 const DEFAULT_FRAMES = 120;
@@ -102,6 +114,10 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let golden: string | undefined;
   let write = false;
   let tolerance: string | undefined;
+  let record: string | undefined;
+  let every: number | undefined;
+  let replay: string | undefined;
+  let framesGiven = false;
   const valueOf = (arg: string, index: number): { value?: string; next: number } => {
     const eq = arg.indexOf('=');
     if (eq > 0) return { value: arg.slice(eq + 1), next: index };
@@ -115,7 +131,18 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     else if (arg === '--changed') changed = true;
     else if (arg === '--all') all = true;
     else if (arg === '--write') write = true;
-    else if (name === '--golden' || name === '--tolerance') {
+    else if (name === '--record' || name === '--replay' || name === '--every') {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      if (value === undefined || value.startsWith('--')) return { error: `${name} needs a value` };
+      if (name === '--record') record = value;
+      else if (name === '--replay') replay = value;
+      else {
+        every = Number(value);
+        if (!Number.isInteger(every) || every < 1)
+          return { error: '--every takes a whole number of ticks ≥ 1' };
+      }
+    } else if (name === '--golden' || name === '--tolerance') {
       const { value, next } = valueOf(arg, i);
       i = next;
       if (name === '--golden') golden = value;
@@ -167,8 +194,10 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
         const number = Number(value);
         if (!Number.isFinite(number) || number <= 0)
           return { error: `${name} needs a positive number` };
-        if (name === '--frames') frames = Math.floor(number);
-        else timeoutSec = number;
+        if (name === '--frames') {
+          frames = Math.floor(number);
+          framesGiven = true;
+        } else timeoutSec = number;
       }
     } else if (arg.startsWith('-')) return { error: `unknown argument ${arg}` };
     else if (scene === undefined) scene = arg;
@@ -179,6 +208,27 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     return {
       error: `${changed ? '--changed' : '--all'} picks the scenes; drop ${scene} or the flag`,
     };
+  if (every !== undefined && record === undefined)
+    return { error: '--every sets the checkpoints of a recording: give it --record <file>' };
+  if (record !== undefined && (scene === undefined || replay !== undefined))
+    return {
+      error: '--record records one run: name its scene (pix3 smoke <scene> --record f.pix3replay)',
+    };
+  if (replay !== undefined) {
+    const extra = [
+      scene !== undefined && scene,
+      changed && '--changed',
+      all && '--all',
+      commands.length > 0 && '--command',
+      run && '--seed/--config/--ads',
+      framesGiven && '--frames',
+      golden !== undefined && '--golden',
+    ].filter(Boolean);
+    if (extra.length > 0)
+      return {
+        error: `--replay plays the recording's scene, settings, inputs and length: drop ${extra.join(', ')}`,
+      };
+  }
   const goldenArgs = goldenArgsOf(golden, write, tolerance);
   if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
   if (goldenArgs && scene === undefined)
@@ -200,6 +250,8 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     commands,
     golden: goldenArgs,
     ...(run ? { run } : {}),
+    ...(record !== undefined ? { record: { file: record, ...(every ? { every } : {}) } } : {}),
+    ...(replay !== undefined ? { replay } : {}),
   };
 };
 
@@ -272,6 +324,10 @@ export interface RunSmokeOptions {
   readonly commands?: readonly SmokeCommand[];
   /** `--seed` / `--config`: the run's `scene.random` seed and component config overrides. */
   readonly run?: SmokeRunOverrides;
+  /** `--record`: record the run (the report's `recording` is the file's text). */
+  readonly record?: { readonly every?: number };
+  /** `--replay`: a recording's text, and the canvas it was made on. */
+  readonly replay?: { readonly text: string; readonly canvas: { width: number; height: number } };
 }
 
 export interface RunOneSmokeOptions extends RunSmokeOptions {
@@ -360,6 +416,8 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   frames: options.frames ?? DEFAULT_FRAMES,
   ...(options.commands?.length ? { commands: options.commands } : {}),
   ...(options.run ? { run: options.run } : {}),
+  ...(options.record ? { record: options.record } : {}),
+  ...(options.replay ? { replay: options.replay.text, canvas: options.replay.canvas } : {}),
   viewport: prepared.manifest.viewport,
   autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
@@ -608,14 +666,24 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     io.stderr(`pix3 smoke: ${golden.error}\n`);
     return 2;
   }
+  const replayPath = args.replay !== undefined ? resolve(io.cwd, args.replay) : null;
+  const replayFile = replayPath ? readReplayFile(replayPath) : null;
+  if (replayFile && 'error' in replayFile) {
+    io.stderr(`pix3 smoke: ${replayFile.error}\n`);
+    return 2;
+  }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const shownRoot = root ?? io.cwd;
   const common = {
-    frames: args.frames,
+    frames: replayFile ? Math.max(1, replayFile.header.end) : args.frames,
     timeoutSec: args.timeoutSec,
     cwd: io.cwd,
     commands: args.commands,
     run: args.run,
+    ...(args.record ? { record: { every: args.record.every } } : {}),
+    ...(replayFile
+      ? { replay: { text: replayFile.text, canvas: replayFile.header.viewport } }
+      : {}),
   };
   // Files are the truth only once the editor has written them (plan §B.6): a dev server with an
   // editor tab (`.pix3/dev.json`) flushes before the scene is read.
@@ -630,8 +698,9 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     );
   } else if (synced.status === 'unsynced') {
     outcome = failure('E_EDITOR_UNSYNCED', describeUnsynced(synced), args.scene);
-  } else if (args.scene !== undefined) {
-    outcome = await runSmoke({ projectRoot: root, scene: args.scene, ...common });
+  } else if (args.scene !== undefined || replayFile) {
+    const scene = args.scene ?? replayFile!.header.scene;
+    outcome = await runSmoke({ projectRoot: root, scene, ...common });
   } else {
     outcome = await runSmokeSet({
       projectRoot: root,
@@ -646,6 +715,21 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     );
     return smokeSetExitCode(outcome);
   }
+  // The recording to its file, the replay's snapshots beside it; neither text stays in the report.
+  let replayReport: ReplayReport | null = null;
+  let recorded: { file: string; ticks: number } | null = null;
+  if (!isSmokeFailure(outcome) && root) {
+    const { recording, replay, ...rest } = outcome;
+    const build = recording !== undefined || replay ? projectHash(root) : '';
+    if (recording !== undefined && args.record) {
+      const file = resolve(io.cwd, args.record.file);
+      writeFileSync(file, stampBuild(recording, build));
+      recorded = { file, ticks: outcome.frames };
+    }
+    if (replay && replayFile && replayPath)
+      replayReport = settleReplay(replay, replayPath, replayFile.header, build);
+    outcome = rest;
+  }
   // A run that could not happen (exit 2) has no end to compare.
   const goldenResult =
     args.golden && !isSmokeFailure(outcome)
@@ -658,13 +742,23 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
         )
       : null;
   if (args.json) {
-    io.stdout(formatSmokeJson(outcome, shownRoot, goldenResult ? { golden: goldenResult } : {}));
+    io.stdout(
+      formatSmokeJson(outcome, shownRoot, {
+        ...(goldenResult ? { golden: goldenResult } : {}),
+        ...(replayReport ? { replay: replayReport } : {}),
+        ...(recorded ? { recorded } : {}),
+      })
+    );
   } else {
     io.stdout(formatSmokeHuman(outcome, shownRoot));
     if (goldenResult) io.stdout(`${formatGoldenHuman(goldenResult).join('\n')}\n`);
+    if (replayReport) io.stdout(`${formatReplayHuman(replayReport).join('\n')}\n`);
+    if (recorded) io.stdout(`recorded ${recorded.ticks} tick(s): ${recorded.file}\n`);
   }
   const exit = smokeExitCode(outcome);
-  return exit === 0 && goldenFailed(goldenResult) ? 1 : exit;
+  return exit === 0 && (goldenFailed(goldenResult) || (replayReport && !replayReport.ok))
+    ? 1
+    : exit;
 };
 
 /** For specs: a report's error list as `frame code script: message` lines. */

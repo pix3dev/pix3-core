@@ -59,7 +59,7 @@
     },
     "packages/vite-plugin": {
       // `src/client/index.ts`: the editor page's client, served by path (`/@fs/…`, CLIENT_ENTRY).
-      // `player/debug/index.ts`: the debug overlay, imported by file path from `virtual:pix3/dev`, as are `player/dev/editor-link.ts` and `player/dev/ad-placeholder.ts`; `player/dev/page-link.ts`: put into the game page's HTML by `transformIndexHtml`.
+      // `player/debug/index.ts`: the debug overlay, imported by file path from `virtual:pix3/dev`, as are `player/dev/editor-link.ts`, `player/dev/ad-placeholder.ts` and `player/dev/run-tape.ts`; `player/dev/page-link.ts`: put into the game page's HTML by `transformIndexHtml`.
       // `player/debug/profile.ts`: bundled by the CLI's `pix3 play --profile` (`packages/cli/src/play/bundle.ts`, by path through esbuild's stdin) into a page script; the player never imports it.
       "entry": [
         "src/index.ts!",
@@ -69,6 +69,7 @@
         "player/debug/profile.ts!",
         "player/dev/editor-link.ts!",
         "player/dev/ad-placeholder.ts!",
+        "player/dev/run-tape.ts!",
         "player/dev/page-link.ts!"
       ],
       "project": [

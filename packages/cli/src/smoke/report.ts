@@ -105,6 +105,29 @@ export interface SmokeReport {
    * events dropped before a sink was added, and the last 500 events with their frames.
    */
   readonly analytics?: SmokeAnalytics;
+  /** `--record`: the recording's text (the CLI writes it to the file and drops it from the report). */
+  readonly recording?: string;
+  /** `--replay`: how the recording played back. */
+  readonly replay?: SmokeReplay;
+}
+
+/** `pix3 smoke --replay`: the runtime's `RunTapeReplayResult`. */
+export interface SmokeReplay {
+  readonly ok: boolean;
+  readonly ticks: number;
+  readonly end: number;
+  readonly checkpoints: number;
+  readonly divergence: {
+    readonly from: number;
+    readonly to: number;
+    readonly paths: readonly string[];
+    readonly morePaths: number;
+    readonly likelyLoad: boolean;
+    readonly recorded: unknown;
+    readonly replayed: unknown;
+  } | null;
+  readonly stopped: string | null;
+  readonly notes: readonly string[];
 }
 
 /** One human line for a run's `scene.analytics` (shared by `pix3 smoke` and `pix3 play`). */
@@ -136,7 +159,9 @@ export type SmokeFailureCode =
   | 'E_SMOKE_CRASH'
   | 'E_EDITOR_UNSYNCED'
   /** The project installs another `@pix3/runtime` than the one this CLI runs scenes with. */
-  | 'E_RUNTIME_VERSION';
+  | 'E_RUNTIME_VERSION'
+  /** `--replay` names a file this engine cannot replay (the reasons say why). */
+  | 'E_SMOKE_REPLAY_FILE';
 
 export interface SmokeFailure {
   readonly ok: false;
@@ -195,6 +220,7 @@ export const SMOKE_CODES: Readonly<
   E_SMOKE_CRASH: 'failure',
   E_EDITOR_UNSYNCED: 'failure',
   E_RUNTIME_VERSION: 'failure',
+  E_SMOKE_REPLAY_FILE: 'failure',
 };
 
 export const isSmokeFailure = (outcome: SmokeOutcome): outcome is SmokeFailure => 'code' in outcome;
@@ -216,6 +242,12 @@ export interface SmokeJob {
   readonly commands?: readonly SmokeCommand[];
   /** `--seed` / `--config` / `--ads`: `SceneRunner.setRunOverrides` for the run. */
   readonly run?: SmokeRunOverrides;
+  /** `--record`: record the run (`every` = ticks between checkpoints). */
+  readonly record?: { readonly every?: number };
+  /** `--replay`: a recording's text; it decides the run's settings, scene and length. */
+  readonly replay?: string;
+  /** The canvas in CSS px when it is not {@link viewport} (a replay: the recording's). */
+  readonly canvas?: { readonly width: number; readonly height: number };
 }
 
 /** A smoke run's test settings: the `scene.random` seed, ad outcomes and component config overrides. */

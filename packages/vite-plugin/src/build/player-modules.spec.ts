@@ -9,7 +9,11 @@ describe('devSource', () => {
   /** `meta` stands for the page's `<meta name="pix3-rev">` content. */
   const evaluate = (source: string, search: string, meta: string | null = null) => {
     const module: Record<string, (...args: unknown[]) => unknown> = {};
-    const body = source.replace(/export function (\w+)/g, 'module.$1 = function $1');
+    const body = source.replace(
+      /export (async )?function (\w+)/g,
+      (_, async: string | undefined, name: string) =>
+        `module.${name} = ${async ?? ''}function ${name}`
+    );
     const document = {
       querySelector: (selector: string) =>
         meta !== null && selector === 'meta[name="pix3-rev"]' ? { getAttribute: () => meta } : null,
@@ -29,6 +33,7 @@ describe('devSource', () => {
       overlayPath: '/o',
       editorLinkPath: '/l',
       adPlaceholderPath: '/a',
+      runTapePath: '/t',
       editorUrl: null,
       testHostPath: null,
     });
@@ -55,6 +60,7 @@ describe('devSource', () => {
         overlayPath: '/o',
         editorLinkPath: '/l',
         adPlaceholderPath: '/a',
+        runTapePath: '/t',
         editorUrl: null,
         testHostPath: null,
       });
@@ -64,11 +70,35 @@ describe('devSource', () => {
     }
   });
 
+  it('loads the run recorder only for a run that records or replays, and a build says it cannot', async () => {
+    const dev = devSource('dev', {
+      overlayPath: '/o',
+      editorLinkPath: '/l',
+      adPlaceholderPath: '/a',
+      runTapePath: '/t/run-tape.js',
+      editorUrl: null,
+      testHostPath: null,
+    });
+    expect(dev).toContain('await import("/t/run-tape.js")');
+    // A plain run imports nothing.
+    await expect(evaluate(dev, '').installRunTape({}, { seed: 1 })).resolves.toBeUndefined();
+    const errors: unknown[] = [];
+    const body = devSource('none').replace(
+      /export (async )?function (\w+)/g,
+      'exports.$2 = $1function $2'
+    );
+    const build: Record<string, (...args: unknown[]) => Promise<void>> = {};
+    new Function('exports', 'console', body)(build, { error: (m: unknown) => errors.push(m) });
+    await build.installRunTape({}, { record: {} });
+    expect(String(errors[0])).toContain('need the dev server');
+  });
+
   it('reads the revision the plugin stamped into the page on the dev server, none in a build', () => {
     const dev = devSource('dev', {
       overlayPath: '/o',
       editorLinkPath: '/l',
       adPlaceholderPath: '/a',
+      runTapePath: '/t',
       editorUrl: null,
       testHostPath: null,
     });
@@ -82,6 +112,7 @@ describe('devSource', () => {
       overlayPath: '/o',
       editorLinkPath: '/l',
       adPlaceholderPath: '/a',
+      runTapePath: '/t',
       editorUrl: null,
     };
     const dev = devSource('dev', { ...options, testHostPath: '/h/page-test-host.js' });

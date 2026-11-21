@@ -201,6 +201,17 @@ export class GameStorage {
     return this.queue;
   }
 
+  /**
+   * @internal The save as this session starts from it, without reading it (no migration runs): a
+   * run recording's starting snapshot. The read one before the first access, else the live data.
+   */
+  startSnapshot(): Snapshot {
+    const snapshot = this.materialized
+      ? { version: this.dataVersion, data: this.data }
+      : (this.pending ?? { version: 0, data: {} });
+    return structuredClone(snapshot);
+  }
+
   /** The save as JSON text: `{"version":n,"data":{…}}` (what {@link import} and `--storage` take). */
   export(): string {
     this.materialize();

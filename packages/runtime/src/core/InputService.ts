@@ -1,6 +1,7 @@
 import { Vector2 } from 'three';
 
 import { appLifecycle, type AppLifecycleChange } from './AppLifecycle';
+import type { RunDomInput } from './run-tap';
 
 export interface InputPointerFrameEvent {
   /**
@@ -268,6 +269,11 @@ export class InputService {
    * clears transient state.
    */
   private lockDepth = 0;
+
+  /** `setRunTap`: a recording hears every DOM input here. */
+  private runTap: ((input: RunDomInput) => void) | null = null;
+  /** Set while {@link inject} replays a pointer: its canvas fraction instead of the DOM's. */
+  private injectedFraction: { x: number; y: number } | null = null;
 
   /**
    * Names passed to {@link getAxis}/{@link getButton} while a harness recording
@@ -652,6 +658,7 @@ export class InputService {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
+    this.tapPointer('down', event);
     if (this.lockDepth > 0) {
       return;
     }
@@ -695,6 +702,7 @@ export class InputService {
   };
 
   private onPointerMove = (event: PointerEvent): void => {
+    this.tapPointer('move', event);
     if (this.lockDepth > 0) {
       return;
     }
@@ -729,10 +737,12 @@ export class InputService {
   };
 
   private onPointerUp = (event: PointerEvent): void => {
+    this.tapPointer('up', event);
     this.endPointer(event, 'up');
   };
 
   private onPointerCancel = (event: PointerEvent): void => {
+    this.tapPointer('cancel', event);
     this.endPointer(event, 'cancel');
   };
 
@@ -743,6 +753,8 @@ export class InputService {
    * mouse leaving the element: nothing to end.
    */
   private onPointerLeave = (event: PointerEvent): void => {
+    // Recorded only when it ends a press: the mouse leaving the canvas is not an input.
+    if (this.activePointers.has(event.pointerId)) this.tapPointer('cancel', event);
     this.endPointer(event, 'cancel');
   };
 
@@ -852,6 +864,15 @@ export class InputService {
   };
 
   private onWheel = (event: WheelEvent): void => {
+    this.runTap?.({
+      kind: 'wheel',
+      dx: event.deltaX,
+      dy: event.deltaY,
+      ctrl: event.ctrlKey,
+      meta: event.metaKey,
+      shift: event.shiftKey,
+      alt: event.altKey,
+    });
     // Still swallow the gesture while locked (the page must not scroll behind
     // a cutscene), but accumulate nothing. Unconditional on purpose: it is also
     // what stops a Ctrl/⌘ + wheel or trackpad pinch from zooming the page
@@ -883,6 +904,7 @@ export class InputService {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    this.tapKey('down', event);
     if (this.lockDepth > 0) {
       return;
     }
@@ -897,6 +919,7 @@ export class InputService {
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
+    this.tapKey('up', event);
     if (this.lockDepth > 0) {
       return;
     }
@@ -933,10 +956,89 @@ export class InputService {
     const scaleY = this.height / safeRectHeight;
     this.unitsPerCssPx = scaleX > 0 ? scaleX : 1;
 
+    // An injected input is a fraction of the canvas: this canvas's size, whatever the recording's.
+    const injected = this.injectedFraction;
+    if (injected) return { x: injected.x * this.width, y: injected.y * this.height };
     const x = (event.clientX - rect.left) * scaleX;
     const y = (event.clientY - rect.top) * scaleY;
 
     return { x, y };
+  }
+
+  /** Where the event is, as a fraction of the canvas (an injected input carries its own). */
+  private pointerFraction(event: PointerEvent, rect: DOMRect): { x: number; y: number } {
+    if (this.injectedFraction) return this.injectedFraction;
+    return {
+      x: (event.clientX - rect.left) / (rect.width > 0 ? rect.width : 1),
+      y: (event.clientY - rect.top) / (rect.height > 0 ? rect.height : 1),
+    };
+  }
+
+  private tapPointer(type: 'down' | 'move' | 'up' | 'cancel', event: PointerEvent): void {
+    if (!this.runTap || !this.element) return;
+    const at = this.pointerFraction(event, this.element.getBoundingClientRect());
+    this.runTap({
+      kind: 'pointer',
+      type,
+      id: event.pointerId,
+      x: at.x,
+      y: at.y,
+      pointerType: event.pointerType,
+      button: event.button,
+      buttons: event.buttons,
+    });
+  }
+
+  private tapKey(type: 'down' | 'up', event: KeyboardEvent): void {
+    this.runTap?.({ kind: 'key', type, code: event.code, key: event.key, repeat: event.repeat });
+  }
+
+  /** @internal The runner's run tape (`SceneRunner.setRunTap`): every DOM input as it arrives. */
+  setRunTap(tap: ((input: RunDomInput) => void) | null): void {
+    this.runTap = tap;
+  }
+
+  /**
+   * Feed one input as if the DOM had delivered it to the canvas — a replay, or a host without a
+   * DOM (`SceneRunner.injectRunInput`). Ignored while nothing is attached, as a real event would be.
+   */
+  inject(input: RunDomInput): void {
+    if (!this.element) return;
+    if (input.kind === 'key') {
+      const event = { code: input.code, key: input.key, repeat: input.repeat } as KeyboardEvent;
+      if (input.type === 'down') this.onKeyDown(event);
+      else this.onKeyUp(event);
+      return;
+    }
+    if (input.kind === 'wheel') {
+      this.onWheel({
+        deltaX: input.dx,
+        deltaY: input.dy,
+        ctrlKey: input.ctrl,
+        metaKey: input.meta,
+        shiftKey: input.shift,
+        altKey: input.alt,
+        preventDefault: () => {},
+      } as WheelEvent);
+      return;
+    }
+    const event = {
+      pointerId: input.id,
+      clientX: 0,
+      clientY: 0,
+      pointerType: input.pointerType,
+      button: input.button,
+      buttons: input.buttons,
+    } as PointerEvent;
+    this.injectedFraction = { x: input.x, y: input.y };
+    try {
+      if (input.type === 'down') this.onPointerDown(event);
+      else if (input.type === 'move') this.onPointerMove(event);
+      else if (input.type === 'up') this.onPointerUp(event);
+      else this.onPointerCancel(event);
+    } finally {
+      this.injectedFraction = null;
+    }
   }
 
   private getInputDimensions(): { width: number; height: number } {

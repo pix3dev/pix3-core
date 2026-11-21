@@ -322,6 +322,8 @@ export interface DevSourceOptions {
   readonly editorLinkPath: string;
   /** This package's `player/dev/ad-placeholder` (`platform`'s ads without an adapter), as a file path. */
   readonly adPlaceholderPath: string;
+  /** This package's `player/dev/run-tape` (`RunOverrides.record` / `.replay`), as a file path. */
+  readonly runTapePath: string;
   /** `<base>__pix3/` when the plugin serves the editor, else null (no link). */
   readonly editorUrl: string | null;
   /**
@@ -341,6 +343,8 @@ export interface DevSourceOptions {
  * - `devPageLink()` is the editor link `player/dev/page-link.ts` opened while a page the editor
  *   opened was loading (the plugin injects it into the HTML): the player's `loadId` and the Play
  *   gate it waits at before booting;
+ * - `installRunTape(runner, run)` starts a recording or sets a replay up (`player/dev/run-tape.ts`)
+ *   when the run asks for one (`pix3 play --record/--replay`); a build only says it cannot;
  * - `installDevTools(context)` installs the ads placeholder (`player/dev/ad-placeholder.ts`, what
  *   `platform.showRewarded` plays while the game has no portal adapter), imports the debug overlay when the URL has `debug`, otherwise the
  *   "Pix3 editor" link (top-level page, editor on, no `?clean`), so a plain `/` costs one small
@@ -364,6 +368,9 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
       'export function devPageRev() { return null; }',
       'export function devPageLink() { return null; }',
       'export function installDevTools() {}',
+      'export async function installRunTape(runner, run) {',
+      "  if (run && (run.record || run.replay)) console.error('[pix3] Recording and replaying a run need the dev server (pix3 play on `npm run dev`).');",
+      '}',
       '',
     ].join('\n');
   }
@@ -388,6 +395,12 @@ export const devSource = (mode: 'dev' | 'none', options?: DevSourceOptions): str
     `  return Number.isNaN(rev) ? null : rev;`,
     `}`,
     `export function devPageLink() { return window.__PIX3_PAGE_LINK__ ?? null; }`,
+    // \`RunOverrides.record\` / \`.replay\` (\`pix3 play --record/--replay\`): awaited before the scene starts.
+    `export async function installRunTape(runner, run) {`,
+    `  if (!run || (!run.record && run.replay === undefined)) return;`,
+    `  const tape = await import(${JSON.stringify(options.runTapePath)});`,
+    `  tape.installRunTape(runner, run);`,
+    `}`,
     `const testHostPath = ${JSON.stringify(options.testHostPath)};`,
     `let toolsLoading = null;`,
     `function loadTools() {`,

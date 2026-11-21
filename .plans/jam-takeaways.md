@@ -279,6 +279,30 @@ false). Прогон сильнее игры: тест форсирует, да�
   записи, которые повтор обязан отвергнуть.
 - Зависимости: A3 (снимок storage), B1 (исходы рекламы), A1 (события фона).
 
+**Сделано (2026-11-21).** `core/RunTape.ts` (`RunRecorder`, `parseRunTape`, `runTapeOverrides`,
+`replayRunTape`) + типы `core/run-tap.ts`; раннер: `setRunTap` (до/после тика, вход, старт сцены),
+`injectRunInput`, `stepFrames(count, dtSec)`, `pendingLoads`, `describeRunStart`; `InputService`
+пишет DOM-ввод (доли канваса) и `inject`; `commands.dispatchExternal` — команда извне (бот, мост,
+`--command`, `HeadlessGame.dispatch`), игровые сверяются в чекпойнтах; фон (`awayMs`), потеря фокуса
+(`appLifecycle.simulateBlur`), исход рекламы (`PlatformHost.noteAdOutcome`). Формат — спец. «Replay
+files» (6.26). CLI: `pix3 smoke <scene> --record [--every N]`, `pix3 smoke --replay` (Node, гарантия),
+`pix3 play --record/--replay` (дев-сервер; плеер грузит `player/dev/run-tape.ts` через
+`virtual:pix3/dev installRunTape`), `cli/src/replay-file.ts` (хеш проекта, снимки расхождения).
+`HeadlessGameOptions.record/replay`, `game.input/recording/replay`. Проверено в Chrome на фикстуре
+(скретч, не в репо): `play --bot --golden` (WRITTEN → MATCH ×2, другой seed → MISMATCH), запись бота →
+`smoke --replay` MATCH и `play --replay` MATCH, правка кода → DIVERGED 120–150 + PNG, смена сцены с
+фейдом → выравнивание (40 тиков пропущено) в Node и Chrome.
+Отклонения: «фаза» = `before`/`after` тика (вход между тиками / внутри — бот в frame listener) + `seq`;
+сверх плана — `f` (тики одного кадра: от этого зависит, когда доходят async-продолжения), ожидание
+загрузок перед тиком (`pendingLoads`; без него Node недетерминирован на смене сцены/спавне) и
+выравнивание по старту сцены (фейд `changeScene` в реальном времени); `--every` — у записи, не у
+повтора (чекпойнты берутся из файла); последний чекпойнт — в момент `finish`. Запись/повтор на
+`dist` нет (exit 2): рекордер в сборку не попадает. Не повторяются: resize (записан, нота), локаль на
+странице (в Node — да). Узел, чьей позицией владеет layout, перекладывается при отрисовке — Node не
+рисует, скрипт, двигающий такой узел, разойдётся. Заметка к D1: число realtime-тиков до старта бота
+плавает (214/215) — счётчики тиков в эталон не класть. Для игр: пересобрать vite-plugin и
+editor-core (page-test-host зовёт `dispatchExternal`).
+
 ## Этап D. Сетка прогонов и эталоны в `pix3 play` (M–L)
 
 Новых команд нет: `sweep` и галерея экранов (G) — это сетка свежих загрузок внутри `pix3 play`.

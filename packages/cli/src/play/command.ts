@@ -13,6 +13,15 @@ import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 import { formatTreeHuman, type PlayTree } from './tree-report.ts';
 import { analyticsSummary, type SmokeAnalytics } from '../smoke/report.ts';
 import {
+  formatReplayHuman,
+  projectHash,
+  readReplayFile,
+  settleReplay,
+  stampBuild,
+  type ReplayOutcome,
+  type ReplayReport,
+} from '../replay-file.ts';
+import {
   formatGoldenHuman,
   goldenArgsOf,
   goldenFailed,
@@ -49,7 +58,14 @@ interface PlayArgs {
     storage?: 'memory' | { snapshot: Record<string, unknown> };
     ads?: AdRunOutcome | AdRunOutcome[];
     config?: Record<string, unknown>;
+    record?: { every?: number };
+    /** `--replay`: the recording's text; the page sets the run up from it. */
+    replay?: string;
   } | null;
+  /** `--record <file> [--every N]`: the run written as a `.pix3replay` (dev server only). */
+  readonly record?: { readonly file: string; readonly every?: number };
+  /** `--replay <file>`: play a recording back on the page (dev server only). */
+  readonly replay?: string;
   /** `bot.args` for the policy, as one JSON object. */
   readonly botArgs: Record<string, unknown>;
   readonly seconds: number;
@@ -151,17 +167,28 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   let write = false;
   let tolerance: string | undefined;
   let project: string | undefined;
+  let record: string | undefined;
+  let every: number | undefined;
+  let replay: string | undefined;
+  const given = new Set<string>();
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const [flag, inline] = arg.startsWith('--') ? arg.split(/=(.*)/s) : [arg];
     const value = (): string | undefined => inline ?? argv[++i];
+    given.add(flag);
     if (flag === '--help' || flag === '-h') return 'help';
     if (flag === '--json') json = true;
     else if (flag === '--profile') profile = true;
     else if (flag === '--tree') tree = true;
     else if (flag === '--write') write = true;
     else if (flag === '--golden') golden = value();
-    else if (flag === '--tolerance') tolerance = value();
+    else if (flag === '--record') record = value();
+    else if (flag === '--replay') replay = value();
+    else if (flag === '--every') {
+      every = Number(value());
+      if (!Number.isInteger(every) || every < 1)
+        return { error: '--every takes a whole number of ticks ≥ 1' };
+    } else if (flag === '--tolerance') tolerance = value();
     else if (flag === '--size') {
       const match = /^(\d+)x(\d+)$/.exec(value() ?? '');
       if (!match) return { error: '--size takes WIDTHxHEIGHT in CSS px, e.g. --size 390x844' };
@@ -242,7 +269,30 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       error: '--bot and --run are two runs: give one (a policy in --run is {"bot":{"name":…}})',
     };
   }
-  const driven = bot !== undefined || gameRun !== null;
+  if (every !== undefined && record === undefined)
+    return { error: '--every sets the checkpoints of a recording: give it --record <file>' };
+  if (record !== undefined && replay !== undefined)
+    return { error: '--record and --replay are two runs: give one' };
+  if (replay !== undefined) {
+    const extra = [
+      '--bot',
+      '--run',
+      '--seed',
+      '--config',
+      '--ads',
+      '--storage',
+      '--reduced-motion',
+      '--golden',
+      '--scene',
+      '--size',
+      '--scale',
+    ].filter(flag => given.has(flag));
+    if (extra.length > 0)
+      return {
+        error: `--replay plays the recording's scene, settings, inputs and screen: drop ${extra.join(', ')}`,
+      };
+  }
+  const driven = bot !== undefined || gameRun !== null || replay !== undefined;
   const goldenArgs = goldenArgsOf(golden, write, tolerance);
   if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
   // Only a fixed-step run ends the same way twice: a page left to itself runs in real time.
@@ -279,13 +329,15 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       config !== undefined ||
       reducedMotion ||
       storage !== undefined ||
-      ads !== undefined
+      ads !== undefined ||
+      record !== undefined
         ? {
             ...(seed !== undefined ? { seed } : {}),
             ...(reducedMotion ? { reducedMotion } : {}),
             ...(storage !== undefined ? { storage } : {}),
             ...(ads !== undefined ? { ads } : {}),
             ...(config ? { config } : {}),
+            ...(record !== undefined ? { record: every ? { every } : {} } : {}),
           }
         : null,
     seconds: budget,
@@ -297,6 +349,8 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     tree,
     golden: goldenArgs,
     project,
+    ...(record !== undefined ? { record: { file: record, ...(every ? { every } : {}) } } : {}),
+    ...(replay !== undefined ? { replay } : {}),
   };
 };
 
@@ -388,6 +442,10 @@ interface PlayReport {
   readonly tree?: PlayTree | { error: string };
   /** `--golden`: matched, written, or the paths that differ. */
   readonly golden?: GoldenResult;
+  /** `--record`: the file written and the ticks in it. */
+  readonly recorded?: { readonly file: string; readonly ticks: number };
+  /** `--replay`: how the recording played back on the page. */
+  readonly replay?: ReplayReport;
 }
 
 /** How often the CLI asks the page whether the policy is done or wants a picture. */
@@ -405,12 +463,34 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     io.stderr(`pix3 play: ${parsed.error}\n\n${COMMAND_USAGE.play}`);
     return 2;
   }
-  const args = parsed;
+  // A replay plays the recording's scene on its screen, with its settings (`__PIX3_RUN__.replay`).
+  const replayPath = parsed.replay !== undefined ? resolve(io.cwd, parsed.replay) : null;
+  const replayFile = replayPath ? readReplayFile(replayPath) : null;
+  if (replayFile && 'error' in replayFile) {
+    io.stderr(`pix3 play: ${replayFile.error}\n`);
+    return 2;
+  }
+  const args: PlayArgs = replayFile
+    ? {
+        ...parsed,
+        width: replayFile.header.viewport.width,
+        height: replayFile.header.viewport.height,
+        scale: replayFile.header.viewport.dpr,
+        scene: replayFile.header.scene,
+        run: { replay: replayFile.text },
+      }
+    : parsed;
   const env = io.env ?? process.env;
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const url = resolveTarget(args, root, io.cwd);
   if (typeof url !== 'string') {
     io.stderr(`pix3 play: ${url.error}\n`);
+    return 2;
+  }
+  if ((args.record || replayFile) && url.startsWith('file:')) {
+    io.stderr(
+      `pix3 play: --${args.record ? 'record' : 'replay'} needs the dev server (\`npm run dev\`): a build carries no recorder\n`
+    );
     return 2;
   }
   // The policy a run plays: checked here, compiled only for a page that cannot import it itself
@@ -597,6 +677,52 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       )) as Record<string, unknown>;
     let runReport: Record<string, unknown> | undefined;
     const started = Date.now();
+    let replayOutcome: ReplayOutcome | null = null;
+    let replayShot: string | undefined;
+    /**
+     * `--replay`: the page steps the recording (`window.__PIX3_RUN_TAPE__`, `player/dev/run-tape.ts`);
+     * on a divergence it stays on that tick, and the picture is taken there.
+     */
+    const driveReplay = async (): Promise<ReplayOutcome> => {
+      const refused = (await chrome.evaluate(
+        session,
+        '(() => { const t = window.__PIX3_RUN_TAPE__; if (!t) return ["the page set no replay up (is the dev server\'s player older than this CLI?)"]; if (t.errors) return t.errors; t.start(); return null; })()'
+      )) as string[] | null;
+      const stoppedWith = (stopped: string): ReplayOutcome => ({
+        ok: false,
+        ticks: 0,
+        end: replayFile!.header.end,
+        checkpoints: 0,
+        divergence: null,
+        stopped,
+        notes: [],
+      });
+      if (refused) return stoppedWith(`not replayable: ${refused.join('; ')}`);
+      let lastProgress = Date.now();
+      for (const deadline = Date.now() + args.seconds * 1000; Date.now() < deadline; ) {
+        await sleep(POLL_MS);
+        const poll = (await chrome
+          .evaluate(
+            session,
+            '(() => { const t = window.__PIX3_RUN_TAPE__; return t ? { tick: t.tick, result: t.result ? JSON.parse(JSON.stringify(t.result)) : null } : { gone: true }; })()'
+          )
+          .catch(() => ({}))) as { gone?: boolean; tick?: number; result?: ReplayOutcome | null };
+        if (poll.gone) return stoppedWith('the page reloaded during the replay');
+        if (poll.result) {
+          if (poll.result.divergence && replayPath) {
+            await chrome.evaluate(session, 'window.__PIX3_PLAYER__.runner.renderOnce(), true');
+            replayShot = `${replayPath.replace(/\.pix3replay$/, '')}.tick-${poll.result.divergence.to}.png`;
+            writeFileSync(replayShot, await capture());
+          }
+          return poll.result;
+        }
+        if (Date.now() - lastProgress >= PROGRESS_MS) {
+          lastProgress = Date.now();
+          io.stderr(`pix3 play: replay at tick ${poll.tick ?? 0} of ${replayFile!.header.end}\n`);
+        }
+      }
+      return stoppedWith(`the replay did not end within --seconds ${args.seconds}`);
+    };
     if (toolsError && args.bot) {
       botReport = { name: args.bot, error: { message: toolsError } };
     } else if (toolsError) {
@@ -728,6 +854,8 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
             reason: 'timeout',
             detail: `the run did not end within --seconds ${args.seconds}`,
           });
+    } else if (status === 'running' && replayFile) {
+      replayOutcome = await driveReplay();
     } else if (status === 'running' && !driven) {
       await startProfile();
       await sleep(args.seconds * 1000);
@@ -739,6 +867,34 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       profile = { error: `nothing measured: the game is ${status}` };
     }
 
+    // `--record`: the page's recording, ended here, to its file with the project's build hash.
+    let recorded: { file: string; ticks: number } | undefined;
+    if (args.record && status === 'running') {
+      const text = await chrome
+        .evaluate(
+          session,
+          'window.__PIX3_RUN_TAPE__ && window.__PIX3_RUN_TAPE__.finish ? window.__PIX3_RUN_TAPE__.finish() : null'
+        )
+        .catch(() => null);
+      if (typeof text === 'string' && root) {
+        const file = resolve(io.cwd, args.record.file);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, stampBuild(text, projectHash(root)));
+        const end = /"type":"end","tick":(\d+)/.exec(text.slice(text.lastIndexOf('{')));
+        recorded = { file, ticks: Number(end?.[1] ?? 0) };
+      } else {
+        errors.push(
+          'the page recorded nothing: it reloaded during the run, or its player is older than this CLI'
+        );
+      }
+    }
+    const replayReport: ReplayReport | undefined =
+      replayOutcome && replayFile && replayPath && root
+        ? {
+            ...settleReplay(replayOutcome, replayPath, replayFile.header, projectHash(root)),
+            ...(replayShot ? { screenshot: replayShot } : {}),
+          }
+        : undefined;
     const frames = Number(
       (await chrome.evaluate(
         session,
@@ -752,7 +908,8 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     for (const error of playerErrors) if (!errors.includes(error)) errors.push(error);
     // A page that says `running` but never advanced its loop is as dead as a black one: the
     // run passes only when frames went by (the release check plays the built page on this).
-    if (status === 'running' && frames === 0)
+    // A replay steps the game itself (manual time): the page's own loop stays still.
+    if (status === 'running' && frames === 0 && !replayFile)
       errors.push(`the game booted but its loop ran no frame in ${args.seconds} s`);
     // The sounds the game asked for (`scene.audio.requested()`): nobody can listen to a headless
     // page, but which sound a round triggered, and when, is checkable (core-tests/game17).
@@ -804,7 +961,12 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     const botFailed =
       botReport !== undefined && (done?.pass !== true || botReport.error !== undefined);
     const runFailed = runReport !== undefined && !runPassed(runReport);
-    const failed = status !== 'running' || errors.length > 0 || botFailed || runFailed;
+    const failed =
+      status !== 'running' ||
+      errors.length > 0 ||
+      botFailed ||
+      runFailed ||
+      (replayFile !== null && replayReport?.ok !== true);
     const goldenResult = args.golden
       ? settleGolden(args.golden, io.cwd, goldenOf(game, analytics ?? undefined), failed, golden)
       : null;
@@ -824,6 +986,8 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(profile ? { profile } : {}),
       ...(tree ? { tree } : {}),
       ...(goldenResult ? { golden: goldenResult } : {}),
+      ...(recorded ? { recorded } : {}),
+      ...(replayReport ? { replay: replayReport } : {}),
     };
     if (args.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
     else io.stdout(formatPlayHuman(report));
@@ -898,5 +1062,8 @@ const formatPlayHuman = (report: PlayReport): string => {
   if (report.profile) lines.push(...formatProfileHuman(report.profile));
   if (report.tree) lines.push(...formatTreeHuman(report.tree));
   if (report.golden) lines.push(...formatGoldenHuman(report.golden));
+  if (report.replay) lines.push(...formatReplayHuman(report.replay));
+  if (report.recorded)
+    lines.push(`recorded ${report.recorded.ticks} tick(s): ${report.recorded.file}`);
   return `${lines.join('\n')}\n`;
 };

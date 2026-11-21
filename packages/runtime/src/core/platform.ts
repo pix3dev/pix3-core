@@ -141,6 +141,11 @@ class ActiveShow {
     this.settled = true;
     if (this.timer !== null) clearTimeout(this.timer);
     if (active === this) active = null;
+    // As the run outcome that replays it: a rewarded show that paid out is `reward`.
+    const paid = this.kind === 'rewarded' && !this.rewardDue;
+    this.host?.noteAdOutcome(
+      outcome === 'unavailable' ? 'unavailable' : paid && outcome === 'closed' ? 'reward' : 'skip'
+    );
     this.host?.setPauseReason('ad', false);
     this.resolve({ id: this.id, outcome });
   }
@@ -174,6 +179,7 @@ const startShow = (kind: AdKind, placement: string, onReward?: () => void): Prom
   const source = adapter ?? fallbackAdapter;
   const method = kind === 'rewarded' ? source?.showRewarded : source?.showInterstitial;
   if (runOutcome === null && !method) {
+    host?.noteAdOutcome('unavailable');
     return Promise.resolve({ id, outcome: 'unavailable' });
   }
   const current = new ActiveShow(id, kind, placement, onReward, host);

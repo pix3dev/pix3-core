@@ -213,6 +213,30 @@ the round decides (score, phase, moves left, ids of what is on the board), not t
   model, it does not prove the balance: "a round takes 40 moves" from a bot is `[modelled]` until
   players confirm it.
 
+### Replays — a run you can play again
+
+A bug you saw once is worth a recording: `npx pix3 play --bot <name> --seed 7 --record
+design/tests/replays/bug.pix3replay` (the dev server; a bot, `--run` or nobody driving) writes the
+inputs from outside the game per tick — taps, keys, the bot's `command`s, a trip to the background,
+ad outcomes — with the run's settings and checkpoints of your `registerGameDebug` snapshot and the
+live tree every 30 ticks. Then `npx pix3 smoke --replay design/tests/replays/bug.pix3replay` plays
+it in Node, tick for tick: `MATCH`, or `DIVERGED between tick 390 and 420` with the paths that
+differ (`state.score`, `tree.player.p.0`) and both checkpoints beside the file. Use it two ways:
+reproduce a bug headless (it replays until the checkpoint where it went wrong, every time), and
+after a fix keep the file as a regression check — a divergence after a change is a finding, like a
+golden mismatch. `npx pix3 play --replay <file>` replays on the page and saves a picture of the
+divergent tick.
+
+- **A command your game dispatches itself is a result, not an input** — a tap that dispatches
+  `tap` is recorded as the tap; the `tap` shows up in the checkpoints. Commands from outside (a
+  bot's `command`, `smoke --command`) are inputs.
+- **`likely load timing`** on a divergence means a load or a scene change fell in that interval:
+  the page took its own time to load, the replay does not. A scene that started sooner than
+  recorded (a fade) is lined up for you — the note says how many ticks were skipped.
+- **Name the tick:** record again with `--every 1` (a checkpoint every tick).
+- Keep game logic on `scene.random` and game time: a run that reads `Math.random`, `Date.now()` or
+  wall-clock timers does not replay.
+
 ### Profiling a game — `pix3 play --profile`
 
 To find what is slow and to confirm a fix, measure the same run before and after:

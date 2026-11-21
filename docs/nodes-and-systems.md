@@ -620,6 +620,22 @@ runner clears it on stop, so the next scene never inherits a dead intent. A
 `GameDebugProvider` publishes it as `actions: () => scene.commands.list().map(c => c.name)`
 rather than keeping a second, hand-maintained list.
 
+**From outside the game, `dispatchExternal(name, args?)`** — the same dispatch, marked as an
+input: a test (`HeadlessGame.dispatch`), a bot's `bot.command`, the bridge and `pix3 smoke
+--command` use it. A run recording (`pix3 play --record`, `RunTape.ts`, spec "Replay files") keeps
+these as inputs and replays them; a command the game dispatches itself (a button's handler) is its
+behaviour, compared at the checkpoints and never replayed — so a script never calls
+`dispatchExternal`.
+
+**Record and replay a run** (spec "Replay files"): `RunRecorder` hears every outside input at its
+tick through the runner's tap (`SceneRunner.setRunTap`; DOM input from `InputService`, external
+commands, background / focus loss, ad outcomes) and writes a `.pix3replay` with checkpoints of
+`gameState` and the live tree; `replayRunTape` steps it back (manual time, each tick's recorded
+`dt` — `stepFrames(count, dtSec)` —, inputs through `SceneRunner.injectRunInput`, loads let land
+first — `pendingLoads`) and names the first checkpoint interval and paths that differ.
+`createHeadlessGame({ record })` → `game.recording()`, `createHeadlessGame({ replay })` →
+`game.replay()`; `game.input({ kind: 'pointer', … })` delivers a page's input in Node.
+
 **Test-only intents** (`test.place-special`) are registered behind `if (import.meta.env.DEV)`: dev, the editor's play and `pix3 smoke` (its script build defines `DEV: true`) have them; a Vite build defines `false` and the minifier drops the branch. Setting a run up needs no intent at all: `SceneRunner.setRunOverrides({ seed?, config? })` seeds `scene.random` and overrides component config (`{ nodeId: { componentId: { key: value } } }`, through the schema like a scene's `config:`, before the pre-roll `onStart`, on every graph the runner starts; a wrong address is a `console.error`). Hosts: the player's `devRunOverrides` (`virtual:pix3/dev`: the dev server's `?run=<json>`, else `globalThis.__PIX3_RUN__`, which `pix3 play --seed/--config` injects before the page loads — a build reads only that global, so `dist` takes a seeded run without test code of its own), `pix3 smoke --seed/--config`, and the editor's `pix3_play {action: start|restart, run}` (`GamePlaySessionService.setRunOverrides`, cleared when play stops).
 
 **Boundary:** commands express intent, not continuous control. Movement, gestures

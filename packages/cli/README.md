@@ -404,6 +404,38 @@ matched by it whatever the order (the path names the golden's index, `id` the it
 lists the only numeric paths allowed to drift, each covering everything below it:
 `--tolerance 'gameState.stats.avgMoves=0.01,gameState.units=0.5'`. Code `src/golden.ts`.
 
+## Replays — `--record` / `--replay` on `pix3 smoke` and `pix3 play`
+
+A recording keeps what came from **outside** the game, at the tick it reached it — taps and drags
+(canvas fractions, `pointerId`, cancel), keys, wheel, commands dispatched from outside (a bot's
+`command`, `--command`), a trip to the background, a focus loss, ad outcomes — plus the run's
+settings (`RunOverrides`, the save it started from) and every tick's time step, and checkpoints of
+the game's `registerGameDebug` snapshot and live tree (every 30 ticks; `--every N`). The format is
+the spec's "Replay files" (`docs/pix3-specification.md`). Code: `src/replay-file.ts`; the
+runtime's `core/RunTape.ts`.
+
+- `pix3 play [--bot <name> | --run …] --record run.pix3replay [--every N]` — the dev page (a build
+  has no recorder: exit 2), with whatever drives it; the report says `recorded N tick(s): <file>`
+  (`recorded: { file, ticks }` in `--json`).
+- `pix3 smoke <scene> --record run.pix3replay [--every N] [--command …]` — the same in Node.
+- `pix3 smoke --replay run.pix3replay` — **the guarantee**: Node, manual time, each recorded tick
+  with its `dt`, loads let land before the next tick. The recording names the scene, the settings,
+  the inputs and the length, so `--replay` takes no scene, `--frames`, `--command`, `--seed`,
+  `--config`, `--ads` or `--golden`.
+- `pix3 play --replay run.pix3replay` — the dev page in headless Chrome at the recorded screen,
+  best-effort; on a divergence the page stays on that tick and `<file>.tick-<N>.png` is its picture.
+
+Either replay prints `replay <file>: MATCH — N tick(s), M checkpoint(s)`, or `DIVERGED between tick
+390 and 420` (`likely load timing` when a load or a scene change fell in that interval) with the
+differing paths (`state.score`, `tree.player.p.0`, `commands.length`), the two checkpoints written
+beside the file as `<file>.tick-<N>.recorded.json` / `.replayed.json`, and exit 1; `STOPPED` when
+the game stopped or a recorded scene change never came. Record with `--every 1` for the exact tick.
+A note says when the recording was made on other project files (`build` hash) and when a scene
+started sooner than recorded (a fade, a slow load on the page: the replay skips those ticks). A
+file that is not a recording is refused with every problem by line (`E_SMOKE_REPLAY_FILE`, exit
+2). `--json` adds `replay: { file, ok, ticks, end, checkpoints, divergence: { from, to, paths,
+morePaths, likelyLoad } | null, stopped, notes, buildChanged, snapshots?, screenshot? }`.
+
 ## `pix3 tree` — find your way around a scene
 
 `pix3 tree <scene>` prints one line per node, indented by depth, from the YAML alone (no loader,

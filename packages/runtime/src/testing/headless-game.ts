@@ -13,6 +13,16 @@ import type { AutoloadConfig } from '../core/ProjectManifest';
 import { ScriptRegistry, type ComponentTypeInfo } from '../core/ScriptRegistry';
 import { registerBuiltInScripts } from '../behaviors/register-behaviors';
 import type { NodeBase } from '../nodes/NodeBase';
+import type { RunInput } from '../core/run-tap';
+import {
+  parseRunTape,
+  replayRunTape,
+  RunRecorder,
+  runTapeOverrides,
+  type RunRecordOptions,
+  type RunTape,
+  type RunTapeReplayResult,
+} from '../core/RunTape';
 
 import { installCanvas2DStub } from './canvas-2d-stub';
 
@@ -103,6 +113,15 @@ export interface HeadlessGameOptions {
    * no portal adapter.
    */
   readonly ads?: RunOverrides['ads'];
+
+  /** Record the run from its first tick (`RunRecorder`); {@link HeadlessGame.recording} ends it. */
+  readonly record?: RunRecordOptions;
+
+  /**
+   * A recording (`.pix3replay` text) to play back with {@link HeadlessGame.replay}: its settings
+   * replace {@link storage} and {@link ads}. Throws here when the file is not one this engine reads.
+   */
+  readonly replay?: string;
 }
 
 export interface HeadlessGame {
@@ -145,8 +164,23 @@ export interface HeadlessGame {
    * instantiates — when the next assertion must see the result and no frames should pass first.
    */
   flush(): Promise<void>;
-  /** Dispatch a registered game command. Returns false when no such command exists. */
+  /**
+   * Dispatch a registered game command from outside the game (`commands.dispatchExternal`: a
+   * recording keeps it as input). Returns false when no such command exists.
+   */
   dispatch(name: string, args?: GameCommandArgs): boolean;
+  /**
+   * Deliver an input as a page would: a pointer at a canvas fraction, a key, a wheel, a trip to the
+   * background — `runner.injectRunInput`. Lands at the next {@link step}.
+   */
+  input(input: RunInput): void;
+  /** {@link HeadlessGameOptions.record}: end the recording, the file's text. */
+  recording(): string;
+  /**
+   * {@link HeadlessGameOptions.replay}: start the recording's scene and play it to its end, or to
+   * the first checkpoint that differs.
+   */
+  replay(): Promise<RunTapeReplayResult>;
   /** The game's `registerGameDebug` snapshot, or `null` when it registered no provider. */
   snapshot(): Record<string, unknown> | null;
   /** Ask the game's debug provider a named question. */
@@ -274,6 +308,13 @@ class OfflineResourceManager extends ResourceManager {
 const NEVER_RENDER = Number.MAX_SAFE_INTEGER;
 
 export async function createHeadlessGame(options: HeadlessGameOptions): Promise<HeadlessGame> {
+  let tape: RunTape | null = null;
+  if (options.replay !== undefined) {
+    const parsed = parseRunTape(options.replay);
+    if (!parsed.ok)
+      throw new Error(`[headless] Not a replayable recording: ${parsed.errors.join('; ')}`);
+    tape = parsed.tape;
+  }
   const canvasStub = installCanvas2DStub();
   const viewport = options.viewport ?? { width: 1920, height: 1080 };
   const fixedDeltaSec = options.fixedDeltaSec ?? 1 / 60;
@@ -303,7 +344,9 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
   const runner = new SceneRunner(sceneManager, renderer, audioService, assetLoader, viewport);
   runner.setAutoloads(options.autoloads ?? [], scriptRegistry);
   runner.setStorage({ namespace: 'headless', mode: options.storage ?? 'memory' });
-  if (options.ads !== undefined) runner.setRunOverrides({ ads: options.ads });
+  if (tape) runner.setRunOverrides(runTapeOverrides(tape));
+  else if (options.ads !== undefined) runner.setRunOverrides({ ads: options.ads });
+  const recorder = options.record ? new RunRecorder(runner, options.record) : null;
 
   const errors: ScriptErrorInfo[] = [];
   const releaseErrorSink = registerScriptErrorSink(error => {
@@ -398,6 +441,10 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
     async step(frames = 1): Promise<number> {
       let executed = 0;
       for (let i = 0; i < frames; i += 1) {
+        // A recording lets loads land before the next tick, as its replay will.
+        for (let turns = 0; recorder && runner.pendingLoads > 0 && turns < 2000; turns += 1) {
+          await flushPending();
+        }
         const ran = runner.stepFrames(1);
         if (ran === 0) {
           break;
@@ -415,7 +462,24 @@ export async function createHeadlessGame(options: HeadlessGameOptions): Promise<
     flush: () => flushPending(START_UP_FLUSH_ROUNDS),
 
     dispatch(name: string, args?: GameCommandArgs): boolean {
-      return sceneService().commands.dispatch(name, args);
+      return sceneService().commands.dispatchExternal(name, args);
+    },
+
+    input(input: RunInput): void {
+      runner.injectRunInput(input);
+    },
+
+    recording(): string {
+      if (!recorder)
+        throw new Error('[headless] Not recording: pass `record` to createHeadlessGame.');
+      return recorder.finish();
+    },
+
+    async replay(): Promise<RunTapeReplayResult> {
+      if (!tape)
+        throw new Error('[headless] Nothing to replay: pass `replay` to createHeadlessGame.');
+      if (!runner.running) await game.start(tape.header.scene);
+      return await replayRunTape(runner, tape, { flush: () => flushPending() });
     },
 
     snapshot(): Record<string, unknown> | null {

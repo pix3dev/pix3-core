@@ -94,7 +94,8 @@ interface PageRefusal {
 
 interface PageCommands {
   list(): Array<{ name: string }>;
-  dispatch(name: string, args?: Record<string, unknown>): boolean;
+  /** From outside the game: a run recording keeps it as input. */
+  dispatchExternal(name: string, args?: Record<string, unknown>): boolean;
 }
 
 const refuse = (reason: string, detail: string): PageRefusal => ({ ok: false, reason, detail });
@@ -207,7 +208,7 @@ const buildPageWorld = (
             .join(', ') || 'none'
         }).`;
       }
-      return commands.dispatch(name, args)
+      return commands.dispatchExternal(name, args)
         ? null
         : `command "${name}" declined (its handler returned false) or threw.`;
     },

@@ -56,6 +56,7 @@ import { PhysicsDebugOverlay } from './physics-debug-overlay';
 import { DirectionAxesOverlay } from './direction-axes-overlay';
 import { worldToCanvasLogical, worldToCanvasThroughCamera } from './world-to-canvas';
 import { GameTime } from './GameTime';
+import type { RunInput, RunTap } from './run-tap';
 import {
   DEFAULT_RUNTIME_TIME_CONFIG,
   resolveRuntimeTimeConfig,
@@ -221,6 +222,12 @@ export class SceneRunner implements PlatformHost {
   private ticksSinceRender = 0;
   /** True for the duration of {@link runOneTick} — reentrancy guard for `stepFrames`. */
   private inTick = false;
+  /** {@link setRunTap}: a run recording or a replay, told of every tick and external input. */
+  private runTap: RunTap | null = null;
+  /** The scene the next {@link runGraph} starts (for the run tap). */
+  private startingScenePath: string | null = null;
+  /** Scene loads and prefab spawns in flight ({@link pendingLoads}). */
+  private loadsInFlight = 0;
   /** True while the master bus is silenced because the mode is not `'realtime'`. */
   private audioSilenced = false;
   /** Master volume captured when silencing, restored when the mode returns to realtime. */
@@ -453,6 +460,76 @@ export class SceneRunner implements PlatformHost {
     return ads[this.adRunOutcomesTaken++] ?? 'unavailable';
   }
 
+  /** @internal `platform`: a show that took a run outcome slot ended so (the run tap hears it). */
+  noteAdOutcome(outcome: AdRunOutcome): void {
+    this.runTap?.input({ kind: 'ad', outcome });
+  }
+
+  /** The run's {@link setRunOverrides}, or null. */
+  getRunOverrides(): RunOverrides | null {
+    return this.runOverrides;
+  }
+
+  /**
+   * Hear every tick and every input from outside the game — a run recording, or a replay feeding
+   * its inputs back (`core/RunTape.ts`); null detaches. One at a time.
+   */
+  setRunTap(tap: RunTap | null): void {
+    this.runTap = tap;
+    this.inputService.setRunTap(tap ? input => tap.input(input) : null);
+  }
+
+  /**
+   * Deliver one external input as it arrives in a page: a pointer, key or wheel event on the canvas,
+   * a command from outside the game, a trip to the background, a focus loss. A replay's way in, and
+   * a host's without a DOM. `resize` and `ad` are not deliverable (the canvas and the ad run
+   * outcomes decide them) and are ignored.
+   */
+  injectRunInput(input: RunInput): void {
+    switch (input.kind) {
+      case 'pointer':
+      case 'key':
+      case 'wheel':
+        this.inputService.inject(input);
+        return;
+      case 'command':
+        this.sceneService.commands.dispatchExternal(input.name, input.args);
+        return;
+      case 'background':
+        appLifecycle.simulateBackground(input.awayMs);
+        return;
+      case 'blur':
+        appLifecycle.simulateBlur();
+        return;
+    }
+  }
+
+  /** Scene loads and prefab spawns not finished yet: a replay lets them land before a tick. */
+  get pendingLoads(): number {
+    return this.loadsInFlight;
+  }
+
+  /**
+   * @internal A run recording's header: the canvas (CSS px) and pixel ratio, the active locale, and
+   * the save this session started from (null when it reads none).
+   */
+  describeRunStart(): {
+    viewport: { width: number; height: number; dpr: number };
+    locale: string | null;
+    storage: unknown;
+  } {
+    const canvas = this.measureCanvas();
+    return {
+      viewport: {
+        width: canvas.width,
+        height: canvas.height,
+        dpr: typeof devicePixelRatio === 'number' ? devicePixelRatio : 1,
+      },
+      locale: this.localization?.locale ?? null,
+      storage: this.storageOptions ? this.sceneService.storage.startSnapshot() : null,
+    };
+  }
+
   private applyRunOverrides(graph: { nodeMap: Map<string, NodeBase> }): void {
     const overrides = this.runOverrides;
     if (!overrides) return;
@@ -544,12 +621,18 @@ export class SceneRunner implements PlatformHost {
   async loadAndStartScene(path: string): Promise<void> {
     const epoch = this.stopEpoch;
     const filePath = normalizeScenePath(path);
-    const text = await this.resourceManager.readText(`res://${filePath}`);
-    const graph = await this.sceneManager.parseScene(text, { filePath });
-    if (this.abandonIfStopped(epoch, graph)) {
-      return;
+    this.loadsInFlight += 1;
+    try {
+      const text = await this.resourceManager.readText(`res://${filePath}`);
+      const graph = await this.sceneManager.parseScene(text, { filePath });
+      if (this.abandonIfStopped(epoch, graph)) {
+        return;
+      }
+      this.startingScenePath = filePath;
+      await this.runGraph(graph);
+    } finally {
+      this.loadsInFlight -= 1;
     }
-    await this.runGraph(graph);
   }
 
   /**
@@ -596,7 +679,13 @@ export class SceneRunner implements PlatformHost {
     // call its own nodes `spawn-1` — two live nodes sharing an id turns every lookup by id
     // (`findNode`, `getLiveNodeById`, node queries) into a coin flip.
     const instanceId = instanceIdOverride?.trim() || `spawn:${this.spawnCounter}`;
-    const node = await this.sceneManager.instantiatePrefab(path, instanceId);
+    this.loadsInFlight += 1;
+    let node: NodeBase;
+    try {
+      node = await this.sceneManager.instantiatePrefab(path, instanceId);
+    } finally {
+      this.loadsInFlight -= 1;
+    }
 
     const target = parent ?? this.runtimeGraph.rootNodes[0] ?? null;
     if (!target) {
@@ -735,6 +824,8 @@ export class SceneRunner implements PlatformHost {
     this.applyRunOverrides(this.runtimeGraph);
     // The page's session from here: an `onStart` may already show an ad (`platform`).
     platformHost.activate(this);
+    this.runTap?.sceneStarted(this.startingScenePath);
+    this.startingScenePath = null;
 
     // The session's autoloads, once: their `onStart` runs in the pre-roll tick below, before any
     // scene component's.
@@ -751,6 +842,7 @@ export class SceneRunner implements PlatformHost {
     this.clock.start();
     if (!this.disposeLifecycle) {
       this.disposeLifecycle = appLifecycle.subscribe(this.onAppLifecycle);
+      this.hadFocus = appLifecycle.focused;
       this.setPauseReason('background', appLifecycle.state === 'background');
     }
     if (this.timeConfig.mode === 'manual') {
@@ -823,6 +915,8 @@ export class SceneRunner implements PlatformHost {
   /** The first realtime tick after a return from the background plays no time. */
   private zeroNextRealtimeDelta = false;
   private disposeLifecycle: (() => void) | null = null;
+  /** Focus as {@link onAppLifecycle} last saw it: a loss is a recorded `blur`. */
+  private hadFocus = true;
 
   private get isPaused(): boolean {
     return this.pauseReasons.size > 0;
@@ -1046,9 +1140,18 @@ export class SceneRunner implements PlatformHost {
   }
 
   private readonly onAppLifecycle = (change: AppLifecycleChange): void => {
-    if (!change.stateChanged) return;
+    const focused = appLifecycle.focused;
+    const lostFocus = this.hadFocus && !focused;
+    this.hadFocus = focused;
+    if (!change.stateChanged) {
+      if (lostFocus) this.runTap?.input({ kind: 'blur' });
+      return;
+    }
     const background = change.state === 'background';
-    if (!background) this.zeroNextRealtimeDelta = true;
+    if (!background) {
+      this.zeroNextRealtimeDelta = true;
+      this.runTap?.input({ kind: 'background', awayMs: change.awayMs });
+    }
     this.sceneService.app.notify(change);
     this.setPauseReason('background', background);
   };
@@ -1287,8 +1390,10 @@ export class SceneRunner implements PlatformHost {
    * Returns the number of ticks actually executed: a paused runner returns 0, a
    * call made from inside a tick (a frame listener, a script) returns 0, and a
    * tick that throws past {@link updateGameLogicSafe} ends the batch early.
+   * `dtSec` steps each tick by that instead of `fixedDeltaSec` (a replay's recorded step); the
+   * batch is one frame (a run recording's `f`).
    */
-  stepFrames(count = 1): number {
+  stepFrames(count = 1, dtSec?: number): number {
     if (this.timeConfig.mode !== 'manual') {
       console.warn(
         `[SceneRunner] stepFrames() is only available in 'manual' time mode (current: '${this.timeConfig.mode}').`
@@ -1304,11 +1409,15 @@ export class SceneRunner implements PlatformHost {
     }
 
     const requested = typeof count === 'number' && Number.isFinite(count) ? Math.floor(count) : 0;
+    const dt =
+      typeof dtSec === 'number' && Number.isFinite(dtSec) && dtSec >= 0
+        ? dtSec
+        : this.timeConfig.fixedDeltaSec;
     let executed = 0;
     for (let i = 0; i < requested; i += 1) {
       if (!this.isRunning || this.isPaused) break;
       try {
-        this.runOneTick(this.timeConfig.fixedDeltaSec);
+        this.runOneTick(dt, i === 0);
       } catch (thrown) {
         // updateGameLogicSafe already absorbs script/update throws; anything that
         // reaches here came from the ECS or render pass. Ending the batch keeps
@@ -1379,14 +1488,14 @@ export class SceneRunner implements PlatformHost {
       const wallDelta = this.clock.getDelta();
       const dt = this.zeroNextRealtimeDelta ? 0 : Math.min(wallDelta, MAX_REALTIME_DELTA_SEC);
       this.zeroNextRealtimeDelta = false;
-      this.runOneTick(dt);
+      this.runOneTick(dt, true);
     } else {
       // Drain the wall clock even though the batch ignores it — see setTimeMode.
       this.clock.getDelta();
       this.zeroNextRealtimeDelta = false;
       for (let i = 0; i < ticksPerFrame; i += 1) {
         if (!this.isRunning || this.isPaused) break;
-        this.runOneTick(fixedDeltaSec);
+        this.runOneTick(fixedDeltaSec, i === 0);
         if (this.timeConfig.mode !== 'fixed') break; // a script switched modes mid-batch
       }
     }
@@ -1406,11 +1515,13 @@ export class SceneRunner implements PlatformHost {
    * (nothing was submitted), so `totalFrameMs` equals `logicMs` for it and
    * summing `renderMs` across a batch still gives the batch's real paint cost.
    */
-  private runOneTick(rawDt: number): void {
+  private runOneTick(rawDt: number, frameStart: boolean): void {
     this.inTick = true;
     try {
+      this.runTap?.beforeTick(rawDt, frameStart);
       this.runFrameBody(rawDt);
     } finally {
+      this.runTap?.afterTick();
       this.inTick = false;
     }
   }
@@ -1780,6 +1891,7 @@ export class SceneRunner implements PlatformHost {
     // pin/projection-based scripts (e.g. PinToNodeBehavior) project with correct matrices.
     if (viewportChanged) {
       this.sceneService.setViewportSize(cssWidth, cssHeight);
+      this.runTap?.input({ kind: 'resize', width: cssWidth, height: cssHeight });
     }
 
     // 2. Render Passes
@@ -2112,6 +2224,9 @@ export class SceneRunner implements PlatformHost {
       },
       getFrameNumber(): number {
         return runner.frameNumber;
+      },
+      noteExternalCommand(name: string, args?: Record<string, unknown>): void {
+        runner.runTap?.input({ kind: 'command', name, ...(args !== undefined ? { args } : {}) });
       },
       isRealtime(): boolean {
         return runner.timeConfig.mode !== 'manual';
@@ -2562,4 +2677,14 @@ export interface RunOverrides {
    */
   ads?: AdRunOutcome | readonly AdRunOutcome[];
   config?: Record<string, Record<string, Record<string, unknown>>>;
+  /**
+   * Record this run (`pix3 play --record`): the host attaches a `RunRecorder` before the first
+   * tick; `every` = ticks between checkpoints (30). The runner itself does not read it.
+   */
+  record?: { every?: number };
+  /**
+   * Replay this recording (`pix3 play --replay`): the text of a `.pix3replay` file. The host sets
+   * the run up from its header and drives the ticks (`replayRunTape`); the runner does not read it.
+   */
+  replay?: string;
 }

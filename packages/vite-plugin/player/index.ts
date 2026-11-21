@@ -17,6 +17,7 @@ import {
   devRunOverrides,
   devSceneOverride,
   installDevTools,
+  installRunTape,
 } from 'virtual:pix3/dev';
 import { embeddedAssets } from 'virtual:pix3/embedded-assets';
 import { installNetworkService } from 'virtual:pix3/network';
@@ -260,7 +261,8 @@ export async function startGame(
     installDevTools({ runner, renderer, audio: audioService, state });
     runner.setBatching2DEnabled(true);
     // A test run's seed and component config (`?run=`, dev only; always null in a build).
-    runner.setRunOverrides(devRunOverrides());
+    const run = devRunOverrides();
+    runner.setRunOverrides(run);
     // The screen's safe area (notch, home indicator): nodes with `layout.safeArea` lay out inside
     // it. Measured from `env(safe-area-inset-*)` (the page has `viewport-fit=cover`), again on
     // every resize — a phone turned sideways moves the notch.
@@ -285,6 +287,8 @@ export async function startGame(
     // No pre-packed atlas: nothing in 2.x writes `assets/.atlas/atlas-manifest.json` (the editor
     // packs into IndexedDB for its own play mode), so the player does not probe for one
     // (.plans/done/player-build.md P26).
+    // A recording from the first tick, or a replay's settings and time (`pix3 play --record/--replay`).
+    await installRunTape(runner, run);
     // `loadAndStartScene` reads, parses and runs the graph directly; `startScene` would clone it
     // through the serializer, which a player does not need (and must not bundle).
     await runner.loadAndStartScene(scenePath);

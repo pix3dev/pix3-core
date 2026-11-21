@@ -71,6 +71,8 @@ export * from './core/world-to-canvas';
 export * from './core/PlayableSdk';
 export * from './core/platform';
 export type { AdRunOutcome } from './core/platform-host';
+export * from './core/RunTape';
+export type * from './core/run-tap';
 
 // Nodes
 export * from './nodes/NodeBase';

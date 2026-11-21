@@ -1118,7 +1118,7 @@ export class GameTestService {
           const known = commands.list().map(entry => entry.name);
           return `no command "${name}" is registered${known.length ? ` (registered: ${known.join(', ')})` : ' — the game registers none (scene.commands.register)'}.`;
         }
-        return commands.dispatch(name, args)
+        return commands.dispatchExternal(name, args)
           ? null
           : `command "${name}" declined (its handler returned false) or threw.`;
       },
@@ -1340,7 +1340,8 @@ interface LiveCommandRegistry {
   readonly log: readonly GameCommandLogEntry[];
   readonly droppedLogEntries: number;
   list(): Array<{ name: string }>;
-  dispatch(name: string, args?: Record<string, unknown>): boolean;
+  /** From outside the game: a run recording keeps it as input. */
+  dispatchExternal(name: string, args?: Record<string, unknown>): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,7 +1410,7 @@ function executeMonkeyAction(
       if (!registry) {
         return { status: 'refused', note: 'the scene no longer exposes a command registry' };
       }
-      return registry.dispatch(action.name)
+      return registry.dispatchExternal(action.name)
         ? { status: 'sent' }
         : { status: 'refused', note: 'no registered handler took it' };
     }

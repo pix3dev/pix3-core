@@ -154,6 +154,11 @@ const AD_PLACEHOLDER_ENTRY = fileURLToPath(
   )
 );
 
+/** …and the run recorder / replayer (`pix3 play --record/--replay`). */
+const RUN_TAPE_ENTRY = fileURLToPath(
+  new URL(FROM_SOURCE ? '../player/dev/run-tape.ts' : './player/dev/run-tape.js', import.meta.url)
+);
+
 /** The game page's early editor link (`?role=` pages, plan play-in-page S5b), put into its HTML. */
 const PAGE_LINK_ENTRY = fileURLToPath(
   new URL(FROM_SOURCE ? '../player/dev/page-link.ts' : './player/dev/page-link.js', import.meta.url)
@@ -384,6 +389,7 @@ export function pix3(options: Pix3Options = {}): Plugin[] {
                 overlayPath: normalizePath(DEBUG_OVERLAY_ENTRY),
                 editorLinkPath: normalizePath(EDITOR_LINK_ENTRY),
                 adPlaceholderPath: normalizePath(AD_PLACEHOLDER_ENTRY),
+                runTapePath: normalizePath(RUN_TAPE_ENTRY),
                 editorUrl: settings.editor ? `${baseUrl()}__pix3/` : null,
                 testHostPath: pageTestHostEntry(root()),
               })

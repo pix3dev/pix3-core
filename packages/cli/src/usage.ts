@@ -39,6 +39,8 @@ Usage:
         [--seed N] [--ads <outcomes>]
         [--seed N] [--config '<json>'] a test run: scene.random seeded, component config overridden
         [--golden <f.json> [--write]] the run's end state + events pinned in a file (exit 1 on a diff)
+        [--record <f> [--every N]] the run as a replay file; --replay <f> plays one back, exact,
+        [--replay <f>]             comparing checkpoints (exit 1 with the interval and paths)
   pix3 tree [scene] [--json]       One line per node (type#id, pos, size, layout, components,
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
         [--props] [--project <dir>]
@@ -69,6 +71,8 @@ Usage:
         [--golden <f.json> [--write]] a bot/--run round's end pinned in a file (exit 1 on a diff)
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
+        [--record <f> [--every N]] the run as a replay file (dev server); --replay <f> plays one
+        [--replay <f>]             on the page, a picture at the divergence
   pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless
         [--node <id>] [--views iso,front,right,top|all|az:el] Chrome; the scene starts, so
         [--size 512] [--out <f.png>] core:MergeStatic bakes); mesh, draw-call, triangle counts,
@@ -164,6 +168,8 @@ export const COMMAND_USAGE = {
   smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
                   [--seed N] [--config '<json>'] [--ads <outcomes>] [--timeout S] [--json] [--no-sync]
                   [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
+                  [--record <file.pix3replay> [--every N]]
+       pix3 smoke --replay <file.pix3replay> [--timeout S] [--json] [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -201,12 +207,21 @@ export const COMMAND_USAGE = {
   --write        record the golden instead (only a clean run with something to pin)
   --tolerance t  numeric paths allowed to drift, each covering what is below it:
                  'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
+  --record f     write the run as a replay file: the inputs from outside the game (--command here),
+                 its settings and checkpoints of the gameState and the live tree every 30 ticks
+  --every N      ticks between checkpoints of --record (1 = every tick: the exact tick of a
+                 divergence, a bigger file)
+  --replay f     play a recording back (pix3 play --record or smoke --record): its scene, settings,
+                 inputs and ticks, comparing every checkpoint. MATCH, or DIVERGED between tick A and
+                 B with the paths that differ (state.score, tree.player.p.0) and both checkpoints
+                 written beside the file as <file>.tick-B.recorded.json / .replayed.json
   --json         machine-readable report
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 
-  Exit: 0 = no errors, 1 = errors or a --golden that differs / was not written, 2 = could not run
-  (no scene, bundle failure, unsupported, timeout, no golden file, or E_RUNTIME_VERSION: the project
+  Exit: 0 = no errors, 1 = errors, a --golden that differs / was not written, or a replay that
+  diverged or stopped, 2 = could not run (no scene, bundle failure, unsupported, timeout, no golden
+  file, a file that is not a recording — E_SMOKE_REPLAY_FILE — or E_RUNTIME_VERSION: the project
   installs another @pix3/runtime than this CLI runs).
 `,
   tree: `Usage: pix3 tree [scene] [--depth N] [--types A,B] [--props] [--json] [--project <dir>]
@@ -334,6 +349,8 @@ Reference it from a scene or script as res://<path inside the project>.
                  [--storage memory|'<json>'|<file>] [--ads reward|skip|unavailable|<a,b,…>]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
+                 [--record <file.pix3replay> [--every N]]
+       pix3 play --replay <file.pix3replay> [--seconds S] [--json] [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
   when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
@@ -412,12 +429,21 @@ Reference it from a scene or script as res://<path inside the project>.
   --write        record the golden instead (only a clean run with something to pin)
   --tolerance t  numeric paths allowed to drift, each covering what is below it:
                  'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
+  --record f     write the run as a replay file (dev server only): the inputs from outside the game
+                 (the bot's taps and commands, a trip to the background, ad outcomes), its settings,
+                 every tick's time step and checkpoints every 30 ticks; replay it in Node with
+                 pix3 smoke --replay f (exact) or here with --replay
+  --every N      ticks between checkpoints of --record (1 = every tick)
+  --replay f     play a recording back on the dev page at its screen (best-effort): MATCH, or
+                 DIVERGED between tick A and B with the differing paths, both checkpoints beside
+                 the file and <file>.tick-B.png, the page on that tick
 
   Exit 0 = the page ran frames, nothing threw, the bot or the run passed (an until met, or the
   policy's done(true)) and a --golden matched; 1 = errors, a failed or crashed bot, a run that
   failed, timed out or was refused, a page that never booted or whose loop ran no frame, a golden
-  that differs or was not written; 2 = could not run (no Chrome, nothing to play, no such policy,
-  no golden file).
+  that differs or was not written, a replay that diverged or stopped; 2 = could not run (no Chrome,
+  nothing to play, no such policy, no golden file, --record/--replay on a build, a file that is not
+  a recording).
 `,
   render: `Usage: pix3 render <scene.pix3scene|res://…> [--node <id>] [--views <list>] [--size 512]
                    [--out <file.png>] [--lights auto|studio|scene] [--background '#8f9aa6']

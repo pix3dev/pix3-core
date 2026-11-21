@@ -36,6 +36,7 @@ export class AppLifecycle {
   private focusedNow = true;
   private held = false;
   private simulatedAway = false;
+  private simulatedBlur = false;
   private stateNow: AppState = 'active';
   private backgroundSince = 0;
   /** What listeners last heard, so a duplicate event is not a second transition. */
@@ -53,7 +54,7 @@ export class AppLifecycle {
   /** The window has keyboard focus. */
   get focused(): boolean {
     if (this.listeners.size === 0) this.read();
-    return this.focusedNow && !this.simulatedAway;
+    return this.focusedNow && !this.simulatedAway && !this.simulatedBlur;
   }
 
   /**
@@ -120,6 +121,14 @@ export class AppLifecycle {
     this.update();
     this.simulatedAway = false;
     this.backgroundSince = this.now() - Math.max(0, awayMs);
+    this.update();
+  }
+
+  /** Lose keyboard focus and get it back at once (a replayed `blur`): held pointers dropped. */
+  simulateBlur(): void {
+    this.simulatedBlur = true;
+    this.update();
+    this.simulatedBlur = false;
     this.update();
   }
 

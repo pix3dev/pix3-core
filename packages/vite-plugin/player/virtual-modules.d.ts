@@ -89,6 +89,14 @@ declare module 'virtual:pix3/dev' {
     readonly gate: Promise<void> | null;
   } | null;
   /**
+   * Dev: `RunOverrides.record` starts a recording, `.replay` sets one up (`player/dev/run-tape.ts`,
+   * read back through `window.__PIX3_RUN_TAPE__`); nothing otherwise. Build: says it cannot.
+   */
+  export function installRunTape(
+    runner: SceneRunner,
+    run: import('@pix3/runtime').RunOverrides | null
+  ): Promise<void>;
+  /**
    * Dev: the debug overlay when the URL has `?debug`, else the "Pix3 editor" link, and
    * `state.loadTools` (the test host). Build: a no-op.
    * The argument is `player/debug/context.ts`'s `Pix3DebugContext` (an ambient module cannot
