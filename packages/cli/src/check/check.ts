@@ -31,7 +31,7 @@ import {
 } from './typescript.ts';
 
 /**
- * `pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]` (plan §5 A): everything
+ * `pix3 check [--json] [--no-hydrate] [--no-pixels] [--offline] [--no-sync] [--project <dir>]` (plan §5 A): everything
  * `pix3 validate` checks (both levels), plus a TypeScript type-check of the project's scripts and
  * whether the agent kit and the project's `@pix3/runtime` match this CLI.
  *
@@ -176,6 +176,7 @@ export interface CheckReport {
 export type ValidateFn = (options: {
   projectRoot: string;
   hydrate: boolean;
+  pixels?: boolean;
 }) => Promise<BundledValidateReport>;
 
 export interface CheckIo extends CliIo {
@@ -186,6 +187,7 @@ export interface CheckIo extends CliIo {
 interface CheckArgs {
   readonly json: boolean;
   readonly hydrate: boolean;
+  readonly pixels: boolean;
   readonly offline: boolean;
   readonly sync: boolean;
   readonly project?: string;
@@ -195,6 +197,7 @@ interface CheckArgs {
 const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } => {
   let json = false;
   let hydrate = true;
+  let pixels = true;
   let offline = false;
   let sync = true;
   let project: string | undefined;
@@ -203,6 +206,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     const arg = argv[i];
     if (arg === '--json') json = true;
     else if (arg === '--no-hydrate') hydrate = false;
+    else if (arg === '--no-pixels') pixels = false;
     else if (arg === '--offline') offline = true;
     else if (arg === '--no-sync') sync = false;
     else if (arg === '--help' || arg === '-h') help = true;
@@ -212,7 +216,7 @@ const parseCheckArgs = (argv: readonly string[]): CheckArgs | { error: string } 
     } else if (arg.startsWith('--project=')) project = arg.slice('--project='.length);
     else return { error: `unknown argument ${arg}` };
   }
-  return { json, hydrate, offline, sync, project, help };
+  return { json, hydrate, pixels, offline, sync, project, help };
 };
 
 const defaultValidate: ValidateFn = async options => {
@@ -274,6 +278,8 @@ export const checkProject = async (
   projectRoot: string,
   options: {
     readonly hydrate: boolean;
+    /** The pixel warnings (`--no-pixels` = false). Default true. */
+    readonly pixels?: boolean;
     readonly offline: boolean;
     /** Flush a running editor first (plan §B.6); `false` = `--no-sync`. Default true. */
     readonly sync?: boolean;
@@ -296,7 +302,11 @@ export const checkProject = async (
     });
   }
   const validate = options.validate ?? defaultValidate;
-  const validated = await validate({ projectRoot, hydrate: options.hydrate });
+  const validated = await validate({
+    projectRoot,
+    hydrate: options.hydrate,
+    pixels: options.pixels,
+  });
   const validateMs = Date.now() - started;
 
   const notes: string[] = [...validated.notes];
@@ -521,6 +531,7 @@ export const runCheck = async (argv: readonly string[], io: CheckIo): Promise<nu
   const projectRoot = project.root;
   const report = await checkProject(projectRoot, {
     hydrate: args.hydrate,
+    pixels: args.pixels,
     offline: args.offline,
     sync: args.sync,
     validate: io.validate,

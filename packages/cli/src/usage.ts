@@ -27,10 +27,12 @@ Usage:
         [--remote]                 --repair fixes an entry that drifted (version, port,
         [--project <dir>]          token, the P1 --browserUrl launch); --remote: the agent
                                    is on an SSH host, Chrome on your machine (forwarded)
-  pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, then
-        [--no-hydrate]             each scene loaded as the game loads it (exit 1 on errors)
+  pix3 validate [paths…] [--json]  Strict scene check: schema, references, guards, the pixels
+        [--no-hydrate] [--no-pixels] of the PNGs they use, then each scene loaded as the game
+                                   loads it (exit 1 on errors)
   pix3 check [--json]              validate + TypeScript check of the scripts + version
         [--no-hydrate] [--offline] check (exit 1 on errors)
+        [--no-pixels]
         [--project <dir>]
   pix3 smoke [scene] [--json]      Run the game headless in Node for N frames (no browser):
         [--changed | --all]        script throws with frame + stack, console errors, missing
@@ -153,15 +155,18 @@ export const COMMAND_USAGE = {
                  --remote the RemoteForward port (stored; default the one pix3 editor stored)
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 `,
-  validate: `Usage: pix3 validate [paths…] [--json] [--no-hydrate] [--project <dir>]
+  validate: `Usage: pix3 validate [paths…] [--json] [--no-hydrate] [--no-pixels] [--project <dir>]
 
   paths          .pix3scene / .prefab files or folders (default: every scene and .prefab)
   --json         machine-readable report (diagnostics + sha256 of each validated file)
   --no-hydrate   do not load the scenes as the game does: no project code runs (user: component
                  properties not checked)
+  --no-pixels    do not decode the PNGs the scenes and .pix3anim files use (W_SPRITE_NO_ALPHA,
+                 W_FRAME_CLIPPED, W_FRAME_BLEED; measured once per file, cached in
+                 .pix3/cache/pixels.json by modification time and size)
   --project dir  project root (default: nearest folder with pix3project.yaml)
 `,
-  check: `Usage: pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
+  check: `Usage: pix3 check [--json] [--no-hydrate] [--no-pixels] [--offline] [--no-sync] [--project <dir>]
 
   Everything \`pix3 validate\` checks, plus a TypeScript type-check of the project's scripts
   (tsc --noEmit) and a version check.
@@ -169,6 +174,7 @@ export const COMMAND_USAGE = {
   --json         machine-readable report (diagnostics, sha256 of every checked file, typecheck,
                  kit)
   --no-hydrate   do not load the scenes as the game does (user: component properties not checked)
+  --no-pixels    do not decode the PNGs the scenes use (the pixel warnings, as pix3 validate)
   --offline      never install TypeScript (fails with the command to run instead)
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project root (default: nearest folder with pix3project.yaml)

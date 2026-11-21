@@ -146,6 +146,23 @@ export const DIAGNOSTIC_CODES = {
     summary:
       'an image a .pix3anim names (a frame texturePath, the spritesheet) does not exist; its .svg frames get the E_SVG_* checks too',
   },
+  W_SPRITE_NO_ALPHA: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      'a PNG a scene or a .pix3anim uses has no transparency: a picture on a flat backdrop, drawn as a box',
+  },
+  W_FRAME_CLIPPED: {
+    severity: 'warning',
+    level: 1,
+    summary:
+      "a .pix3anim frame's art runs into an edge most frames of its clip keep clear — a pose cut off by the slice",
+  },
+  W_FRAME_BLEED: {
+    severity: 'warning',
+    level: 1,
+    summary: "a .pix3anim frame holds a piece of a neighbour's picture, cut by its edge",
+  },
   E_LOCALE_MISSING: {
     severity: 'error',
     level: 1,

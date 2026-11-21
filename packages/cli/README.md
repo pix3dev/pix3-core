@@ -8,7 +8,7 @@ pix3 editor [--project <dir>] [--stop] [--stop-chrome] [--chrome-only] [--no-chr
                                               find/start the dev server, open the editor in Chrome (CDP behind the token proxy)
 pix3 agent-setup [claude|codex] [--repair] [--cdp-port <n>] [--project <dir>]
                                               write the project's chrome-devtools-mcp config
-pix3 validate [paths…] [--json]               strict scene check
+pix3 validate [paths…] [--json] [--no-pixels] strict scene check (+ pixels of the PNGs it uses)
 pix3 check [--json] [--no-hydrate] [--offline] [--no-sync] [--project <dir>]
                                               validate + tsc over the scripts + versions
 pix3 smoke [scene] [--changed|--all] [--frames N] [--timeout S] [--json] [--project <dir>]
@@ -185,6 +185,27 @@ see: the default or fallback locale's table not loading means every `labelKey` s
 The tables, their images and the scripts' keys are checked on whole-project runs (as
 `W_UNUSED_ASSET`); the keys a scene sets on every run. Nothing is said about keys when the project
 has no tables or the default one does not load (that is its own error).
+
+### Pixels of the PNGs a scene uses
+
+Level 1 decodes every PNG a validated scene names and every frame of a sequence-mode `.pix3anim`
+it reaches (the CLI's own decoder, `src/image/png.ts`; a 16-bit or interlaced PNG is skipped) and
+warns about what an image generator or a bad slice leaves behind. What it measures per file
+(`src/image/pixel-facts.ts`) is kept in `.pix3/cache/pixels.json` by modification time and size,
+so a re-run decodes only what changed; a cache it cannot write is ignored. `--no-pixels` (on
+`validate` and `check`) skips it all.
+
+| Code | Severity | When |
+| --- | --- | --- |
+| `W_SPRITE_NO_ALPHA` | warning | the PNG has no transparency and is a picture on a flat backdrop: its border is one colour (90% within 12), 15–97% of it is that colour, and the picture keeps a margin from every edge (a screen mockup or a full-bleed background does not) — it draws as a box. On the PNG, once, naming a scene that uses it; the fix is `pix3 slice <file> --blobs` |
+| `W_FRAME_CLIPPED` | warning | in a clip of three frames or more, a frame's art runs into an edge (a solid run of 3 px and 8% of the side) that two thirds of the clip's frames keep clear: a pose that reached out of its grid cell. Art that touches the edge in most frames — a bust, a ground line — is the design |
+| `W_FRAME_BLEED` | warning | a frame holds, besides its picture, a shape under a quarter of the picture's size lying along an edge (60% of its extent on the edge line): a piece of the neighbour the cut took. A part of the picture that only touches the edge (a tail tip) does not count |
+
+Tuned on real art before they were enabled (plan `.plans/jam-takeaways.md` E2): silent on
+Skyways (its 23 scene PNGs and all 104 sprites), on the 273 sprite PNGs of the two jam games but
+one opaque QR code, and on 394 frames `pix3 slice --blobs` cut from Codex and Skyways sheets;
+firing on grids cut across the fixture sheets (`validate.spec.ts`). Spritesheet-mode frames (UV
+rects) are not measured.
 
 ### Autoloads
 

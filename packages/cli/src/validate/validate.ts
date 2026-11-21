@@ -34,6 +34,7 @@ import { scanUserScripts } from './user-scripts.ts';
 import { checkAutoloads, checkAutoloadTypes } from './autoloads.ts';
 import { checkManifestExport } from './manifest-export.ts';
 import { checkStorageNamespace } from './storage-namespace.ts';
+import { checkPixels } from './pixels.ts';
 
 export interface ValidateOptions {
   /** Project folder (the one holding `pix3project.yaml`, or any folder `res://` is relative to). */
@@ -46,6 +47,8 @@ export interface ValidateOptions {
   readonly scriptImports?: ScriptImportMap;
   /** Resolved `esbuild` module URL for level 2 (default: resolve `esbuild` from here). */
   readonly esbuildSpecifier?: string;
+  /** The pixel warnings of the PNGs the scenes and `.pix3anim` files use. Default true. */
+  readonly pixels?: boolean;
 }
 
 export interface ValidatedFile {
@@ -252,6 +255,14 @@ export const validateProject = async (options: ValidateOptions): Promise<Validat
     }
   }
   for (const file of [...animations].sort()) diagnostics.push(...checkAnimationFile(project, file));
+  if (options.pixels !== false) {
+    const sceneImages = new Map<string, string[]>();
+    for (const [scene, result] of results) {
+      for (const ref of result.references)
+        sceneImages.set(ref, [...(sceneImages.get(ref) ?? []), scene]);
+    }
+    diagnostics.push(...checkPixels(project, sceneImages, [...animations].sort()));
+  }
   const localization = resolveLocalization(project);
   if (localization) {
     const tables = checkLocaleTables(project, localization);

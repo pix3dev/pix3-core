@@ -28,6 +28,7 @@ interface ValidateArgs {
   readonly paths: string[];
   readonly json: boolean;
   readonly hydrate: boolean;
+  readonly pixels: boolean;
   readonly project?: string;
   readonly help: boolean;
 }
@@ -36,12 +37,14 @@ const parseValidateArgs = (argv: readonly string[]): ValidateArgs | { error: str
   const paths: string[] = [];
   let json = false;
   let hydrate = true;
+  let pixels = true;
   let project: string | undefined;
   let help = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--json') json = true;
     else if (arg === '--no-hydrate') hydrate = false;
+    else if (arg === '--no-pixels') pixels = false;
     else if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--project') {
       project = argv[++i];
@@ -50,7 +53,7 @@ const parseValidateArgs = (argv: readonly string[]): ValidateArgs | { error: str
     else if (arg.startsWith('-')) return { error: `unknown option ${arg}` };
     else paths.push(arg);
   }
-  return { paths, json, hydrate, project, help };
+  return { paths, json, hydrate, pixels, project, help };
 };
 
 /** Scene files named by the arguments: files as given, folders searched recursively. */
@@ -136,6 +139,7 @@ export const runValidate = async (argv: readonly string[], io: ValidateIo): Prom
     projectRoot,
     files: targets?.files,
     hydrate: args.hydrate,
+    pixels: args.pixels,
     scriptImports: io.scriptImports,
     esbuildSpecifier: io.esbuildSpecifier,
   });

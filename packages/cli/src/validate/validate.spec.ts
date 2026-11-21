@@ -1,5 +1,13 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -7,6 +15,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { runValidate } from './command.ts';
 import { DIAGNOSTIC_CODES, type Diagnostic } from './diagnostics.ts';
 import { scanExportNames } from '../script-rule.ts';
+import { runSliceCli } from '../slice/command.ts';
 import { validateProject, type ValidateOptions, type ValidateReport } from './validate.ts';
 
 /**
@@ -1238,6 +1247,97 @@ describe('level 1: .pix3anim frames', () => {
     ]);
     const none = await run(files, { hydrate: false, files: ['scenes/b.pix3scene'] });
     expect(codesOf(none)).toEqual([]);
+  });
+});
+
+describe('level 1: pixels of the PNGs the scenes use', () => {
+  // Real Codex sheets cut down to a few KB (`../image/fixtures/`, see `slice.spec.ts`), cut by
+  // `pix3 slice` the right way and the wrong way inside a project.
+  const FIXTURES = join(import.meta.dirname, '..', 'image', 'fixtures');
+  const quiet = { cwd: '', stdout: () => {}, stderr: () => {} };
+  const pixelProject = (): string => {
+    const root = makeProject({
+      'scenes/a.pix3scene': scene(
+        [
+          '  - id: board',
+          '    type: Sprite2D',
+          '    properties:',
+          '      texture: { type: texture, url: res://sprites/islands-sheet.png }',
+          '  - id: island',
+          '    type: Sprite2D',
+          '    properties:',
+          '      texture: { type: texture, url: res://sprites/islands/islands_01.png }',
+        ].join('\n') + '\n'
+      ),
+    });
+    mkdirSync(join(root, 'sprites'));
+    copyFileSync(join(FIXTURES, 'islands-keyed.png'), join(root, 'sprites/islands-sheet.png'));
+    const slice = (args: string[]): void => {
+      expect(runSliceCli(args, { ...quiet, cwd: root })).toBe(0);
+    };
+    copyFileSync(join(FIXTURES, 'icons-ui.png'), join(root, 'icons.png'));
+    // The sheet's rows are not on a 2×2 grid: the first icon reaches into the row below.
+    slice(['icons.png', '--grid', '2x2', '--anim', 'cut']);
+    // Three rows over two: a piece of an icon lands in the cell below.
+    slice(['icons.png', '--grid', '2x3', '--anim', 'bleed']);
+    slice(['icons.png', '--blobs', '--join', '2', '--anim', 'good']);
+    slice([
+      join(FIXTURES, 'islands-keyed.png'),
+      '--blobs',
+      '--join',
+      '2',
+      '--out',
+      'sprites/islands',
+      '--names',
+      'islands_01,islands_02,islands_03',
+    ]);
+    return root;
+  };
+
+  it('W_SPRITE_NO_ALPHA, W_FRAME_CLIPPED, W_FRAME_BLEED fire on the mistakes and nowhere else', async () => {
+    const report = await validateProject({ projectRoot: pixelProject(), hydrate: false });
+    expect(find(report, 'W_SPRITE_NO_ALPHA').map(d => [d.file, d.message.split(':')[0]])).toEqual([
+      ['sprites/islands-sheet.png', 'sprites/islands-sheet.png, used by scenes/a.pix3scene'],
+    ]);
+    expect(find(report, 'W_FRAME_CLIPPED').map(d => [d.file, d.path])).toEqual([
+      ['sprites/cut/cut.pix3anim', 'clips[0].frames[0].texturePath'],
+    ]);
+    expect(find(report, 'W_FRAME_CLIPPED')[0].message).toMatch(
+      /frame sprites\/cut\/cut_0001\.png: the art runs into the bottom edge \(\d+ px\) where 3 of 4 frames/
+    );
+    expect(find(report, 'W_FRAME_BLEED').map(d => [d.file, d.path, d.message])).toEqual([
+      [
+        'sprites/bleed/bleed.pix3anim',
+        'clips[0].frames[4].texturePath',
+        'frame sprites/bleed/bleed_0005.png: a piece of another picture (22×7 at 33,0) is cut by the top edge — the slice took part of a neighbour.',
+      ],
+    ]);
+    expect(report.diagnostics.filter(d => d.file.startsWith('sprites/good/'))).toEqual([]);
+  });
+
+  it('caches what it measured by mtime and size; --no-pixels decodes nothing', async () => {
+    const root = pixelProject();
+    await validateProject({ projectRoot: root, hydrate: false });
+    const cachePath = join(root, '.pix3/cache/pixels.json');
+    const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+    expect(Object.keys(cache.files)).toContain('sprites/islands-sheet.png');
+    // A cached entry is believed while the file's mtime and size match: clear its backdrop and
+    // the warning goes; touch the file and it is measured again.
+    cache.files['sprites/islands-sheet.png'].facts.backdrop = null;
+    writeFileSync(cachePath, JSON.stringify(cache));
+    const cached = await validateProject({ projectRoot: root, hydrate: false });
+    expect(codesOf(cached)).not.toContain('W_SPRITE_NO_ALPHA');
+    const later = new Date(Date.now() + 5000);
+    utimesSync(join(root, 'sprites/islands-sheet.png'), later, later);
+    expect(codesOf(await validateProject({ projectRoot: root, hydrate: false }))).toContain(
+      'W_SPRITE_NO_ALPHA'
+    );
+    const off = await validateProject({
+      projectRoot: pixelProject(),
+      hydrate: false,
+      pixels: false,
+    });
+    expect(codesOf(off).filter(code => /^W_(SPRITE|FRAME)_/.test(code))).toEqual([]);
   });
 });
 
