@@ -9,6 +9,7 @@ import {
   formatGoldenHuman,
   goldenArgsOf,
   goldenOf,
+  gridGoldenOf,
   readGolden,
   settleGolden,
   type GoldenArgs,
@@ -32,7 +33,7 @@ describe('golden', () => {
     });
     expect(goldenArgsOf('--write', false, undefined)).toMatchObject({ error: expect.any(String) });
     expect(goldenArgsOf('g.json', false, 'score=0.1')).toMatchObject({
-      error: expect.stringContaining('under gameState or analytics'),
+      error: expect.stringContaining('under gameState, analytics or aggregate'),
     });
     expect(goldenArgsOf('g.json', false, 'gameState.score=-1')).toMatchObject({
       error: expect.any(String),
@@ -164,6 +165,33 @@ describe('golden', () => {
     });
     expect(readGolden(goldenArgsOf('nope.json', false, undefined) as GoldenArgs, scratch)).toEqual({
       error: 'no golden nope.json — record one first with --golden nope.json --write',
+    });
+  });
+
+  it("pins a grid's aggregate under its own root", () => {
+    const tolerant = args('aggregate.numbers=0.5', true);
+    const aggregate = { runs: 2, numbers: { 'gameState.score': { min: 1, max: 3 } } };
+    expect(settleGolden(tolerant, scratch, gridGoldenOf(aggregate), false, null).status).toBe(
+      'written'
+    );
+    expect(readGolden(args(), scratch)).toMatchObject({ error: expect.any(String) });
+    const golden = readGolden(tolerant, scratch, 'grid');
+    if ('error' in golden) throw new Error(golden.error);
+    const moved = { runs: 2, numbers: { 'gameState.score': { min: 1.4, max: 4 } } };
+    const result = settleGolden(
+      { ...tolerant, write: false },
+      scratch,
+      gridGoldenOf(moved),
+      false,
+      golden
+    );
+    expect(result).toMatchObject({
+      status: 'mismatch',
+      diffs: [{ path: 'aggregate.numbers.gameState.score.max', expected: 3, actual: 4 }],
+    });
+    writeFileSync(join(scratch, 'golden.json'), JSON.stringify({ gameState: 1, analytics: [] }));
+    expect(readGolden(tolerant, scratch, 'grid')).toMatchObject({
+      error: expect.stringContaining('not a grid golden'),
     });
   });
 });

@@ -349,6 +349,27 @@ editor-core (page-test-host зовёт `dispatchExternal`).
 
 `bot.pinch(center, scale, frames)` (`bot.background` — в A1).
 
+**Сделано (2026-11-21), D2 (Chrome) + D3.** Сетка — внутри `pix3 play` (`cli/src/play/grid.ts`):
+`--seed 1..50|1,4,9`, `--size 390x844@3,360x640` (у размера свой `@scale`), `--locale ru,en`
+(новый `RunOverrides.locale`: раннер стартует в нём раньше превью-локали и default),
+`--config`/`--bot-args`/`--storage` — повтор флага или файл со списком; `--parallel N`,
+`--check-determinism`. Каждая комбинация — свой `Target.createBrowserContext` и загрузка
+(`PipeChrome.createContext/closeContext`, `onEvent` теперь возвращает отписку); прогон вынесен в
+`playOnce`, бандл тестового хоста строится один раз на сетку. Вывод: строка на комбинацию (метка из
+меняющихся осей, вердикт `pass/fail/crash/error`, кадры, снимок, ошибки) + агрегат (`numbers`:
+n/min/median/p90/max, 6 значащих; массив — по `….length`; `outcomes` — доли строк/булевых; доли
+вердиктов), `--json` = `{runs, aggregate, golden?}`. `--golden` у сетки пинит `{ aggregate }`
+(`readGolden(…, 'grid')`, `gridGoldenOf`; корни сравнения — по ключам файла). Сетка требует
+`--bot`/`--run`; `--record/--replay/--screenshot/--profile/--tree` — отказ. Exit 1 — error/crash,
+расхождение при повторе, golden; проигрыш (`done(false)`) — данные. D3: `bot.pinch` = два touch
+(`BOT_POINTER_ID` и `BOT_PINCH_POINTER_ID = BOT_POINTER_ID − 1`) по 60 CSS px от точки, зазор
+линейно к `scale` за `frames` (12), занимает палец бота (не вместе со swipe/tapAt); `BotPinch` в
+`game-bot-world.ts`, мир страницы и мир редактора (`direct-action` — отказ). Проверено в Chrome на
+скретч-фикстуре: `pincher` → 2 касания (taps 2); сетка 3 сида × 2 размера, `--parallel 3` — 6 PASS
+за 15 с; golden агрегата WRITTEN → повтор MISMATCH только по `ticks` → с `--tolerance
+aggregate.numbers.gameState.ticks=10` MATCH. `--check-determinism` ловит дрейф realtime-тиков до
+старта бота (`ticks` фикстуры: 206–210) — ожидаемо по ноте C; задокументировано, в снимок не класть.
+
 ## Этап G. Галерея экранов (S, поверх D2)
 
 Не отдельная команда. Файл `design/tests/screens.ts` (кладёт кит, рядом с `design/tests/bots`):

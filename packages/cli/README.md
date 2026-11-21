@@ -404,6 +404,10 @@ matched by it whatever the order (the path names the golden's index, `id` the it
 lists the only numeric paths allowed to drift, each covering everything below it:
 `--tolerance 'gameState.stats.avgMoves=0.01,gameState.units=0.5'`. Code `src/golden.ts`.
 
+A **grid** (`pix3 play` with list values, below) pins its aggregate instead: `{ "aggregate": … }`,
+paths under `aggregate.` — `--tolerance 'aggregate.numbers.gameState.ticks=5'`. A single run's
+golden and a grid's are not interchangeable (exit 2 names which one the file is not).
+
 ## Replays — `--record` / `--replay` on `pix3 smoke` and `pix3 play`
 
 A recording keeps what came from **outside** the game, at the tick it reached it — taps and drags
@@ -787,7 +791,30 @@ frame of `done()` (what `--screenshot` then shows). `bot.screenshot(name)` pause
 policy's frame; the CLI's poll (every 50 ms: `finished`, `frame`, the next picture) captures
 `<name>.png` into `--shots <dir>` and resumes it. `bot.background(ms)` sends the game to the
 background and back in one call (`scene.app` handlers, held pointers dropped, a 0 s first tick).
-`--bot-args '<json>'` is the policy's `bot.args`.
+`--bot-args '<json>'` is the policy's `bot.args`. `bot.pinch(center, scale, frames?)` puts two
+touches 60 CSS px either side of a world point and scales the gap to `scale` over the frames
+(default 12; `BotPinch` in `game-bot-world.ts`), both lifted at the end — the pinch-zoom of a map or
+a camera, `physical-input` only. `--locale <code>` starts the run in that locale
+(`RunOverrides.locale`, ahead of the project's default).
+
+**The run grid.** List values make one run per combination, each a fresh load in a browser context
+of its own (`Target.createBrowserContext`: its own storage), with `--bot` or `--run`:
+`--seed 1..50` (or `1,4,9`), `--size 390x844@3,360x640@2` (each size its own scale), `--locale
+ru,en`, and `--config` / `--bot-args` / `--storage` repeated or given a file holding a JSON list.
+`--parallel N` runs N at a time (each page paints in software — mind the cores);
+`--check-determinism` plays every combination twice and names the `gameState`/`analytics` paths
+on which the two ends differ. The report is a row per combination (its label — the axes that vary
+—, verdict `pass` / `fail` / `crash` / `error`, the bot's frames, the snapshot, its errors) and the
+aggregate (`--json`: `{ runs, aggregate, golden? }`): the share of each verdict; `numbers` — every
+number in the snapshots by path (`gameState.score`; an array counts by `….length`) with `n`, `min`,
+`median`, `p90` (linear between ranks), `max`, six significant digits; `outcomes` — every string or
+boolean value's share. `--golden` pins the aggregate. `--record`, `--replay`, `--screenshot`,
+`--profile`, `--tree` take one run; `bot.screenshot` pictures go under `--shots <dir>/<label>/`.
+Exit 1 when a run errored or crashed, a combination ended differently twice or the golden
+differs; a lost round is a result the aggregate counts. A counter of realtime ticks the game runs
+before the bot starts drifts by a tick or two between loads (the page boots in real time) — it
+shows up under `--check-determinism`; leave it out of the snapshot or give it a tolerance. Code
+`src/play/grid.ts`.
 `--safe-area T,R,B,L` emulates the page's `env(safe-area-inset-*)` (CSS px) through
 `Emulation.setSafeAreaInsetsOverride`, dev or `dist`, for `layout.safeArea` nodes. With it, every
 picture (`--screenshot`, `bot.screenshot`) shades the unsafe bands in translucent magenta with a

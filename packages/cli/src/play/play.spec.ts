@@ -56,7 +56,7 @@ describe('pix3 play', () => {
     expect(frames.err).toContain('--frames takes a positive whole number');
     const badArgs = await run(['--bot', 'x', '--bot-args', '[1]']);
     expect(badArgs.code).toBe(2);
-    expect(badArgs.err).toContain('--bot-args takes one JSON object');
+    expect(badArgs.err).toContain('--bot-args takes a JSON object');
 
     // A test run's seed and config are injected into the page, so dist takes them too (game13).
     // `dev` is the dev server: with none running the answer says so.
@@ -68,7 +68,7 @@ describe('pix3 play', () => {
       seed: 3,
       reducedMotion: true,
     });
-    expect((await run(['--config', '[1]'])).err).toContain('--config takes one JSON object');
+    expect((await run(['--config', '[1]'])).err).toContain('--config takes a JSON object');
     const runOf = (argv: string[]) => {
       const parsed = parsePlayArgs(argv);
       return typeof parsed === 'object' && 'run' in parsed ? parsed.run : parsed;
@@ -127,6 +127,47 @@ describe('pix3 play', () => {
     const runPolicy = await run(['dist', '--run', '{"bot":{"name":"gone"}}']);
     expect(runPolicy.code).toBe(2);
     expect(runPolicy.err).toContain(join('design', 'tests', 'bots', 'gone.ts'));
+  });
+
+  it('turns list values into a grid of runs, each with its own size, args and overrides', async () => {
+    const parsed = parsePlayArgs([
+      'dist',
+      '--bot',
+      'round',
+      '--seed',
+      '1..3',
+      '--size',
+      '390x844@3,360x640',
+      '--locale',
+      'ru',
+      '--parallel',
+      '2',
+    ]);
+    if (typeof parsed !== 'object' || 'error' in parsed) throw new Error(String(parsed));
+    expect(parsed.parallel).toBe(2);
+    expect(parsed.grid?.seed?.map(seed => seed.value)).toEqual([1, 2, 3]);
+    expect(parsed.grid?.size?.map(size => size.value)).toEqual([
+      { width: 390, height: 844, scale: 3 },
+      { width: 360, height: 640 },
+    ]);
+    // One value per axis is a single run, its values applied as before.
+    const single = parsePlayArgs(['dist', '--bot', 'x', '--size', '360x640@2', '--locale', 'ru']);
+    expect(single).toMatchObject({ grid: null, width: 360, height: 640, scale: 2 });
+    expect(typeof single === 'object' && 'run' in single ? single.run : null).toEqual({
+      locale: 'ru',
+    });
+    writeFileSync(join(root, 'configs.json'), JSON.stringify([{ a: { b: { n: 1 } } }, { a: {} }]));
+    const configs = parsePlayArgs(['dist', '--bot', 'x', '--config', join(root, 'configs.json')]);
+    expect(typeof configs === 'object' && 'grid' in configs ? configs.grid?.config : null).toEqual([
+      { value: { a: { b: { n: 1 } } }, label: 'config={"a":{"b":{"n":1}}}' },
+      { value: { a: {} }, label: 'config={"a":{}}' },
+    ]);
+    expect((await run(['dist', '--seed', '1..3'])).err).toContain('a grid');
+    expect((await run(['dist', '--bot', 'x', '--seed', '1,2', '--tree'])).err).toContain(
+      '--tree take(s) one run'
+    );
+    expect((await run(['dist', '--bot', 'x', '--parallel', '0'])).err).toContain('--parallel');
+    expect((await run(['dist', '--locale', 'ru;en'])).err).toContain('--locale takes');
   });
 
   it('refuses a recording or a replay it cannot make before a browser starts', async () => {

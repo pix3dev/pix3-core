@@ -84,6 +84,7 @@ import {
   BOT_POINTER_ID,
   collectBotNodeViews,
   nearestBotNode,
+  BotPinch,
   PhysicalAxisDriver,
   projectToCanvasFraction,
   botPointInNode,
@@ -948,6 +949,7 @@ export class GameTestService {
     const sink = new DomInputSink(runtime.canvas, runtime.windowRef);
     const scene = runner as unknown as BotSceneHandle;
     const sticks = new PhysicalAxisDriver(scene, runtime.canvas, sink);
+    const pinch = new BotPinch(scene, runtime.canvas, sink);
     /** Keys/buttons the world put down, so `releaseAll` can be exhaustive. */
     const heldKeys = new Set<string>();
     const heldButtons = new Set<string>();
@@ -1131,7 +1133,13 @@ export class GameTestService {
         return null;
       },
 
+      pinchAt: (phase, center, spread) =>
+        channel === 'physical-input'
+          ? pinch.at(phase, center, spread)
+          : 'pinch() is a physical gesture; on `direct-action` there is nothing to call. Run the policy on `physical-input`, or drive the intent with command().',
+
       releaseAll: () => {
+        pinch.releaseAll();
         if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
         swipeDown = null;
         for (const code of heldKeys) sink.key('up', code);

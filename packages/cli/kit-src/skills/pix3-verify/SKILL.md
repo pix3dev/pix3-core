@@ -213,6 +213,33 @@ the round decides (score, phase, moves left, ids of what is on the board), not t
   model, it does not prove the balance: "a round takes 40 moves" from a bot is `[modelled]` until
   players confirm it.
 
+### Balance from a grid
+
+One seed is an anecdote. To see how a rule plays across rounds, run the same policy over many seeds
+(and the variants you are weighing) in one command:
+
+```bash
+npx pix3 play dist --bot round --seed 1..30 --config '{"game-root":{"rules":{"moves":20}}}' \
+  --config '{"game-root":{"rules":{"moves":25}}}' --parallel 4
+```
+
+Each combination is a fresh load; the report is a row per run and the aggregate — `min / median /
+p90 / max` of every number in your `registerGameDebug` snapshot, the share of every string or
+boolean (`result: win 63%, lose 37%`), the share of each verdict. Compare the variants by their
+rows' labels (`config=…`), or run one grid per variant and compare the aggregates. A lost round
+(`done(false)`) is data here, not a failure; a crash or a page error is (exit 1).
+
+- **Put what the round decides in the snapshot** (result, score, moves left, the turn it ended),
+  never a timer or a count of realtime ticks: the page boots in real time, so a tick counter
+  drifts between loads and `--check-determinism` (every combination twice) flags it.
+- **Pin it** with `--golden design/tests/golden/balance.json --write` — the aggregate, not one
+  round — and `--tolerance 'aggregate.numbers.gameState.moves=1'` for what may move a little.
+- **Every number from a grid is `[modelled]`**: a policy on seeds played it. Say which policy,
+  seeds and config produced it; only what people did is `[measured]`. A bot that plays better or
+  worse than people moves the whole aggregate.
+- Sizes and locales are axes too (`--size 390x844@2,360x640@2 --locale en,ru`): the same round at
+  each screen and language, each with its own row.
+
 ### Replays — a run you can play again
 
 A bug you saw once is worth a recording: `npx pix3 play --bot <name> --seed 7 --record

@@ -879,7 +879,11 @@ export class SceneRunner implements PlatformHost {
       if (this.runtimeGraph) applyLocaleToTree(this.runtimeGraph.rootNodes, this.assetLoader);
     });
 
-    const seed = this.seedLocale ?? this.localizationConfig?.defaultLocale ?? 'en';
+    const seed =
+      this.runOverrides?.locale ??
+      this.seedLocale ??
+      this.localizationConfig?.defaultLocale ??
+      'en';
     // Only wait when localization is actually configured — an inert default has
     // no table file and must not delay play start with a doomed fetch.
     if (this.localizationConfig) {
@@ -2664,9 +2668,11 @@ function repaintLabels(roots: readonly NodeBase[]): void {
   for (const root of roots) visit(root);
 }
 
-/** {@link SceneRunner.setRunOverrides}: a test run's seed, reduced motion, save, ad outcomes and component config. */
+/** {@link SceneRunner.setRunOverrides}: a test run's seed, locale, reduced motion, save, ad outcomes and component config. */
 export interface RunOverrides {
   seed?: number;
+  /** The locale the run starts in (`pix3 play --locale`), whatever the editor's preview or the default. */
+  locale?: string;
   /** Force `scene.app.reducedMotion` (`pix3 play --reduced-motion`), whatever the system or the game says. */
   reducedMotion?: boolean;
   /** The save a test run plays with (`pix3 play --storage`): `'memory'` or `{ snapshot }`. */

@@ -137,20 +137,40 @@ export class PipeChrome {
     });
   }
 
-  onEvent(listener: (event: CdpEvent) => void): void {
+  /** Listen to every event; returns the unsubscribe. */
+  onEvent(listener: (event: CdpEvent) => void): () => void {
     this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
   }
 
-  /** A fresh page, attached in flat mode: its commands carry the returned session id. */
-  async openPage(): Promise<string> {
-    const { targetId } = (await this.send('Target.createTarget', { url: 'about:blank' })) as {
-      targetId: string;
-    };
+  /**
+   * A fresh page, attached in flat mode: its commands carry the returned session id. With
+   * `context`, in a browser context of its own (its own storage, cache and service workers);
+   * {@link closeContext} disposes it.
+   */
+  async openPage(context?: string): Promise<string> {
+    const { targetId } = (await this.send('Target.createTarget', {
+      url: 'about:blank',
+      ...(context ? { browserContextId: context } : {}),
+    })) as { targetId: string };
     const { sessionId } = (await this.send('Target.attachToTarget', {
       targetId,
       flatten: true,
     })) as { sessionId: string };
     return sessionId;
+  }
+
+  /** A new isolated browser context (an incognito-like profile) for {@link openPage}. */
+  async createContext(): Promise<string> {
+    const { browserContextId } = (await this.send('Target.createBrowserContext', {
+      disposeOnDetach: true,
+    })) as { browserContextId: string };
+    return browserContextId;
+  }
+
+  /** Close a context from {@link createContext}, its pages with it. */
+  async closeContext(context: string): Promise<void> {
+    await this.send('Target.disposeBrowserContext', { browserContextId: context });
   }
 
   /** Evaluate in the page and return the JSON value (a thrown error becomes a rejection). */

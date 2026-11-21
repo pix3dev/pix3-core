@@ -446,6 +446,49 @@ export class PhysicalAxisDriver {
   }
 }
 
+/** The second finger of a `bot.pinch` (the first is {@link BOT_POINTER_ID}); below the sticks' ids. */
+export const BOT_PINCH_POINTER_ID = BOT_POINTER_ID - 1;
+
+/** Half the gap between a pinch's two fingers at spread 1, in CSS px. */
+export const PINCH_HALF_GAP_CSS_PX = 60;
+
+const TOUCH = { pointerType: 'touch' } as const;
+
+/**
+ * The two fingers of `bot.pinch`: placed left and right of a world point, `spread` × 60 CSS px
+ * from it (1 at the start; the scale at the end), as touches. One pinch at a time.
+ */
+export class BotPinch {
+  private last: { nx: number; ny: number; half: number } | null = null;
+
+  constructor(
+    private readonly scene: BotSceneHandle,
+    private readonly canvas: BotCanvasHandle,
+    private readonly sink: InputSink
+  ) {}
+
+  at(phase: 'down' | 'move' | 'up', center: BotPoint, spread: number): string | null {
+    const at = projectToCanvasFraction(this.scene, this.canvas, center.x, center.y) ?? this.last;
+    if (!at) {
+      return `the world point (${center.x}, ${center.y}) could not be projected to the canvas.`;
+    }
+    const width = this.canvas.getBoundingClientRect().width;
+    const half = width > 0 ? (PINCH_HALF_GAP_CSS_PX * spread) / width : 0.15 * spread;
+    this.last = phase === 'up' ? null : { nx: at.nx, ny: at.ny, half };
+    this.sink.pointer(phase, at.nx - half, at.ny, BOT_POINTER_ID, TOUCH);
+    this.sink.pointer(phase, at.nx + half, at.ny, BOT_PINCH_POINTER_ID, TOUCH);
+    return null;
+  }
+
+  releaseAll(): void {
+    const last = this.last;
+    if (!last) return;
+    this.last = null;
+    this.sink.pointer('up', last.nx - last.half, last.ny, BOT_POINTER_ID, TOUCH);
+    this.sink.pointer('up', last.nx + last.half, last.ny, BOT_PINCH_POINTER_ID, TOUCH);
+  }
+}
+
 /**
  * `Key_ArrowLeft` → `ArrowLeft`. A single character is expanded to its
  * `KeyboardEvent.code` (`Key_A` → `KeyA`, `Key_1` → `Digit1`) because the runtime

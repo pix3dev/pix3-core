@@ -121,6 +121,12 @@ declare interface Pix3TestBot {
    * tick plays no time. Checks a drag held across an app switch, a pause screen, a save.
    */
   background(ms?: number): void;
+  /**
+   * Pinch with two touches around a world point over `frames` ticks (default 12): both down 60 CSS
+   * px either side of `center`, the gap scaled to `scale` (2 = spread apart, a zoom in; 0.5 =
+   * pinched together), both up. physical-input only; not while a swipe or tapAt is in progress.
+   */
+  pinch(center: BotPoint, scale: number, frames?: number): void;
 
   // -- protocol --------------------------------------------------------------
 

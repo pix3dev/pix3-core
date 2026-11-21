@@ -13,6 +13,9 @@ import type { SmokeAnalytics } from './smoke/report.ts';
  * Arrays whose items all carry a unique scalar `id` are matched by it (order ignored; the path
  * names the golden's index, the entry the id). Equality is exact except under a `--tolerance`
  * path, which covers that path and everything below it, numbers only.
+ *
+ * A run grid (`pix3 play` with list values) pins its aggregate instead: `{ "aggregate": … }`
+ * (`gridGoldenOf`), paths rooted at `aggregate`.
  */
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -45,15 +48,22 @@ export type GoldenResult =
     }
   | { readonly file: string; readonly status: 'not-written'; readonly reason: string };
 
+/**
+ * One run: `{ gameState, analytics }` (`{ name, props }` per tracked event, in order); a grid:
+ * `{ aggregate }`. Compared root by root.
+ */
 interface GoldenFile {
-  readonly gameState: Json;
-  /** `{ name, props }` per tracked event, in order. */
-  readonly analytics: Json[];
+  readonly gameState?: Json;
+  readonly analytics?: Json[];
+  readonly aggregate?: Json;
 }
+
+/** Which golden a command pins: one run's end, or a grid's aggregate. */
+export type GoldenKind = 'run' | 'grid';
 
 /** Differences a result lists; the rest is counted. */
 const MAX_DIFFS = 50;
-const ROOTS = ['gameState', 'analytics'];
+const ROOTS = ['gameState', 'analytics', 'aggregate'];
 
 const isPlainObject = (value: unknown): value is { [key: string]: Json } =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,7 +87,7 @@ export const goldenArgsOf = (
     const eps = Number(match?.[2]);
     if (!match || !Number.isFinite(eps) || eps < 0 || !ROOTS.includes(match[1].split('.')[0])) {
       return {
-        error: `--tolerance takes path=eps pairs under gameState or analytics, e.g. --tolerance 'gameState.score.avg=0.01,gameState.units=0.5' (got ${part.trim()})`,
+        error: `--tolerance takes path=eps pairs under gameState, analytics or aggregate, e.g. --tolerance 'gameState.score.avg=0.01,gameState.units=0.5' (got ${part.trim()})`,
       };
     }
     map.set(match[1], eps);
@@ -86,7 +96,11 @@ export const goldenArgsOf = (
 };
 
 /** The golden to compare with, read before the run; an error line when it cannot be. */
-export const readGolden = (args: GoldenArgs, cwd: string): GoldenFile | { error: string } => {
+export const readGolden = (
+  args: GoldenArgs,
+  cwd: string,
+  kind: GoldenKind = 'run'
+): GoldenFile | { error: string } => {
   const path = resolve(cwd, args.file);
   if (!existsSync(path))
     return {
@@ -98,6 +112,13 @@ export const readGolden = (args: GoldenArgs, cwd: string): GoldenFile | { error:
   } catch (error) {
     return { error: `${args.file} is not JSON: ${(error as Error).message}` };
   }
+  if (kind === 'grid') {
+    return isPlainObject(data) && isPlainObject(data.aggregate)
+      ? { aggregate: data.aggregate }
+      : {
+          error: `${args.file} is not a grid golden: { "aggregate": … } (write one with --write; a single run's golden pins one round, not a grid)`,
+        };
+  }
   if (!isPlainObject(data) || !('gameState' in data) || !Array.isArray(data.analytics ?? [])) {
     return {
       error: `${args.file} is not a golden: { "gameState": …, "analytics": [{ "name", "props" }] } (write one with --write)`,
@@ -108,6 +129,10 @@ export const readGolden = (args: GoldenArgs, cwd: string): GoldenFile | { error:
     analytics: (data.analytics ?? []) as Json[],
   };
 };
+
+/** What a grid is pinned by: its aggregate (`grid.ts`). */
+export const gridGoldenOf = (aggregate: unknown): GoldenFile =>
+  JSON.parse(JSON.stringify({ aggregate })) as GoldenFile;
 
 /** What a run is pinned by: its end snapshot and, in order, the events it tracked (no frames). */
 export const goldenOf = (gameState: unknown, analytics: SmokeAnalytics | undefined): GoldenFile =>
@@ -191,8 +216,9 @@ export const diffGolden = (
     if (JSON.stringify(a) !== JSON.stringify(b))
       diffs.push({ path, expected: a, actual: b, ...tag });
   };
-  walk(expected.gameState, actual.gameState, 'gameState');
-  walk(expected.analytics, actual.analytics, 'analytics');
+  for (const root of ROOTS as (keyof GoldenFile)[]) {
+    if (root in expected || root in actual) walk(expected[root], actual[root], root);
+  }
   return diffs;
 };
 
@@ -209,7 +235,11 @@ export const settleGolden = (
 ): GoldenResult => {
   if (args.write) {
     if (runFailed) return { file: args.file, status: 'not-written', reason: 'the run failed' };
-    if (run.gameState === null && run.analytics.length === 0) {
+    if (
+      Object.values(run).every(
+        value => value === null || (Array.isArray(value) && value.length === 0)
+      )
+    ) {
       return {
         file: args.file,
         status: 'not-written',
@@ -221,7 +251,7 @@ export const settleGolden = (
     writeFileSync(path, `${JSON.stringify(run, null, 2)}\n`);
     return { file: args.file, status: 'written' };
   }
-  const diffs = diffGolden(golden ?? { gameState: null, analytics: [] }, run, args.tolerance);
+  const diffs = diffGolden(golden ?? {}, run, args.tolerance);
   if (diffs.length === 0) return { file: args.file, status: 'match' };
   return {
     file: args.file,

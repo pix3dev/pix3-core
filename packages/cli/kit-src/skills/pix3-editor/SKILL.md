@@ -188,7 +188,9 @@ to publish world coordinates and
 `bot.command(name, args?)` dispatches one of the game's `scene.commands`; `bot.screenshot(name)`
 saves a picture of that frame under `pix3 play --bot` and is only a log marker here;
 `bot.background(ms)` sends the app to the background and back (the game's `scene.app` handlers
-run, held pointers drop — the stuck drag after an app switch). `args` (one
+run, held pointers drop — the stuck drag after an app switch); `bot.pinch(center, scale,
+frames?)` pinches two touches around a world point (2 = spread to twice the gap, 0.5 = together;
+`physical-input`, one at a time with the finger). `args` (one
 JSON object) is what the policy reads as `bot.args` — one file for the win, the lose and the
 specials run (`pix3 play --bot <name> --bot-args '<json>'` on the page). **Policy state between runs:** on
 your page the policy module stays evaluated until the page loads again (`start`, `restart`, or a

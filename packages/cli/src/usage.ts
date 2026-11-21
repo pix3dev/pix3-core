@@ -207,6 +207,22 @@ export const COMMAND_USAGE = {
   --write        record the golden instead (only a clean run with something to pin)
   --tolerance t  numeric paths allowed to drift, each covering what is below it:
                  'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
+
+  A grid — several values for one or more of --seed (1..50 or 1,4,9), --size (390x844@3,360x640@2:
+  each size its own @scale), --locale (ru,en), --config / --bot-args / --storage (repeat the flag,
+  or give a file holding a JSON list): one run per combination, each a fresh load in a browser
+  context of its own, with --bot or --run. Prints a row per combination (verdict, frames, the
+  registerGameDebug snapshot, its errors) and the aggregate: min / median / p90 / max of every
+  number in the snapshots (an array counts by its length), the share of every string or boolean
+  value, the share of each verdict (pass, fail, crash, error).
+  --parallel N   runs at a time (default 1; each paints in software, so mind the cores)
+  --check-determinism  every combination twice; a pair that ends differently names the paths.
+                 A counter of realtime ticks before the bot starts drifts by a tick or two — keep
+                 it out of the snapshot you compare
+  --golden f     with a grid pins the aggregate ({ "aggregate": … }); --tolerance paths start
+                 with aggregate. (aggregate.numbers.gameState.score=1)
+  A grid exits 1 when a run errored or crashed, a combination ended differently twice or the
+  golden differs; a lost round (done(false)) is a result the aggregate counts, not a failure.
   --record f     write the run as a replay file: the inputs from outside the game (--command here),
                  its settings and checkpoints of the gameState and the live tree every 30 ticks
   --every N      ticks between checkpoints of --record (1 = every tick: the exact tick of a
@@ -349,7 +365,10 @@ Reference it from a scene or script as res://<path inside the project>.
                  [--storage memory|'<json>'|<file>] [--ads reward|skip|unavailable|<a,b,…>]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
                  [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
-                 [--record <file.pix3replay> [--every N]]
+                 [--record <file.pix3replay> [--every N]] [--locale <code>]
+       pix3 play --bot <name> | --run '<json>'  a grid: list values for --seed 1..50, --size a,b,
+                 --locale ru,en, --config / --bot-args / --storage (repeated, or a file with a list)
+                 [--parallel N] [--check-determinism] [--golden <file.json> [--write]] [--json]
        pix3 play --replay <file.pix3replay> [--seconds S] [--json] [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
@@ -385,6 +404,7 @@ Reference it from a scene or script as res://<path inside the project>.
                  the same game time on any machine, and it stays paused on the frame of done()
   --seed N       seed scene.random for this run (dev and dist: injected into the page), so a
                  bot meets the same board every time
+  --locale code  start the run in this locale (dev and dist), whatever the project's default
   --config json  override component config for this run (dev and dist):
                  '{"<nodeId>": {"<componentId>": {"moves": 3}}}' — a short round, a set target;
                  a wrong node, component or key is an error

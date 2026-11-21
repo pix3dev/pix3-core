@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
 import { NodeBase } from '@pix3/runtime';
 import {
+  BOT_PINCH_POINTER_ID,
+  BOT_POINTER_ID,
   BOT_STICK_POINTER_BASE,
+  BotPinch,
   botPointInNode,
   hiddenReason,
   collectBotNodeViews,
@@ -316,6 +319,30 @@ describe('projectToCanvasFraction', () => {
       getBoundingClientRect: () => ({ width: 0, height: 0 }),
     };
     expect(projectToCanvasFraction(makeScene([]), empty, 0, 0)).toBeNull();
+  });
+});
+
+describe('BotPinch', () => {
+  it('puts two touches 60 CSS px either side of the point, scaled by the spread', () => {
+    const sink = makeSink();
+    const pinch = new BotPinch(makeScene([]), canvas, sink);
+    expect(pinch.at('down', { x: 0, y: 0 }, 1)).toBeNull();
+    expect(pinch.at('move', { x: 0, y: 0 }, 0.5)).toBeNull();
+    pinch.releaseAll();
+    pinch.releaseAll();
+    expect(sink.events).toEqual([
+      `pointer:down:0.200,0.500:${BOT_POINTER_ID}`,
+      `pointer:down:0.800,0.500:${BOT_PINCH_POINTER_ID}`,
+      `pointer:move:0.350,0.500:${BOT_POINTER_ID}`,
+      `pointer:move:0.650,0.500:${BOT_PINCH_POINTER_ID}`,
+      `pointer:up:0.350,0.500:${BOT_POINTER_ID}`,
+      `pointer:up:0.650,0.500:${BOT_PINCH_POINTER_ID}`,
+    ]);
+  });
+
+  it('refuses a point it cannot project', () => {
+    const pinch = new BotPinch(makeScene([], false), canvas, makeSink());
+    expect(pinch.at('down', { x: 0, y: 0 }, 1)).toContain('could not be projected');
   });
 });
 

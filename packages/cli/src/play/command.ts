@@ -22,10 +22,26 @@ import {
   type ReplayReport,
 } from '../replay-file.ts';
 import {
+  aggregateGrid,
+  formatGridHuman,
+  gridCombos,
+  isGrid,
+  jsonLabel,
+  parseSeedList,
+  parseSizeList,
+  runPool,
+  type GridAxes,
+  type GridCombo,
+  type GridRun,
+  type GridValue,
+} from './grid.ts';
+import {
+  diffGolden,
   formatGoldenHuman,
   goldenArgsOf,
   goldenFailed,
   goldenOf,
+  gridGoldenOf,
   readGolden,
   settleGolden,
   type GoldenArgs,
@@ -54,6 +70,7 @@ interface PlayArgs {
   /** A test run's `RunOverrides` for the game, injected as `__PIX3_RUN__` (dev and dist). */
   readonly run: {
     seed?: number;
+    locale?: string;
     reducedMotion?: boolean;
     storage?: 'memory' | { snapshot: Record<string, unknown> };
     ads?: AdRunOutcome | AdRunOutcome[];
@@ -82,6 +99,12 @@ interface PlayArgs {
   /** `--golden <file> [--write] [--tolerance …]`: the run's end pinned in a file (`golden.ts`). */
   readonly golden: GoldenArgs | null;
   readonly project?: string;
+  /** List values (`--seed 1..50`, `--size a,b`, …): one run per combination (`grid.ts`). */
+  readonly grid: GridAxes | null;
+  /** `--parallel N`: grid runs at a time (default 1). */
+  readonly parallel: number;
+  /** `--check-determinism`: every combination twice, the two ends compared. */
+  readonly checkDeterminism: boolean;
 }
 
 const DEFAULT_SIZE = { width: 390, height: 844 };
@@ -142,19 +165,21 @@ export const parseAdsArg = (
 /** Exported for the spec. */
 export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: string } | 'help' => {
   let target: string | undefined;
-  let width = DEFAULT_SIZE.width;
-  let height = DEFAULT_SIZE.height;
   let scale: number | undefined;
   let scene: string | undefined;
   let bot: string | undefined;
   let gameRun: Record<string, unknown> | null = null;
-  let botArgs: Record<string, unknown> = {};
-  let seed: number | undefined;
   let safeArea: PlayArgs['safeArea'] = null;
   let safeAreaOverlay = true;
-  let config: Record<string, unknown> | undefined;
   let reducedMotion = false;
-  let storage: NonNullable<PlayArgs['run']>['storage'];
+  let seeds: GridValue<number>[] = [];
+  let sizes: GridValue<{ width: number; height: number; scale?: number }>[] = [];
+  const configs: GridValue<Record<string, unknown>>[] = [];
+  const botArgsList: GridValue<Record<string, unknown>>[] = [];
+  const locales: GridValue<string>[] = [];
+  const storages: GridValue<NonNullable<NonNullable<PlayArgs['run']>['storage']>>[] = [];
+  let parallel: number | undefined;
+  let checkDeterminism = false;
   let ads: NonNullable<PlayArgs['run']>['ads'];
   let seconds: number | undefined;
   let frames: number | undefined;
@@ -190,11 +215,21 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
         return { error: '--every takes a whole number of ticks ≥ 1' };
     } else if (flag === '--tolerance') tolerance = value();
     else if (flag === '--size') {
-      const match = /^(\d+)x(\d+)$/.exec(value() ?? '');
-      if (!match) return { error: '--size takes WIDTHxHEIGHT in CSS px, e.g. --size 390x844' };
-      width = Number(match[1]);
-      height = Number(match[2]);
-    } else if (flag === '--scale') scale = Number(value());
+      const parsed = parseSizeList(value() ?? '');
+      if ('error' in parsed) return parsed;
+      sizes = parsed;
+    } else if (flag === '--locale') {
+      for (const locale of (value() ?? '').split(',').map(part => part.trim())) {
+        if (!/^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})*$/.test(locale))
+          return { error: '--locale takes a locale code or a list: --locale ru,en' };
+        locales.push({ value: locale, label: `locale=${locale}` });
+      }
+    } else if (flag === '--parallel') {
+      parallel = Number(value());
+      if (!Number.isInteger(parallel) || parallel < 1)
+        return { error: '--parallel takes a whole number of runs at a time ≥ 1' };
+    } else if (flag === '--check-determinism') checkDeterminism = true;
+    else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
     else if (flag === '--run') {
@@ -221,40 +256,39 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     } else if (flag === '--no-safe-area-overlay') safeAreaOverlay = false;
     else if (flag === '--reduced-motion') reducedMotion = true;
     else if (flag === '--storage') {
-      const parsed = parseStorageArg(value() ?? '');
+      const text = value() ?? '';
+      const parsed = parseStorageArg(text);
       if ('error' in parsed) return parsed;
-      storage = parsed.storage;
+      storages.push({
+        value: parsed.storage,
+        label: text.length <= 40 ? `storage=${text}` : `storage#${storages.length + 1}`,
+      });
     } else if (flag === '--ads') {
       const parsed = parseAdsArg(value());
       if ('error' in parsed) return parsed;
       ads = parsed.ads;
     } else if (flag === '--seed') {
-      seed = Number(value());
-      if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
+      const parsed = parseSeedList(value() ?? '');
+      if ('error' in parsed) return parsed;
+      seeds = parsed;
     } else if (flag === '--config') {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(value() ?? '');
-      } catch {
-        parsed = undefined;
-      }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      const parsed = parseObjectList(value() ?? '');
+      if (!parsed) {
         return {
-          error: `--config takes one JSON object {"<nodeId>": {"<componentId>": {"key": value}}}, e.g. --config '{"game-root":{"rules":{"moves":3}}}'`,
+          error: `--config takes a JSON object {"<nodeId>": {"<componentId>": {"key": value}}}, e.g. --config '{"game-root":{"rules":{"moves":3}}}' — or a file holding one or a list of them; repeat it for a grid`,
         };
       }
-      config = parsed as Record<string, unknown>;
+      for (const config of parsed)
+        configs.push({ value: config, label: jsonLabel('config', config, configs.length) });
     } else if (flag === '--bot-args') {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(value() ?? '');
-      } catch {
-        parsed = undefined;
+      const parsed = parseObjectList(value() ?? '');
+      if (!parsed) {
+        return {
+          error: `--bot-args takes a JSON object, e.g. --bot-args '{"target":"lose"}' — or a file holding one or a list of them; repeat it for a grid`,
+        };
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        return { error: `--bot-args takes one JSON object, e.g. --bot-args '{"target":"lose"}'` };
-      }
-      botArgs = parsed as Record<string, unknown>;
+      for (const args of parsed)
+        botArgsList.push({ value: args, label: jsonLabel('bot-args', args, botArgsList.length) });
     } else if (flag === '--seconds') seconds = Number(value());
     else if (flag === '--frames') frames = Number(value());
     else if (flag === '--screenshot') screenshot = value();
@@ -278,6 +312,7 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       '--bot',
       '--run',
       '--seed',
+      '--locale',
       '--config',
       '--ads',
       '--storage',
@@ -293,6 +328,27 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       };
   }
   const driven = bot !== undefined || gameRun !== null || replay !== undefined;
+  const axes: GridAxes = {
+    seed: seeds,
+    config: configs,
+    botArgs: botArgsList,
+    size: sizes,
+    locale: locales,
+    storage: storages,
+  };
+  const grid = isGrid(axes) || parallel !== undefined || checkDeterminism ? axes : null;
+  if (grid) {
+    if (!bot && !gameRun)
+      return {
+        error:
+          'a grid (list values, --parallel, --check-determinism) compares fixed-step runs: give it --bot <name> or --run',
+      };
+    const single = ['--record', '--replay', '--screenshot', '--profile', '--tree'].filter(flag =>
+      given.has(flag)
+    );
+    if (single.length > 0)
+      return { error: `${single.join(', ')} take(s) one run: drop it from a grid` };
+  }
   const goldenArgs = goldenArgsOf(golden, write, tolerance);
   if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
   // Only a fixed-step run ends the same way twice: a page left to itself runs in real time.
@@ -313,30 +369,23 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   const frameBudget = frames ?? DEFAULT_BOT_FRAMES;
   if (!Number.isInteger(frameBudget) || frameBudget <= 0)
     return { error: '--frames takes a positive whole number of game frames (60 = 1 s)' };
-  return {
+  const first = sizes[0]?.value;
+  const base: PlayArgs = {
     target,
-    width,
-    height,
-    scale,
+    width: first?.width ?? DEFAULT_SIZE.width,
+    height: first?.height ?? DEFAULT_SIZE.height,
+    scale: first?.scale ?? scale,
     scene,
     bot,
     gameRun,
-    botArgs,
+    botArgs: {},
     safeArea,
     safeAreaOverlay,
     run:
-      seed !== undefined ||
-      config !== undefined ||
-      reducedMotion ||
-      storage !== undefined ||
-      ads !== undefined ||
-      record !== undefined
+      reducedMotion || ads !== undefined || record !== undefined
         ? {
-            ...(seed !== undefined ? { seed } : {}),
             ...(reducedMotion ? { reducedMotion } : {}),
-            ...(storage !== undefined ? { storage } : {}),
             ...(ads !== undefined ? { ads } : {}),
-            ...(config ? { config } : {}),
             ...(record !== undefined ? { record: every ? { every } : {} } : {}),
           }
         : null,
@@ -351,6 +400,58 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     project,
     ...(record !== undefined ? { record: { file: record, ...(every ? { every } : {}) } } : {}),
     ...(replay !== undefined ? { replay } : {}),
+    grid,
+    parallel: parallel ?? 1,
+    checkDeterminism,
+  };
+  // A single run is the grid's one combination.
+  return grid ? base : argsForCombo(base, gridCombos(axes)[0]);
+};
+
+/** One JSON object, a list of them, or a file holding either; null when it is none of those. */
+const parseObjectList = (text: string): Record<string, unknown>[] | null => {
+  let source = text.trim();
+  if (!source.startsWith('{') && !source.startsWith('[')) {
+    try {
+      source = readFileSync(resolve(text), 'utf8');
+    } catch {
+      return null;
+    }
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return null;
+  }
+  const list = Array.isArray(parsed) ? parsed : [parsed];
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  return list.length > 0 && list.every(isObject) ? list : null;
+};
+
+/** The run of one grid combination: its size, `bot.args` and `RunOverrides` over the base. */
+const argsForCombo = (base: PlayArgs, combo: GridCombo): PlayArgs => {
+  const run = {
+    ...base.run,
+    ...(combo.seed !== undefined ? { seed: combo.seed } : {}),
+    ...(combo.locale !== undefined ? { locale: combo.locale } : {}),
+    ...(combo.config !== undefined ? { config: combo.config } : {}),
+    ...(combo.storage !== undefined
+      ? { storage: combo.storage as NonNullable<PlayArgs['run']>['storage'] }
+      : {}),
+  };
+  return {
+    ...base,
+    ...(combo.size
+      ? {
+          width: combo.size.width,
+          height: combo.size.height,
+          scale: combo.size.scale ?? base.scale,
+        }
+      : {}),
+    botArgs: combo.botArgs ?? base.botArgs,
+    run: Object.keys(run).length > 0 ? run : null,
   };
 };
 
@@ -503,7 +604,10 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     io.stderr(`pix3 play: no bot policy ${policyFile}\n`);
     return 2;
   }
-  const golden = args.golden && !args.golden.write ? readGolden(args.golden, io.cwd) : null;
+  const golden =
+    args.golden && !args.golden.write
+      ? readGolden(args.golden, io.cwd, args.grid ? 'grid' : 'run')
+      : null;
   if (golden && 'error' in golden) {
     io.stderr(`pix3 play: ${golden.error}\n`);
     return 2;
@@ -517,22 +621,226 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
   const chrome = PipeChrome.launch(chromePath.path, {
     noSandbox: needsNoSandbox(chromePath.path, env),
   });
-  const errors: string[] = [];
+  let scripts: Promise<PageScripts> | null = null;
+  const context: PlayContext = {
+    io,
+    url,
+    root,
+    policyName,
+    policyFile,
+    replayFile,
+    replayPath,
+    tag: '',
+    // Built once for every run of a grid.
+    pageScripts: () =>
+      (scripts ??= withCommandBundle(
+        'play',
+        'page-debug.js',
+        async outdir => (await import('./bundle.ts')).buildPlayBundle(outdir),
+        async dir => {
+          const bundle = await import('./bundle.ts');
+          return { host: bundle.readPlayHost(dir), debug: bundle.readPlayDebug(dir) };
+        }
+      )),
+  };
   try {
-    const session = await chrome.openPage();
-    chrome.onEvent((event: CdpEvent) => {
-      if (event.sessionId !== session) return;
-      if (event.method === 'Runtime.exceptionThrown') {
-        const details = event.params.exceptionDetails as {
-          text?: string;
-          exception?: { description?: string };
-        };
-        errors.push(details.exception?.description ?? details.text ?? 'an uncaught exception');
-      } else if (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error') {
-        const parts = (event.params.args as Array<{ value?: unknown; description?: string }>) ?? [];
-        errors.push(parts.map(part => String(part.value ?? part.description ?? '')).join(' '));
-      }
-    });
+    if (args.grid) return await playGrid(chrome, args, args.grid, context, golden);
+    const { report, failed } = await playOnce(chrome, args, context);
+    const goldenResult = args.golden
+      ? settleGolden(args.golden, io.cwd, goldenOf(report.game, report.analytics), failed, golden)
+      : null;
+    const full: PlayReport = { ...report, ...(goldenResult ? { golden: goldenResult } : {}) };
+    if (args.json) io.stdout(`${JSON.stringify(full, null, 2)}\n`);
+    else io.stdout(formatPlayHuman(full));
+    return failed || goldenFailed(goldenResult) ? 1 : 0;
+  } catch (error) {
+    io.stderr(`pix3 play: ${(error as Error).message}\n`);
+    return 1;
+  } finally {
+    await chrome.close();
+  }
+};
+
+type ReplayFileRead = Exclude<ReturnType<typeof readReplayFile>, { error: string }>;
+type GoldenRead = Exclude<ReturnType<typeof readGolden>, { error: string }>;
+
+/** A file-name-safe form of a combination's label. */
+const slug = (label: string): string =>
+  label
+    .replace(/[^A-Za-z0-9_.=-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'run';
+
+/** A run's verdict in the grid's table. */
+const verdictOf = (report: PlayReport, failed: boolean): GridRun['verdict'] => {
+  if (report.status !== 'running' || report.errors.length > 0) return 'error';
+  if (report.bot?.error !== undefined) return 'crash';
+  if (report.run && report.run.ok !== true) return 'error';
+  return failed ? 'fail' : 'pass';
+};
+
+/**
+ * The grid: every combination a fresh load in a browser context of its own, `--parallel` at a
+ * time; with `--check-determinism` each one twice and the two ends compared. Exit 1 when a run
+ * errored or crashed, a combination ended differently twice, or the aggregate's golden differs —
+ * a lost round (`done(false)`) is a result the aggregate counts, not a failure.
+ */
+const playGrid = async (
+  chrome: PipeChrome,
+  args: PlayArgs,
+  axes: GridAxes,
+  context: PlayContext,
+  golden: GoldenRead | null
+): Promise<number> => {
+  const { io, root } = context;
+  const combos = gridCombos(axes);
+  const shotsRoot = resolve(
+    io.cwd,
+    args.shots ?? join(root ?? io.cwd, '.pix3', 'screenshots', `grid-${Date.now()}`)
+  );
+  const once = async (
+    combo: GridCombo,
+    pass: number
+  ): Promise<{ report: PlayReport; failed: boolean }> => {
+    const browserContext = await chrome.createContext();
+    try {
+      return await playOnce(
+        chrome,
+        { ...argsForCombo(args, combo), shots: join(shotsRoot, slug(combo.label)) },
+        { ...context, browserContext, tag: ` [${combo.label}${pass > 0 ? ' again' : ''}]` }
+      );
+    } finally {
+      await chrome.closeContext(browserContext).catch(() => undefined);
+    }
+  };
+  const play = async (combo: GridCombo): Promise<GridRun> => {
+    const first = await once(combo, 0);
+    const report = first.report;
+    let determinism: GridRun['determinism'];
+    if (args.checkDeterminism) {
+      const second = await once(combo, 1);
+      const paths = diffGolden(
+        goldenOf(report.game, report.analytics),
+        goldenOf(second.report.game, second.report.analytics),
+        new Map()
+      ).map(diff => diff.path);
+      determinism = { same: paths.length === 0, paths };
+    }
+    const frames = report.bot?.frames;
+    const run: GridRun = {
+      combo,
+      verdict: verdictOf(report, first.failed),
+      ...(typeof frames === 'number' ? { frames } : {}),
+      game: report.game,
+      errors: [
+        ...report.errors,
+        ...(report.bot?.error ? [String((report.bot.error as { message?: string }).message)] : []),
+        ...(report.run && report.run.ok !== true
+          ? [`${String(report.run.reason)}: ${String(report.run.detail ?? '')}`]
+          : []),
+      ],
+      ...(determinism ? { determinism } : {}),
+    };
+    return run;
+  };
+  // A combination Chrome could not play is that combination's error, not the grid's end.
+  const runs = await runPool(combos.length, args.parallel, index =>
+    play(combos[index]).catch(
+      (error: Error): GridRun => ({
+        combo: combos[index],
+        verdict: 'error',
+        game: null,
+        errors: [error.message],
+      })
+    )
+  );
+  const aggregate = aggregateGrid(runs);
+  const broken = runs.some(
+    run => run.verdict === 'error' || run.verdict === 'crash' || run.determinism?.same === false
+  );
+  const goldenResult = args.golden
+    ? settleGolden(args.golden, io.cwd, gridGoldenOf(aggregate), broken, golden)
+    : null;
+  if (args.json) {
+    io.stdout(
+      `${JSON.stringify(
+        {
+          runs: runs.map(run => ({
+            label: run.combo.label,
+            ...(run.combo.seed !== undefined ? { seed: run.combo.seed } : {}),
+            ...(run.combo.size ? { size: run.combo.size } : {}),
+            ...(run.combo.locale !== undefined ? { locale: run.combo.locale } : {}),
+            ...(run.combo.config ? { config: run.combo.config } : {}),
+            ...(run.combo.botArgs ? { botArgs: run.combo.botArgs } : {}),
+            ...(run.combo.storage !== undefined ? { storage: run.combo.storage } : {}),
+            verdict: run.verdict,
+            ...(run.frames !== undefined ? { frames: run.frames } : {}),
+            game: run.game ?? null,
+            errors: run.errors,
+            ...(run.determinism ? { determinism: run.determinism } : {}),
+          })),
+          aggregate,
+          ...(goldenResult ? { golden: goldenResult } : {}),
+        },
+        null,
+        2
+      )}\n`
+    );
+  } else {
+    const lines = formatGridHuman(runs, aggregate);
+    if (goldenResult) lines.push(...formatGoldenHuman(goldenResult));
+    io.stdout(`${lines.join('\n')}\n`);
+  }
+  return broken || goldenFailed(goldenResult) ? 1 : 0;
+};
+
+interface PageScripts {
+  readonly host: string;
+  readonly debug: string;
+}
+
+/** What every run of one `pix3 play` shares. */
+interface PlayContext {
+  readonly io: CliIo;
+  readonly url: string;
+  readonly root: string | null;
+  readonly policyName: string | undefined;
+  readonly policyFile: string | null;
+  readonly replayFile: ReplayFileRead | null;
+  readonly replayPath: string | null;
+  /** ` [seed=3]` in a grid's progress lines. */
+  readonly tag: string;
+  /** `browserContextId`: the run's own browser context (a grid's fresh load). */
+  readonly browserContext?: string;
+  readonly pageScripts: () => Promise<PageScripts>;
+}
+
+/**
+ * One load of the page and one run on it: the report (golden aside) and whether it failed.
+ * Throws only when Chrome itself does.
+ */
+const playOnce = async (
+  chrome: PipeChrome,
+  args: PlayArgs,
+  context: PlayContext
+): Promise<{ report: PlayReport; failed: boolean }> => {
+  const { io, url, root, policyName, policyFile, replayFile, replayPath, tag } = context;
+  const errors: string[] = [];
+  const session = await chrome.openPage(context.browserContext);
+  const unlisten = chrome.onEvent((event: CdpEvent) => {
+    if (event.sessionId !== session) return;
+    if (event.method === 'Runtime.exceptionThrown') {
+      const details = event.params.exceptionDetails as {
+        text?: string;
+        exception?: { description?: string };
+      };
+      errors.push(details.exception?.description ?? details.text ?? 'an uncaught exception');
+    } else if (event.method === 'Runtime.consoleAPICalled' && event.params.type === 'error') {
+      const parts = (event.params.args as Array<{ value?: unknown; description?: string }>) ?? [];
+      errors.push(parts.map(part => String(part.value ?? part.description ?? '')).join(' '));
+    }
+  });
+  try {
     await chrome.send('Runtime.enable', {}, session);
     const overlay = args.safeArea && args.safeAreaOverlay ? args.safeArea : null;
     /** One PNG of the page, the unsafe bands shaded on it when --safe-area is given. */
@@ -598,15 +906,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     const driven = status === 'running' && (args.bot !== undefined || args.gameRun !== null);
     const pageScripts =
       status === 'running' && (args.profile || args.tree || driven)
-        ? await withCommandBundle(
-            'play',
-            'page-debug.js',
-            async outdir => (await import('./bundle.ts')).buildPlayBundle(outdir),
-            async dir => {
-              const bundle = await import('./bundle.ts');
-              return { host: bundle.readPlayHost(dir), debug: bundle.readPlayDebug(dir) };
-            }
-          )
+        ? await context.pageScripts()
         : null;
     /**
      * The profile starts once the game runs as it will for the whole window: after the bot set
@@ -774,7 +1074,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         if (Date.now() - lastProgress >= PROGRESS_MS) {
           lastProgress = Date.now();
           io.stderr(
-            `pix3 play: bot ${args.bot} at frame ${poll?.frame ?? 0} of ${args.frames} (${Math.round((Date.now() - started) / 1000)} s)\n`
+            `pix3 play${tag}: bot ${args.bot} at frame ${poll?.frame ?? 0} of ${args.frames} (${Math.round((Date.now() - started) / 1000)} s)\n`
           );
         }
         if (poll?.shot) {
@@ -829,7 +1129,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
         if (Date.now() - lastProgress >= PROGRESS_MS) {
           lastProgress = Date.now();
           io.stderr(
-            `pix3 play: game_run running (${Math.round((Date.now() - started) / 1000)} s)\n`
+            `pix3 play${tag}: game_run running (${Math.round((Date.now() - started) / 1000)} s)\n`
           );
         }
       }
@@ -967,9 +1267,6 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       botFailed ||
       runFailed ||
       (replayFile !== null && replayReport?.ok !== true);
-    const goldenResult = args.golden
-      ? settleGolden(args.golden, io.cwd, goldenOf(game, analytics ?? undefined), failed, golden)
-      : null;
     const report: PlayReport = {
       url,
       size: `${args.width}x${args.height}@${args.scale}x`,
@@ -985,18 +1282,12 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(analytics ? { analytics } : {}),
       ...(profile ? { profile } : {}),
       ...(tree ? { tree } : {}),
-      ...(goldenResult ? { golden: goldenResult } : {}),
       ...(recorded ? { recorded } : {}),
       ...(replayReport ? { replay: replayReport } : {}),
     };
-    if (args.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
-    else io.stdout(formatPlayHuman(report));
-    return failed || goldenFailed(goldenResult) ? 1 : 0;
-  } catch (error) {
-    io.stderr(`pix3 play: ${(error as Error).message}\n`);
-    return 1;
+    return { report, failed };
   } finally {
-    await chrome.close();
+    unlisten();
   }
 };
 

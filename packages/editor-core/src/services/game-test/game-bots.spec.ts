@@ -76,6 +76,8 @@ function makeWorld(
       calls.push(`background:${awayMs}`);
       return null;
     },
+    pinchAt: (phase, center, spread) =>
+      gate(`pinch:${phase}:${center.x},${center.y}@${Math.round(spread * 100) / 100}`),
     releaseAll: () => {
       calls.push('releaseAll');
     },
@@ -475,6 +477,36 @@ describe('BotSession actuators', () => {
     expect(session.report().log.map(entry => entry.message)).toContain(
       'background for 1500 ms at frame 1'
     );
+  });
+
+  it('pinch(center, scale, frames) spreads two fingers over the frames, then lifts them', () => {
+    const world = makeWorld();
+    const session = new BotSession(
+      'p',
+      policyOf(bot => {
+        if (bot.frame === 1) bot.pinch({ x: 5, y: 6 }, 2, 4);
+        if (bot.frame === 2) bot.swipe({ x: 0, y: 0 }, { x: 1, y: 1 });
+        if (bot.frame === 3) bot.pinch({ x: 5, y: 6 }, 0);
+      }),
+      world
+    );
+    run(session, 6);
+    expect(world.calls).toEqual([
+      'pinch:down:5,6@1',
+      'pinch:move:5,6@1.25',
+      'pinch:move:5,6@1.5',
+      'pinch:move:5,6@1.75',
+      'pinch:move:5,6@2',
+      'pinch:up:5,6@2',
+    ]);
+    expect(session.report().sent).toBe(1);
+    expect(session.report().refused).toBe(2);
+    expect(
+      session
+        .report()
+        .log.map(entry => entry.message)
+        .join('\n')
+    ).toContain('still pinching');
   });
 
   it('a swipe the world finds too short is noted in the log, not refused (core-tests/game14)', () => {

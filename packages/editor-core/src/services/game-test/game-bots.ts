@@ -403,6 +403,13 @@ export interface Pix3TestBot {
    * and the next tick plays no time — a drag held across an app switch, a pause screen, a save.
    */
   background(ms?: number): void;
+  /**
+   * Pinch with two fingers around a world point over `frames` ticks (default 12): both down
+   * 60 CSS px either side of `center`, the gap scaled to `scale` (2 = spread twice as wide, a zoom
+   * in; 0.5 = pinched together), both up. Physical input only; it uses the bot's finger, so not
+   * while a {@link swipe} or {@link tapAt} is in progress.
+   */
+  pinch(center: BotPoint, scale: number, frames?: number): void;
 
   // -- protocol --------------------------------------------------------------
 
@@ -522,6 +529,11 @@ export interface BotWorld {
   requestScreenshot(name: string, frame: number): string | null;
   /** Background round trip of `awayMs` (`bot.background`): `null`, or a sentence on refusal. */
   sendToBackground(awayMs: number): string | null;
+  /**
+   * Both fingers of a pinch (`bot.pinch`) at `spread` × the starting gap around `center`. A
+   * sentence on refusal (on `up`, ignored: the fingers lift anyway).
+   */
+  pinchAt(phase: 'down' | 'move' | 'up', center: BotPoint, spread: number): string | null;
   /** Drop everything still held. Called once, from the session's teardown. */
   releaseAll(): void;
 }
@@ -596,6 +608,8 @@ const botPointerOf = (p: BotPointer | undefined): BotPointer | undefined | strin
 
 /** Ticks a `swipe()` takes when the policy does not say — a quick flick at 60 fps. */
 const DEFAULT_SWIPE_FRAMES = 8;
+/** Ticks a `pinch()` takes when the policy does not say. */
+const DEFAULT_PINCH_FRAMES = 12;
 
 // ---------------------------------------------------------------------------
 // The session
@@ -645,6 +659,9 @@ export class BotSession {
   } | null = null;
   /** The `tapAt` in flight on the same finger, and the frame its release is due on. */
   private pointTap: { at: BotPoint; dueAt: number; pointer?: BotPointer } | null = null;
+  /** The pinch in progress (it uses the bot's finger and a second one). */
+  private pinch: { center: BotPoint; scale: number; startFrame: number; frames: number } | null =
+    null;
 
   constructor(
     private readonly name: string,
@@ -724,6 +741,7 @@ export class BotSession {
     this.openTaps.clear();
     this.swipe = null;
     this.pointTap = null;
+    this.pinch = null;
     this.world.releaseAll();
   }
 
@@ -773,6 +791,7 @@ export class BotSession {
       command: (name, args) => this.doCommand(name, args),
       screenshot: name => this.doScreenshot(name),
       background: ms => this.doBackground(ms),
+      pinch: (center, scale, frames) => this.doPinch(center, scale, frames),
       log: event => this.record('policy', String(event)),
       done: (pass, reason) => this.doDone(pass, reason),
     };
@@ -838,9 +857,10 @@ export class BotSession {
     if (!isBotPoint(point)) return this.refuse('tapAt() needs a world point {x, y}.');
     const device = botPointerOf(pointer);
     if (typeof device === 'string') return this.refuse(`tapAt(): ${device}`);
-    if (this.swipe || this.pointTap) {
+    const busy = this.fingerBusy();
+    if (busy) {
       return this.refuse(
-        `tapAt() was called while the bot's finger is still ${this.swipe ? 'swiping' : 'down on the previous tapAt'} — one finger: wait for it to lift.`
+        `tapAt() was called while the bot's finger is still ${busy} — one finger: wait for it to lift.`
       );
     }
     const refusal = this.world.tapAtDown(point, device);
@@ -886,9 +906,9 @@ export class BotSession {
         'swipe() was called while the previous swipe is still moving — wait for it to end (its `frames`).'
       );
     }
-    if (this.pointTap) {
+    if (this.pointTap || this.pinch) {
       return this.refuse(
-        "swipe() was called while the bot's finger is still down on a tapAt — one finger: wait for it to lift."
+        `swipe() was called while the bot's finger is still ${this.fingerBusy()} — one finger: wait for it to lift.`
       );
     }
     const refusal = this.world.pointerAt('down', from, device);
@@ -899,6 +919,49 @@ export class BotSession {
         : DEFAULT_SWIPE_FRAMES;
     this.swipe = { from, to, startFrame: this.currentFrame, frames: span, pointer: device };
     this.sent += 1;
+  }
+
+  /** What the bot's finger is doing, or null when it is free. */
+  private fingerBusy(): string | null {
+    if (this.swipe) return 'swiping';
+    if (this.pinch) return 'pinching';
+    if (this.pointTap) return 'down on the previous tapAt';
+    return null;
+  }
+
+  private doPinch(center: BotPoint, scale: number, frames?: number): void {
+    if (!isBotPoint(center)) {
+      return this.refuse('pinch() needs a world point {x, y}: pinch(center, scale, frames?).');
+    }
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+      return this.refuse('pinch() needs a scale > 0: 2 spreads the fingers apart, 0.5 pinches in.');
+    }
+    const busy = this.fingerBusy();
+    if (busy) {
+      return this.refuse(
+        `pinch() was called while the bot's finger is still ${busy} — wait for it to lift.`
+      );
+    }
+    const refusal = this.world.pinchAt('down', center, 1);
+    if (refusal) return this.refuse(refusal);
+    const span =
+      typeof frames === 'number' && Number.isFinite(frames) && frames >= 1
+        ? Math.round(frames)
+        : DEFAULT_PINCH_FRAMES;
+    this.pinch = { center, scale, startFrame: this.currentFrame, frames: span };
+    this.sent += 1;
+  }
+
+  /** One tick of the pinch in progress: the gap eased linearly to its scale, then both up. */
+  private advancePinch(): void {
+    const pinch = this.pinch;
+    if (!pinch) return;
+    const t = Math.min(1, (this.currentFrame - pinch.startFrame) / pinch.frames);
+    this.world.pinchAt('move', pinch.center, 1 + (pinch.scale - 1) * t);
+    if (t >= 1) {
+      this.pinch = null;
+      this.world.pinchAt('up', pinch.center, pinch.scale);
+    }
   }
 
   private doScreenshot(name: string): void {
@@ -988,6 +1051,7 @@ export class BotSession {
 
   private releaseDue(): void {
     this.advanceSwipe();
+    this.advancePinch();
     if (this.pointTap && this.pointTap.dueAt <= this.currentFrame) {
       const { at, pointer } = this.pointTap;
       this.pointTap = null;

@@ -13,6 +13,7 @@ import { loadBotPolicy, ModuleBotStore } from '@/services/game-test/bot-loader';
 import { DomInputSink } from '@/services/game-test/frame-input';
 import {
   BOT_POINTER_ID,
+  BotPinch,
   PhysicalAxisDriver,
   collectBotNodeViews,
   keyCodeOf,
@@ -118,6 +119,7 @@ const buildPageWorld = (
   const scene = runner as unknown as BotSceneHandle;
   const canvasHandle = canvas as unknown as BotCanvasHandle;
   const sticks = new PhysicalAxisDriver(scene, canvasHandle, sink);
+  const pinch = new BotPinch(scene, canvasHandle, sink);
   const heldKeys = new Set<string>();
   const openTaps = new Map<string, { nx: number; ny: number }>();
   let swipeDown: { nx: number; ny: number } | null = null;
@@ -224,7 +226,9 @@ const buildPageWorld = (
       runner.simulateBackground(awayMs);
       return null;
     },
+    pinchAt: (phase, center, spread) => pinch.at(phase, center, spread),
     releaseAll: () => {
+      pinch.releaseAll();
       if (swipeDown) sink.pointer('up', swipeDown.nx, swipeDown.ny, BOT_POINTER_ID);
       swipeDown = null;
       for (const code of heldKeys) sink.key('up', code);
