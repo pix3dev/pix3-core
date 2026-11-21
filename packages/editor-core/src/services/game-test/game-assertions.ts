@@ -62,6 +62,9 @@ export function isComparisonOp(value: unknown): value is ComparisonOp {
  *
  * Numeric segments index into arrays (`'waves.0.enemies'`), because a game that
  * exposes a list is otherwise unassertable without a wrapper object.
+ *
+ * The same path language names a difference in a golden (`pix3 play` / `pix3 smoke --golden`,
+ * cli `golden.ts`), rooted there at `gameState.` — change both together.
  */
 export function resolveJsonPath(root: Json | null, path: string): Json | undefined {
   if (path.length === 0) return root ?? undefined;

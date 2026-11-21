@@ -12,6 +12,16 @@ import { PipeChrome, type CdpEvent } from './chrome-pipe.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 import { formatTreeHuman, type PlayTree } from './tree-report.ts';
 import { analyticsSummary, type SmokeAnalytics } from '../smoke/report.ts';
+import {
+  formatGoldenHuman,
+  goldenArgsOf,
+  goldenFailed,
+  goldenOf,
+  readGolden,
+  settleGolden,
+  type GoldenArgs,
+  type GoldenResult,
+} from '../golden.ts';
 
 /**
  * `pix3 play` — the game's own page (the dev server, or a built `dist/index.html` as it ships) in
@@ -53,6 +63,8 @@ interface PlayArgs {
   readonly profile: boolean;
   /** Read the live object tree at the end of the run. */
   readonly tree: boolean;
+  /** `--golden <file> [--write] [--tolerance …]`: the run's end pinned in a file (`golden.ts`). */
+  readonly golden: GoldenArgs | null;
   readonly project?: string;
 }
 
@@ -135,6 +147,9 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   let json = false;
   let profile = false;
   let tree = false;
+  let golden: string | undefined;
+  let write = false;
+  let tolerance: string | undefined;
   let project: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -144,6 +159,9 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     if (flag === '--json') json = true;
     else if (flag === '--profile') profile = true;
     else if (flag === '--tree') tree = true;
+    else if (flag === '--write') write = true;
+    else if (flag === '--golden') golden = value();
+    else if (flag === '--tolerance') tolerance = value();
     else if (flag === '--size') {
       const match = /^(\d+)x(\d+)$/.exec(value() ?? '');
       if (!match) return { error: '--size takes WIDTHxHEIGHT in CSS px, e.g. --size 390x844' };
@@ -225,6 +243,13 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     };
   }
   const driven = bot !== undefined || gameRun !== null;
+  const goldenArgs = goldenArgsOf(golden, write, tolerance);
+  if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
+  // Only a fixed-step run ends the same way twice: a page left to itself runs in real time.
+  if (goldenArgs && !driven)
+    return {
+      error: '--golden pins a fixed-step run: give it --bot <name> (and --seed N) or --run',
+    };
   // A bot run paints every frame: at DPR 3 a headless page took 5–6 minutes a round
   // (core-tests/game13), so a bot defaults to 2; --scale 3 for the final pictures.
   scale ??= driven ? 2 : 3;
@@ -270,6 +295,7 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     json,
     profile,
     tree,
+    golden: goldenArgs,
     project,
   };
 };
@@ -360,6 +386,8 @@ interface PlayReport {
   readonly profile?: PlayProfile | { error: string };
   /** `--tree`: the live object tree at the end (`packages/vite-plugin/player/debug/tree.ts`). */
   readonly tree?: PlayTree | { error: string };
+  /** `--golden`: matched, written, or the paths that differ. */
+  readonly golden?: GoldenResult;
 }
 
 /** How often the CLI asks the page whether the policy is done or wants a picture. */
@@ -393,6 +421,11 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     : null;
   if (policyFile && !existsSync(policyFile)) {
     io.stderr(`pix3 play: no bot policy ${policyFile}\n`);
+    return 2;
+  }
+  const golden = args.golden && !args.golden.write ? readGolden(args.golden, io.cwd) : null;
+  if (golden && 'error' in golden) {
+    io.stderr(`pix3 play: ${golden.error}\n`);
     return 2;
   }
   const chromePath = findChrome(env);
@@ -767,6 +800,14 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       writeFileSync(screenshotPath, png);
     }
 
+    const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
+    const botFailed =
+      botReport !== undefined && (done?.pass !== true || botReport.error !== undefined);
+    const runFailed = runReport !== undefined && !runPassed(runReport);
+    const failed = status !== 'running' || errors.length > 0 || botFailed || runFailed;
+    const goldenResult = args.golden
+      ? settleGolden(args.golden, io.cwd, goldenOf(game, analytics ?? undefined), failed, golden)
+      : null;
     const report: PlayReport = {
       url,
       size: `${args.width}x${args.height}@${args.scale}x`,
@@ -782,14 +823,11 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(analytics ? { analytics } : {}),
       ...(profile ? { profile } : {}),
       ...(tree ? { tree } : {}),
+      ...(goldenResult ? { golden: goldenResult } : {}),
     };
-    const done = botReport?.done as { pass?: boolean; reason?: string } | undefined;
-    const botFailed =
-      botReport !== undefined && (done?.pass !== true || botReport.error !== undefined);
-    const runFailed = runReport !== undefined && !runPassed(runReport);
     if (args.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
     else io.stdout(formatPlayHuman(report));
-    return status !== 'running' || errors.length > 0 || botFailed || runFailed ? 1 : 0;
+    return failed || goldenFailed(goldenResult) ? 1 : 0;
   } catch (error) {
     io.stderr(`pix3 play: ${(error as Error).message}\n`);
     return 1;
@@ -859,5 +897,6 @@ const formatPlayHuman = (report: PlayReport): string => {
     lines.push(`screenshot ${shot.name} (frame ${shot.frame}): ${shot.path}`);
   if (report.profile) lines.push(...formatProfileHuman(report.profile));
   if (report.tree) lines.push(...formatTreeHuman(report.tree));
+  if (report.golden) lines.push(...formatGoldenHuman(report.golden));
   return `${lines.join('\n')}\n`;
 };

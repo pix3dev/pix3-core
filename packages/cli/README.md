@@ -373,9 +373,36 @@ total }, scripts, domMissing, notes, game, logs, analytics? }` — `game` is the
 frame-stamped, `analytics` what the game tracked through `scene.analytics` (`{ total, dropped,
 events: [{ name, props, frame }] }`, the last 500; absent when it tracked nothing). Stacks are source-mapped to the project's files. With no scene argument `--json`
 prints `{ ok, selection: "changed" | "all", reason, changed?, runs: [<that report, per scene>] }`.
+`--golden <file.json> [--write] [--tolerance …]` pins the run's end (one named scene) — see
+"Goldens" below.
 
 A green smoke run means nothing threw for N frames without input. It does not mean the game
 plays: nothing was tapped, nothing was drawn.
+
+## Goldens — `--golden` on `pix3 smoke` and `pix3 play`
+
+A golden pins how a seeded fixed-step run **ends**, so a later change that moves it fails loudly:
+`pix3 smoke <scene> --seed N --golden <file.json> [--write] [--tolerance '<path>=<eps>,…']`, and the
+same flags on `pix3 play --bot <name> --seed N` (or `--run`; a page left to itself runs in real
+time, so `play` refuses `--golden` without one). `--write` records the run into the file (a run
+with errors, a failed bot or nothing to pin — no `registerGameDebug` snapshot and no tracked event —
+is not written: `golden: NOT WRITTEN`, exit 1); without it the file is read before the run (missing
+or not a golden → exit 2) and compared after it: `golden: MATCH`, or `golden: MISMATCH` with one
+`path: expected → actual` line per difference (up to 50, then a count) and exit 1. `--json` adds
+`golden: { file, status: "match" | "mismatch" | "written" | "not-written", diffs?: [{ path,
+expected?, actual?, id? }], more?, reason? }` (a side with nothing there is left out). Every other
+flag of the run (`--frames`, `--config`, `--ads`, `--storage`, `--bot-args`, …) is part of what the
+golden pins: give the same ones each time.
+
+The file: `{ "gameState": <the registerGameDebug snapshot at the end>, "analytics": [{ "name",
+"props" }] }` — the events the game tracked through `scene.analytics`, in order, without their
+frames (the last 500 of the run). Paths are the `gameState` predicate paths of `pix3_game_run`
+(dot segments, a number indexes an array) rooted at the file: the predicate `score.best` is
+`gameState.score.best` here, the second event's level `analytics.1.props.level`. The comparison
+goes to every depth and is exact; an array whose items all carry a unique string or number `id` is
+matched by it whatever the order (the path names the golden's index, `id` the item). `--tolerance`
+lists the only numeric paths allowed to drift, each covering everything below it:
+`--tolerance 'gameState.stats.avgMoves=0.01,gameState.units=0.5'`. Code `src/golden.ts`.
 
 ## `pix3 tree` — find your way around a scene
 
@@ -755,7 +782,8 @@ The report carries `sounds: { requested, last: [{ sound, frame }] }` read from t
 game asked for no sound; `pix3_game_run` answers the same field for its run. Likewise
 `analytics: { total, dropped, events: [{ name, props, frame }] }` — what the game tracked through
 `scene.analytics` (the last 500 events, sink or no sink), absent when it tracked nothing; the human
-report prints the event names.
+report prints the event names. `--golden <file.json> [--write] [--tolerance …]` pins the end of a
+`--bot` / `--run` round (the snapshot and those events) — see "Goldens" above.
 
 `--tree` prints the running game's object tree at the end of the run (`tree` in `--json`:
 `{count, truncated, roots}`, each object `{id, nodeId, type, name, visible, instances, children,

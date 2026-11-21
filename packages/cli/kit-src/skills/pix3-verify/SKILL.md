@@ -188,6 +188,31 @@ object's live values. The same tab's **Colliders** / **Axes** draw the physics c
 node's local axes over the game; before a screenshot, `__PIX3_PLAYER__.debug.physicsWireframe(true)`
 / `.directionAxes(true)` turn them on.
 
+### Goldens — pin how a seeded round ends
+
+Once a round plays as designed, pin it so a later refactor that changes the outcome cannot pass
+unnoticed: `npx pix3 play dist --bot round --seed 7 --golden design/tests/golden/round-7.json --write`
+(or `npx pix3 smoke scenes/main.pix3scene --seed 7 --command start@1 --frames 600 --golden … --write`)
+records the end of the run — the `registerGameDebug` snapshot as `gameState` and the
+`scene.analytics` events in order as `analytics` — and the same command without `--write` compares
+against it: `golden: MATCH`, or `golden: MISMATCH` with `gameState.score.best: 120 → 118` per path
+and exit 1. Paths are your `pix3_game_run` `gameState` predicate paths under `gameState.`; a list
+whose items have a unique `id` is matched by id. Only a fixed-step run ends the same way twice:
+`play` needs `--bot` or `--run`, both use `--seed`, and every other flag (`--frames`, `--config`,
+`--bot-args`, `--ads`, `--storage`) must be the same each time. `--tolerance
+'gameState.stats.avgMoves=0.01'` lets only the listed numbers drift; keep the snapshot to what
+the round decides (score, phase, moves left, ids of what is on the board), not timers or positions.
+
+- **Read the file before you commit it.** A golden records what the game *did*, not what it
+  should do: written from a broken round, it pins the bug.
+- **A mismatch is a finding.** If your change was meant to move the end (a rebalance), say which
+  paths moved and why, then `--write` again in the same change; never rewrite to make red go away.
+- **Numbers in a report carry their source.** A figure from a golden, a bot or a `smoke` run is
+  `[modelled]` — a policy on a seed played it, not a person (name the command and the seed); only
+  what people did — a playtest, the live game's analytics — is `[measured]`. A golden guards the
+  model, it does not prove the balance: "a round takes 40 moves" from a bot is `[modelled]` until
+  players confirm it.
+
 ### Profiling a game — `pix3 play --profile`
 
 To find what is slow and to confirm a fix, measure the same run before and after:

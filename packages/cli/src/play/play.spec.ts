@@ -93,11 +93,32 @@ describe('pix3 play', () => {
       '--safe-area takes top,right,bottom,left'
     );
 
+    // --golden pins a fixed-step run (a bot or --run), read before Chrome starts.
+    expect((await run(['dist', '--golden', 'g.json'])).err).toContain(
+      '--golden pins a fixed-step run'
+    );
+    expect((await run(['dist', '--write'])).err).toContain('--write goes with --golden');
+    expect(
+      (await run(['dist', '--bot', 'x', '--golden', 'g.json', '--tolerance', 'x=1'])).err
+    ).toContain('--tolerance takes path=eps');
+    const goldenArgs = parsePlayArgs(['dist', '--bot', 'x', '--golden=g.json', '--write']);
+    expect(
+      typeof goldenArgs === 'object' && 'golden' in goldenArgs ? goldenArgs.golden : null
+    ).toEqual({
+      file: 'g.json',
+      write: true,
+      tolerance: new Map(),
+    });
     mkdirSync(join(root, 'dist'));
     writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
     const policy = await run(['dist', '--bot', 'missing']);
     expect(policy.code).toBe(2);
     expect(policy.err).toContain(join('design', 'tests', 'bots', 'missing.ts'));
+    mkdirSync(join(root, 'design', 'tests', 'bots'), { recursive: true });
+    writeFileSync(join(root, 'design', 'tests', 'bots', 'round.ts'), 'export {};');
+    const noGolden = await run(['dist', '--bot', 'round', '--golden', 'none.json']);
+    expect(noGolden.code).toBe(2);
+    expect(noGolden.err).toContain('no golden none.json — record one first');
 
     // --run takes pix3_game_run's params; its policy is checked before Chrome starts, and a run
     // is either a --run or a --bot (play-in-page S3).

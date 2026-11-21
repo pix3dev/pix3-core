@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -408,6 +408,84 @@ export class Ads extends Script {
     expect(
       asReport(await runSmoke({ projectRoot: quiet, scene: MAIN, frames: 1 })).analytics
     ).toBeUndefined();
+  });
+
+  it('--golden: --write pins the end state and the events, a later run matches or names the paths', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Count')),
+      'scripts/Count.ts': `import { Script, registerGameDebug, type PropertySchema } from '@pix3/runtime';
+
+export class Count extends Script {
+  private frames = 0;
+  static getPropertySchema(): PropertySchema {
+    return { nodeType: 'Count', properties: [] };
+  }
+  onStart(): void {
+    registerGameDebug({ name: 'count', snapshot: () => ({ frames: this.frames, roll: this.roll }) });
+    this.scene?.analytics.track('level_start', { level: 1 });
+  }
+  private roll = 0;
+  onUpdate(): void {
+    this.frames += 1;
+    this.roll = this.scene?.random.int(0, 1000) ?? -1;
+  }
+}
+`,
+    });
+    let out = '';
+    let err = '';
+    const io = {
+      cwd: root,
+      stdout: (text: string) => void (out += text),
+      stderr: (text: string) => void (err += text),
+    };
+    const smoke = (...extra: string[]) =>
+      runSmokeCli([MAIN, '--frames', '3', '--seed', '7', '--golden', 'g/run.json', ...extra], io);
+
+    expect(await smoke()).toBe(2);
+    expect(err).toContain('no golden g/run.json');
+    expect(await runSmokeCli(['--golden', 'g/run.json'], io)).toBe(2);
+    expect(err).toContain('name its scene');
+
+    expect(await smoke('--write')).toBe(0);
+    expect(out).toContain('golden: WRITTEN g/run.json');
+    expect(JSON.parse(readFileSync(join(root, 'g', 'run.json'), 'utf8'))).toMatchObject({
+      gameState: { frames: 4 },
+      analytics: [{ name: 'level_start', props: { level: 1 } }],
+    });
+
+    out = '';
+    expect(await smoke('--json')).toBe(0);
+    expect((JSON.parse(out) as { golden: unknown }).golden).toEqual({
+      file: 'g/run.json',
+      status: 'match',
+    });
+
+    // Another seed is another run: the roll differs, and the frames are still the same.
+    out = '';
+    expect(
+      await runSmokeCli([MAIN, '--frames', '3', '--seed', '8', '--golden', 'g/run.json'], io)
+    ).toBe(1);
+    expect(out).toMatch(/golden: MISMATCH g\/run.json — 1 path\(s\) differ/);
+    expect(out).toMatch(/gameState\.roll: \d+ → \d+/);
+    out = '';
+    expect(
+      await runSmokeCli(
+        [
+          MAIN,
+          '--frames',
+          '3',
+          '--seed',
+          '8',
+          '--golden',
+          'g/run.json',
+          '--tolerance',
+          'gameState.roll=1000',
+        ],
+        io
+      )
+    ).toBe(0);
+    expect(out).toContain('golden: MATCH g/run.json');
   });
 
   it('scene.audio.play of an existing file runs silent headless (no error, no warning)', async () => {

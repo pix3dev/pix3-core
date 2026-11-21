@@ -38,6 +38,7 @@ Usage:
         [--project <dir>]          the scenes git changes reach, else every top-level scene
         [--seed N] [--ads <outcomes>]
         [--seed N] [--config '<json>'] a test run: scene.random seeded, component config overridden
+        [--golden <f.json> [--write]] the run's end state + events pinned in a file (exit 1 on a diff)
   pix3 tree [scene] [--json]       One line per node (type#id, pos, size, layout, components,
         [--depth N] [--types A,B]  prefab instances); no scene = project overview
         [--props] [--project <dir>]
@@ -65,6 +66,7 @@ Usage:
         [--reduced-motion] [--storage memory|'<json>'|<file>]
         [--ads reward|skip|unavailable|<list>] [--json]
         [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
+        [--golden <f.json> [--write]] a bot/--run round's end pinned in a file (exit 1 on a diff)
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end
   pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless
@@ -161,7 +163,7 @@ export const COMMAND_USAGE = {
 `,
   smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
                   [--seed N] [--config '<json>'] [--ads <outcomes>] [--timeout S] [--json] [--no-sync]
-                  [--project <dir>]
+                  [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
 
   Run the game headless in Node — no browser, no editor: the project's scripts compiled, the scene
   loaded by the real loader, N frames of 1/60 s stepped by the real SceneRunner. Reports every
@@ -190,12 +192,22 @@ export const COMMAND_USAGE = {
                  order (reward,skip); without it every show is unavailable, as in a build with no
                  portal adapter
   --timeout S    wall-clock limit in seconds (default 20) → exit 2, E_SMOKE_TIMEOUT
+  --golden f     compare the run's end with a golden file: { gameState: the registerGameDebug
+                 snapshot, analytics: [{name, props}] in order }; exit 1 with one line per path that
+                 differs (expected → actual), exit 2 when the file is missing. Paths are the
+                 pix3_game_run gameState paths rooted at the file: gameState.score.best,
+                 analytics.0.props.level; arrays of items with a unique id are matched by id.
+                 Give the run the same flags (--seed, --frames, --config, …) every time; needs a scene
+  --write        record the golden instead (only a clean run with something to pin)
+  --tolerance t  numeric paths allowed to drift, each covering what is below it:
+                 'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
   --json         machine-readable report
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 
-  Exit: 0 = no errors, 1 = errors, 2 = could not run (no scene, bundle failure, unsupported, timeout,
-  or E_RUNTIME_VERSION: the project installs another @pix3/runtime than this CLI runs).
+  Exit: 0 = no errors, 1 = errors or a --golden that differs / was not written, 2 = could not run
+  (no scene, bundle failure, unsupported, timeout, no golden file, or E_RUNTIME_VERSION: the project
+  installs another @pix3/runtime than this CLI runs).
 `,
   tree: `Usage: pix3 tree [scene] [--depth N] [--types A,B] [--props] [--json] [--project <dir>]
 
@@ -321,7 +333,7 @@ Reference it from a scene or script as res://<path inside the project>.
                  [--seconds S] [--safe-area T,R,B,L] [--no-safe-area-overlay] [--reduced-motion]
                  [--storage memory|'<json>'|<file>] [--ads reward|skip|unavailable|<a,b,…>]
                  [--screenshot <file.png>] [--shots <dir>] [--profile] [--tree] [--json]
-                 [--project <dir>]
+                 [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
   when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
@@ -390,11 +402,22 @@ Reference it from a scene or script as res://<path inside the project>.
                  object and 5000 in all. The same tree as /?debug's Scene tab and
                  __PIX3_PLAYER__.debug.tree()
   --json         machine-readable report (with --tree: "tree" {count, truncated, roots})
+  --golden f     compare the run's end with a golden file: { gameState: the registerGameDebug
+                 snapshot, analytics: [{name, props}] in order }; exit 1 with one line per path that
+                 differs (expected → actual), exit 2 when the file is missing. Paths are the
+                 pix3_game_run gameState paths rooted at the file: gameState.score.best,
+                 analytics.0.props.level; arrays of items with a unique id are matched by id.
+                 Needs --bot or --run (a fixed-step round); give it the same flags
+                 (--seed, --config, --bot-args, …) every time
+  --write        record the golden instead (only a clean run with something to pin)
+  --tolerance t  numeric paths allowed to drift, each covering what is below it:
+                 'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
 
   Exit 0 = the page ran frames, nothing threw, the bot or the run passed (an until met, or the
-  policy's done(true)); 1 = errors, a failed or crashed bot, a run that failed, timed out or was
-  refused, a page that never booted or whose loop ran no frame; 2 = could not run (no Chrome,
-  nothing to play, no such policy).
+  policy's done(true)) and a --golden matched; 1 = errors, a failed or crashed bot, a run that
+  failed, timed out or was refused, a page that never booted or whose loop ran no frame, a golden
+  that differs or was not written; 2 = could not run (no Chrome, nothing to play, no such policy,
+  no golden file).
 `,
   render: `Usage: pix3 render <scene.pix3scene|res://…> [--node <id>] [--views <list>] [--size 512]
                    [--out <file.png>] [--lights auto|studio|scene] [--background '#8f9aa6']

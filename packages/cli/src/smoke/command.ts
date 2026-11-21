@@ -25,6 +25,15 @@ import {
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
 import { parseAdsArg } from '../play/command.ts';
+import {
+  formatGoldenHuman,
+  goldenArgsOf,
+  goldenFailed,
+  goldenOf,
+  readGolden,
+  settleGolden,
+  type GoldenArgs,
+} from '../golden.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { selectSmokeScenes, type SmokeSelection } from './select-scenes.ts';
 
@@ -52,6 +61,8 @@ interface SmokeArgs {
   readonly help: boolean;
   readonly commands: readonly SmokeCommand[];
   readonly run?: SmokeRunOverrides;
+  /** `--golden <file> [--write] [--tolerance …]`: the run's end pinned in a file (`golden.ts`). */
+  readonly golden: GoldenArgs | null;
 }
 
 const DEFAULT_FRAMES = 120;
@@ -88,6 +99,9 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let help = false;
   const commands: SmokeCommand[] = [];
   let run: SmokeRunOverrides | undefined;
+  let golden: string | undefined;
+  let write = false;
+  let tolerance: string | undefined;
   const valueOf = (arg: string, index: number): { value?: string; next: number } => {
     const eq = arg.indexOf('=');
     if (eq > 0) return { value: arg.slice(eq + 1), next: index };
@@ -100,7 +114,13 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     else if (arg === '--no-sync') sync = false;
     else if (arg === '--changed') changed = true;
     else if (arg === '--all') all = true;
-    else if (arg === '--help' || arg === '-h') help = true;
+    else if (arg === '--write') write = true;
+    else if (name === '--golden' || name === '--tolerance') {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      if (name === '--golden') golden = value;
+      else tolerance = value;
+    } else if (arg === '--help' || arg === '-h') help = true;
     else if (name === '--command') {
       const { value, next } = valueOf(arg, i);
       i = next;
@@ -159,6 +179,10 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     return {
       error: `${changed ? '--changed' : '--all'} picks the scenes; drop ${scene} or the flag`,
     };
+  const goldenArgs = goldenArgsOf(golden, write, tolerance);
+  if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
+  if (goldenArgs && scene === undefined)
+    return { error: '--golden pins one run: name its scene (pix3 smoke scenes/main.pix3scene)' };
   for (const command of commands) {
     if (command.frame > frames)
       return { error: `--command ${command.name}@${command.frame} is past --frames ${frames}` };
@@ -174,6 +198,7 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     project,
     help,
     commands,
+    golden: goldenArgs,
     ...(run ? { run } : {}),
   };
 };
@@ -507,11 +532,17 @@ export const formatSmokeHuman = (outcome: SmokeOutcome, root: string): string =>
   return `${lines.join('\n')}\n`;
 };
 
-export const formatSmokeJson = (outcome: SmokeOutcome, root: string): string => {
+/** `extra`: fields the command adds to one report (`golden`). */
+export const formatSmokeJson = (
+  outcome: SmokeOutcome,
+  root: string,
+  extra: Record<string, unknown> = {}
+): string => {
   if (isSmokeFailure(outcome)) return `${JSON.stringify(outcome, null, 2)}\n`;
   return `${JSON.stringify(
     {
       ...outcome,
+      ...extra,
       errors: outcome.errors.map(error => ({
         ...error,
         ...(error.stack ? { stack: trimStack(error.stack, root, 12).join('\n') } : {}),
@@ -572,6 +603,11 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     io.stdout(COMMAND_USAGE.smoke);
     return 0;
   }
+  const golden = args.golden && !args.golden.write ? readGolden(args.golden, io.cwd) : null;
+  if (golden && 'error' in golden) {
+    io.stderr(`pix3 smoke: ${golden.error}\n`);
+    return 2;
+  }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const shownRoot = root ?? io.cwd;
   const common = {
@@ -610,9 +646,25 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     );
     return smokeSetExitCode(outcome);
   }
-  if (args.json) io.stdout(formatSmokeJson(outcome, shownRoot));
-  else io.stdout(formatSmokeHuman(outcome, shownRoot));
-  return smokeExitCode(outcome);
+  // A run that could not happen (exit 2) has no end to compare.
+  const goldenResult =
+    args.golden && !isSmokeFailure(outcome)
+      ? settleGolden(
+          args.golden,
+          io.cwd,
+          goldenOf(outcome.game?.snapshot, outcome.analytics),
+          outcome.errors.length > 0,
+          golden
+        )
+      : null;
+  if (args.json) {
+    io.stdout(formatSmokeJson(outcome, shownRoot, goldenResult ? { golden: goldenResult } : {}));
+  } else {
+    io.stdout(formatSmokeHuman(outcome, shownRoot));
+    if (goldenResult) io.stdout(`${formatGoldenHuman(goldenResult).join('\n')}\n`);
+  }
+  const exit = smokeExitCode(outcome);
+  return exit === 0 && goldenFailed(goldenResult) ? 1 : exit;
 };
 
 /** For specs: a report's error list as `frame code script: message` lines. */
