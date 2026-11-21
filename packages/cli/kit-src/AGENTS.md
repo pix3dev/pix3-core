@@ -151,7 +151,9 @@ Example — the layout `npm create pix3` sets up (`pix3 new`); other projects di
    write into `sprites/` (`pix3-nodes` → "An SVG you write as a sprite") — or an image the
    human generates. A label/text that is only emoji is refused — emoji are not art. For a set
    of related art (enemies, tiles, icons), get one piece right at game scale first and make
-   the rest from it — same palette, view, outline and detail. Note the source and licence of
+   the rest from it — same palette, view, outline and detail. A generated sheet of several
+   pictures becomes one PNG per picture with `pix3 slice <sheet> --blobs` (`--anim` for a
+   flipbook) — never by hand-measured crops. Note the source and licence of
    every image you import or generate beside it. List every placeholder you leave.
 
 ## YAML essentials (`.pix3scene`) — details in `pix3-scene-format`

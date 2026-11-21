@@ -19,6 +19,8 @@ pix3 kit [--update] [--migrate] [--project <dir>]
                                               install / update the agent kit; --migrate: a 1.x kit → 2.x
 pix3 character-compile <spec> [--dry-run] [--force] [--json] [--project <dir>]
                                               a 2D character (.pix3anim + prefab) from frame PNGs
+pix3 slice <sheet.png> --grid CxR | --blobs [--key auto|#rrggbb] [--anim <slug>] [--out <dir>]
+                                              cut a generated sheet into frame PNGs (+ a .pix3anim)
 pix3 sfx <preset|"text"> [--out <f.wav>] [--seed <n>] [--json]
                                               synthesize a sound effect to WAV, offline
 pix3 gap "<what was missing>" [--kind …] [--list] record what the agent had to work around
@@ -288,6 +290,46 @@ the written `.pix3anim` is the identity; the compiler's types are assignable to
 `pix3 validate` on a starter that instances the prefab; `character.headless.spec.ts` boots the
 prefab through the real loader and drives idle → attack → restart → die → variant switch. The
 format itself: the kit's `.claude/skills/pix3-scene-format/pix3anim.md`.
+
+## `pix3 slice` — a generated sheet cut into frames
+
+```text
+pix3 slice art/icons.png --blobs --names coin,star,heart --out sprites/icons
+pix3 slice art/run.png --grid 6x1 --anim hero --clip run --fps 12   # sprites/hero/run_0001.png …
+pix3 slice art/sheet.png --blobs --dry-run --json                   # boxes only
+```
+
+An image generator returns a sheet: several icons, or the poses of a run cycle, on transparency
+(Codex) or on a flat colour. `--grid CxR` cuts equal cells (an empty cell is skipped and named in a
+warning); `--blobs` takes one frame per shape. The blob rules are the ones Skyways' own slicer used
+on Codex sheets (`design/tools/slice-icons.py`): a pixel is solid at alpha > 40 — the generator's
+speckle and the dark glow it leaves around a picture sit at alpha ≈ 0–40 —, solid parts closer than
+`--join` pixels (Manhattan, default 10) are one frame, so a sparkle beside a gem or a halo ring
+stays with its picture; shapes under 1% of the largest are dropped; inside a frame the
+neighbours' pixels and everything at alpha ≤ 12 are cleared, and the frame is trimmed and padded
+by `--pad` (2). Frames are numbered in reading order: a row ends where the next shape's centre
+lies below every box in it, left to right within a row. A frame under a fifth of the largest
+prints a warning (a part split off its picture: raise `--join`); `--count N` / `--names a,b,…`
+keep exactly that many (fewer is exit 1).
+
+`--key auto` (the default) uses the sheet's alpha; an opaque sheet whose border is one flat
+colour (90% of the border within 12 of the median) has that colour keyed out — only where it is
+reachable from the border, with thresholds from the backdrop's own noise, so a shadow inside the
+art of the backdrop's colour survives. `--key #rrggbb` keys that colour everywhere (a chroma key;
+holes included). The colour of a partly keyed pixel has the background's share taken out.
+
+`--anim <slug>` writes the frames as `<clip>_0001.png …` into `sprites/<slug>/` of the project
+(or `--out`) and a sequence-mode `<slug>.pix3anim` beside them; `--blobs` frames then share one
+canvas, centred, bottoms aligned. A second sheet with `--clip <name>` adds (or replaces) that clip
+in the same file. Frame files that exist are refused unless `--force`. `--json` prints `{ sheet,
+mode, key, frames: [{ file, box, width, height }], anim, warnings, written }` — `box` is where the
+frame's content came from on the sheet.
+
+PNG only: `src/image/png.ts` reads 8-bit grey, grey+alpha, RGB, RGBA and palette (`tRNS`) PNGs
+on `node:zlib` and refuses 16-bit and interlaced files with how to re-save them; the pixel rules
+are `src/image/sheet.ts`. Checked against slice-icons.py on the seven Skyways sheets (54 frames,
+every box identical); the spec runs on three of them cut down to a few KB
+(`src/image/fixtures/`).
 
 ## `pix3 smoke` — run the game headless
 

@@ -165,6 +165,8 @@ const dispatch = async (
       return (await import('./font/command.ts')).runFontCli(argv, io);
     case 'grid': // plain YAML: rows × cols prefab instances written into a scene
       return (await import('./grid/command.ts')).runGridCli(argv, io);
+    case 'slice': // plain Node: PNG on node:zlib
+      return (await import('./slice/command.ts')).runSliceCli(argv, io);
     case 'sfx': // offline synth, no dependencies
       return (await import('./sfx/command.ts')).runSfx(argv, io);
   }

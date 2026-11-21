@@ -58,6 +58,12 @@ Usage:
         [--out <file.wav>]         hit, explosion, powerup, click, whoosh, chime, win, lose,
                                    deny; or "big explosion")
         [--seed <n>] [--json]
+  pix3 slice <sheet.png>           Cut a generated sheet into frame PNGs in reading order: by a
+        --grid CxR | --blobs       grid, or by alpha shapes (parts within --join px are one frame,
+        [--key auto|#rrggbb]       speckle and faint glow dropped); a flat background keyed out;
+        [--join N] [--count N] [--names a,b] [--pad N] [--out <dir>]
+        [--anim <slug> [--clip c] [--fps N]] --anim: also <slug>.pix3anim (one clip per sheet)
+        [--dry-run] [--force] [--json]
   pix3 font [add <family>]         List the fonts this CLI ships (Nunito, Rubik, Baloo 2, …);
         [--project <dir>] [--json] add copies one into fonts/ and registers it in pix3project.yaml
   pix3 play [dev|dist] [--bot <n>] The game's page (or the build) in a headless Chrome at a phone
@@ -354,6 +360,36 @@ which a single-file build embeds as base64 — --rate 44100 when a sound needs t
   --rate      sample rate in Hz, 8000..48000 (default 22050)
   --json      print { path, res, durationMs, preset, seed, modifiers, bytes, peak, params }
 Reference it from a scene or script as res://<path inside the project>.
+`,
+  slice: `Usage: pix3 slice <sheet.png> (--grid <cols>x<rows> | --blobs) [--key auto|#rrggbb]
+                  [--join N] [--count N] [--names a,b,…] [--pad N] [--out <dir>]
+                  [--anim <slug> [--clip <name>] [--fps N]] [--dry-run] [--force] [--json]
+
+  Cuts a sheet of sprites (an image generator's icon sheet, a run cycle) into one PNG per frame,
+  numbered in reading order: rows top to bottom, left to right in a row.
+
+  --grid CxR   equal cells; an empty cell is skipped (and named in a warning)
+  --blobs      one frame per shape: a pixel with alpha > 40 is solid, solid parts closer than
+               --join pixels are one frame (default 10; a sparkle beside a gem, a glow ring —
+               raise it when one picture comes out as several frames). Shapes under 1% of
+               the largest are speckle and dropped; pixels at alpha <= 12 (generator haze, dark
+               glow) are cleared; each frame is trimmed to what is left plus --pad (default 2)
+  --count N    keep exactly the N largest shapes (fails when there are fewer)
+  --names a,b  the frames' file names in reading order (implies --count)
+  --key        auto (default): the sheet's own alpha, or — for an opaque sheet — the colour of its
+               border, keyed out; #rrggbb keys that colour out
+  --out dir    where frames go (default: a folder named after the sheet beside it; with --anim,
+               sprites/<slug>/ in the project)
+  --anim slug  also write <slug>.pix3anim (sequence mode) with a clip of these frames; with
+               --blobs all frames share one canvas, bottoms aligned. Frames are <clip>_0001.png …;
+               a second sheet with --clip <name> adds (or replaces) that clip in the same file
+  --fps N      the clip's frames per second (default 12)
+  --dry-run    print the frames and boxes, write nothing
+  --force      replace frame files that exist (default: refuse, write nothing)
+  --json       { sheet, mode, key, frames: [{ file, box, width, height }], anim, warnings, written }
+
+  PNG only, 8-bit (RGBA, RGB, grey, palette); an interlaced PNG is refused — re-save it without.
+  Exit: 0 = done, 1 = refused (unreadable sheet, too few frames, existing files), 2 = usage.
 `,
   font: `Usage: pix3 font [list] [--json]
        pix3 font add <family> [--project <dir>] [--json]

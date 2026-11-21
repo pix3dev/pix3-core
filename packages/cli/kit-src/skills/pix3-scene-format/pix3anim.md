@@ -19,7 +19,10 @@ The editor does not create a `.pix3anim` (its inspector binds an existing one); 
 
 1. Frames into one folder: `sprites/<name>/<clip>_0001.png`, `<clip>_0002.png`, … (or SVGs —
    by the rules of AGENTS.md rule 5; `pix3 validate` checks the frames a `.pix3anim` names like
-   a scene's sprites: `E_SVG_*`, reported on the `.pix3anim`).
+   a scene's sprites: `E_SVG_*`, reported on the `.pix3anim`). The poses arrive as one
+   generated sheet? `pix3 slice sheet.png --grid 6x1 --anim <name> --clip <clip>` (or `--blobs`
+   for poses not on a grid) cuts it into those files and writes step 2's file for you —
+   `pix3 slice --help`.
 2. `sprites/<name>/<name>.pix3anim`: `version`, `texturePath: ""` and one clip per animation,
    each frame naming its image — the example under "Two modes" below; leave out every field
    whose default (the tables) is what you want.
