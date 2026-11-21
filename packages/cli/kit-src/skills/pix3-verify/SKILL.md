@@ -223,6 +223,11 @@ npx pix3 play dist --bot round --seed 1..30 --config '{"game-root":{"rules":{"mo
   --config '{"game-root":{"rules":{"moves":25}}}' --parallel 4
 ```
 
+A policy that plays through `command()`, `press` and `tap(node)` (no `tapAt` / `swipe`) runs the
+same grid in Node, on `direct-action`, in seconds and exactly reproducible:
+`npx pix3 smoke scenes/main.pix3scene --bot round --seed 1..200 --parallel 4` — use it for the
+numbers, and `pix3 play` for what needs real input or pictures.
+
 Each combination is a fresh load; the report is a row per run and the aggregate — `min / median /
 p90 / max` of every number in your `registerGameDebug` snapshot, the share of every string or
 boolean (`result: win 63%, lose 37%`), the share of each verdict. Compare the variants by their

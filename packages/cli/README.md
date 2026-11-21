@@ -309,7 +309,23 @@ stopped by `--timeout` (default 20 s).
 overridden through the schema before the first `onStart`; a node, component or key the scene does
 not have is a `console.error`, so an error of the run. `--ads reward | skip | unavailable` (or a
 list by show order, `reward,skip`) decides every `platform` ad show (`RunOverrides.ads`); without it
-a show is `unavailable`, as in a build with no portal adapter.
+a show is `unavailable`, as in a build with no portal adapter. `--locale <code>` starts the run
+in that locale, `--storage memory | <snapshot> | <file>` from that save, `--size WxH` on that
+canvas.
+
+`--bot <name> [--bot-args '<json>']` plays `design/tests/bots/<name>.ts` in Node on the
+`direct-action` channel: the policy is compiled with the project's scripts (one runtime), and
+editor-core's `services/game-test/bot-host.ts` — the host the page and the editor tick policies
+with, bundled into the smoke bundle as `bot-host.mjs` and held to `check-dist` with the page
+host — ticks it from the runner's frame hook. `tap(node)` invokes the control's `click`
+interaction, `press` / `axis` set the input service, `command()` dispatches; pointer gestures
+(`tapAt`, `swipe`, `pinch`, `moveTo`) are refused, as on `direct-action` anywhere. The run ends at
+the policy's `done()` (`--frames` defaults to 7200 with a bot, `--timeout` to 120); the report adds
+`bot` (the policy's report) and a failed or crashed policy exits 1. With list values (`--seed
+1..50`, `--config` / `--bot-args` / `--storage` repeated or a file with a list, `--locale ru,en`,
+`--size a,b`) and `--parallel N` / `--check-determinism` / `--golden`, it is the grid of `pix3 play`
+(below): a worker per combination, the same table, aggregate and exit rule — in a fraction of the
+time, and exactly reproducible (manual ticks from the first one, no realtime boot).
 
 Stubbed: rendering (a null renderer; post-processing never loads), audio (no Web Audio in Node),
 input (no events), network (`scene.network` is null). Textures resolve empty, glTF models and
@@ -404,7 +420,7 @@ matched by it whatever the order (the path names the golden's index, `id` the it
 lists the only numeric paths allowed to drift, each covering everything below it:
 `--tolerance 'gameState.stats.avgMoves=0.01,gameState.units=0.5'`. Code `src/golden.ts`.
 
-A **grid** (`pix3 play` with list values, below) pins its aggregate instead: `{ "aggregate": … }`,
+A **grid** (`pix3 play` or `pix3 smoke <scene>` with list values) pins its aggregate instead: `{ "aggregate": … }`,
 paths under `aggregate.` — `--tolerance 'aggregate.numbers.gameState.ticks=5'`. A single run's
 golden and a grid's are not interchangeable (exit 2 names which one the file is not).
 

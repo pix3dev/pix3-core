@@ -85,8 +85,14 @@
       // `page-test-host.ts`: the game page's test host — built into `dist/page-test-host.js` by
       // `vite.page-test-host.config.ts` (imported by path from `virtual:pix3/dev`) and bundled by
       // the CLI's `pix3 play` for a built page (`packages/cli/src/play/bundle.ts`, through
-      // esbuild's stdin); nothing in the editor imports it.
-      "entry": ["src/index.ts!", "scripts/*.mjs!", "src/services/game-test/page-test-host.ts!"],
+      // esbuild's stdin); nothing in the editor imports it. `bot-host.ts`: also an entry of the
+      // CLI's smoke bundle (`packages/cli/src/smoke/bundle.ts`, `startDirectBot` for `--bot`).
+      "entry": [
+        "src/index.ts!",
+        "scripts/*.mjs!",
+        "src/services/game-test/page-test-host.ts!",
+        "src/services/game-test/bot-host.ts!"
+      ],
       "project": [
         "src/**/*.ts!",
         "scripts/*.mjs!",

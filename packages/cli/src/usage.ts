@@ -167,6 +167,8 @@ export const COMMAND_USAGE = {
 `,
   smoke: `Usage: pix3 smoke [scene] [--changed | --all] [--frames N] [--command name[@frame]]…
                   [--seed N] [--config '<json>'] [--ads <outcomes>] [--timeout S] [--json] [--no-sync]
+                  [--bot <name> [--bot-args '<json>']] [--locale <code>] [--storage <save>]
+                  [--size WxH] [list values, --parallel N, --check-determinism: a grid]
                   [--golden <file.json> [--write] [--tolerance '<path>=<eps>,…']] [--project <dir>]
                   [--record <file.pix3replay> [--every N]]
        pix3 smoke --replay <file.pix3replay> [--timeout S] [--json] [--project <dir>]
@@ -208,21 +210,29 @@ export const COMMAND_USAGE = {
   --tolerance t  numeric paths allowed to drift, each covering what is below it:
                  'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
 
-  A grid — several values for one or more of --seed (1..50 or 1,4,9), --size (390x844@3,360x640@2:
-  each size its own @scale), --locale (ru,en), --config / --bot-args / --storage (repeat the flag,
-  or give a file holding a JSON list): one run per combination, each a fresh load in a browser
-  context of its own, with --bot or --run. Prints a row per combination (verdict, frames, the
-  registerGameDebug snapshot, its errors) and the aggregate: min / median / p90 / max of every
-  number in the snapshots (an array counts by its length), the share of every string or boolean
-  value, the share of each verdict (pass, fail, crash, error).
-  --parallel N   runs at a time (default 1; each paints in software, so mind the cores)
-  --check-determinism  every combination twice; a pair that ends differently names the paths.
-                 A counter of realtime ticks before the bot starts drifts by a tick or two — keep
-                 it out of the snapshot you compare
-  --golden f     with a grid pins the aggregate ({ "aggregate": … }); --tolerance paths start
-                 with aggregate. (aggregate.numbers.gameState.score=1)
+  --bot name     play design/tests/bots/<name>.ts on direct-action (the same policy API as pix3 play
+                 --bot; tap(node) invokes the control's click, press/axis set the input service,
+                 command() dispatches; tapAt/swipe/pinch/moveTo are refused): the run ends at the
+                 policy's done(), --frames defaults to 7200 and --timeout to 120 with a bot. A
+                 failed or crashed policy exits 1
+  --bot-args j   the policy's bot.args (a JSON object)
+  --locale c     start the run in this locale (RunOverrides.locale)
+  --storage s    the save scene.storage starts from: memory or a snapshot (inline or a file)
+  --size WxH     the canvas in CSS px (default: viewportBaseSize)
+
+  A grid — several values for --seed (1..50 or 1,4,9), --locale (ru,en), --size, or --config /
+  --bot-args / --storage repeated (or a file holding a JSON list) — runs the scene once per
+  combination, each in a worker of its own, and prints the grid of pix3 play: a row per
+  combination and the aggregate (min / median / p90 / max of every number in the snapshot, the
+  share of every string or boolean value and of each verdict). Deterministic here: manual
+  1/60 s ticks from the first one.
+  --parallel N   workers at a time (default 1)
+  --check-determinism  every combination twice; a pair that ends differently names the paths
+  --golden f     with a grid pins the aggregate ({ "aggregate": … }); --tolerance paths start with
+                 aggregate
   A grid exits 1 when a run errored or crashed, a combination ended differently twice or the
-  golden differs; a lost round (done(false)) is a result the aggregate counts, not a failure.
+  golden differs; a lost round (done(false)) is a result the aggregate counts.
+
   --record f     write the run as a replay file: the inputs from outside the game (--command here),
                  its settings and checkpoints of the gameState and the live tree every 30 ticks
   --every N      ticks between checkpoints of --record (1 = every tick: the exact tick of a
@@ -235,8 +245,8 @@ export const COMMAND_USAGE = {
   --no-sync      do not ask a running Pix3 editor (.pix3/dev.json) to flush its unsaved scenes first
   --project dir  project folder (default: nearest folder with pix3project.yaml)
 
-  Exit: 0 = no errors, 1 = errors, a --golden that differs / was not written, or a replay that
-  diverged or stopped, 2 = could not run (no scene, bundle failure, unsupported, timeout, no golden
+  Exit: 0 = no errors, 1 = errors, a failed or crashed --bot, a --golden that differs / was not
+  written, or a replay that diverged or stopped, 2 = could not run (no scene, bundle failure, unsupported, timeout, no golden
   file, a file that is not a recording — E_SMOKE_REPLAY_FILE — or E_RUNTIME_VERSION: the project
   installs another @pix3/runtime than this CLI runs).
 `,
@@ -449,6 +459,23 @@ Reference it from a scene or script as res://<path inside the project>.
   --write        record the golden instead (only a clean run with something to pin)
   --tolerance t  numeric paths allowed to drift, each covering what is below it:
                  'gameState.stats.avg=0.01,gameState.units=0.5'; everything else is exact
+
+  A grid — several values for one or more of --seed (1..50 or 1,4,9), --size (390x844@3,360x640@2:
+  each size its own @scale), --locale (ru,en), --config / --bot-args / --storage (repeat the flag,
+  or give a file holding a JSON list): one run per combination, each a fresh load in a browser
+  context of its own, with --bot or --run. Prints a row per combination (verdict, frames, the
+  registerGameDebug snapshot, its errors) and the aggregate: min / median / p90 / max of every
+  number in the snapshots (an array counts by its length), the share of every string or boolean
+  value, the share of each verdict (pass, fail, crash, error).
+  --parallel N   runs at a time (default 1; each paints in software, so mind the cores)
+  --check-determinism  every combination twice; a pair that ends differently names the paths.
+                 A counter of realtime ticks before the bot starts drifts by a tick or two — keep
+                 it out of the snapshot you compare
+  --golden f     with a grid pins the aggregate ({ "aggregate": … }); --tolerance paths start
+                 with aggregate. (aggregate.numbers.gameState.score=1)
+  A grid exits 1 when a run errored or crashed, a combination ended differently twice or the
+  golden differs; a lost round (done(false)) is a result the aggregate counts, not a failure.
+
   --record f     write the run as a replay file (dev server only): the inputs from outside the game
                  (the bot's taps and commands, a trip to the background, ad outcomes), its settings,
                  every tick's time step and checkpoints every 30 ticks; replay it in Node with

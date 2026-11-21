@@ -109,6 +109,25 @@ export interface SmokeReport {
   readonly recording?: string;
   /** `--replay`: how the recording played back. */
   readonly replay?: SmokeReplay;
+  /**
+   * `--bot`: the policy's report (editor-core's `BotReport`: `channel`, `frames`, `sent`,
+   * `refused`, `done?`, `error?`, `log`, `notes`), or why it could not start (`error` only).
+   */
+  readonly bot?: SmokeBot;
+}
+
+/** `SmokeReport.bot`: the fields the CLI reads of a `BotReport`. */
+export interface SmokeBot {
+  readonly name: string;
+  readonly frames?: number;
+  readonly done?: { readonly pass: boolean; readonly reason: string; readonly frame: number };
+  readonly error?: { readonly message: string };
+  readonly log?: readonly {
+    readonly frame: number;
+    readonly kind: string;
+    readonly message: string;
+  }[];
+  readonly [key: string]: unknown;
 }
 
 /** `pix3 smoke --replay`: the runtime's `RunTapeReplayResult`. */
@@ -248,6 +267,16 @@ export interface SmokeJob {
   readonly replay?: string;
   /** The canvas in CSS px when it is not {@link viewport} (a replay: the recording's). */
   readonly canvas?: { readonly width: number; readonly height: number };
+  /**
+   * `--bot`: a policy played on `direct-action` (editor-core's `bot-host.ts`, bundled as
+   * `bot-host.mjs`), compiled with the project's scripts. The run ends at its verdict.
+   */
+  readonly bot?: {
+    readonly name: string;
+    /** Project-relative path of the policy file. */
+    readonly file: string;
+    readonly args?: Record<string, unknown>;
+  };
 }
 
 /** A smoke run's test settings: the `scene.random` seed, ad outcomes and component config overrides. */
@@ -256,6 +285,10 @@ export interface SmokeRunOverrides {
   /** `RunOverrides.ads`: what every `platform` ad show does (`--ads reward,skip`). */
   readonly ads?: 'reward' | 'skip' | 'unavailable' | readonly ('reward' | 'skip' | 'unavailable')[];
   readonly config?: Record<string, Record<string, Record<string, unknown>>>;
+  /** `RunOverrides.locale`: the locale the run starts in. */
+  readonly locale?: string;
+  /** `RunOverrides.storage`: the save the run starts from (always in memory). */
+  readonly storage?: 'memory' | { readonly snapshot: Record<string, unknown> };
 }
 
 /** One `--command name@frame`: `scene.commands.dispatch(name)` right before that frame steps. */

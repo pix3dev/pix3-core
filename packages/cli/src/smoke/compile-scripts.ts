@@ -30,6 +30,8 @@ export type CompileResult =
       readonly registered: readonly string[];
       readonly stubbed: readonly string[];
       readonly bundledPackages: readonly string[];
+      /** `options.policy`'s module namespace, compiled with the scripts (one runtime). */
+      readonly policy?: unknown;
     }
   | { readonly status: 'none' }
   | {
@@ -61,9 +63,12 @@ export const compileAndImportScripts = async (
     readonly esbuildSpecifier?: string;
     /** Where `three/*` addons resolve when the project has no `three` of its own. */
     readonly fallbackResolveDir?: string;
+    /** A bot policy file (project-relative) to compile alongside: `pix3 smoke --bot`. */
+    readonly policy?: string;
   } = {}
 ): Promise<CompileResult> => {
-  if (entries.length === 0) return { status: 'none' };
+  const files = options.policy ? [...entries, options.policy] : entries;
+  if (files.length === 0) return { status: 'none' };
   const esbuild = await loadEsbuild(options.esbuildSpecifier ?? 'esbuild');
   if (!esbuild) {
     return {
@@ -78,7 +83,7 @@ export const compileAndImportScripts = async (
   let code: string;
   try {
     const result = await esbuild.build({
-      ...scriptBuildOptions(project, entries, 'pix3-smoke-scripts.ts'),
+      ...scriptBuildOptions(project, files, 'pix3-smoke-scripts.ts'),
       platform: 'browser',
       // Sources in the map are relative to this root, not the invoking CLI's cwd.
       absWorkingDir: project.root,
@@ -122,7 +127,7 @@ export const compileAndImportScripts = async (
   try {
     return {
       status: 'loaded',
-      registered: await importAndRegister(code, entries, registry, 'pix3-smoke-scripts-'),
+      ...(await importAndRegister(code, entries, registry, 'pix3-smoke-scripts-', options.policy)),
       stubbed: [...stubbed].sort(),
       bundledPackages: [...bundled].sort(),
     };

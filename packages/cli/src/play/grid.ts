@@ -3,9 +3,26 @@
  * `--config`, `--bot-args`, `--size`, `--locale`, `--storage` make one run per combination, each a
  * fresh load; the report is a row per combination and an aggregate over the game's
  * `registerGameDebug` snapshots — min / median / max / p90 of every number, the share of every
- * value of a string or boolean — which `--golden` pins (`gridGoldenOf`). No imports from the
- * runtime: both commands load this file.
+ * value of a string or boolean — which `--golden` pins (`gridGoldenOf`). {@link runGrid} is the
+ * whole grid but the run itself, which each command brings (a page in Chrome, a worker in Node).
+ * No imports from the runtime: both commands load this file.
  */
+
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import type { CliIo } from '../io.ts';
+import type { SmokeAnalytics } from '../smoke/report.ts';
+import {
+  diffGolden,
+  formatGoldenHuman,
+  goldenFailed,
+  goldenOf,
+  gridGoldenOf,
+  settleGolden,
+  type GoldenArgs,
+  type readGolden,
+} from '../golden.ts';
 
 /** One axis value as the command line gave it, and the label the table shows. */
 export interface GridValue<T> {
@@ -104,6 +121,28 @@ export const parseSizeList = (
     });
   }
   return sizes;
+};
+
+/** One JSON object, a list of them, or a file holding either; null when it is none of those. */
+export const parseObjectList = (text: string): Record<string, unknown>[] | null => {
+  let source = text.trim();
+  if (!source.startsWith('{') && !source.startsWith('[')) {
+    try {
+      source = readFileSync(resolve(text), 'utf8');
+    } catch {
+      return null;
+    }
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return null;
+  }
+  const list = Array.isArray(parsed) ? parsed : [parsed];
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  return list.length > 0 && list.every(isObject) ? list : null;
 };
 
 /** A JSON object's label: itself when short, else `<name>#<n>`. */
@@ -273,4 +312,91 @@ export const runPool = async <T>(
   };
   await Promise.all(Array.from({ length: Math.min(parallel, count) }, worker));
   return results;
+};
+
+/** One run of a combination, as the command played it. */
+export interface GridPlay {
+  readonly verdict: GridRun['verdict'];
+  readonly frames?: number;
+  readonly game: unknown;
+  readonly analytics?: SmokeAnalytics;
+  readonly errors: readonly string[];
+}
+
+/**
+ * The grid: every combination played (`again` on the second play of `--check-determinism`, the
+ * two ends compared by their golden paths), `parallel` at a time; a combination whose play throws
+ * is that combination's error. Writes the table and the aggregate (or `--json`), settles
+ * `--golden` over the aggregate, and answers the exit code: 1 when a run errored or crashed, a
+ * combination ended differently twice or the golden differs — a lost round is a result.
+ */
+export const runGrid = async (options: {
+  readonly combos: readonly GridCombo[];
+  readonly parallel: number;
+  readonly checkDeterminism: boolean;
+  readonly play: (combo: GridCombo, again: boolean) => Promise<GridPlay>;
+  readonly io: CliIo;
+  readonly json: boolean;
+  readonly golden: GoldenArgs | null;
+  readonly goldenRead: Exclude<ReturnType<typeof readGolden>, { error: string }> | null;
+}): Promise<number> => {
+  const { combos, io } = options;
+  const playCombo = async (combo: GridCombo): Promise<GridRun> => {
+    const first = await options.play(combo, false);
+    let determinism: GridRun['determinism'];
+    if (options.checkDeterminism) {
+      const second = await options.play(combo, true);
+      const paths = diffGolden(
+        goldenOf(first.game, first.analytics),
+        goldenOf(second.game, second.analytics),
+        new Map()
+      ).map(diff => diff.path);
+      determinism = { same: paths.length === 0, paths };
+    }
+    return {
+      combo,
+      verdict: first.verdict,
+      ...(first.frames !== undefined ? { frames: first.frames } : {}),
+      game: first.game,
+      errors: first.errors,
+      ...(determinism ? { determinism } : {}),
+    };
+  };
+  const runs = await runPool(combos.length, options.parallel, index =>
+    playCombo(combos[index]).catch(
+      (error: Error): GridRun => ({
+        combo: combos[index],
+        verdict: 'error',
+        game: null,
+        errors: [error.message],
+      })
+    )
+  );
+  const aggregate = aggregateGrid(runs);
+  const broken = runs.some(
+    run => run.verdict === 'error' || run.verdict === 'crash' || run.determinism?.same === false
+  );
+  const goldenResult = options.golden
+    ? settleGolden(options.golden, io.cwd, gridGoldenOf(aggregate), broken, options.goldenRead)
+    : null;
+  if (options.json) {
+    const rows = runs.map(({ combo: { index: _index, label, ...axes }, ...run }) => ({
+      label,
+      ...axes,
+      ...run,
+      game: run.game ?? null,
+    }));
+    io.stdout(
+      `${JSON.stringify(
+        { runs: rows, aggregate, ...(goldenResult ? { golden: goldenResult } : {}) },
+        null,
+        2
+      )}\n`
+    );
+  } else {
+    const lines = formatGridHuman(runs, aggregate);
+    if (goldenResult) lines.push(...formatGoldenHuman(goldenResult));
+    io.stdout(`${lines.join('\n')}\n`);
+  }
+  return broken || goldenFailed(goldenResult) ? 1 : 0;
 };

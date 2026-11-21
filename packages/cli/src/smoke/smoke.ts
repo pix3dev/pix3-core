@@ -43,6 +43,7 @@ import type {
   SmokeJob,
   SmokeOutcome,
   SmokeReplay,
+  SmokeBot,
   SmokeReport,
   SmokeWarning,
   SmokeWarningCode,
@@ -175,9 +176,27 @@ const ENGINE_REPORTS = [
   /^\[GameCommands\]/,
 ];
 
+/**
+ * The slice of editor-core's `services/game-test/bot-host.ts` a `--bot` run calls, loaded from
+ * the bundle's `bot-host.mjs` (the CLI does not type-check editor-core's sources).
+ */
+interface BotHostModule {
+  startDirectBot(
+    runner: SceneRunner,
+    options: {
+      readonly name: string;
+      readonly module: unknown;
+      readonly args?: Record<string, unknown>;
+      readonly gameState: () => unknown;
+    }
+  ): { readonly session: { readonly finished: boolean }; stop(): SmokeBot } | { error: string };
+}
+
 export const runSmokeJob = async (
   job: SmokeJob,
-  imports: ScriptImportMap
+  imports: ScriptImportMap,
+  /** Where `bot-host.mjs` is (`--bot`). */
+  botHostUrl?: string
 ): Promise<SmokeOutcome> => {
   const startedAt = performance.now();
   let tape: RunTape | null = null;
@@ -350,6 +369,7 @@ export const runSmokeJob = async (
   let registered: readonly string[] = [];
   let recorder: RunRecorder | null = null;
   let replay: RunTapeReplayResult | null = null;
+  let botReport: SmokeBot | null = null;
 
   const finish = (): SmokeOutcome => {
     const sorted = [...stepTimes].sort((a, b) => a - b);
@@ -420,6 +440,7 @@ export const runSmokeJob = async (
       ...(analytics ? { analytics } : {}),
       ...(recorder ? { recording: recorder.finish() } : {}),
       ...(replay ? { replay: replay as SmokeReplay } : {}),
+      ...(botReport ? { bot: botReport } : {}),
     };
   };
 
@@ -434,7 +455,9 @@ export const runSmokeJob = async (
     const compiled = await compileAndImportScripts(project, index.entries, registry, imports, {
       esbuildSpecifier: job.esbuildSpecifier,
       fallbackResolveDir: job.fallbackResolveDir,
+      ...(job.bot ? { policy: job.bot.file } : {}),
     });
+    let policyModule: unknown;
     timings.compile = performance.now() - compileStart;
     switch (compiled.status) {
       case 'unavailable':
@@ -469,6 +492,7 @@ export const runSmokeJob = async (
       }
       case 'loaded':
         registered = compiled.registered;
+        policyModule = compiled.policy;
         for (const specifier of compiled.stubbed) {
           addWarning(
             'W_SMOKE_STUBBED_IMPORT',
@@ -564,6 +588,20 @@ export const runSmokeJob = async (
     }
     nodesStart = countNodes(runner.getLiveRootNodes());
 
+    // `--bot`: the policy on `direct-action`, ticked from the runner's frame hook like everywhere.
+    let bot: ReturnType<BotHostModule['startDirectBot']> | null = null;
+    if (job.bot && botHostUrl) {
+      const host = (await import(botHostUrl)) as BotHostModule;
+      bot = host.startDirectBot(runner, {
+        name: job.bot.name,
+        module: policyModule,
+        args: job.bot.args ?? {},
+        gameState: () => JSON.parse(JSON.stringify(getGameDebug()?.snapshot?.() ?? null)),
+      });
+      if ('error' in bot) botReport = { name: job.bot.name, error: { message: bot.error } };
+    }
+    const botPlaying = bot && !('error' in bot) ? bot : null;
+
     // --- Frames 1..N ----------------------------------------------------------------------------
     if (tape) {
       replay = await replayRunTape(runner, tape, {
@@ -600,7 +638,9 @@ export const runSmokeJob = async (
       stepTimes.push(elapsed);
       if (next === 1) timings.firstFrame = elapsed;
       await flushPending();
+      if (botPlaying?.session.finished) break;
     }
+    if (botPlaying) botReport = botPlaying.stop();
     nodesEnd = countNodes(runner.getLiveRootNodes());
     for (const sprite of untexturedSprites(
       runner.getLiveRootNodes(),

@@ -22,26 +22,23 @@ import {
   type ReplayReport,
 } from '../replay-file.ts';
 import {
-  aggregateGrid,
-  formatGridHuman,
   gridCombos,
   isGrid,
   jsonLabel,
+  parseObjectList,
   parseSeedList,
   parseSizeList,
-  runPool,
+  runGrid,
   type GridAxes,
   type GridCombo,
-  type GridRun,
+  type GridPlay,
   type GridValue,
 } from './grid.ts';
 import {
-  diffGolden,
   formatGoldenHuman,
   goldenArgsOf,
   goldenFailed,
   goldenOf,
-  gridGoldenOf,
   readGolden,
   settleGolden,
   type GoldenArgs,
@@ -117,7 +114,7 @@ const STORAGE_HINT =
   '--storage takes memory, a snapshot {"version":N,"data":{…}} (what scene.storage.export() returns) or a file holding one';
 
 /** `--storage memory | '<json>' | <file>` → `RunOverrides.storage`, or the error line. */
-const parseStorageArg = (
+export const parseStorageArg = (
   value: string
 ): { storage: NonNullable<NonNullable<PlayArgs['run']>['storage']> } | { error: string } => {
   if (value === 'memory') return { storage: 'memory' };
@@ -408,28 +405,6 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   return grid ? base : argsForCombo(base, gridCombos(axes)[0]);
 };
 
-/** One JSON object, a list of them, or a file holding either; null when it is none of those. */
-const parseObjectList = (text: string): Record<string, unknown>[] | null => {
-  let source = text.trim();
-  if (!source.startsWith('{') && !source.startsWith('[')) {
-    try {
-      source = readFileSync(resolve(text), 'utf8');
-    } catch {
-      return null;
-    }
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source);
-  } catch {
-    return null;
-  }
-  const list = Array.isArray(parsed) ? parsed : [parsed];
-  const isObject = (v: unknown): v is Record<string, unknown> =>
-    typeof v === 'object' && v !== null && !Array.isArray(v);
-  return list.length > 0 && list.every(isObject) ? list : null;
-};
-
 /** The run of one grid combination: its size, `bot.args` and `RunOverrides` over the base. */
 const argsForCombo = (base: PlayArgs, combo: GridCombo): PlayArgs => {
   const run = {
@@ -672,7 +647,7 @@ const slug = (label: string): string =>
     .slice(0, 80) || 'run';
 
 /** A run's verdict in the grid's table. */
-const verdictOf = (report: PlayReport, failed: boolean): GridRun['verdict'] => {
+const verdictOf = (report: PlayReport, failed: boolean): GridPlay['verdict'] => {
   if (report.status !== 'running' || report.errors.length > 0) return 'error';
   if (report.bot?.error !== undefined) return 'crash';
   if (report.run && report.run.ok !== true) return 'error';
@@ -713,85 +688,34 @@ const playGrid = async (
       await chrome.closeContext(browserContext).catch(() => undefined);
     }
   };
-  const play = async (combo: GridCombo): Promise<GridRun> => {
-    const first = await once(combo, 0);
-    const report = first.report;
-    let determinism: GridRun['determinism'];
-    if (args.checkDeterminism) {
-      const second = await once(combo, 1);
-      const paths = diffGolden(
-        goldenOf(report.game, report.analytics),
-        goldenOf(second.report.game, second.report.analytics),
-        new Map()
-      ).map(diff => diff.path);
-      determinism = { same: paths.length === 0, paths };
-    }
-    const frames = report.bot?.frames;
-    const run: GridRun = {
-      combo,
-      verdict: verdictOf(report, first.failed),
-      ...(typeof frames === 'number' ? { frames } : {}),
-      game: report.game,
-      errors: [
-        ...report.errors,
-        ...(report.bot?.error ? [String((report.bot.error as { message?: string }).message)] : []),
-        ...(report.run && report.run.ok !== true
-          ? [`${String(report.run.reason)}: ${String(report.run.detail ?? '')}`]
-          : []),
-      ],
-      ...(determinism ? { determinism } : {}),
-    };
-    return run;
-  };
-  // A combination Chrome could not play is that combination's error, not the grid's end.
-  const runs = await runPool(combos.length, args.parallel, index =>
-    play(combos[index]).catch(
-      (error: Error): GridRun => ({
-        combo: combos[index],
-        verdict: 'error',
-        game: null,
-        errors: [error.message],
-      })
-    )
-  );
-  const aggregate = aggregateGrid(runs);
-  const broken = runs.some(
-    run => run.verdict === 'error' || run.verdict === 'crash' || run.determinism?.same === false
-  );
-  const goldenResult = args.golden
-    ? settleGolden(args.golden, io.cwd, gridGoldenOf(aggregate), broken, golden)
-    : null;
-  if (args.json) {
-    io.stdout(
-      `${JSON.stringify(
-        {
-          runs: runs.map(run => ({
-            label: run.combo.label,
-            ...(run.combo.seed !== undefined ? { seed: run.combo.seed } : {}),
-            ...(run.combo.size ? { size: run.combo.size } : {}),
-            ...(run.combo.locale !== undefined ? { locale: run.combo.locale } : {}),
-            ...(run.combo.config ? { config: run.combo.config } : {}),
-            ...(run.combo.botArgs ? { botArgs: run.combo.botArgs } : {}),
-            ...(run.combo.storage !== undefined ? { storage: run.combo.storage } : {}),
-            verdict: run.verdict,
-            ...(run.frames !== undefined ? { frames: run.frames } : {}),
-            game: run.game ?? null,
-            errors: run.errors,
-            ...(run.determinism ? { determinism: run.determinism } : {}),
-          })),
-          aggregate,
-          ...(goldenResult ? { golden: goldenResult } : {}),
-        },
-        null,
-        2
-      )}\n`
-    );
-  } else {
-    const lines = formatGridHuman(runs, aggregate);
-    if (goldenResult) lines.push(...formatGoldenHuman(goldenResult));
-    io.stdout(`${lines.join('\n')}\n`);
-  }
-  return broken || goldenFailed(goldenResult) ? 1 : 0;
+  return runGrid({
+    combos,
+    parallel: args.parallel,
+    checkDeterminism: args.checkDeterminism,
+    io,
+    json: args.json,
+    golden: args.golden,
+    goldenRead: golden,
+    play: async (combo, again) => {
+      const { report, failed } = await once(combo, again ? 1 : 0);
+      const frames = report.bot?.frames;
+      return {
+        verdict: verdictOf(report, failed),
+        ...(typeof frames === 'number' ? { frames } : {}),
+        game: report.game,
+        ...(report.analytics ? { analytics: report.analytics } : {}),
+        errors: [
+          ...report.errors,
+          ...(report.bot?.error
+            ? [String((report.bot.error as { message?: string }).message)]
+            : []),
+          ...(report.run && report.run.ok !== true
+            ? [`${String(report.run.reason)}: ${String(report.run.detail ?? '')}`]
+            : []),
+        ],
+      };
+    },
+  });
 };
 
 interface PageScripts {

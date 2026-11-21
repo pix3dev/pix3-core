@@ -138,8 +138,10 @@ export const importAndRegister = async (
   code: string,
   entries: readonly string[],
   registry: ScriptRegistry,
-  tempPrefix: string
-): Promise<string[]> => {
+  tempPrefix: string,
+  /** A file compiled as the entry after `entries` whose namespace is wanted back (a bot policy). */
+  extra?: string
+): Promise<{ registered: string[]; policy?: unknown }> => {
   const dir = mkdtempSync(join(tmpdir(), tempPrefix));
   const modulePath = join(dir, 'scripts.mjs');
   try {
@@ -151,7 +153,9 @@ export const importAndRegister = async (
       if (isRecord(namespace))
         registered.push(...registerProjectScriptExports(registry, namespace, file));
     });
-    return registered;
+    return extra
+      ? { registered, policy: module[`__pix3_entry_${entries.length}`] }
+      : { registered };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -3,11 +3,9 @@ import { safeSerialize, type Json } from '@/core/agent-introspection';
 import type { GameRuntimeHandle, GameTestHost } from '@/services/game-test/game-runtime-handle';
 import {
   getGameDebug,
-  isInteractive,
   reportScriptError,
   DEFAULT_FIXED_DELTA_SEC,
   NodeBase,
-  type Interactive,
   type GameCommandLogEntry,
   type RuntimeTimeConfig,
   type RuntimeTimeMode,
@@ -95,6 +93,12 @@ import {
   keyCodeOf,
   toCanvasFraction,
 } from '@/services/game-test/game-bot-world';
+import {
+  directActionWorld,
+  dispatchBotCommand,
+  findInteractionOwner,
+  resolveLiveInput,
+} from '@/services/game-test/bot-host';
 import { Vector3 } from 'three';
 
 /**
@@ -930,13 +934,11 @@ export class GameTestService {
   /**
    * The world a policy senses and actuates through (§5.3).
    *
-   * Composed here, next to the monkey's world, because the *editor-side* readers a
-   * bot shares with it live here — `resolveLiveInput`,
-   * `findInteractionOwner`, `readGameState`, `keyCodeOf`. The geometry (node views,
-   * ray-versus-box, the joystick deflection) is in `game-bot-world.ts` instead, for
-   * one reason: it is the part a spec can hold to account without a browser, and it is
-   * the part where being subtly wrong produces a policy that "does not work" with
-   * nothing in the report to point at.
+   * `physical-input` is composed here (DOM events on the canvas, the reachability journal);
+   * `direct-action` is the shared `directActionWorld` of `bot-host.ts` — the world a policy
+   * has in Node too — with aim (`moveTo`) still a real pointer move. The geometry (node views,
+   * ray-versus-box, the joystick deflection, the pinch) is in `game-bot-world.ts`: the part a
+   * spec can hold to account without a browser.
    *
    * The channel decides the actuators and nothing else: both channels sense
    * identically, because what a policy can *see* is not what a run proves.
@@ -948,11 +950,24 @@ export class GameTestService {
     const { runner } = runtime;
     const sink = new DomInputSink(runtime.canvas, runtime.windowRef);
     const scene = runner as unknown as BotSceneHandle;
+    const gameState = (): Json | null => readGameState()?.snapshot ?? null;
+    /** A move, not a press: aim / hover — a real pointer on both channels. */
+    const pointAt = (point: { x: number; y: number }): string | null => {
+      const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
+      if (!at) {
+        return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
+      }
+      // Keeping aim apart from a press is what lets a hover-gated control (a floating joystick,
+      // a tooltip) be exercised at all.
+      sink.pointer('move', at.nx, at.ny, BOT_POINTER_ID);
+      return null;
+    };
+    if (channel === 'direct-action') return { ...directActionWorld(runner, gameState), pointAt };
+
     const sticks = new PhysicalAxisDriver(scene, runtime.canvas, sink);
     const pinch = new BotPinch(scene, runtime.canvas, sink);
-    /** Keys/buttons the world put down, so `releaseAll` can be exhaustive. */
+    /** Keys the world put down, so `releaseAll` can be exhaustive. */
     const heldKeys = new Set<string>();
-    const heldButtons = new Set<string>();
     const openTaps = new Map<string, { nx: number; ny: number }>();
     /** Where the bot's finger went down (a swipe or a tapAt), so teardown can lift it. */
     let swipeDown: { nx: number; ny: number } | null = null;
@@ -963,10 +978,8 @@ export class GameTestService {
      * and its own bounds check is the witness. Only the physical channel earns it — `direct-action`
      * calls the interaction and touches no pixels, which is precisely what it does not prove.
      */
-    const noteTapReach = (target: string): void => {
-      if (channel !== 'physical-input') return;
+    const noteTapReach = (target: string): void =>
       this.gameInput.noteExternalPhysicalReach(runtime, target);
-    };
 
     return {
       channel,
@@ -975,48 +988,28 @@ export class GameTestService {
       nearestOfType: (type, from) => nearestBotNode(scene, type, from),
       raycast: (from, dir) => raycastBotNodes(scene, from, dir),
       pointIn: (query, x, y) => botPointInNode(scene, query, x, y),
-      gameState: () => readGameState()?.snapshot ?? null,
+      gameState,
 
       pressAction: action => {
         const code = keyCodeOf(action) ?? keyCodeOf(`Key_${action}`);
-        if (channel === 'physical-input') {
-          if (!code) {
-            // `Action_Primary` is the honest exception: it is raised by ANY pointer
-            // press, so the physical gesture for it is a press somewhere — and a
-            // press "somewhere" is the false-positive machine the negative control
-            // exists to catch. Refusing it by name is better than synthesizing a tap
-            // into empty space and letting the run claim the button works.
-            return `"${action}" is not a key, so there is no keystroke that raises it. On \`physical-input\` a named action has to come from a control the player can touch: tap("${action}") if it is a node, or press a key the game binds. (\`Action_Primary\` in particular is raised by a press ANYWHERE, so pressing it directly would prove nothing about any button.)`;
-          }
-          sink.key('down', code);
-          heldKeys.add(code);
-          return null;
+        if (!code) {
+          // `Action_Primary` is the honest exception: it is raised by ANY pointer
+          // press, so the physical gesture for it is a press somewhere — and a
+          // press "somewhere" is the false-positive machine the negative control
+          // exists to catch. Refusing it by name is better than synthesizing a tap
+          // into empty space and letting the run claim the button works.
+          return `"${action}" is not a key, so there is no keystroke that raises it. On \`physical-input\` a named action has to come from a control the player can touch: tap("${action}") if it is a node, or press a key the game binds. (\`Action_Primary\` in particular is raised by a press ANYWHERE, so pressing it directly would prove nothing about any button.)`;
         }
-        const input = resolveLiveInput(runner);
-        if (!input) {
-          return `no live InputService could be reached to set "${action}" directly (is the scene still running?).`;
-        }
-        const name =
-          action.startsWith('Key_') || action.startsWith('Action_') ? action : `Key_${action}`;
-        input.setButton(name, true);
-        heldButtons.add(name);
+        sink.key('down', code);
+        heldKeys.add(code);
         return null;
       },
 
       releaseAction: action => {
         const code = keyCodeOf(action) ?? keyCodeOf(`Key_${action}`);
-        if (channel === 'physical-input') {
-          if (!code) return null;
-          sink.key('up', code);
-          heldKeys.delete(code);
-          return null;
-        }
-        const input = resolveLiveInput(runner);
-        if (!input) return null;
-        const name =
-          action.startsWith('Key_') || action.startsWith('Action_') ? action : `Key_${action}`;
-        input.setButton(name, false);
-        heldButtons.delete(name);
+        if (!code) return null;
+        sink.key('up', code);
+        heldKeys.delete(code);
         return null;
       },
 
@@ -1027,15 +1020,6 @@ export class GameTestService {
         }
         const hidden = hiddenReason(node, target);
         if (hidden) return hidden;
-        if (channel === 'direct-action') {
-          const owner = findInteractionOwner(node, 'click');
-          if (!owner) {
-            return `"${target}" declares no "click" interaction, so the direct channel has nothing to call. game_controls lists what each node offers; on \`physical-input\` this same call would be a real pointer press instead.`;
-          }
-          return owner.invokeInteraction('click')
-            ? null
-            : `"${target}" refused "click" — the control is disabled, or an ancestor scroll container holds the pointer.`;
-        }
         const backing = runner.projectNodeToCanvas(node);
         if (!backing) {
           return `"${target}" could not be projected to the canvas (no camera, or a zero-sized canvas).`;
@@ -1052,37 +1036,14 @@ export class GameTestService {
         if (!at) return;
         openTaps.delete(target);
         noteTapReach(target);
-        if (channel === 'physical-input') sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
+        sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
       },
 
-      setAxisValue: (name, value) => {
-        if (channel === 'physical-input') return sticks.steer(name, value);
-        const input = resolveLiveInput(runner) as {
-          setAxis?: (n: string, v: number) => void;
-        } | null;
-        if (typeof input?.setAxis !== 'function') {
-          return `no live InputService could be reached to set axis "${name}" directly.`;
-        }
-        input.setAxis(name, value);
-        return null;
-      },
+      setAxisValue: (name, value) => sticks.steer(name, value),
 
-      pointAt: point => {
-        const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
-        if (!at) {
-          return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
-        }
-        // A move, not a press: this is aim/hover. A policy that wants a press says
-        // `tap`, and keeping the two apart is what lets a hover-gated control (a
-        // floating joystick, a tooltip) be exercised at all.
-        sink.pointer('move', at.nx, at.ny, BOT_POINTER_ID);
-        return null;
-      },
+      pointAt,
 
       pointerAt: (phase, point, pointer) => {
-        if (channel !== 'physical-input') {
-          return 'swipe() is a physical gesture; on `direct-action` there is nothing to call. Run the policy on `physical-input`, or drive the intent with command().';
-        }
         const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
         if (!at) {
           return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
@@ -1095,9 +1056,6 @@ export class GameTestService {
       },
 
       tapAtDown: (point, pointer) => {
-        if (channel !== 'physical-input') {
-          return 'tapAt() is a physical gesture; on `direct-action` there is nothing to call. Tap a control by name with tap(), run on `physical-input`, or drive the intent with command().';
-        }
         const at = projectToCanvasFraction(scene, runtime.canvas, point.x, point.y);
         if (!at) {
           return `the world point (${point.x}, ${point.y}) could not be projected to the canvas.`;
@@ -1113,17 +1071,7 @@ export class GameTestService {
         if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID, pointer);
       },
 
-      dispatchCommand: (name, args) => {
-        const commands = findCommandRegistry(runner);
-        if (!commands) return 'the running scene has no command registry (is it still running?).';
-        if (!commands.list().some(entry => entry.name === name)) {
-          const known = commands.list().map(entry => entry.name);
-          return `no command "${name}" is registered${known.length ? ` (registered: ${known.join(', ')})` : ' — the game registers none (scene.commands.register)'}.`;
-        }
-        return commands.dispatchExternal(name, args)
-          ? null
-          : `command "${name}" declined (its handler returned false) or threw.`;
-      },
+      dispatchCommand: (name, args) => dispatchBotCommand(runner, name, args),
 
       requestScreenshot: (name, frame) =>
         `screenshot "${name}" at frame ${frame}: a marker here — the editor saves no picture mid-run (pix3 play --bot does); pix3_screenshot shows the frame a run ends on.`,
@@ -1133,10 +1081,7 @@ export class GameTestService {
         return null;
       },
 
-      pinchAt: (phase, center, spread) =>
-        channel === 'physical-input'
-          ? pinch.at(phase, center, spread)
-          : 'pinch() is a physical gesture; on `direct-action` there is nothing to call. Run the policy on `physical-input`, or drive the intent with command().',
+      pinchAt: (phase, center, spread) => pinch.at(phase, center, spread),
 
       releaseAll: () => {
         pinch.releaseAll();
@@ -1144,9 +1089,6 @@ export class GameTestService {
         swipeDown = null;
         for (const code of heldKeys) sink.key('up', code);
         heldKeys.clear();
-        const input = resolveLiveInput(runner);
-        for (const name of heldButtons) input?.setButton(name, false);
-        heldButtons.clear();
         for (const [target, at] of openTaps) {
           noteTapReach(target);
           sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID);
@@ -1447,46 +1389,6 @@ function executeMonkeyAction(
     default:
       return { status: 'refused', note: 'unknown action shape' };
   }
-}
-
-/**
- * Who answers to this interaction on this node — the node itself (an engine
- * control) or one of its script components. Resolved per press rather than cached,
- * because a monkey run outlives the nodes it presses.
- */
-function findInteractionOwner(node: NodeBase, interaction: string): Interactive | null {
-  const offers = (candidate: unknown): Interactive | null => {
-    if (!isInteractive(candidate)) return null;
-    try {
-      return candidate.getInteractions().some(entry => entry.name === interaction)
-        ? candidate
-        : null;
-    } catch {
-      return null;
-    }
-  };
-  const own = offers(node);
-  if (own) return own;
-  for (const component of node.components ?? []) {
-    const found = offers(component);
-    if (found) return found;
-  }
-  return null;
-}
-
-/** The live `InputService`, reached the same way the listing reaches it: through a root node. */
-function resolveLiveInput(
-  runner: SceneRunner
-): { setButton(name: string, pressed: boolean): void } | null {
-  for (const root of runner.getLiveRootNodes()) {
-    const input = (root as { input?: unknown }).input as
-      | { setButton?: (name: string, pressed: boolean) => void }
-      | undefined;
-    if (input && typeof input.setButton === 'function') {
-      return input as { setButton(name: string, pressed: boolean): void };
-    }
-  }
-  return null;
 }
 
 /** A release that throws must not take the rest of the holds (or the run) with it. */

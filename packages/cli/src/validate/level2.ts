@@ -105,7 +105,7 @@ export const loadUserScripts = async (
   try {
     return {
       status: 'loaded',
-      registered: await importAndRegister(code, entries, registry, 'pix3-validate-'),
+      registered: (await importAndRegister(code, entries, registry, 'pix3-validate-')).registered,
     };
   } catch (error) {
     return {

@@ -17,5 +17,9 @@ const imports = {
   three: new URL('./three.mjs', import.meta.url).href,
 };
 
-const outcome = await runSmokeJob(workerData as SmokeJob, imports);
+const outcome = await runSmokeJob(
+  workerData as SmokeJob,
+  imports,
+  new URL('./bot-host.mjs', import.meta.url).href
+);
 parentPort?.postMessage(outcome);

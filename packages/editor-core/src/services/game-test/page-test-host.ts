@@ -10,6 +10,7 @@ import {
 import { BackgroundTicker, keepaliveSleep } from '@/services/core/background-ticker';
 import { setEditorKeepAlive } from '@/services/core/page-activity';
 import { loadBotPolicy, ModuleBotStore } from '@/services/game-test/bot-loader';
+import { dispatchBotCommand, tickBotOnFrames } from '@/services/game-test/bot-host';
 import { DomInputSink } from '@/services/game-test/frame-input';
 import {
   BOT_POINTER_ID,
@@ -93,21 +94,7 @@ interface PageRefusal {
   detail: string;
 }
 
-interface PageCommands {
-  list(): Array<{ name: string }>;
-  /** From outside the game: a run recording keeps it as input. */
-  dispatchExternal(name: string, args?: Record<string, unknown>): boolean;
-}
-
 const refuse = (reason: string, detail: string): PageRefusal => ({ ok: false, reason, detail });
-
-const commandsOf = (runner: SceneRunner): PageCommands | null => {
-  for (const root of runner.getLiveRootNodes()) {
-    const commands = (root.scene as { commands?: PageCommands } | undefined)?.commands;
-    if (commands) return commands;
-  }
-  return null;
-};
 
 const buildPageWorld = (
   runner: SceneRunner,
@@ -199,21 +186,7 @@ const buildPageWorld = (
       swipeDown = null;
       if (at) sink.pointer('up', at.nx, at.ny, BOT_POINTER_ID, pointer);
     },
-    dispatchCommand: (name, args) => {
-      const commands = commandsOf(runner);
-      if (!commands) return 'the running scene has no command registry.';
-      if (!commands.list().some(entry => entry.name === name)) {
-        return `no command "${name}" is registered (registered: ${
-          commands
-            .list()
-            .map(e => e.name)
-            .join(', ') || 'none'
-        }).`;
-      }
-      return commands.dispatchExternal(name, args)
-        ? null
-        : `command "${name}" declined (its handler returned false) or threw.`;
-    },
+    dispatchCommand: (name, args) => dispatchBotCommand(runner, name, args),
     requestScreenshot: (name, frame) => {
       // Paused on the tick the policy saw, and painted: a batch paints only its last tick, so this
       // one may not have been drawn yet.
@@ -387,13 +360,10 @@ const startPageBot = async (
     renderEveryNTicks: BOT_TICKS_PER_FRAME,
   });
   runtime.setFocusPauseSuppressed(true);
-  const detach = runner.subscribeFrameStats(() => {
-    session.tick();
-    // Hold the frame the verdict was reached on: the final screenshot shows what was judged.
-    if (session.finished && !runner.paused) {
-      runner.pause();
-      runner.renderOnce();
-    }
+  // Hold the frame the verdict was reached on: the final screenshot shows what was judged.
+  const detach = tickBotOnFrames(runner, session, () => {
+    runner.pause();
+    runner.renderOnce();
   });
   let stopped = false;
   const stop = (): BotReport => {

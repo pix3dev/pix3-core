@@ -24,7 +24,20 @@ import {
   type SmokeRunOverrides,
 } from './report.ts';
 import { runtimeVersionMismatch } from '../version-gate.ts';
-import { parseAdsArg } from '../play/command.ts';
+import { parseAdsArg, parseStorageArg } from '../play/command.ts';
+import {
+  gridCombos,
+  isGrid,
+  jsonLabel,
+  parseObjectList,
+  parseSeedList,
+  parseSizeList,
+  runGrid,
+  type GridAxes,
+  type GridCombo,
+  type GridPlay,
+  type GridValue,
+} from '../play/grid.ts';
 import {
   formatGoldenHuman,
   goldenArgsOf,
@@ -75,9 +88,19 @@ interface SmokeArgs {
   readonly record?: { readonly file: string; readonly every?: number };
   /** `--replay <file>`: play a recording back instead of a scene. */
   readonly replay?: string;
+  /** `--bot <name>`: `design/tests/bots/<name>.ts` on `direct-action`. */
+  readonly bot?: string;
+  /** List values (`--seed 1..50`, …): the axes of a grid; a single run's are folded into `run`. */
+  readonly axes: GridAxes;
+  readonly grid: boolean;
+  readonly parallel: number;
+  readonly checkDeterminism: boolean;
 }
 
 const DEFAULT_FRAMES = 120;
+/** With a bot: two minutes of game time, as `pix3 play --bot`; the run ends at the verdict. */
+const DEFAULT_BOT_FRAMES = 7200;
+const DEFAULT_BOT_TIMEOUT_SEC = 120;
 const DEFAULT_TIMEOUT_SEC = 20;
 
 /**
@@ -118,6 +141,16 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
   let every: number | undefined;
   let replay: string | undefined;
   let framesGiven = false;
+  let timeoutGiven = false;
+  let bot: string | undefined;
+  let seeds: GridValue<number>[] = [];
+  let sizes: GridValue<{ width: number; height: number; scale?: number }>[] = [];
+  const configs: GridValue<Record<string, unknown>>[] = [];
+  const botArgsList: GridValue<Record<string, unknown>>[] = [];
+  const locales: GridValue<string>[] = [];
+  const storages: GridValue<unknown>[] = [];
+  let parallel: number | undefined;
+  let checkDeterminism = false;
   const valueOf = (arg: string, index: number): { value?: string; next: number } => {
     const eq = arg.indexOf('=');
     if (eq > 0) return { value: arg.slice(eq + 1), next: index };
@@ -131,7 +164,50 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     else if (arg === '--changed') changed = true;
     else if (arg === '--all') all = true;
     else if (arg === '--write') write = true;
-    else if (name === '--record' || name === '--replay' || name === '--every') {
+    else if (arg === '--check-determinism') checkDeterminism = true;
+    else if (
+      name === '--bot' ||
+      name === '--bot-args' ||
+      name === '--locale' ||
+      name === '--storage' ||
+      name === '--size' ||
+      name === '--parallel'
+    ) {
+      const { value, next } = valueOf(arg, i);
+      i = next;
+      if (value === undefined || value.startsWith('--')) return { error: `${name} needs a value` };
+      if (name === '--bot') bot = value;
+      else if (name === '--bot-args') {
+        const parsed = parseObjectList(value);
+        if (!parsed)
+          return {
+            error: `--bot-args takes a JSON object, e.g. --bot-args '{"target":"lose"}' — or a file holding one or a list of them; repeat it for a grid`,
+          };
+        for (const args of parsed)
+          botArgsList.push({ value: args, label: jsonLabel('bot-args', args, botArgsList.length) });
+      } else if (name === '--locale') {
+        for (const locale of value.split(',').map(part => part.trim())) {
+          if (!/^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})*$/.test(locale))
+            return { error: '--locale takes a locale code or a list: --locale ru,en' };
+          locales.push({ value: locale, label: `locale=${locale}` });
+        }
+      } else if (name === '--storage') {
+        const parsed = parseStorageArg(value);
+        if ('error' in parsed) return parsed;
+        storages.push({
+          value: parsed.storage,
+          label: value.length <= 40 ? `storage=${value}` : `storage#${storages.length + 1}`,
+        });
+      } else if (name === '--size') {
+        const parsed = parseSizeList(value);
+        if ('error' in parsed) return parsed;
+        sizes = parsed;
+      } else {
+        parallel = Number(value);
+        if (!Number.isInteger(parallel) || parallel < 1)
+          return { error: '--parallel takes a whole number of runs at a time ≥ 1' };
+      }
+    } else if (name === '--record' || name === '--replay' || name === '--every') {
       const { value, next } = valueOf(arg, i);
       i = next;
       if (value === undefined || value.startsWith('--')) return { error: `${name} needs a value` };
@@ -168,22 +244,18 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
       const { value, next } = valueOf(arg, i);
       i = next;
       if (name === '--seed') {
-        const seed = Number(value);
-        if (!Number.isInteger(seed)) return { error: '--seed takes a whole number' };
-        run = { ...run, seed };
+        const parsed = parseSeedList(value ?? '');
+        if ('error' in parsed) return parsed;
+        seeds = parsed;
       } else {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(value ?? '');
-        } catch {
-          parsed = undefined;
-        }
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        const parsed = parseObjectList(value ?? '');
+        if (!parsed) {
           return {
-            error: `--config takes one JSON object {"<nodeId>": {"<componentId>": {"key": value}}}`,
+            error: `--config takes a JSON object {"<nodeId>": {"<componentId>": {"key": value}}} — or a file holding one or a list of them; repeat it for a grid`,
           };
         }
-        run = { ...run, config: parsed as SmokeRunOverrides['config'] };
+        for (const config of parsed)
+          configs.push({ value: config, label: jsonLabel('config', config, configs.length) });
       }
     } else if (name === '--frames' || name === '--timeout' || name === '--project') {
       const { value, next } = valueOf(arg, i);
@@ -197,7 +269,10 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
         if (name === '--frames') {
           frames = Math.floor(number);
           framesGiven = true;
-        } else timeoutSec = number;
+        } else {
+          timeoutSec = number;
+          timeoutGiven = true;
+        }
       }
     } else if (arg.startsWith('-')) return { error: `unknown argument ${arg}` };
     else if (scene === undefined) scene = arg;
@@ -220,7 +295,9 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
       changed && '--changed',
       all && '--all',
       commands.length > 0 && '--command',
-      run && '--seed/--config/--ads',
+      (run || seeds.length + configs.length + locales.length + storages.length > 0) &&
+        '--seed/--config/--ads/--locale/--storage',
+      bot !== undefined && '--bot',
       framesGiven && '--frames',
       golden !== undefined && '--golden',
     ].filter(Boolean);
@@ -229,6 +306,31 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
         error: `--replay plays the recording's scene, settings, inputs and length: drop ${extra.join(', ')}`,
       };
   }
+  const axes: GridAxes = {
+    seed: seeds,
+    config: configs,
+    botArgs: botArgsList,
+    size: sizes,
+    locale: locales,
+    storage: storages,
+  };
+  const grid = isGrid(axes) || parallel !== undefined || checkDeterminism;
+  if (grid && scene === undefined)
+    return {
+      error: 'a grid plays one scene: name it (pix3 smoke scenes/main.pix3scene --seed 1..20)',
+    };
+  if (grid && record !== undefined) return { error: '--record takes one run: drop it from a grid' };
+  if (botArgsList.length > 0 && bot === undefined)
+    return { error: '--bot-args goes with --bot <name>' };
+  if (bot !== undefined && scene === undefined)
+    return {
+      error: '--bot plays one scene: name it (pix3 smoke scenes/main.pix3scene --bot round)',
+    };
+  if (bot !== undefined && !framesGiven) frames = DEFAULT_BOT_FRAMES;
+  if (bot !== undefined && !timeoutGiven) timeoutSec = DEFAULT_BOT_TIMEOUT_SEC;
+  // A single run: the one value of each axis is the run's.
+  if (!grid) run = { ...run, ...overridesOf(gridCombos(axes)[0]) };
+  if (run && Object.keys(run).length === 0) run = undefined;
   const goldenArgs = goldenArgsOf(golden, write, tolerance);
   if (goldenArgs && 'error' in goldenArgs) return goldenArgs;
   if (goldenArgs && scene === undefined)
@@ -252,8 +354,23 @@ const parseSmokeArgs = (argv: readonly string[]): SmokeArgs | { error: string } 
     ...(run ? { run } : {}),
     ...(record !== undefined ? { record: { file: record, ...(every ? { every } : {}) } } : {}),
     ...(replay !== undefined ? { replay } : {}),
+    ...(bot !== undefined ? { bot } : {}),
+    axes,
+    grid,
+    parallel: parallel ?? 1,
+    checkDeterminism,
   };
 };
+
+/** A combination's `RunOverrides` (seed, config, locale, save); `bot.args` and the canvas aside. */
+const overridesOf = (combo: GridCombo): SmokeRunOverrides => ({
+  ...(combo.seed !== undefined ? { seed: combo.seed } : {}),
+  ...(combo.config !== undefined ? { config: combo.config as SmokeRunOverrides['config'] } : {}),
+  ...(combo.locale !== undefined ? { locale: combo.locale } : {}),
+  ...(combo.storage !== undefined
+    ? { storage: combo.storage as SmokeRunOverrides['storage'] }
+    : {}),
+});
 
 const failure = (code: SmokeFailureCode, reason: string, scene?: string): SmokeFailure => ({
   ok: false,
@@ -328,6 +445,10 @@ export interface RunSmokeOptions {
   readonly record?: { readonly every?: number };
   /** `--replay`: a recording's text, and the canvas it was made on. */
   readonly replay?: { readonly text: string; readonly canvas: { width: number; height: number } };
+  /** `--bot`: the policy (`design/tests/bots/<name>.ts`) and its `bot.args`. */
+  readonly bot?: { readonly name: string; readonly args?: Record<string, unknown> };
+  /** `--size`: the canvas in CSS px (default: the design viewport). */
+  readonly canvas?: { readonly width: number; readonly height: number };
 }
 
 export interface RunOneSmokeOptions extends RunSmokeOptions {
@@ -417,12 +538,24 @@ const jobFor = (prepared: Prepared, scene: string, options: RunSmokeOptions): Sm
   ...(options.commands?.length ? { commands: options.commands } : {}),
   ...(options.run ? { run: options.run } : {}),
   ...(options.record ? { record: options.record } : {}),
+  ...(options.canvas ? { canvas: options.canvas } : {}),
   ...(options.replay ? { replay: options.replay.text, canvas: options.replay.canvas } : {}),
+  ...(options.bot
+    ? {
+        bot: {
+          name: options.bot.name,
+          file: `${BOT_DIR}/${options.bot.name}.ts`,
+          ...(options.bot.args ? { args: options.bot.args } : {}),
+        },
+      }
+    : {}),
   viewport: prepared.manifest.viewport,
   autoloads: prepared.manifest.autoloads,
   esbuildSpecifier: resolveEsbuild(),
   fallbackResolveDir: cliPackageRoot(),
 });
+
+const BOT_DIR = 'design/tests/bots';
 
 /** Run each scene in its own worker, one after another, from one smoke bundle. */
 const runScenes = async (
@@ -556,6 +689,18 @@ export const formatSmokeHuman = (outcome: SmokeOutcome, root: string): string =>
     );
   }
   if (report.analytics) lines.push(`  ${analyticsSummary(report.analytics)}`);
+  if (report.bot) {
+    const { name, done, error } = report.bot;
+    lines.push(
+      error
+        ? `  bot ${name} (direct-action): CRASHED — ${error.message}`
+        : done
+          ? `  bot ${name} (direct-action): ${done.pass ? 'PASS' : 'FAIL'} at frame ${done.frame} — ${done.reason}`
+          : `  bot ${name} (direct-action): no verdict in ${report.bot.frames ?? 0} frame(s)`
+    );
+    for (const entry of (report.bot.log ?? []).slice(-8))
+      lines.push(`    [${entry.frame}] ${entry.kind}: ${entry.message}`);
+  }
   if (report.errors.length > 0) {
     lines.push('errors:');
     for (const error of report.errors) {
@@ -661,7 +806,10 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     io.stdout(COMMAND_USAGE.smoke);
     return 0;
   }
-  const golden = args.golden && !args.golden.write ? readGolden(args.golden, io.cwd) : null;
+  const golden =
+    args.golden && !args.golden.write
+      ? readGolden(args.golden, io.cwd, args.grid ? 'grid' : 'run')
+      : null;
   if (golden && 'error' in golden) {
     io.stderr(`pix3 smoke: ${golden.error}\n`);
     return 2;
@@ -674,6 +822,12 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
   }
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
   const shownRoot = root ?? io.cwd;
+  if (args.bot !== undefined && root && !existsSync(join(root, BOT_DIR, `${args.bot}.ts`))) {
+    io.stderr(`pix3 smoke: no bot policy ${join(root, BOT_DIR, `${args.bot}.ts`)}\n`);
+    return 2;
+  }
+  const singleBotArgs = args.axes.botArgs?.[0]?.value;
+  const singleSize = args.axes.size?.[0]?.value;
   const common = {
     frames: replayFile ? Math.max(1, replayFile.header.end) : args.frames,
     timeoutSec: args.timeoutSec,
@@ -684,6 +838,10 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     ...(replayFile
       ? { replay: { text: replayFile.text, canvas: replayFile.header.viewport } }
       : {}),
+    ...(args.bot !== undefined
+      ? { bot: { name: args.bot, ...(singleBotArgs ? { args: singleBotArgs } : {}) } }
+      : {}),
+    ...(singleSize ? { canvas: { width: singleSize.width, height: singleSize.height } } : {}),
   };
   // Files are the truth only once the editor has written them (plan §B.6): a dev server with an
   // editor tab (`.pix3/dev.json`) flushes before the scene is read.
@@ -698,6 +856,8 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     );
   } else if (synced.status === 'unsynced') {
     outcome = failure('E_EDITOR_UNSYNCED', describeUnsynced(synced), args.scene);
+  } else if (args.grid) {
+    return smokeGrid(root, args, { projectRoot: root, ...common }, io, golden);
   } else if (args.scene !== undefined || replayFile) {
     const scene = args.scene ?? replayFile!.header.scene;
     outcome = await runSmoke({ projectRoot: root, scene, ...common });
@@ -731,13 +891,15 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     outcome = rest;
   }
   // A run that could not happen (exit 2) has no end to compare.
+  const botFailed =
+    !isSmokeFailure(outcome) && outcome.bot !== undefined && smokeVerdict(outcome) !== 'pass';
   const goldenResult =
     args.golden && !isSmokeFailure(outcome)
       ? settleGolden(
           args.golden,
           io.cwd,
           goldenOf(outcome.game?.snapshot, outcome.analytics),
-          outcome.errors.length > 0,
+          outcome.errors.length > 0 || botFailed,
           golden
         )
       : null;
@@ -756,9 +918,74 @@ export const runSmokeCli = async (argv: readonly string[], io: SmokeIo): Promise
     if (recorded) io.stdout(`recorded ${recorded.ticks} tick(s): ${recorded.file}\n`);
   }
   const exit = smokeExitCode(outcome);
-  return exit === 0 && (goldenFailed(goldenResult) || (replayReport && !replayReport.ok))
+  return exit === 0 &&
+    (botFailed || goldenFailed(goldenResult) || (replayReport && !replayReport.ok))
     ? 1
     : exit;
+};
+
+/** A run's verdict as a grid counts it: a policy's pass / fail / crash, or the game's error. */
+const smokeVerdict = (outcome: SmokeOutcome): GridPlay['verdict'] => {
+  if (isSmokeFailure(outcome) || outcome.errors.length > 0) return 'error';
+  if (outcome.bot?.error) return 'crash';
+  return !outcome.bot || outcome.bot.done?.pass === true ? 'pass' : 'fail';
+};
+
+/**
+ * `pix3 smoke <scene>` with list values: every combination a worker of its own (a fresh game),
+ * `--parallel` at a time, from one bundle — the grid of `pix3 play`, in Node.
+ */
+const smokeGrid = async (
+  root: string,
+  args: SmokeArgs,
+  common: RunSmokeOptions,
+  io: SmokeIo,
+  golden: Exclude<ReturnType<typeof readGolden>, { error: string }> | null
+): Promise<number> => {
+  const refuse = (failed: SmokeFailure): number => {
+    io.stderr(`pix3 smoke: ${failed.code}: ${failed.reason}\n`);
+    return 2;
+  };
+  const prepared = prepare(root);
+  if ('code' in prepared) return refuse(prepared);
+  const scene = resolveSmokeScene(prepared.project, io.cwd, args.scene ?? '');
+  if (typeof scene !== 'string') return refuse(scene);
+  return withSmokeBundle(dir =>
+    runGrid({
+      combos: gridCombos(args.axes),
+      parallel: args.parallel,
+      checkDeterminism: args.checkDeterminism,
+      io,
+      json: args.json,
+      golden: args.golden,
+      goldenRead: golden,
+      play: async combo => {
+        const options: RunSmokeOptions = {
+          ...common,
+          run: { ...common.run, ...overridesOf(combo) },
+          ...(combo.size ? { canvas: { width: combo.size.width, height: combo.size.height } } : {}),
+          ...(common.bot && combo.botArgs ? { bot: { ...common.bot, args: combo.botArgs } } : {}),
+        };
+        const outcome = await runInWorker(
+          dir,
+          jobFor(prepared, scene, options),
+          common.timeoutSec ?? DEFAULT_TIMEOUT_SEC
+        );
+        if (isSmokeFailure(outcome))
+          return { verdict: 'error', game: null, errors: [`${outcome.code}: ${outcome.reason}`] };
+        return {
+          verdict: smokeVerdict(outcome),
+          frames: outcome.bot?.frames ?? outcome.frames,
+          game: outcome.game?.snapshot ?? null,
+          ...(outcome.analytics ? { analytics: outcome.analytics } : {}),
+          errors: [
+            ...outcome.errors.map(error => `frame ${error.frame} ${error.code}: ${error.message}`),
+            ...(outcome.bot?.error ? [outcome.bot.error.message] : []),
+          ],
+        };
+      },
+    })
+  );
 };
 
 /** For specs: a report's error list as `frame code script: message` lines. */

@@ -369,6 +369,22 @@ n/min/median/p90/max, 6 значащих; массив — по `….length`; `o
 за 15 с; golden агрегата WRITTEN → повтор MISMATCH только по `ticks` → с `--tolerance
 aggregate.numbers.gameState.ticks=10` MATCH. `--check-determinism` ловит дрейф realtime-тиков до
 старта бота (`ticks` фикстуры: 206–210) — ожидаемо по ноте C; задокументировано, в снимок не класть.
+**Сделано (2026-11-21), D2 (Node).** Бот-хост вынесен в `editor-core/src/services/game-test/bot-host.ts`
+(`findInteractionOwner`, `resolveLiveInput`, `dispatchBotCommand`, `directActionWorld` — мир без DOM,
+`tickBotOnFrames`, `startDirectBot`); его берут страница (`page-test-host`: тик и команды), редактор
+(`GameTestService`: канал `direct-action` — это `directActionWorld` + свой `pointAt`; дубли
+поиска ввода/интеракций/команд ушли) и `pix3 smoke`. Отклонение: хост работает от `SceneRunner`, не от
+`HeadlessGame` — smoke собирает раннер сам (без `createHeadlessGame`), а `HeadlessGame.runner` даёт
+то же; спека `bot-host.spec.ts` гоняет его на `createHeadlessGame`. В CLI модуль входит отдельной
+точкой smoke-бандла (`bot-host.mjs`, alias `@` → editor-core/src, общий чанк рантайма), политика
+компилируется вместе со скриптами проекта (`compileAndImportScripts({ policy })`). `check-dist` — ok
+(bot-host в графе page-test-host). `pix3 smoke <scene> --bot <name> [--bot-args]` (кадры 7200 и
+таймаут 120 по умолчанию, конец на `done()`, провал/падение политики → exit 1, `bot` в отчёте) +
+`--locale`, `--storage`, `--size` (canvas) + та же сетка (`runGrid` в `grid.ts` — общий для play
+и smoke: пул, повтор, агрегат, golden, вывод, exit). Проверено на скретч-фикстуре: 2×10 комбинаций
+с `--check-determinism` — 40 прогонов за 3,4 с, все same-twice (Node детерминирован, в отличие от
+Chrome), golden агрегата WRITTEN → MATCH; `pix3 play dist` с политикой после рефакторинга — PASS.
+Попутно исправлено: блок сетки в `usage.ts` по ошибке попал в справку `smoke` в первом коммите.
 
 ## Этап G. Галерея экранов (S, поверх D2)
 

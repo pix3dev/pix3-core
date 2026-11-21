@@ -11,7 +11,10 @@ import type { Plugin } from 'esbuild';
  * - `smoke-worker` — the worker-thread entry that runs a game (`worker.ts`);
  * - `tree-defaults` — per-node-type default property values for `pix3 tree --props`;
  * - `runtime` / `three` — what compiled project scripts import, sharing their chunks with the
- *   worker so `instanceof Script` holds across the seam.
+ *   worker so `instanceof Script` holds across the seam;
+ * - `bot-host` — editor-core's `services/game-test/bot-host.ts` (`--bot`: a policy on
+ *   `direct-action`), from its source, on the same runtime chunk. `check-dist` keeps that file free
+ *   of the editor (it is in the page host's graph), so nothing of the editor comes along.
  *
  * Published package: prebuilt into `dist/smoke/prebuilt/` at `prepack` (`scripts/build-smoke.mjs`).
  * Repo checkout: `entry.ts` builds it into a temp folder on demand, so runtime edits are live.
@@ -19,6 +22,7 @@ import type { Plugin } from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, '..', '..');
+const editorCoreSrc = resolve(packageRoot, '..', 'editor-core', 'src');
 
 /** One three.js: resolve every `three` import from this package, whoever imports it. */
 const dedupeThree = (): Plugin => ({
@@ -47,7 +51,10 @@ export const buildSmokeBundle = async (
       'tree-defaults': join(here, '..', 'tree', 'defaults.ts'),
       runtime: join(here, 'bundle-entries', 'runtime.ts'),
       three: join(here, 'bundle-entries', 'three.ts'),
+      'bot-host': join(editorCoreSrc, 'services', 'game-test', 'bot-host.ts'),
     },
+    // editor-core's own import alias, for `bot-host` and the game-test files it reaches.
+    alias: { '@': editorCoreSrc },
     outdir,
     outExtension: { '.js': '.mjs' },
     bundle: true,
