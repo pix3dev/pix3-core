@@ -31,6 +31,7 @@ import { scanUserScripts } from '../validate/user-scripts.ts';
 import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
 import type {
+  SmokeAnalytics,
   SmokeError,
   SmokeErrorCode,
   SmokeJob,
@@ -353,6 +354,13 @@ export const runSmokeJob = async (
       }
       game = { name: provider.name, snapshot };
     }
+    let analytics: SmokeAnalytics | null = null;
+    try {
+      const tracked = runner?.getLiveRootNodes()[0]?.scene?.analyticsRunReport() ?? null;
+      if (tracked && tracked.total > 0) analytics = JSON.parse(JSON.stringify(tracked));
+    } catch (thrown) {
+      notes.push(`scene.analytics could not be read: ${describeThrown(thrown).message}`);
+    }
     const warnings = [...warningsByKey.values()].map(({ warning, count }) =>
       count > 1 ? { ...warning, count } : warning
     );
@@ -387,6 +395,7 @@ export const runSmokeJob = async (
       notes,
       game,
       logs: { count: logCount, lines: logs },
+      ...(analytics ? { analytics } : {}),
     };
   };
 

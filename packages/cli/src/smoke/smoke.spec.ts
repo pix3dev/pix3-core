@@ -377,6 +377,39 @@ export class Ads extends Script {
     expect(await lines()).toContain('ad unavailable');
   });
 
+  it('reports the events scene.analytics tracked, with their frames', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Track')),
+      'scripts/Track.ts': script(
+        'Track',
+        `  onStart(): void {
+    this.scene?.analytics.track('level_start', { level: 1 });
+  }
+  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 2) this.scene?.analytics.track('tap');
+  }`
+      ),
+    });
+    const report = asReport(await runSmoke({ projectRoot: root, scene: MAIN, frames: 3 }));
+    expect(report.analytics).toEqual({
+      total: 2,
+      dropped: 0,
+      events: [
+        { name: 'level_start', props: { level: 1 }, frame: 0 },
+        { name: 'tap', props: {}, frame: 1 },
+      ],
+    });
+    expect(formatSmokeHuman(report, root)).toContain(
+      'analytics: 2 event(s) tracked (level_start, tap)'
+    );
+    // A game that never tracks reports nothing.
+    const quiet = project({ 'scenes/main.pix3scene': scene('') });
+    expect(
+      asReport(await runSmoke({ projectRoot: quiet, scene: MAIN, frames: 1 })).analytics
+    ).toBeUndefined();
+  });
+
   it('scene.audio.play of an existing file runs silent headless (no error, no warning)', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:Sound')),

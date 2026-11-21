@@ -331,6 +331,14 @@ export const STRIPPABLE_RUNTIME_MODULES: readonly StrippableRuntimeModule[] = [
     lazyValueImporters: ['core/SceneService', 'core/SceneRunner', 'testing/headless-game'],
   },
 
+  // --- analytics ---
+  {
+    // `SceneService.analytics` constructs it lazily; `analyticsRunReport` only reads the field.
+    modulePath: 'core/AnalyticsApi',
+    keepWhenMentioned: ['analytics', 'AnalyticsApi'],
+    lazyValueImporters: ['core/SceneService'],
+  },
+
   // --- the portal: ads and level events ---
   {
     // Page-level, reached only by `import { platform }` (its value exports keep it too). The runner

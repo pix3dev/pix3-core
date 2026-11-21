@@ -236,6 +236,20 @@ false). Прогон сильнее игры: тест форсирует, да�
 `onBackground`. Необязательный `defineEvents([...])` — неизвестное имя → `console.warn` в dev.
 `pix3 play --json` и smoke отдают события прогона. Вендорские sinks — вне ядра.
 
+**Сделано (2026-11-21).** `core/AnalyticsApi.ts` = `scene.analytics` (ленивый геттер, стрипаемый:
+`analytics`/`AnalyticsApi`). Событие — `{ name, props (мелкая копия), frame }`; буфер до первого sink
+500 (`ANALYTICS_BUFFER_SIZE`, старые выбрасываются, счётчик `dropped`), первый sink получает его по
+порядку, поздний — только новое; `setUserProps` сливается и отдаётся каждому sink (новому — при
+`addSink`); упавший `track`/`setUserProps`/`flush` (и отклонённый промис `flush`) — `console.error`
+один раз на sink. Отчёт прогона — последние 500 событий независимо от sinks
+(`SceneService.analyticsRunReport()`, фасад не создаёт): поле `analytics` в `pix3 smoke --json` и
+`pix3 play --json` (+ строка в человеческом отчёте), нет поля — игра ничего не трекала.
+Отклонения: сброс на фоне — подпиской на `AppLifecycle` (источник `scene.app`), а не
+`scene.app.onBackground`: подписки `scene.app` чистятся в конце сессии, а аналитика живёт со
+страницей; удержанный агентом прогон не сбрасывает. `defineEvents` предупреждает не только в dev
+(у runtime нет dev-флага), но один раз на имя. `HeadlessGameOptions` не тронут — `game.scene.analytics`
+доступен и так.
+
 ---
 
 ## Этап C. Запись и повтор прогона (M)

@@ -100,6 +100,29 @@ export interface SmokeReport {
   readonly game: { readonly name: string; readonly snapshot: unknown } | null;
   /** `console.log`/`info` from the run: the total, and the first lines (frame-stamped). */
   readonly logs: { readonly count: number; readonly lines: readonly string[] };
+  /**
+   * What the game tracked through `scene.analytics` (absent when it tracked nothing): the total,
+   * events dropped before a sink was added, and the last 500 events with their frames.
+   */
+  readonly analytics?: SmokeAnalytics;
+}
+
+/** One human line for a run's `scene.analytics` (shared by `pix3 smoke` and `pix3 play`). */
+export const analyticsSummary = (analytics: SmokeAnalytics): string => {
+  const distinct = [...new Set(analytics.events.map(event => event.name))];
+  const shown = distinct.slice(0, 8).join(', ') + (distinct.length > 8 ? ', …' : '');
+  const dropped = analytics.dropped > 0 ? `, ${analytics.dropped} dropped before a sink` : '';
+  return `analytics: ${analytics.total} event(s) tracked (${shown})${dropped}`;
+};
+
+export interface SmokeAnalytics {
+  readonly total: number;
+  readonly dropped: number;
+  readonly events: readonly {
+    readonly name: string;
+    readonly props: Readonly<Record<string, unknown>>;
+    readonly frame: number;
+  }[];
 }
 
 /** The run could not happen at all (exit 2). */

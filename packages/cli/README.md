@@ -368,9 +368,10 @@ and indented otherwise, cut only past 4 000 characters (`--json` always carries 
 `--json` prints `{ ok, scene, frames, framesRequested, firstFrameOk, errors:
 [{ code, frame, script?, nodeId?, nodeName?, phase?, message, stack?, domAccess? }], warnings,
 nodes: { start, end }, timingsMs: { compile, load, firstFrame, step: { total, mean, p95, max },
-total }, scripts, domMissing, notes, game, logs }` — `game` is the `registerGameDebug` provider's
+total }, scripts, domMissing, notes, game, logs, analytics? }` — `game` is the `registerGameDebug` provider's
 `snapshot()` at the end (when the game registers one), `logs` the first `console.log` lines,
-frame-stamped. Stacks are source-mapped to the project's files. With no scene argument `--json`
+frame-stamped, `analytics` what the game tracked through `scene.analytics` (`{ total, dropped,
+events: [{ name, props, frame }] }`, the last 500; absent when it tracked nothing). Stacks are source-mapped to the project's files. With no scene argument `--json`
 prints `{ ok, selection: "changed" | "all", reason, changed?, runs: [<that report, per scene>] }`.
 
 A green smoke run means nothing threw for N frames without input. It does not mean the game
@@ -751,7 +752,10 @@ player's `devRunOverrides` (`virtual:pix3/dev`: `?run=`, else that global — th
 global only) hands them to `SceneRunner.setRunOverrides`. A bot run defaults to `--scale 2`.
 The report carries `sounds: { requested, last: [{ sound, frame }] }` read from the page's
 `scene.audio.requested()` (a clip path or `sfx:<preset>`, the runner frame) — absent when the
-game asked for no sound; `pix3_game_run` answers the same field for its run.
+game asked for no sound; `pix3_game_run` answers the same field for its run. Likewise
+`analytics: { total, dropped, events: [{ name, props, frame }] }` — what the game tracked through
+`scene.analytics` (the last 500 events, sink or no sink), absent when it tracked nothing; the human
+report prints the event names.
 
 `--tree` prints the running game's object tree at the end of the run (`tree` in `--json`:
 `{count, truncated, roots}`, each object `{id, nodeId, type, name, visible, instances, children,

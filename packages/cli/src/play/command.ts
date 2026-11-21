@@ -11,6 +11,7 @@ import { readDevInfo } from '../editor/dev-server.ts';
 import { PipeChrome, type CdpEvent } from './chrome-pipe.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 import { formatTreeHuman, type PlayTree } from './tree-report.ts';
+import { analyticsSummary, type SmokeAnalytics } from '../smoke/report.ts';
 
 /**
  * `pix3 play` — the game's own page (the dev server, or a built `dist/index.html` as it ships) in
@@ -351,6 +352,8 @@ interface PlayReport {
   readonly screenshot?: string;
   /** The sounds the game asked for: how many, and the last ones with their frames. */
   readonly sounds?: { requested: number; last: { sound: string; frame: number }[] };
+  /** What the game tracked through `scene.analytics` (absent when nothing). */
+  readonly analytics?: SmokeAnalytics;
   /** The pictures the policy took with `bot.screenshot(name)`, in order. */
   readonly screenshots?: readonly { name: string; frame: number; path: string }[];
   /** `--profile`: the measured window (`packages/vite-plugin/player/debug/profile.ts`). */
@@ -728,6 +731,14 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       .catch(() => null)) as { total: number; last: { sound: string; frame: number }[] } | null;
     const sounds =
       journal && journal.total > 0 ? { requested: journal.total, last: journal.last } : null;
+    // The events the game tracked (`scene.analytics`), read without constructing the facade.
+    const tracked = (await chrome
+      .evaluate(
+        session,
+        `(() => { const r = window.__PIX3_PLAYER__ && window.__PIX3_PLAYER__.runner; const root = r && r.getLiveRootNodes()[0]; const s = root && root.scene; const a = s && s.analyticsRunReport ? s.analyticsRunReport() : null; return a ? JSON.parse(JSON.stringify(a)) : null; })()`
+      )
+      .catch(() => null)) as SmokeAnalytics | null;
+    const analytics = tracked && tracked.total > 0 ? tracked : null;
     const game = await chrome
       .evaluate(
         session,
@@ -768,6 +779,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
       ...(shots.length > 0 ? { screenshots: shots } : {}),
       ...(sounds ? { sounds } : {}),
+      ...(analytics ? { analytics } : {}),
       ...(profile ? { profile } : {}),
       ...(tree ? { tree } : {}),
     };
@@ -841,6 +853,7 @@ const formatPlayHuman = (report: PlayReport): string => {
       `sounds: ${report.sounds.requested} requested${distinct.length ? ` (${distinct.slice(0, 8).join(', ')}${distinct.length > 8 ? ', …' : ''})` : ''}`
     );
   }
+  if (report.analytics) lines.push(analyticsSummary(report.analytics));
   if (report.screenshot) lines.push(`screenshot: ${report.screenshot}`);
   for (const shot of report.screenshots ?? [])
     lines.push(`screenshot ${shot.name} (frame ${shot.frame}): ${shot.path}`);

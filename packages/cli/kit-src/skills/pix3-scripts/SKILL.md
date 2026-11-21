@@ -304,6 +304,17 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `pix3 smoke`, `pix3_play {run: {seed}}`) then replays the same board and spawns; `Math.random`
   cannot be seeded.
 
+## Analytics (`this.scene.analytics`)
+
+`this.scene.analytics.track('level_complete', { level, moves })` — events with a name and flat
+props; `setUserProps({ cohort })`. Where they go is a sink the game adds once, in an autoload or
+`src/main.ts`: `scene.analytics.addSink({ track: e => vendor.logEvent(e.name, e.props),
+setUserProps: p => vendor.identify(p), flush: () => vendor.flush() })` — events tracked before it
+wait (up to 500) and arrive in order; a throwing sink never breaks the game; sinks are flushed when
+the app goes to the background. `defineEvents(['level_start', 'level_complete'])` once makes a
+typo'd name warn. Check what a run tracked: `pix3 smoke --json` / `pix3 play --json` → `analytics`
+(names, props, frames) — no sink needed.
+
 ## Ads and level events (`platform`)
 
 `import { platform } from '@pix3/runtime'` — a module, not `this.scene`. A rewarded ad:

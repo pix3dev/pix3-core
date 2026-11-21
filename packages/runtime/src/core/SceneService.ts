@@ -17,6 +17,7 @@ import { CutsceneApi } from './CutsceneApi';
 import { AppApi } from './AppApi';
 import { HapticsApi } from './HapticsApi';
 import { GameStorage, type StorageOpenOptions } from './GameStorage';
+import { AnalyticsApi, type AnalyticsRunReport } from './AnalyticsApi';
 import type { InputService } from './InputService';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
@@ -163,6 +164,7 @@ export class SceneService {
   private inertLocalization: LocalizationService | null = null;
   private cutsceneApi: CutsceneApi | null = null;
   private gameStorage: GameStorage | null = null;
+  private analyticsApi: AnalyticsApi | null = null;
   private collision2dService: Collision2DService | null = null;
   private physics2dService: Physics2DService | null = null;
   /** Scene-scoped named intents; see {@link commands}. Cleared by the runner on stop. */
@@ -232,6 +234,8 @@ export class SceneService {
     this.cutsceneApi?.dispose();
     this.cutsceneApi = null;
     this.closeStorage();
+    this.analyticsApi?.dispose();
+    this.analyticsApi = null;
     this.clearTweens();
     this.collision2dService = null;
     this.commandRegistry?.clear();
@@ -277,6 +281,22 @@ export class SceneService {
    */
   get storage(): GameStorage {
     return (this.gameStorage ??= new GameStorage());
+  }
+
+  /**
+   * The game's analytics: `track(name, props?)`, `setUserProps(props)`, `addSink(sink)` (a vendor
+   * SDK, the game's backend), `defineEvents([...])`. Events before the first sink wait in a
+   * 500-event buffer; sinks are flushed when the app goes to the background; a throwing sink is
+   * reported once and never breaks the game. Constructed on first touch, so a project that never
+   * says the word ships without it (`strippable-runtime-modules.ts`).
+   */
+  get analytics(): AnalyticsApi {
+    return (this.analyticsApi ??= new AnalyticsApi(() => this.frame));
+  }
+
+  /** What the run tracked (`pix3 play --json`, `pix3 smoke --json`); null when nothing touched analytics. */
+  analyticsRunReport(): AnalyticsRunReport | null {
+    return this.analyticsApi?.runReport() ?? null;
   }
 
   /** The runner, before the first `onStart`: read the save (see {@link GameStorage.open}). */

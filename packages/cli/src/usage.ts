@@ -63,7 +63,7 @@ Usage:
         [--shots <dir>] [--frames N] [--bot-args '<json>']
         [--seed N] [--config '<json>'] [--safe-area T,R,B,L]
         [--reduced-motion] [--storage memory|'<json>'|<file>]
-        [--ads reward|skip|unavailable|<list>]
+        [--ads reward|skip|unavailable|<list>] [--json]
         [--run '<json>']           --run: one pix3_game_run on the page (dev or dist);
         [--profile] [--tree]       --profile: frame/logic/render ms, activities, draw calls;
                                    --tree: the live object tree at the end

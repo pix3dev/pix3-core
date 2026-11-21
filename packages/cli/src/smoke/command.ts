@@ -12,6 +12,7 @@ import { ProjectFiles, toProjectPath } from '../validate/project.ts';
 import { isRecord } from '../validate/yaml-doc.ts';
 import { SMOKE_WORKER_FILE, withSmokeBundle } from './entry.ts';
 import {
+  analyticsSummary,
   isSmokeFailure,
   type SmokeFailure,
   type SmokeFailureCode,
@@ -471,6 +472,7 @@ export const formatSmokeHuman = (outcome: SmokeOutcome, root: string): string =>
       `  game "${report.game.name}" snapshot: ${formatGameSnapshot(report.game.snapshot)}`
     );
   }
+  if (report.analytics) lines.push(`  ${analyticsSummary(report.analytics)}`);
   if (report.errors.length > 0) {
     lines.push('errors:');
     for (const error of report.errors) {
