@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parsePlayArgs, runPlayCli, safeAreaOverlayScript } from './command.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
+import { checkScreens, screensSheetHtml, selectScreens } from './screens.ts';
 import { formatTreeHuman } from './tree-report.ts';
 
 /**
@@ -37,6 +38,103 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('pix3 play', () => {
+  it('--screens: the gallery of design/tests/screens.ts, refused before Chrome starts', async () => {
+    const parsed = parsePlayArgs([
+      '--screens',
+      '--only',
+      'menu,shop',
+      '--locale',
+      'all',
+      '--size',
+      '390x844,360x640@1',
+    ]);
+    expect(typeof parsed === 'object' && 'screens' in parsed ? parsed.screens : null).toMatchObject(
+      {
+        only: ['menu', 'shop'],
+        locales: 'all',
+        sizes: [{ label: 'size=390x844' }, { label: 'size=360x640@1' }],
+      }
+    );
+    // Sizes and locales multiply the states; they are not a grid needing a bot.
+    expect(typeof parsed === 'object' && 'grid' in parsed ? parsed.grid : 'x').toBeNull();
+    expect((await run(['--screens', '--seed', '3'])).err).toContain('drop --seed');
+    expect((await run(['--screens', '--bot', 'x'])).err).toContain('drop --bot');
+    expect((await run(['--only', 'menu'])).err).toContain('give it --screens');
+    expect((await run(['--bot', 'x', '--locale', 'all'])).err).toContain(
+      '--locale all is for --screens'
+    );
+
+    mkdirSync(join(root, 'dist'));
+    writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
+    const none = await run(['dist', '--screens']);
+    expect(none.code).toBe(2);
+    expect(none.err).toContain('no design/tests/screens.ts');
+    mkdirSync(join(root, 'design', 'tests', 'bots'), { recursive: true });
+    writeFileSync(
+      join(root, 'design', 'tests', 'screens.ts'),
+      "const empty: Record<string, unknown> = {};\nexport default [{ name: 'menu', overrides: empty }, { name: 'shop', overrides: {}, policy: 'to-shop' }];\n"
+    );
+    const unknown = await run(['dist', '--screens', '--only', 'result']);
+    expect(unknown.code).toBe(2);
+    expect(unknown.err).toContain('no screen result');
+    const policy = await run(['dist', '--screens']);
+    expect(policy.code).toBe(2);
+    expect(policy.err).toContain(
+      `screen shop: no bot policy ${join(root, 'design', 'tests', 'bots', 'to-shop.ts')}`
+    );
+  });
+
+  it('checks the screen list and draws its contact sheet', () => {
+    expect(checkScreens([])).toEqual({ error: expect.stringContaining('non-empty list') });
+    expect(checkScreens([{ name: 'a b' }])).toEqual({
+      error: expect.stringContaining('file-name-safe'),
+    });
+    expect(checkScreens([{ name: 'a' }, { name: 'a' }])).toEqual({
+      error: expect.stringContaining('taken'),
+    });
+    expect(checkScreens([{ name: 'a', overrides: { record: {} } }])).toEqual({
+      error: expect.stringContaining('take no record'),
+    });
+    const screens = checkScreens([
+      { name: 'menu' },
+      { name: 'shop', overrides: { seed: 2 }, policy: ' to-shop ' },
+    ]);
+    expect(screens).toEqual([
+      { name: 'menu', overrides: {} },
+      { name: 'shop', overrides: { seed: 2 }, policy: 'to-shop' },
+    ]);
+    expect(selectScreens(screens as never, ['shop'])).toEqual([(screens as never[])[1]]);
+
+    const html = screensSheetHtml(
+      [
+        {
+          screen: 'menu',
+          locale: 'ru',
+          size: '390x844@2',
+          file: '/o/menu.png',
+          status: 'ok',
+          errors: [],
+          shots: [],
+        },
+        {
+          screen: 'menu',
+          locale: 'en',
+          size: '390x844@2',
+          status: 'error',
+          errors: ['boom'],
+          shots: [{ name: 'open<', frame: 4, path: '/o/menu.en/open<.png' }],
+        },
+      ],
+      path => path.slice(3)
+    );
+    expect(html.match(/<section>/g)).toHaveLength(1);
+    expect(html).toContain('<img src="menu.png"><figcaption>ru · 390x844@2</figcaption>');
+    expect(html).toContain(
+      '<figure class="error"><div class="none"></div><figcaption>en · 390x844@2 · error'
+    );
+    expect(html).toContain('<img src="menu.en/open&lt;.png"><figcaption>en · 390x844@2 · open&lt;');
+  });
+
   it('prints its help', async () => {
     const result = await run(['--help']);
     expect(result.code).toBe(0);

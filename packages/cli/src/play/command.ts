@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { CliIo } from '../io.ts';
@@ -29,11 +29,23 @@ import {
   parseSeedList,
   parseSizeList,
   runGrid,
+  runPool,
   type GridAxes,
   type GridCombo,
   type GridPlay,
   type GridValue,
 } from './grid.ts';
+import {
+  formatScreensHuman,
+  loadScreens,
+  screensSheetHtml,
+  selectScreens,
+  type ScreenPicture,
+  type ScreenState,
+  type ScreensReport,
+} from './screens.ts';
+import { ProjectFiles } from '../validate/project.ts';
+import { resolveLocalization } from '../validate/localization-plan.ts';
 import {
   formatGoldenHuman,
   goldenArgsOf,
@@ -102,6 +114,15 @@ interface PlayArgs {
   readonly parallel: number;
   /** `--check-determinism`: every combination twice, the two ends compared. */
   readonly checkDeterminism: boolean;
+  /**
+   * `--screens [--only a,b]`: the gallery of `design/tests/screens.ts` (`screens.ts`), a picture
+   * per state × `--locale` (`all` = the project's) × `--size`.
+   */
+  readonly screens: {
+    readonly only: readonly string[];
+    readonly locales: readonly GridValue<string>[] | 'all';
+    readonly sizes: readonly GridValue<{ width: number; height: number; scale?: number }>[];
+  } | null;
 }
 
 const DEFAULT_SIZE = { width: 390, height: 844 };
@@ -177,6 +198,9 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
   const storages: GridValue<NonNullable<NonNullable<PlayArgs['run']>['storage']>>[] = [];
   let parallel: number | undefined;
   let checkDeterminism = false;
+  let screens = false;
+  let localeAll = false;
+  let only: string[] = [];
   let ads: NonNullable<PlayArgs['run']>['ads'];
   let seconds: number | undefined;
   let frames: number | undefined;
@@ -216,7 +240,12 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       if ('error' in parsed) return parsed;
       sizes = parsed;
     } else if (flag === '--locale') {
-      for (const locale of (value() ?? '').split(',').map(part => part.trim())) {
+      const text = value() ?? '';
+      if (text === 'all') {
+        localeAll = true;
+        continue;
+      }
+      for (const locale of text.split(',').map(part => part.trim())) {
         if (!/^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})*$/.test(locale))
           return { error: '--locale takes a locale code or a list: --locale ru,en' };
         locales.push({ value: locale, label: `locale=${locale}` });
@@ -226,7 +255,14 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
       if (!Number.isInteger(parallel) || parallel < 1)
         return { error: '--parallel takes a whole number of runs at a time ≥ 1' };
     } else if (flag === '--check-determinism') checkDeterminism = true;
-    else if (flag === '--scale') scale = Number(value());
+    else if (flag === '--screens') screens = true;
+    else if (flag === '--only') {
+      only = (value() ?? '')
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean);
+      if (only.length === 0) return { error: '--only takes screen names: --only menu,result' };
+    } else if (flag === '--scale') scale = Number(value());
     else if (flag === '--scene') scene = value();
     else if (flag === '--bot') bot = value();
     else if (flag === '--run') {
@@ -324,6 +360,32 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
         error: `--replay plays the recording's scene, settings, inputs and screen: drop ${extra.join(', ')}`,
       };
   }
+  if (only.length > 0 && !screens) return { error: '--only picks screens: give it --screens' };
+  if (localeAll && !screens)
+    return { error: '--locale all is for --screens; a run or a grid takes codes: --locale ru,en' };
+  if (screens) {
+    // A screen's state is its entry in screens.ts; the command line only multiplies it.
+    const owned = [
+      '--bot',
+      '--run',
+      '--bot-args',
+      '--seed',
+      '--config',
+      '--storage',
+      '--scene',
+      '--golden',
+      '--record',
+      '--replay',
+      '--screenshot',
+      '--profile',
+      '--tree',
+      '--check-determinism',
+    ].filter(flag => given.has(flag));
+    if (owned.length > 0)
+      return {
+        error: `--screens sets each state from design/tests/screens.ts: drop ${owned.join(', ')} (put it in a screen's overrides, scene or policy)`,
+      };
+  }
   const driven = bot !== undefined || gameRun !== null || replay !== undefined;
   const axes: GridAxes = {
     seed: seeds,
@@ -333,7 +395,8 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     locale: locales,
     storage: storages,
   };
-  const grid = isGrid(axes) || parallel !== undefined || checkDeterminism ? axes : null;
+  const grid =
+    !screens && (isGrid(axes) || parallel !== undefined || checkDeterminism) ? axes : null;
   if (grid) {
     if (!bot && !gameRun)
       return {
@@ -355,12 +418,13 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     };
   // A bot run paints every frame: at DPR 3 a headless page took 5–6 minutes a round
   // (core-tests/game13), so a bot defaults to 2; --scale 3 for the final pictures.
-  scale ??= driven ? 2 : 3;
+  scale ??= driven || screens ? 2 : 3;
   if (!Number.isFinite(scale) || scale <= 0) return { error: '--scale takes a positive number' };
   // With a bot the budget is game frames: a headless page at --scale 3 paints ~8 fps, and 60 wall
   // seconds were ~8 s of a fixed-tick game — a round never finished (core-tests/game9). Seconds
   // stay as the wall-clock safety net.
-  const budget = seconds ?? (driven ? DEFAULT_BOT_WALL_SECONDS : 3);
+  // A screen without a policy: how long the page runs before its picture.
+  const budget = seconds ?? (driven ? DEFAULT_BOT_WALL_SECONDS : screens ? 2 : 3);
   if (!Number.isFinite(budget) || budget <= 0)
     return { error: '--seconds takes a positive number' };
   const frameBudget = frames ?? DEFAULT_BOT_FRAMES;
@@ -400,9 +464,10 @@ export const parsePlayArgs = (argv: readonly string[]): PlayArgs | { error: stri
     grid,
     parallel: parallel ?? 1,
     checkDeterminism,
+    screens: screens ? { only, locales: localeAll ? 'all' : locales, sizes } : null,
   };
   // A single run is the grid's one combination.
-  return grid ? base : argsForCombo(base, gridCombos(axes)[0]);
+  return grid || screens ? base : argsForCombo(base, gridCombos(axes)[0]);
 };
 
 /** The run of one grid combination: its size, `bot.args` and `RunOverrides` over the base. */
@@ -587,6 +652,11 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     io.stderr(`pix3 play: ${golden.error}\n`);
     return 2;
   }
+  const screens = args.screens ? await loadGallery(args.screens, root ?? io.cwd) : null;
+  if (screens && 'error' in screens) {
+    io.stderr(`pix3 play: ${screens.error}\n`);
+    return 2;
+  }
   const chromePath = findChrome(env);
   if (!chromePath) {
     io.stderr(`pix3 play: ${describeChromeNotFound()}\n`);
@@ -619,6 +689,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
       )),
   };
   try {
+    if (screens) return await playScreens(chrome, args, screens, context);
     if (args.grid) return await playGrid(chrome, args, args.grid, context, golden);
     const { report, failed } = await playOnce(chrome, args, context);
     const goldenResult = args.golden
@@ -716,6 +787,195 @@ const playGrid = async (
       };
     },
   });
+};
+
+interface Gallery {
+  readonly jobs: readonly { readonly screen: ScreenState; readonly combo: GridCombo }[];
+  readonly policyFileOf: (screen: ScreenState) => string | null;
+}
+
+/** The pictures `--screens` takes: the listed states × locale × size, every policy found. */
+const loadGallery = async (
+  gallery: NonNullable<PlayArgs['screens']>,
+  root: string
+): Promise<Gallery | { error: string }> => {
+  const loaded = await loadScreens(root);
+  const screens = 'error' in loaded ? loaded : selectScreens(loaded, gallery.only);
+  if ('error' in screens) return screens;
+  const policyFileOf = (screen: ScreenState): string | null =>
+    screen.policy ? join(root, 'design', 'tests', 'bots', `${screen.policy}.ts`) : null;
+  for (const screen of screens) {
+    const policyFile = policyFileOf(screen);
+    if (policyFile && !existsSync(policyFile))
+      return { error: `screen ${screen.name}: no bot policy ${policyFile}` };
+  }
+  const locales =
+    gallery.locales === 'all'
+      ? (resolveLocalization(new ProjectFiles(root))?.locales ?? []).map(value => ({
+          value,
+          label: `locale=${value}`,
+        }))
+      : gallery.locales;
+  const combos = gridCombos({ locale: locales, size: gallery.sizes });
+  return {
+    jobs: screens.flatMap(screen => combos.map(combo => ({ screen, combo }))),
+    policyFileOf,
+  };
+};
+
+/**
+ * `--screens`: every state of `design/tests/screens.ts` (or `--only` these) × locale × size, each
+ * a fresh load in a browser context of its own with the state's `RunOverrides` (the locale axis
+ * over the state's own), its scene and its policy (played to `done(true)`); the picture is the page
+ * at the end. Then the contact sheet, drawn by the same Chrome, and `screens.json`. Exit 1 when a
+ * picture errored (a page error, a policy that did not reach `done(true)`), 2 when the list is
+ * unusable.
+ */
+const playScreens = async (
+  chrome: PipeChrome,
+  args: PlayArgs,
+  gallery: Gallery,
+  context: PlayContext
+): Promise<number> => {
+  const { io } = context;
+  const root = context.root ?? io.cwd;
+  const out = resolve(
+    io.cwd,
+    args.shots ?? join(root, '.pix3', 'screenshots', `screens-${Date.now()}`)
+  );
+  mkdirSync(out, { recursive: true });
+  const { jobs, policyFileOf } = gallery;
+  const pictures = await runPool(
+    jobs.length,
+    args.parallel,
+    async (index): Promise<ScreenPicture> => {
+      const { screen, combo } = jobs[index];
+      const runArgs = argsForCombo({ ...args, scene: screen.scene, bot: screen.policy }, combo);
+      const size = `${runArgs.width}x${runArgs.height}@${runArgs.scale}`;
+      const stem = slug([screen.name, combo.locale, size].filter(Boolean).join('.'));
+      const file = join(out, `${stem}.png`);
+      const base: Omit<ScreenPicture, 'status' | 'errors' | 'shots'> = {
+        screen: screen.name,
+        ...(combo.locale ? { locale: combo.locale } : {}),
+        size,
+      };
+      const broken = (error: string): ScreenPicture => ({
+        ...base,
+        status: 'error',
+        errors: [error],
+        shots: [],
+      });
+      const url = resolveTarget(runArgs, context.root, io.cwd);
+      if (typeof url !== 'string') return broken(url.error);
+      const browserContext = await chrome.createContext();
+      try {
+        const { report, failed } = await playOnce(
+          chrome,
+          {
+            ...runArgs,
+            run: { ...(screen.overrides as PlayArgs['run']), ...runArgs.run },
+            screenshot: file,
+            shots: join(out, stem),
+            // A policy's wall-clock net; --seconds is how long a page without one runs.
+            ...(screen.policy ? { seconds: DEFAULT_BOT_WALL_SECONDS } : {}),
+          },
+          {
+            ...context,
+            url,
+            browserContext,
+            policyName: screen.policy,
+            policyFile: policyFileOf(screen),
+            tag: ` [${[screen.name, combo.label === 'run' ? '' : combo.label].filter(Boolean).join(' ')}]`,
+          }
+        );
+        const crash = report.bot?.error as { message?: string } | undefined;
+        const done = report.bot?.done as { pass?: boolean; reason?: string } | undefined;
+        const errors = [
+          ...report.errors,
+          ...(report.status !== 'running' ? [`the game is ${report.status}`] : []),
+          ...(crash ? [`policy ${screen.policy}: ${crash.message ?? 'crashed'}`] : []),
+          ...(screen.policy && !crash && done?.pass !== true
+            ? [
+                `policy ${screen.policy} ${done ? `ended done(false): ${done.reason ?? ''}` : `did not call done() within ${args.frames} frames`}`,
+              ]
+            : []),
+        ];
+        return {
+          ...base,
+          ...(report.screenshot ? { file: report.screenshot } : {}),
+          status: failed || errors.length > 0 ? 'error' : 'ok',
+          errors,
+          shots: report.screenshots ?? [],
+        };
+      } catch (error) {
+        return broken((error as Error).message);
+      } finally {
+        await chrome.closeContext(browserContext).catch(() => undefined);
+      }
+    }
+  );
+  const html = join(out, 'index.html');
+  writeFileSync(
+    html,
+    screensSheetHtml(pictures, path =>
+      relative(out, path).split(sep).map(encodeURIComponent).join('/')
+    )
+  );
+  const sheet = join(out, 'sheet.png');
+  const sheetError = await drawSheet(chrome, html, sheet).catch((error: Error) => error.message);
+  const report: ScreensReport = {
+    out,
+    html,
+    ...(sheetError ? {} : { sheet }),
+    pictures,
+  };
+  writeFileSync(join(out, 'screens.json'), `${JSON.stringify(report, null, 2)}\n`);
+  if (args.json) io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+  else io.stdout(formatScreensHuman(report));
+  if (sheetError) io.stderr(`pix3 play: the contact sheet was not drawn: ${sheetError}\n`);
+  return pictures.some(picture => picture.status === 'error') ? 1 : 0;
+};
+
+/** Chrome's longest screenshot side; a taller sheet is drawn scaled down to it. */
+const MAX_SHEET_PX = 16_000;
+
+/** `index.html` of the gallery photographed whole, at 1 CSS px a pixel (or scaled to fit). */
+const drawSheet = async (chrome: PipeChrome, html: string, png: string): Promise<null> => {
+  const session = await chrome.openPage();
+  try {
+    await chrome.send(
+      'Emulation.setDeviceMetricsOverride',
+      { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
+      session
+    );
+    await chrome.send('Page.navigate', { url: pathToFileURL(html).href }, session);
+    type Size = { width: number; height: number };
+    let size = null as Size | null;
+    for (const deadline = Date.now() + 20_000; !size && Date.now() < deadline; ) {
+      await sleep(100);
+      size = (await chrome
+        .evaluate(
+          session,
+          `document.readyState === 'complete' && [...document.images].every(i => i.complete) ? { width: document.body.scrollWidth, height: document.body.scrollHeight } : null`
+        )
+        .catch(() => null)) as Size | null;
+    }
+    if (!size) throw new Error('the sheet page did not load in 20 s');
+    const scale = Math.min(1, MAX_SHEET_PX / Math.max(size.width, size.height));
+    const shot = (await chrome.send(
+      'Page.captureScreenshot',
+      {
+        format: 'png',
+        captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width: size.width, height: size.height, scale },
+      },
+      session
+    )) as { data?: string };
+    writeFileSync(png, Buffer.from(shot.data ?? '', 'base64'));
+    return null;
+  } finally {
+    await chrome.send('Page.close', {}, session).catch(() => undefined);
+  }
 };
 
 interface PageScripts {

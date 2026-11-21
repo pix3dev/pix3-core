@@ -188,6 +188,24 @@ object's live values. The same tab's **Colliders** / **Axes** draw the physics c
 node's local axes over the game; before a screenshot, `__PIX3_PLAYER__.debug.physicsWireframe(true)`
 / `.directionAxes(true)` turn them on.
 
+### Screens — look at every screen after a UI change
+
+After you change anything the player sees (a HUD, a modal, a font, a layout, a locale table), look
+at all the screens, not the one you were working on:
+`npx pix3 play --screens --locale all --size 390x844@2,360x640@2,844x390@1`. It photographs every
+state listed in `design/tests/screens.ts` in every locale at every size and writes a contact sheet
+— open `sheet.png` (one row per state) — and `screens.json`. Keep the list complete: one entry per
+screen the player can reach (menu, play at its start, each modal, the result card, a shop with a
+save that fills it), each **set directly** — `overrides` = `{ config, storage: { snapshot }, seed,
+ads }` puts the game in that state on load, `scene` boots another scene; a `policy` (a bot that ends
+with `done(true)` on the state) only for what cannot be set. Add the entry with the screen.
+
+On the sheet, check every tile: nothing cut off or overlapping at the narrow and the landscape
+size, no text running out of its box in the longest locale, no key shown instead of its text, and
+the play screen speaks in pictograms (AGENTS.md): no sentence on it — numbers, icons and at most a
+four-word refusal caption. A tile outlined red errored (`screens.json` says why). `--only menu,shop`
+re-takes a few.
+
 ### Goldens — pin how a seeded round ends
 
 Once a round plays as designed, pin it so a later refactor that changes the outcome cannot pass

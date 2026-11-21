@@ -154,3 +154,18 @@ declare interface BotPolicy {
   /** Runs once after the last tick, whatever ended the run. */
   end?(bot: Pix3TestBot): void;
 }
+
+/**
+ * One state of the screen gallery (`design/tests/screens.ts`, `pix3 play --screens`): photographed
+ * per locale × size with these run settings, after `policy` (a file in this folder) calls
+ * `done(true)` on it — or, without one, after `--seconds` (2) of play.
+ */
+declare interface ScreenState {
+  /** The picture's file name: letters, digits, `_` and `-`. */
+  name: string;
+  /** The run's settings: `{ config, storage, seed, ads, reducedMotion }` (`--locale` wins). */
+  overrides: import('@pix3/runtime').RunOverrides;
+  /** Another scene to boot (dev server only). */
+  scene?: string;
+  policy?: string;
+}

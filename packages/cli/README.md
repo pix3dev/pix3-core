@@ -759,6 +759,7 @@ npx pix3 play dist --run '{"bot":{"name":"round"},"until":[{"kind":"gameState","
 npx pix3 play https://example.com/game/ --seconds 5 --json
 npx pix3 play dist --profile --seconds 8         # a performance report of the run (dev or dist)
 npx pix3 play --tree                             # the running game's object tree at the end
+npx pix3 play --screens --locale all --size 390x844@2,360x640@2   # the screen gallery
 ```
 
 A private headless Chrome (its own temp profile, CDP over `--remote-debugging-pipe`, the Chrome
@@ -812,6 +813,24 @@ touches 60 CSS px either side of a world point and scales the gap to `scale` ove
 (default 12; `BotPinch` in `game-bot-world.ts`), both lifted at the end — the pinch-zoom of a map or
 a camera, `physical-input` only. `--locale <code>` starts the run in that locale
 (`RunOverrides.locale`, ahead of the project's default).
+
+**The screen gallery.** `--screens` photographs every state listed in `design/tests/screens.ts`
+(the kit writes a starter; `ScreenState` is declared in `design/tests/bots/pix3-test-bot.d.ts`):
+`export default [{ name, overrides, scene?, policy? }] satisfies ScreenState[]`. A state is *set*,
+not played to — `overrides` is its `RunOverrides` (config, a storage snapshot, seed, ads, reduced
+motion), `scene` another scene to boot (dev server only), `policy` a bot that walks there and ends
+with `done(true)` (its `bot.screenshot` pictures are kept as extra tiles); without a policy the
+picture is taken after `--seconds` (default 2). One picture per state × `--locale` (`all` = the
+project's locales, `localization:` or `locales/*.json`; the axis wins over a state's own
+`locale`) × `--size`, each a fresh load in a browser context of its own, `--parallel N` at a time;
+`--only a,b` picks states. Into `--shots <dir>` (default `.pix3/screenshots/screens-<time>/`):
+`<name>.<locale>.<size>.png`, `index.html` — the contact sheet, a row per state, each tile
+labelled in its corner as on `pix3 render`'s sheet, an errored one outlined red — `sheet.png`
+(that page photographed by the same Chrome; scaled down past 16000 px) and `screens.json`
+(`{ out, html, sheet, pictures: [{ screen, locale, size, file, status, errors, shots }] }`, also
+`--json`). The flags that set a run (`--bot`, `--run`, `--seed`, `--config`, `--storage`,
+`--scene`, `--golden`, `--record`, …) are refused: they belong in a state. Exit 1 when a picture
+errored (a page error, a policy that did not end `done(true)`), 2 when the list does not load.
 
 **The run grid.** List values make one run per combination, each a fresh load in a browser context
 of its own (`Target.createBrowserContext`: its own storage), with `--bot` or `--run`:

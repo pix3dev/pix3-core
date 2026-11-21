@@ -28,8 +28,8 @@ import {
   checkLocaleTables,
   checkScriptKeys,
   checkSpriteKeys,
-  resolveLocalization,
 } from './resource-files.ts';
+import { resolveLocalization } from './localization-plan.ts';
 import { scanUserScripts } from './user-scripts.ts';
 import { checkAutoloads, checkAutoloadTypes } from './autoloads.ts';
 import { checkManifestExport } from './manifest-export.ts';

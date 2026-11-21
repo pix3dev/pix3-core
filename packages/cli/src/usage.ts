@@ -73,6 +73,8 @@ Usage:
                                    --tree: the live object tree at the end
         [--record <f> [--every N]] the run as a replay file (dev server); --replay <f> plays one
         [--replay <f>]             on the page, a picture at the divergence
+        [--screens [--only a,b]]   the screen gallery: design/tests/screens.ts × --locale × --size,
+                                   a contact sheet and screens.json
   pix3 render <scene|prefab>       Draw a model from several sides into one PNG sheet (headless
         [--node <id>] [--views iso,front,right,top|all|az:el] Chrome; the scene starts, so
         [--size 512] [--out <f.png>] core:MergeStatic bakes); mesh, draw-call, triangle counts,
@@ -380,6 +382,8 @@ Reference it from a scene or script as res://<path inside the project>.
                  --locale ru,en, --config / --bot-args / --storage (repeated, or a file with a list)
                  [--parallel N] [--check-determinism] [--golden <file.json> [--write]] [--json]
        pix3 play --replay <file.pix3replay> [--seconds S] [--json] [--project <dir>]
+       pix3 play --screens [--only a,b] [--locale all|ru,en] [--size 390x844@2,…] [--parallel N]
+                 [--seconds S] [--shots <dir>] [--safe-area T,R,B,L] [--json]
 
   The game's own page in a private headless Chrome at a phone's size — the dev server (default,
   when one runs) or the built dist/index.html as it ships ('dist', or when no server runs) —
@@ -484,6 +488,19 @@ Reference it from a scene or script as res://<path inside the project>.
   --replay f     play a recording back on the dev page at its screen (best-effort): MATCH, or
                  DIVERGED between tick A and B with the differing paths, both checkpoints beside
                  the file and <file>.tick-B.png, the page on that tick
+
+  --screens      the screen gallery: every state in design/tests/screens.ts (export default
+                 [{ name, overrides, scene?, policy? }]; the kit writes a starter) photographed in
+                 every --locale (all = the project's locales) at every --size, each a fresh load in
+                 a browser context of its own. A state is set, not played to: overrides is its
+                 RunOverrides (config, storage, seed, ads, reducedMotion; --locale wins), scene
+                 another scene (dev only), policy a bot in design/tests/bots that ends with
+                 done(true) on the state (its bot.screenshot pictures are kept too); without one the
+                 picture is taken after --seconds (default 2). --only a,b picks states. Writes
+                 <name>.<locale>.<size>.png, index.html (the contact sheet: a row per state),
+                 sheet.png (its picture) and screens.json into --shots (default
+                 .pix3/screenshots/screens-<time>/); exit 1 when a picture errored (a page error, a
+                 policy that did not end done(true)), 2 when the list is unusable
 
   Exit 0 = the page ran frames, nothing threw, the bot or the run passed (an until met, or the
   policy's done(true)) and a --golden matched; 1 = errors, a failed or crashed bot, a run that

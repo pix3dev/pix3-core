@@ -178,6 +178,7 @@ describe('kit drift', () => {
         '.claude/skills/pix3-editor/SKILL.md',
         '.claude/skills/pix3-model/SKILL.md',
         'design/tests/bots/pix3-test-bot.d.ts',
+        'design/tests/screens.ts',
       ])
     );
     expect(text('CLAUDE.md')).toBe('@AGENTS.md\n');
@@ -1358,8 +1359,9 @@ describe('pix3 kit', () => {
     const report = await run();
     expect(report.typecheck).toMatchObject({ mode: 'project', tsconfig: 'tsconfig.json' });
     expect(report.diagnostics.filter(d => d.code === 'E_TYPE')).toEqual([]);
+    // The kit's screen list (`pix3 play --screens`) type-checks against ScreenState as shipped.
     expect(report.files.map(f => f.file)).toEqual(
-      expect.arrayContaining(['design/tests/bots/dodge.ts'])
+      expect.arrayContaining(['design/tests/bots/dodge.ts', 'design/tests/screens.ts'])
     );
 
     // A call the harness does not have is a type error at the policy, not a silent no-op.

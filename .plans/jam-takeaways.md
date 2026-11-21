@@ -395,6 +395,30 @@ Chrome), golden агрегата WRITTEN → MATCH; `pix3 play dist` с поли
 сводный лист (как у `pix3 render`) и `screens.json`. Кит: рецепт «посмотреть экраны после изменения
 UI», правило пиктограмм. Шаблоны не меняются.
 
+**Сделано (2026-11-21).** `pix3 play --screens [--only a,b] [--locale all|ru,en] [--size …]
+[--parallel N] [--seconds S] [--shots dir]` (`cli/src/play/screens.ts` + `playScreens`/`loadGallery`/
+`drawSheet` в `command.ts`). `design/tests/screens.ts` (кит кладёт стартер `[{ name: 'start',
+overrides: {} }]`; `ScreenState` — глобальный тип в `pix3-test-bot.d.ts`, `overrides:
+import('@pix3/runtime').RunOverrides`) компилируется esbuild и импортируется в Node; проверка списка
+(имя-слово, уникальность, без `record`/`replay`), политики проверяются до запуска Chrome. Картинка на
+состояние × локаль × размер — свежая загрузка в своём контексте (`playOnce` с `screenshot`), с
+политикой — кадр `done(true)` (её `bot.screenshot` — доп. плитки), без — через `--seconds` (2);
+`--locale` перекрывает `locale` состояния. Флаги, задающие прогон (`--bot/--run/--seed/--config/
+--storage/--scene/--golden/--record/…`), — отказ. Вывод: `<name>.<locale>.<size>.png`, `index.html`
+(лист: строка на состояние, подпись в углу плитки как у `pix3 render`, ошибка — красная рамка),
+`sheet.png`, `screens.json`; exit 1 — ошибка картинки (страница, политика не дошла до `done(true)`),
+2 — список не грузится. Проверено в headless Chrome на скретч-фикстуре (не в репо; dev-сервер, en/ru
+таблицы, Label2D с `labelKey`): 3 состояния (без политики, политика с `bot.screenshot`, политика
+`done(false)`) × `--locale all` × 2 размера, `--parallel 2` — 12 картинок за ~15 с, локали видны на
+плитках, ошибочные обведены, exit 1; без ошибочного — exit 0.
+Отклонения: лист собирается не канвасом рантайма (`renderModelSheet` рисует 3D-виды, на готовые PNG
+не переносится), а HTML-страницей, сфотографированной тем же Chrome, — тот же вид подписи, а
+`index.html` остаётся рядом для человека. `resolveLocalization` вынесен из `resource-files.ts` в
+`validate/localization-plan.ts` (без импорта рантайма — нужен Node-исходнику `play`). `--locale all`
+только с `--screens`. Дрейф realtime-тиков в `--check-determinism` не трогал: это поле снимка игры
+(`ticks`), CLI не знает, какой путь игнорировать; чистое решение — старт бота на фиксированном тике,
+не «маленькая правка».
+
 ## Этап F. Паритет локалей (S)
 
 В `cli/src/validate/resource-files.ts`, таблицы — JSON: `W_LOCALE_KEY_MISSING` (ключ default-локали

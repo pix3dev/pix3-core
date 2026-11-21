@@ -31,7 +31,7 @@ import {
 
 import { PENDING_COMPONENT_WARNING } from '../validate/level2.ts';
 import { ProjectFiles } from '../validate/project.ts';
-import { resolveLocalization } from '../validate/resource-files.ts';
+import { resolveLocalization } from '../validate/localization-plan.ts';
 import type { ScriptImportMap } from '../validate/script-build.ts';
 import { scanUserScripts } from '../validate/user-scripts.ts';
 import { compileAndImportScripts } from './compile-scripts.ts';
