@@ -3,6 +3,7 @@ import { Vector2, Vector3 } from 'three';
 
 import { Node2D } from '../Node2D';
 import { Camera2D, findActiveCamera2D } from './Camera2D';
+import type { SceneService } from '../../core/SceneService';
 
 function makeRoot(): Node2D {
   return new Node2D({ id: 'root', name: 'Root' });
@@ -189,6 +190,40 @@ describe('Camera2D.shake', () => {
     const off = cam.getShakeOffset(new Vector2());
     expect(off.x).toBe(0);
     expect(off.y).toBe(0);
+  });
+});
+
+describe('Camera2D.shake — clock, strongest wins, direction', () => {
+  it("advances by the runner's real delta, so it plays through a hitstop (scaled dt = 0)", () => {
+    const cam = new Camera2D({ id: 'cam', name: 'Cam' });
+    cam.scene = { time: { unscaledDeltaSec: 1 / 60 } } as unknown as SceneService;
+    cam.shake({ amplitude: 10, frequency: 20, duration: 1, decay: 1 });
+    const seen = new Set<number>();
+    for (let i = 0; i < 4; i++) {
+      cam.solve(0);
+      seen.add(cam.getShakeOffset(new Vector2()).x);
+    }
+    expect(seen.size).toBe(4);
+  });
+
+  it('ignores a weaker request and keeps its knobs', () => {
+    const cam = new Camera2D({ id: 'cam', name: 'Cam', shakeAmplitude: 30 });
+    cam.shake({ duration: 1, decay: 1 });
+    cam.solve(0.1);
+    cam.shake({ amplitude: 5, duration: 0.1 });
+    expect(cam.serializeConfig()).toMatchObject({ shakeAmplitude: 30, shakeDuration: 1 });
+    cam.solve(0.2); // past the weak request's 0.1 s: still the strong shake
+    const off = cam.getShakeOffset(new Vector2());
+    expect(off.x !== 0 || off.y !== 0).toBe(true);
+  });
+
+  it('shakes along `direction` only', () => {
+    const cam = new Camera2D({ id: 'cam', name: 'Cam' });
+    cam.shake({ amplitude: 10, duration: 1, direction: 0 });
+    cam.solve(0.13);
+    const off = cam.getShakeOffset(new Vector2());
+    expect(off.y).toBeCloseTo(0, 12);
+    expect(off.x).not.toBe(0);
   });
 });
 

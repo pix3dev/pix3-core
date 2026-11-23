@@ -247,8 +247,8 @@ interface BurstParticle {
  * on the CPU each tick (a handful of particles for a fraction of a second, so the
  * per-frame cost is noise), auto-freeing once the last particle dies.
  *
- * Ticked through `node.tick`, so it respects the global `Time.scale` exactly like
- * the other juice effects — a hitstop freezes the sparks mid-air.
+ * Ticked through `node.tick`, so it respects the global `Time.scale` like `punchScale` (not like
+ * the shake and the hit flash, which play through a hitstop) — the freeze holds the sparks mid-air.
  */
 export class ParticleBurst2D extends Node2D {
   private readonly particles: BurstParticle[] = [];

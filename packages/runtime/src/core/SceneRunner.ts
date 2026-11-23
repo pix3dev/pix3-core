@@ -1573,6 +1573,7 @@ export class SceneRunner implements PlatformHost {
     // ticked below read this frame's value rather than last frame's.
     this.sceneService.updateTweens(dt);
     this.updateGameLogicSafe(dt);
+    this.sceneService.updateJuice();
     this.flushInstancedNodes();
     const logicMs = performance.now() - logicStart;
 

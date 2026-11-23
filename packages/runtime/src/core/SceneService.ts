@@ -383,11 +383,21 @@ export class SceneService {
   }
 
   /**
+   * Juice that runs on the runner's real time and ends by the clock (`juice.hitFlash`). Called by
+   * `SceneRunner` every tick after the scripts; one null check for a scene that never used juice.
+   */
+  updateJuice(): void {
+    this.juiceApi?.update();
+  }
+
+  /**
    * Cancel every tween. Called by `SceneRunner.stop()` next to {@link clearCommands}
    * (and by {@link dispose}) — a tween closure must never outlive its graph.
    */
   clearTweens(): void {
     this.tweenApi?.cancelAll();
+    // The hit flashes of the graph that is going away.
+    this.juiceApi?.clear();
   }
 
   /** The runner's current frame (0 without a running scene). */

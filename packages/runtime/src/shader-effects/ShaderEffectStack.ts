@@ -143,7 +143,10 @@ export class ShaderEffectStack {
    * type — a duplicate attach is a no-op. Refuses effects whose targets don't
    * include this stack's target. Returns whether it attached.
    */
-  attach(type: string, init?: { enabled?: boolean; params?: Record<string, unknown> }): boolean {
+  attach(
+    type: string,
+    init?: { enabled?: boolean; params?: Record<string, unknown>; transient?: boolean }
+  ): boolean {
     if (this.effects.some(e => e.type === type)) {
       return false;
     }
@@ -164,6 +167,7 @@ export class ShaderEffectStack {
       enabled: typeof init?.enabled === 'boolean' ? init.enabled : true,
       params: {},
       uniforms: info.createUniforms(),
+      ...(init?.transient ? { transient: true } : {}),
     };
     for (const p of info.params) {
       const override = init?.params?.[p.key];
@@ -229,6 +233,39 @@ export class ShaderEffectStack {
     return true;
   }
 
+  /**
+   * Drive an attached effect's uniforms with `params` and keep it compiled in even if it is
+   * disabled, WITHOUT touching its authored `params` / `enabled`: serialization, the inspector and
+   * {@link getParam} go on seeing the authored state, and {@link clearOverride} puts it back
+   * exactly. A play-time effect such as `scene.juice.hitFlash`. Returns whether the effect exists.
+   */
+  override(typeOrKey: string, params: Record<string, unknown>): boolean {
+    const effect = this.get(typeOrKey);
+    if (!effect) {
+      return false;
+    }
+    if (!effect.overridden) {
+      effect.overridden = true;
+      if (!effect.enabled) this.syncDefines(true);
+    }
+    for (const [key, value] of Object.entries(params)) {
+      const param = effect.info.params.find(p => p.key === key);
+      if (param) this.writeUniform(effect, param, coerceParamValue(value, param.type));
+    }
+    return true;
+  }
+
+  /** End an {@link override}: the authored params back on the uniforms, a disabled effect off. */
+  clearOverride(typeOrKey: string): void {
+    const effect = this.get(typeOrKey);
+    if (!effect?.overridden) {
+      return;
+    }
+    effect.overridden = false;
+    this.applyParamsToUniforms(effect);
+    if (!effect.enabled) this.syncDefines(true);
+  }
+
   /** Read one param the way the inspector expects (vector2 → a fresh {x,y}). */
   getParam(typeOrKey: string, paramKey: string): unknown {
     const effect = this.get(typeOrKey);
@@ -261,7 +298,7 @@ export class ShaderEffectStack {
    * binder / preview snapshot.
    */
   buildInstanceSchema(): PropertySchema | null {
-    if (this.effects.length === 0) {
+    if (!this.effects.some(effect => !effect.transient)) {
       return null;
     }
     if (this.schemaCache && this.schemaCache.rev === this.revision) {
@@ -272,6 +309,7 @@ export class ShaderEffectStack {
     const groups: NonNullable<PropertySchema['groups']> = {};
 
     for (const effect of this.effects) {
+      if (effect.transient) continue;
       const group = `Effect: ${effect.info.displayName}`;
       groups[group] = { label: effect.info.displayName, expanded: true };
 
@@ -308,9 +346,9 @@ export class ShaderEffectStack {
     }
   }
 
-  /** Serialize the attached effects (only non-default params emitted). */
+  /** Serialize the authored effects (only non-default params emitted; transient ones skipped). */
   serialize(): ShaderEffectEntry[] {
-    return this.effects.map(effect => serializeEffectEntry(effect));
+    return this.effects.filter(effect => !effect.transient).map(serializeEffectEntry);
   }
 
   // ---------------------------------------------------------------------------
@@ -341,7 +379,7 @@ export class ShaderEffectStack {
       }
     }
     for (const effect of this.effects) {
-      if (effect.enabled) {
+      if (effect.enabled || effect.overridden) {
         defines[effect.info.define] = '';
       }
     }
@@ -357,6 +395,14 @@ export class ShaderEffectStack {
   }
 
   private applyParamToUniform(effect: AttachedShaderEffect, param: ShaderEffectParamDef): void {
+    this.writeUniform(effect, param, effect.params[param.key]);
+  }
+
+  private writeUniform(
+    effect: AttachedShaderEffect,
+    param: ShaderEffectParamDef,
+    value: unknown
+  ): void {
     if (!param.uniform) {
       return;
     }
@@ -364,7 +410,6 @@ export class ShaderEffectStack {
     if (!uniform) {
       return;
     }
-    const value = effect.params[param.key];
     switch (param.type) {
       case 'number':
         (uniform as { value: number }).value = Number(value);

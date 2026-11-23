@@ -30,7 +30,8 @@ export type SfxPreset =
   | 'lose'
   | 'laser'
   | 'tick'
-  | 'deny';
+  | 'deny'
+  | 'hit';
 
 export const SFX_PRESETS: readonly SfxPreset[] = [
   'tap',
@@ -43,6 +44,7 @@ export const SFX_PRESETS: readonly SfxPreset[] = [
   'laser',
   'tick',
   'deny',
+  'hit',
 ];
 
 /** Per-shot options for `scene.audio.sfx()`. */
@@ -55,6 +57,11 @@ export interface SfxOptions {
    * distinct pitch gets its own cached buffer.
    */
   pitch?: number;
+  /**
+   * Random ± spread of the playback rate per shot, 0..1 (default 0; ~0.06 for a hit) — the same
+   * as `audio.play`'s. Applied at playback, so it renders no new buffer.
+   */
+  pitchVariation?: number;
 }
 
 /**
@@ -129,6 +136,13 @@ const PRESET_PATCHES: Record<SfxPreset, readonly SfxLayer[]> = {
     { wave: 'square', freq: 311, start: 0.12, duration: 0.22, decay: 2, gain: 0.3 },
     { wave: 'square', freq: 233, start: 0.24, duration: 0.3, decay: 1.8, gain: 0.3 },
     { wave: 'sine', freq: 160, freqEnd: 60, start: 0.24, duration: 0.4, decay: 1.6, gain: 0.5 },
+  ],
+  // One blow, three layers (Mekai's game-feel checklist): a 12 ms noise click, a 220 → 70 Hz
+  // thump over ~0.1 s, and a 640 Hz ring entering at 8 ms and dying over 0.16 s.
+  hit: [
+    { wave: 'noise', duration: 0.012, decay: 2, gain: 0.5, attack: 0.001 },
+    { wave: 'sine', freq: 220, freqEnd: 70, duration: 0.1, decay: 2, gain: 0.9, attack: 0.002 },
+    { wave: 'sine', freq: 640, start: 0.008, duration: 0.16, decay: 3, gain: 0.3 },
   ],
   // A short low two-tone buzz, the second note lower: a wrong move, a refused swap, a locked
   // button (core-tests/game18). Not `lose`, which is the end of a round.

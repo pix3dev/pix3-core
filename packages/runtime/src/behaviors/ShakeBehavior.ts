@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import { appLifecycle } from '../core/AppLifecycle';
 import { Script } from '../core/ScriptComponent';
+import type { SceneService } from '../core/SceneService';
 import { Node3D } from '../nodes/Node3D';
 import type { PropertySchema } from '../fw/property-schema';
 
@@ -13,13 +14,20 @@ export interface ShakeOptions {
   duration?: number;
   /** Falloff power applied to `(1 - progress)`; `0` = no decay, `1` = linear. */
   decay?: number;
+  /**
+   * Shake along one axis only, at this angle in radians in the XY plane (`0` = along +X, `π/2` =
+   * along +Y) — a recoil along the blow. Omitted = every direction. For this request only.
+   */
+  direction?: number;
 }
 
 /**
  * Smooth-noise positional shake, additive over whatever else drives the node's
- * position (e.g. a FollowBehavior). Because it is ticked through `node.tick`, it
- * automatically respects the global `Time.scale` — a hitstop freezes the shake,
- * slow-mo stretches it. Reusable two ways (P0.3):
+ * position (e.g. a FollowBehavior). It runs on the runner's REAL frame delta
+ * ({@link shakeStep}), not the scaled one: it plays through a hitstop — the frozen frame is
+ * exactly when an impact shakes — and decays in real time under slow-mo; a pause stops it. A
+ * request weaker than the shake playing now is ignored ({@link ShakeEnvelope.start}).
+ * Reusable two ways (P0.3):
  *
  *  - **Preset** (`core:Shake`): attach in the inspector, drive on a node signal
  *    via `triggerEvent`, or auto-start with `playOnStart`.
@@ -31,8 +39,7 @@ export interface ShakeOptions {
  * smoothing coupling.
  */
 export class ShakeBehavior extends Script {
-  private active = false;
-  private elapsed = 0;
+  private readonly envelope = new ShakeEnvelope();
   private readonly appliedOffset = new Vector3();
 
   private readonly onTriggerSignal = (): void => {
@@ -99,6 +106,25 @@ export class ShakeBehavior extends Script {
           },
         },
         {
+          name: 'direction',
+          type: 'number',
+          ui: {
+            label: 'Direction',
+            description:
+              'Shake along one axis at this angle (radians); remove the key to shake in every direction',
+            group: 'Shake',
+            step: 0.05,
+            precision: 2,
+          },
+          getValue: c => (c as ShakeBehavior).getDirection() ?? null,
+          setValue: (c, v) => {
+            const config = (c as ShakeBehavior).config;
+            const parsed = typeof v === 'number' ? v : Number(v);
+            if (v != null && v !== '' && Number.isFinite(parsed)) config.direction = parsed;
+            else delete config.direction;
+          },
+        },
+        {
           name: 'triggerEvent',
           type: 'string',
           ui: {
@@ -135,31 +161,48 @@ export class ShakeBehavior extends Script {
   override onDetach(): void {
     this.unbindTrigger();
     this.restore();
-    this.active = false;
+    this.envelope.stop();
     super.onDetach();
   }
 
-  /** Configure (partial) and (re)start the shake. Used by the juice API. */
+  /**
+   * Configure (partial) and (re)start the shake. Used by the juice API. A request weaker than the
+   * shake playing now is ignored and leaves the config as it was; `direction` is for this request
+   * only (the config's own `direction` applies when it is omitted).
+   */
   play(options: ShakeOptions = {}): void {
-    if (options.amplitude != null)
-      this.config.amplitude = ShakeBehavior.num(options.amplitude, 8, 0);
-    if (options.frequency != null)
-      this.config.frequency = ShakeBehavior.num(options.frequency, 24, 0);
-    if (options.duration != null)
-      this.config.duration = ShakeBehavior.num(options.duration, 0.35, 0);
-    if (options.decay != null) this.config.decay = ShakeBehavior.num(options.decay, 1.5, 0);
-    this.trigger();
+    const amplitude = ShakeBehavior.optionNum(options.amplitude, 8);
+    const frequency = ShakeBehavior.optionNum(options.frequency, 24);
+    const duration = ShakeBehavior.optionNum(options.duration, 0.35);
+    const decay = ShakeBehavior.optionNum(options.decay, 1.5);
+    const started = this.envelope.start({
+      amplitude: amplitude ?? this.getAmplitude(),
+      frequency: frequency ?? this.getFrequency(),
+      duration: duration ?? this.getDuration(),
+      decay: decay ?? this.getDecay(),
+      direction: finiteOrUndefined(options.direction) ?? this.getDirection(),
+    });
+    if (!started) return;
+    if (amplitude !== undefined) this.config.amplitude = amplitude;
+    if (frequency !== undefined) this.config.frequency = frequency;
+    if (duration !== undefined) this.config.duration = duration;
+    if (decay !== undefined) this.config.decay = decay;
   }
 
-  /** (Re)start the shake from the beginning. */
+  /** (Re)start the shake from the beginning with the configured values — unless a stronger one plays. */
   trigger(): void {
-    this.elapsed = 0;
-    this.active = true;
+    this.envelope.start({
+      amplitude: this.getAmplitude(),
+      frequency: this.getFrequency(),
+      duration: this.getDuration(),
+      decay: this.getDecay(),
+      direction: this.getDirection(),
+    });
   }
 
   /** Stop shaking and restore the node's position. */
   stop(): void {
-    this.active = false;
+    this.envelope.stop();
     this.restore();
   }
 
@@ -171,28 +214,15 @@ export class ShakeBehavior extends Script {
     // Remove last frame's offset so we read/leave the node's "clean" position.
     this.restore();
 
-    if (!this.active) {
+    if (
+      !this.envelope.advance(
+        shakeStep(this.scene, dt),
+        this.appliedOffset,
+        this.node instanceof Node3D
+      )
+    ) {
       return;
     }
-
-    this.elapsed += dt;
-    const duration = this.getDuration();
-    if (duration > 0 && this.elapsed >= duration) {
-      this.active = false;
-      return;
-    }
-
-    const progress = duration > 0 ? this.elapsed / duration : 0;
-    const damp = Math.pow(Math.max(0, 1 - progress), this.getDecay());
-    const amp = this.getAmplitude() * damp * shakeMotionScale();
-    const phase = this.elapsed * this.getFrequency();
-    const is3D = this.node instanceof Node3D;
-
-    this.appliedOffset.set(
-      shakeNoise(phase, 0) * amp,
-      shakeNoise(phase, 100) * amp,
-      is3D ? shakeNoise(phase, 200) * amp * 0.5 : 0
-    );
     this.node.position.add(this.appliedOffset);
   }
 
@@ -233,6 +263,10 @@ export class ShakeBehavior extends Script {
     return ShakeBehavior.num(this.config.decay, 1.5, 0);
   }
 
+  private getDirection(): number | undefined {
+    return finiteOrUndefined(this.config.direction);
+  }
+
   private getTriggerEvent(): string {
     return typeof this.config.triggerEvent === 'string' ? this.config.triggerEvent.trim() : '';
   }
@@ -255,6 +289,100 @@ export class ShakeBehavior extends Script {
     }
     return Math.max(min, parsed);
   }
+
+  /** An option as the config would store it (`num` with a floor of 0), or undefined when omitted. */
+  private static optionNum(value: number | undefined, fallback: number): number | undefined {
+    return value == null ? undefined : ShakeBehavior.num(value, fallback, 0);
+  }
+}
+
+function finiteOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** What one shake plays: {@link ShakeOptions} resolved against the shaker's own defaults. */
+export interface ShakeParams {
+  amplitude: number;
+  frequency: number;
+  duration: number;
+  decay: number;
+  direction?: number;
+}
+
+/**
+ * The envelope every shake plays (`core:Shake`, `Camera2D`): a smooth-noise offset whose amplitude
+ * falls off as `(1 - progress)^decay`.
+ */
+export class ShakeEnvelope {
+  private params: ShakeParams | null = null;
+  private elapsed = 0;
+
+  /**
+   * The amplitude it shakes with right now (amplitude × envelope; 0 when idle) — what a new
+   * request has to reach to replace it.
+   */
+  get strength(): number {
+    const params = this.params;
+    return params ? params.amplitude * this.damp(params) : 0;
+  }
+
+  /**
+   * Start `params` from the beginning, unless the shake playing now is stronger: a light hit
+   * during a heavy one's shake is ignored instead of cutting it short. Compared with the current
+   * strength, not the peak, so a decaying tail never blocks the next blow. Returns whether it
+   * started.
+   */
+  start(params: ShakeParams): boolean {
+    if (params.amplitude < this.strength) return false;
+    this.params = { ...params };
+    this.elapsed = 0;
+    return true;
+  }
+
+  stop(): void {
+    this.params = null;
+  }
+
+  /**
+   * Advance by `stepSec` and write this frame's offset into `out` (z only when `depth`). Returns
+   * false — `out` untouched — when idle or the shake just ended.
+   */
+  advance(stepSec: number, out: Vector3, depth: boolean): boolean {
+    const params = this.params;
+    if (!params) return false;
+    this.elapsed += Math.max(0, stepSec);
+    if (params.duration > 0 && this.elapsed >= params.duration) {
+      this.params = null;
+      return false;
+    }
+    const amp = params.amplitude * this.damp(params) * shakeMotionScale();
+    const phase = this.elapsed * params.frequency;
+    if (params.direction !== undefined) {
+      const along = shakeNoise(phase, 0) * amp;
+      out.set(Math.cos(params.direction) * along, Math.sin(params.direction) * along, 0);
+    } else {
+      out.set(
+        shakeNoise(phase, 0) * amp,
+        shakeNoise(phase, 100) * amp,
+        depth ? shakeNoise(phase, 200) * amp * 0.5 : 0
+      );
+    }
+    return true;
+  }
+
+  private damp(params: ShakeParams): number {
+    const progress = params.duration > 0 ? this.elapsed / params.duration : 0;
+    return Math.pow(Math.max(0, 1 - progress), params.decay);
+  }
+}
+
+/**
+ * Seconds a shake advances this tick: the runner's REAL frame delta
+ * ({@link GameTime.unscaledDeltaSec}) — once per tick through a hitstop and at full speed under
+ * slow-mo, nothing while paused — or the given `dt` where no runner drives the scene.
+ */
+export function shakeStep(scene: SceneService | undefined, dt: number): number {
+  return scene?.time.unscaledDeltaSec ?? dt;
 }
 
 /**

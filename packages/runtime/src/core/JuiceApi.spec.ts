@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Vector2 } from 'three';
+import { Color, Mesh, MeshBasicMaterial, ShaderLib, Vector2 } from 'three';
 import { SceneService, type SceneServiceDelegate } from './SceneService';
 import { GameTime } from './GameTime';
 import { InputService } from './InputService';
@@ -7,6 +7,10 @@ import { Camera3D } from '../nodes/3D/Camera3D';
 import { Camera2D } from '../nodes/2D/Camera2D';
 import { ShakeBehavior } from '../behaviors/ShakeBehavior';
 import { appLifecycle } from './AppLifecycle';
+import { SceneSaver } from './SceneSaver';
+import { Sprite2D } from '../nodes/2D/Sprite2D';
+import { Node2D } from '../nodes/Node2D';
+import { REDUCED_MOTION_HIT_FLASH_AMOUNT } from './JuiceApi';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
 import type { ResourceManager } from './ResourceManager';
@@ -227,5 +231,138 @@ describe('reduced motion (scene.app.reducedMotion)', () => {
       appLifecycle.setReducedMotion('game', null);
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('juice.hitFlash', () => {
+  const flash = (sprite: Sprite2D) => sprite.getShaderEffectStack().get('core:flash');
+  const amountOf = (sprite: Sprite2D): number =>
+    flash(sprite)!.uniforms.uPix3FlashAmount.value as number;
+  const colorOf = (sprite: Sprite2D): Color =>
+    flash(sprite)!.uniforms.uPix3FlashColor.value as Color;
+  const materialOf = (sprite: Sprite2D): MeshBasicMaterial =>
+    (sprite.children.find(c => (c as unknown as Mesh).isMesh) as unknown as Mesh)
+      .material as MeshBasicMaterial;
+  const yamlOf = (sprite: Sprite2D): string =>
+    new SceneSaver().serializeScene({
+      version: '1.0.0',
+      metadata: {},
+      rootNodes: [sprite],
+      nodeMap: new Map([[sprite.nodeId, sprite]]),
+    });
+
+  it('sets amount for durationSec of unscaled time — through a hitstop — then leaves the added effect at 0', () => {
+    const { service, gameTime } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target', width: 40, height: 40 });
+    gameTime.advance(1 / 60);
+
+    expect(service.juice.hitFlash(sprite, { color: '#ff0000' })).toBe(true);
+    expect(amountOf(sprite)).toBe(1);
+    // The authored colour converts once (sRGB hex → linear), like any colour param.
+    expect(colorOf(sprite).getHexString()).toBe('ff0000');
+    expect(materialOf(sprite).defines?.PIX3_FX_FLASH).toBeDefined();
+
+    service.time.hitstop(500);
+    gameTime.advance(0.05);
+    service.updateJuice();
+    expect(gameTime.scale).toBe(0);
+    expect(amountOf(sprite)).toBe(1);
+    gameTime.advance(0.02);
+    service.updateJuice();
+    expect(amountOf(sprite)).toBe(0);
+    expect(flash(sprite)).toBeDefined(); // kept for the next hit, no recompile then
+  });
+
+  it('keeps the alpha: the flash mixes the colour only, before the opaque write', () => {
+    const { service } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    service.juice.hitFlash(sprite);
+    const material = materialOf(sprite);
+    expect(material.transparent).toBe(true);
+    const shader = {
+      vertexShader: ShaderLib.basic.vertexShader,
+      fragmentShader: ShaderLib.basic.fragmentShader,
+      uniforms: {} as Record<string, { value: unknown }>,
+    };
+    (material.onBeforeCompile as unknown as (s: typeof shader) => void)(shader);
+    const mix = shader.fragmentShader.indexOf('outgoingLight = mix(outgoingLight, uPix3FlashColor');
+    expect(mix).toBeGreaterThan(0);
+    // `opaque_fragment` writes `vec4(outgoingLight, diffuseColor.a)`: the texture's alpha survives.
+    expect(mix).toBeLessThan(shader.fragmentShader.indexOf('#include <opaque_fragment>'));
+    expect(shader.uniforms.uPix3FlashAmount).toBe(flash(sprite)!.uniforms.uPix3FlashAmount);
+  });
+
+  it('borrows an authored core:flash and gives back exactly its state; a repeat restarts the timer', () => {
+    const { service, gameTime } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    sprite.attachEffect('core:flash', {
+      enabled: false,
+      params: { color: '#00ff00', amount: 0.2 },
+    });
+    const authoredYaml = yamlOf(sprite);
+    gameTime.advance(1 / 60);
+
+    service.juice.hitFlash(sprite, { durationSec: 0.06 });
+    expect(amountOf(sprite)).toBe(1);
+    expect(colorOf(sprite).getHexString()).toBe('ffffff');
+    expect(materialOf(sprite).defines?.PIX3_FX_FLASH).toBeDefined(); // on, though authored off
+    expect(yamlOf(sprite)).toBe(authoredYaml); // a save mid-flash sees the authored effect
+
+    gameTime.advance(0.04);
+    service.updateJuice();
+    service.juice.hitFlash(sprite, { durationSec: 0.06, color: '#0000ff' });
+    gameTime.advance(0.04); // 0.08 after the first call, 0.04 after the second
+    service.updateJuice();
+    expect(amountOf(sprite)).toBe(1);
+    gameTime.advance(0.03);
+    service.updateJuice();
+
+    expect(amountOf(sprite)).toBeCloseTo(0.2, 6);
+    expect(colorOf(sprite).getHexString()).toBe('00ff00');
+    expect(flash(sprite)!.enabled).toBe(false);
+    expect(materialOf(sprite).defines?.PIX3_FX_FLASH).toBeUndefined();
+    expect(yamlOf(sprite)).toBe(authoredYaml);
+  });
+
+  it('an effect it added is never saved', () => {
+    const { service } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    service.juice.hitFlash(sprite);
+    expect(yamlOf(sprite)).not.toContain('effects');
+    expect(sprite.getInstancePropertySchema()).toBeNull();
+  });
+
+  it('flashes only its target: two sprites never share the material or the uniforms', () => {
+    const { service } = makeHarness();
+    const a = new Sprite2D({ id: 'a' });
+    const b = new Sprite2D({ id: 'b' });
+    service.juice.hitFlash(a);
+    service.juice.hitFlash(b, { amount: 0 });
+    expect(materialOf(a)).not.toBe(materialOf(b));
+    expect(flash(a)!.uniforms.uPix3FlashAmount).not.toBe(flash(b)!.uniforms.uPix3FlashAmount);
+    expect(amountOf(a)).toBe(1);
+    expect(amountOf(b)).toBe(0); // the warm-up call: compiled in, nothing shown
+  });
+
+  it('plays at half strength under reduced motion', () => {
+    const { service } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    try {
+      appLifecycle.setReducedMotion('run', true);
+      service.juice.hitFlash(sprite);
+      expect(amountOf(sprite)).toBe(REDUCED_MOTION_HIT_FLASH_AMOUNT);
+    } finally {
+      appLifecycle.setReducedMotion('run', null);
+    }
+  });
+
+  it('warns once and does nothing on a node without shader effects', () => {
+    const { service } = makeHarness();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const group = new Node2D({ id: 'group', name: 'group' });
+    expect(service.juice.hitFlash(group)).toBe(false);
+    expect(service.juice.hitFlash(group)).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

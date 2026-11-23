@@ -643,8 +643,9 @@ export class GeometryMesh
     if (this._mapSrc) {
       material.map = this._mapSrc;
     }
-    if (!this.effectStack.isEmpty) {
-      material.effects = this.effectStack.serialize();
+    const effects = this.effectStack.serialize();
+    if (effects.length > 0) {
+      material.effects = effects;
     }
     return {
       geometry: this._geometryKind,

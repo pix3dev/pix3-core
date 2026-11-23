@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NodeBase } from '../nodes/NodeBase';
+import { Node2D } from '../nodes/Node2D';
+import { Node3D } from '../nodes/Node3D';
 import { ShakeBehavior } from './ShakeBehavior';
 import { PunchScaleBehavior } from './PunchScaleBehavior';
 import { PopInBehavior } from './PopInBehavior';
@@ -83,6 +85,75 @@ describe('ShakeBehavior', () => {
   });
 });
 
+describe('ShakeBehavior: the strongest shake wins', () => {
+  it('ignores a request weaker than the shake playing now, and leaves the config alone', () => {
+    const node = makeNode();
+    const shake = new ShakeBehavior('shake', 'core:Shake');
+    shake.node = node;
+    shake.play({ amplitude: 20, frequency: 20, duration: 1, decay: 1 });
+    shake.onUpdate(0.1); // strength now 20 × 0.9 = 18
+
+    shake.play({ amplitude: 6, duration: 0.2 });
+    expect(shake.config.amplitude).toBe(20);
+    expect(shake.config.duration).toBe(1);
+    shake.onUpdate(0.5);
+    expect(node.position.length()).toBeGreaterThan(0); // the strong one still plays at 0.6 s
+
+    // Its tail (20 × 0.1 = 2 at 0.9 s) no longer blocks the next blow.
+    shake.onUpdate(0.3);
+    shake.play({ amplitude: 6, duration: 0.2 });
+    expect(shake.config.amplitude).toBe(6);
+    shake.onUpdate(0.25);
+    expect(node.position.length()).toBe(0); // the new 0.2 s shake ran out, not the old 1 s one
+  });
+
+  it('an equal request restarts it (a signal re-trigger keeps working)', () => {
+    const node = makeNode();
+    const shake = new ShakeBehavior('shake', 'core:Shake');
+    shake.node = node;
+    shake.play({ amplitude: 8, duration: 0.2, decay: 0 });
+    shake.onUpdate(0.15);
+    shake.trigger();
+    shake.onUpdate(0.15); // 0.3 s since the first start, 0.15 s since the restart
+    expect(node.position.length()).toBeGreaterThan(0);
+  });
+});
+
+describe('ShakeBehavior: direction', () => {
+  it('shakes along one axis only, from the options or the config', () => {
+    const node = makeNode();
+    const shake = new ShakeBehavior('shake', 'core:Shake');
+    shake.node = node;
+    const angle = Math.PI / 6;
+    shake.play({ amplitude: 10, frequency: 13, duration: 1, direction: angle });
+    for (let i = 0; i < 5; i++) {
+      shake.onUpdate(0.07);
+      const { x, y } = node.position;
+      expect(Math.hypot(x, y)).toBeGreaterThan(0);
+      expect(Math.abs(x * Math.sin(angle) - y * Math.cos(angle))).toBeLessThan(1e-9);
+    }
+    shake.stop();
+    expect(shake.config.direction).toBeUndefined(); // for that request only
+
+    shake.config.direction = Math.PI / 2;
+    shake.trigger();
+    shake.onUpdate(0.07);
+    expect(node.position.x).toBeCloseTo(0, 9);
+    expect(Math.abs(node.position.y)).toBeGreaterThan(0);
+  });
+
+  it('`direction` is a config key of core:Shake; clearing it means every direction', () => {
+    const schema = ShakeBehavior.getPropertySchema();
+    const direction = schema.properties.find(p => p.name === 'direction')!;
+    const shake = new ShakeBehavior('shake', 'core:Shake');
+    direction.setValue(shake, 1.2);
+    expect(direction.getValue(shake)).toBe(1.2);
+    direction.setValue(shake, '');
+    expect('direction' in shake.config).toBe(false);
+    expect(direction.getValue(shake)).toBeNull();
+  });
+});
+
 describe('PunchScaleBehavior', () => {
   it('pops the scale up immediately and settles back to the resting scale', () => {
     const node = makeNode();
@@ -113,6 +184,62 @@ describe('PunchScaleBehavior', () => {
     expect(node.scale.x).toBeCloseTo(2, 6);
     expect(node.scale.y).toBeCloseTo(3, 6);
     expect(node.scale.z).toBeCloseTo(1, 6);
+  });
+});
+
+describe('PunchScaleBehavior: squash & stretch (axis)', () => {
+  const play = (node: NodeBase, axis: 'x' | 'y', amount: number): PunchScaleBehavior => {
+    const punch = new PunchScaleBehavior('punch', 'core:PunchScale');
+    punch.node = node;
+    punch.play({ amount, duration: 0.3, vibrato: 2, axis });
+    return punch;
+  };
+
+  it("2D 'y': the height stretches, the width compensates, the area is kept", () => {
+    const node = new Node2D({ id: 'n', name: 'n' });
+    node.scale.set(2, 3, 1);
+    const punch = play(node, 'y', 0.3);
+    for (const dt of [0.001, 0.05, 0.05, 0.05]) {
+      punch.onUpdate(dt);
+      expect(node.scale.x * node.scale.y).toBeCloseTo(6, 9);
+      expect(node.scale.z).toBe(1);
+    }
+    punch.onUpdate(0.3);
+    expect(node.scale.toArray()).toEqual([2, 3, 1]);
+  });
+
+  it("3D 'x': the other two axes take 1/√f, the volume is kept", () => {
+    const node = new Node3D({ id: 'n', name: 'n' });
+    const punch = play(node, 'x', 0.4);
+    punch.onUpdate(0.001);
+    expect(node.scale.x).toBeGreaterThan(1.3);
+    expect(node.scale.y).toBeCloseTo(node.scale.z, 12);
+    expect(node.scale.x * node.scale.y * node.scale.z).toBeCloseTo(1, 9);
+    punch.onUpdate(0.3);
+    expect(node.scale.toArray()).toEqual([1, 1, 1]);
+  });
+
+  it('a negative amount squashes first; the axis never goes below ×0.1', () => {
+    const node = new Node2D({ id: 'n', name: 'n' });
+    const punch = play(node, 'y', -0.25);
+    punch.onUpdate(0.001);
+    expect(node.scale.y).toBeLessThan(0.8);
+    expect(node.scale.x).toBeGreaterThan(1.2);
+
+    const deep = new Node2D({ id: 'd', name: 'd' });
+    const crushed = play(deep, 'y', -5); // clamped to -0.9 → f = 0.1 at the start
+    crushed.onUpdate(0);
+    expect(deep.scale.y).toBeCloseTo(0.1, 6);
+    expect(deep.scale.x).toBeCloseTo(10, 6);
+  });
+
+  it('a re-trigger mid-punch does not take the deformed scale as the rest', () => {
+    const node = new Node2D({ id: 'n', name: 'n' });
+    const punch = play(node, 'y', 0.3);
+    punch.onUpdate(0.02);
+    punch.play({ axis: 'y' });
+    punch.onUpdate(0.3);
+    expect(node.scale.toArray()).toEqual([1, 1, 1]);
   });
 });
 

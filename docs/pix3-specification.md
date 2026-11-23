@@ -445,12 +445,19 @@ game time accumulates separately.
 
 **Juice effects** (`scene.juice`, and the matching presets):
 
-- `shake(target, { amplitude, frequency, duration, decay })` — smooth-noise
+- `shake(target, { amplitude, frequency, duration, decay, direction })` — smooth-noise
   positional shake, **additive** over other motion (removes/re-applies its offset
   each frame, so it composes with a follow and restores cleanly). `target` is a
-  node, a node query, or `'camera'` for the active 3D camera. Preset: `core:Shake`.
-- `punchScale(target, { amount, duration, vibrato })` — squash-and-stretch scale
-  punch that settles back to the resting scale. Preset: `core:PunchScale`.
+  node, a node query, or `'camera'` for the active 3D camera. It advances on the real frame
+  delta — through a hitstop, unstretched by slow-mo, stopped by a pause; a request weaker than
+  the shake playing now is ignored; `direction` (radians) shakes along one axis. Preset:
+  `core:Shake`.
+- `punchScale(target, { amount, duration, vibrato, axis })` — scale punch that settles back to
+  the resting scale; `axis: 'x' | 'y'` is squash & stretch (2D keeps the area, 3D the volume; a
+  negative `amount` squashes first). Preset: `core:PunchScale`.
+- `hitFlash(target, { color, durationSec, amount })` — one node a flat colour for 0.06 s through
+  its `core:flash` shader effect, on real time (shows during a hitstop); an authored `core:flash`
+  is restored exactly, an added one is never saved.
 - `popIn(target, { from, duration, easing })` — spawn pop from `from`× up to the
   authored scale with an overshoot easing. Preset: `core:PopIn` (plays on start). The resting
   scale is the node's scale when the pop first runs; an axis at 0 there rests at 1, so a node
@@ -459,14 +466,16 @@ game time accumulates separately.
   independent of the fade-to-black overlay and run on real time (plays during a
   hitstop).
 
-Each transform effect is one reused component per node (no per-call allocation)
-and, being ticked through `node.tick`, automatically respects `Time.scale`. The
-canonical "juicy hit" is three calls:
+Each transform effect is one reused component per node (no per-call allocation);
+`punchScale` and `popIn` respect `Time.scale`, the shake does not (above). One hit, all on the
+contact tick — the shake and the flash play during the freeze, the sparks after it:
 
 ```typescript
-this.scene.time.hitstop(80);
-this.scene.juice.shake('camera', { amplitude: 12 });
-this.scene.juice.flash();
+this.scene.time.hitstop(60);
+this.scene.juice.shake('camera2d', { amplitude: 6 });
+this.scene.juice.hitFlash(target);
+this.scene.juice.burst(target);
+this.scene.audio.sfx('hit', { pitchVariation: 0.06 });
 ```
 
 ### 6.13 Cutscene Director (P1 M)

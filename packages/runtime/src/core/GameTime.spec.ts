@@ -2,6 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { GameTime } from './GameTime';
 
 describe('GameTime', () => {
+  it('unscaledDeltaSec: null until a runner advances it, then the real delta — also while frozen', () => {
+    const time = new GameTime();
+    expect(time.unscaledDeltaSec).toBeNull();
+    time.hitstop(100);
+    time.advance(1 / 60);
+    expect(time.scale).toBe(0);
+    expect(time.unscaledDeltaSec).toBe(1 / 60);
+    time.advance(0);
+    expect(time.unscaledDeltaSec).toBe(0);
+  });
+
   it('defaults to normal speed', () => {
     const time = new GameTime();
     expect(time.scale).toBe(1);

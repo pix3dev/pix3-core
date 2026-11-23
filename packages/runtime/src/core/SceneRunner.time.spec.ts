@@ -12,6 +12,11 @@ import { AssetLoader } from './AssetLoader';
 import { ResourceManager } from './ResourceManager';
 import { Script } from './ScriptComponent';
 import { Camera3D } from '../nodes/3D/Camera3D';
+import { Node2D } from '../nodes/Node2D';
+import { Sprite2D } from '../nodes/2D/Sprite2D';
+import { ShakeBehavior, ShakeEnvelope } from '../behaviors/ShakeBehavior';
+import { ParticleBurst2D } from './juice-transients';
+import { Vector3 } from 'three';
 import {
   DEFAULT_FIXED_DELTA_SEC,
   MAX_TICKS_PER_FRAME,
@@ -677,5 +682,124 @@ describe('SceneRunner realtime dt cap and the background pause', () => {
 
     expect(runner.getPauseReasons()).toEqual(['background']);
     expect(script.received).toEqual([]);
+  });
+});
+
+/**
+ * One hit, tick by tick (plan design-feedback, stage 2): on the contact tick `hitstop` + `shake` +
+ * `hitFlash` + `burst`. While frozen the shake moves and the target stays flashed, the game does
+ * not move; after the freeze the game moves on and the flash is gone. Each effect's own spec
+ * cannot see this — it is about their clocks against each other.
+ */
+describe('SceneRunner: one hit through a hitstop', () => {
+  const TICK = 1 / 60;
+
+  class Mover extends Script {
+    constructor() {
+      super('mover', 'Mover');
+    }
+    override onUpdate(dt: number): void {
+      if (this.node) this.node.position.x += 600 * dt;
+    }
+  }
+
+  function createHitHarness() {
+    const { runner, internals } = createHarness();
+    const root = new Node2D({ id: 'root', name: 'root' });
+    const board = new Node2D({ id: 'board', name: 'board' });
+    const target = new Sprite2D({ id: 'target', name: 'target', width: 40, height: 40 });
+    const mover = new Node2D({ id: 'mover', name: 'mover' });
+    root.add(board);
+    board.add(target);
+    root.add(mover);
+    mover.addComponent(new Mover());
+    root.scene = internals.sceneService;
+    const graph = internals.runtimeGraph;
+    graph.rootNodes.push(root);
+    for (const node of [root, board, target, mover]) graph.nodeMap.set(node.nodeId, node);
+    runner.setTimeMode({ mode: 'manual', fixedDeltaSec: TICK });
+    return { runner, scene: internals.sceneService, board, target, mover };
+  }
+
+  const flashAmount = (target: Sprite2D): number =>
+    target.getShaderEffectStack().get('core:flash')!.uniforms.uPix3FlashAmount.value as number;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shakes and flashes through the freeze, then the game moves on and the flash is gone', () => {
+    const { runner, scene, board, target, mover } = createHitHarness();
+    runner.stepFrames(2);
+    const x0 = mover.position.x;
+    expect(x0).toBeGreaterThan(0);
+
+    // The contact tick: everything in one handler.
+    let burst: ParticleBurst2D | null = null;
+    const hit = (): void => {
+      scene.time.hitstop(80);
+      scene.juice.shake(board, { amplitude: 6, frequency: 24, duration: 0.3, decay: 1 });
+      expect(scene.juice.hitFlash(target)).toBe(true);
+      burst = scene.juice.burst(target);
+    };
+    const contact = new (class extends Script {
+      fired = false;
+      constructor() {
+        super('contact', 'Contact');
+      }
+      override onUpdate(): void {
+        if (!this.fired) {
+          this.fired = true;
+          hit();
+        }
+      }
+    })();
+    mover.addComponent(contact);
+    runner.stepFrames(1);
+    expect(burst).toBeInstanceOf(ParticleBurst2D);
+    expect(flashAmount(target)).toBe(1);
+    const xContact = mover.position.x;
+
+    // An envelope advanced by exactly one tick per tick — what the shake must match.
+    const reference = new ShakeEnvelope();
+    reference.start({ amplitude: 6, frequency: 24, duration: 0.3, decay: 1 });
+    const expected = new Vector3();
+    const shakeOf = () => board.getComponent(ShakeBehavior)!;
+    expect(shakeOf()).toBeInstanceOf(ShakeBehavior);
+
+    // 80 ms at 60 Hz: the four ticks after the contact are frozen.
+    const offsets: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      runner.stepFrames(1);
+      expect(scene.time.isFrozen).toBe(true);
+      expect(mover.position.x).toBe(xContact);
+      reference.advance(TICK, expected, false);
+      expect(board.position.x).toBeCloseTo(expected.x, 9);
+      expect(board.position.y).toBeCloseTo(expected.y, 9);
+      offsets.push(board.position.x);
+      if (i < 3) expect(flashAmount(target)).toBe(1); // 60 ms: three frozen ticks still white
+    }
+    expect(new Set(offsets).size).toBe(4); // it moved every frozen tick
+    expect(flashAmount(target)).toBe(0); // 4 ticks = 67 ms ≥ 60 ms
+
+    runner.stepFrames(1);
+    expect(scene.time.isFrozen).toBe(false);
+    expect(mover.position.x).toBeGreaterThan(xContact);
+    expect(flashAmount(target)).toBe(0);
+  });
+
+  it('a pause stops the shake: no tick, no offset change', () => {
+    const { runner, scene, board } = createHitHarness();
+    scene.juice.shake(board, { amplitude: 6, duration: 0.3 });
+    runner.stepFrames(2);
+    const before = board.position.clone();
+
+    runner.pause();
+    expect(runner.stepFrames(3)).toBe(0);
+    expect(board.position.equals(before)).toBe(true);
+
+    runner.resume();
+    runner.stepFrames(1);
+    expect(board.position.equals(before)).toBe(false);
   });
 });

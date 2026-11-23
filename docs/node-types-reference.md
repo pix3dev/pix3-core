@@ -780,7 +780,7 @@ A 2D game camera (Godot-style). Like `VirtualCamera3D` it does **not** render �
 
 - `position` is the camera center (follow damps it toward the target); `offset` is a separate framing bias that follow and shake never touch.
 - Limits clamp the view **center** zoom-aware, so the view edge never crosses the box; a box smaller than the view pins the center to `limitsCenter`.
-- Shake is additive at apply time (never mutates `position`) and, being tick-driven, respects `Time.scale` — a hitstop freezes it, slow-mo stretches it. Trigger it from a script with `scene.juice.shake('camera2d')` (or `scene.juice.shake('camera')` in a pure-2D scene).
+- Shake is additive at apply time (never mutates `position`) and runs on the runner's real frame delta: it plays through a hitstop, is not stretched by slow-mo and stops with a pause. A request weaker than the shake playing now is ignored (the knobs are left as they were); `direction` (radians, per request) shakes along one axis. Trigger it from a script with `scene.juice.shake('camera2d')` (or `scene.juice.shake('camera')` in a pure-2D scene).
 - v1: screen-anchored HUD shares this camera and pans / zooms with the world. Use a `CanvasLayer2D` to pin a HUD.
 
 ---
@@ -952,7 +952,7 @@ after the first compile, which three caches per variant).
 | Dissolve (`core:dissolve`)   | `amount` (0-1), `scale`, `edgeWidth`, `edgeColor` | Noise-thresholded `discard` with an emissive glowing edge; drive `amount` 0→1 to dissolve away                       |
 | Rim Light (`core:rim`)       | `color`, `intensity` (0-5), `power`               | Fresnel-based emissive rim, brightest at grazing angles                                                              |
 | UV Scroll (`core:uv-scroll`) | `speed` (uv/s)                                    | Scrolls the albedo map. **Play-mode only** (accumulated per tick); static in the edit viewport. Needs `material.map` |
-| Flash Tint (`core:flash`)    | `color`, `amount` (0-1)                           | Blends the final lit color toward a flat color; a hit/damage flash                                                   |
+| Flash Tint (`core:flash`)    | `color`, `amount` (0-1)                           | Blends the final lit color toward a flat color; a hit/damage flash — `scene.juice.hitFlash(node)` drives it          |
 
 Serialized under `material.effects` as an ordered array of `{ type, enabled,
 params }` (only non-default params are written).

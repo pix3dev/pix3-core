@@ -16,6 +16,7 @@ import {
   type JuicePoint2D,
 } from './juice-transients';
 import { Trail2D, type TrailOptions } from './trail-2d';
+import { isShaderEffectHost, type ShaderEffectStack } from '../shader-effects/ShaderEffectStack';
 import type { SceneService } from './SceneService';
 import type { FlashOptions } from './SceneService';
 
@@ -41,6 +42,21 @@ export interface FloatTextOptions extends FloatTextStyleOptions {
   at?: JuiceAnchor;
 }
 
+/** Options for {@link JuiceApi.hitFlash}. */
+export interface HitFlashOptions {
+  /** Colour the target turns (default `#ffffff`). */
+  color?: string;
+  /** How long it stays that colour, in real (unscaled) seconds (default 0.06). */
+  durationSec?: number;
+  /** How far toward `color`, 0..1 (default 1; at most 0.5 under `app.reducedMotion`). */
+  amount?: number;
+}
+
+/** The most a hit flash blends under `app.reducedMotion` (it still confirms the hit). */
+export const REDUCED_MOTION_HIT_FLASH_AMOUNT = 0.5;
+
+const HIT_FLASH = 'core:flash';
+
 /** What `shake('camera2d')` shakes in a scene without a Camera2D: the 2D starter's group. */
 const SCREEN_SHAKE_FALLBACK = 'design-area';
 
@@ -60,14 +76,17 @@ function isJuicePoint(value: unknown): value is JuicePoint2D {
  * `core:*` behavior a designer can attach in the inspector, so calling the API
  * and dropping a preset produce identical results. The effect component is
  * created once per node and reused across calls (no per-call allocation, no
- * pile-up), and — being ticked through `node.tick` — respects the global
- * `Time.scale` (hitstop freezes it, slow-mo stretches it).
+ * pile-up). `punchScale` / `popIn` respect the global `Time.scale` (a hitstop freezes them,
+ * slow-mo stretches them); `shake`, `hitFlash` and `flash` run on the runner's real time, so they
+ * play through the freeze.
  *
- * The classic "juicy hit" is three calls:
+ * One hit, all on the contact tick:
  * ```ts
- * this.scene.time.hitstop(80);
- * this.scene.juice.shake('camera', { amplitude: 12 });
- * this.scene.juice.flash();
+ * this.scene.time.hitstop(60);
+ * this.scene.juice.shake('camera2d', { amplitude: 6 });
+ * this.scene.juice.hitFlash(target);
+ * this.scene.juice.burst(target);
+ * this.scene.audio.sfx('hit', { pitchVariation: 0.06 });
  * ```
  *
  * {@link burst} and {@link floatText} work differently from the transform
@@ -83,6 +102,9 @@ export class JuiceApi {
 
   /** Targets already complained about; see {@link warnOnce}. */
   private readonly warned = new Set<string>();
+
+  /** Hit flashes playing: the flashed stack → when it ends, on the runner's unscaled clock. */
+  private readonly hitFlashes = new Map<ShaderEffectStack, number>();
 
   constructor(private readonly scene: SceneService) {}
 
@@ -192,6 +214,71 @@ export class JuiceApi {
   /** Full-screen impact flash (see {@link SceneService.flash}). */
   flash(options: FlashOptions = {}): void {
     this.scene.flash(options);
+  }
+
+  /**
+   * Turn one node a flat colour for a moment — the "it was hit" read. Drives the `core:flash`
+   * shader effect of the node's material (`Sprite2D`, `AnimatedSprite2D`, `Button2D`,
+   * `GeometryMesh`); the sprite's alpha is kept, so only its silhouette flashes. Runs on the
+   * runner's real time, so it shows through a hitstop started on the same tick.
+   *
+   * An authored `core:flash` is borrowed, never changed: its colour, `amount` and `enabled` come
+   * back exactly when the flash ends (and a save never sees the flash). Without one, the effect is
+   * added for the run and left at `amount` 0 for the next hit. A call during a flash restarts its
+   * timer. The first flash of a node recompiles its shader — call
+   * `hitFlash(node, { amount: 0 })` in `onStart` for a target hit at a tense moment.
+   *
+   * Returns whether it flashed; a node without a shader-effect stack (`Label2D`, `SpineSkeleton2D`,
+   * a group) warns once and does nothing.
+   */
+  hitFlash(target: JuiceTarget, options: HitFlashOptions = {}): boolean {
+    const node = this.resolveNode(target);
+    if (!node) {
+      return false;
+    }
+    if (!isShaderEffectHost(node)) {
+      this.warnOnce(
+        `hitFlash:${node.type}`,
+        `hitFlash: a ${node.type} has no shader effects to flash ("${node.name}") — flash a Sprite2D, ` +
+          'AnimatedSprite2D, Button2D or GeometryMesh.'
+      );
+      return false;
+    }
+    const stack = node.getShaderEffectStack();
+    if (!stack.get(HIT_FLASH) && !stack.attach(HIT_FLASH, { transient: true })) {
+      return false;
+    }
+    const color =
+      typeof options.color === 'string' && options.color.trim() ? options.color.trim() : '#ffffff';
+    const requested = options.amount ?? 1;
+    let amount = Number.isFinite(requested) ? Math.min(1, Math.max(0, requested)) : 1;
+    if (this.scene.app.reducedMotion) {
+      amount = Math.min(amount, REDUCED_MOTION_HIT_FLASH_AMOUNT);
+    }
+    const durationSec = Math.max(0, options.durationSec ?? 0.06) || 0;
+    stack.override(HIT_FLASH, { color, amount });
+    this.hitFlashes.set(stack, this.scene.time.unscaledElapsedSec + durationSec);
+    return true;
+  }
+
+  /**
+   * End the hit flashes whose time is up. Called by `SceneRunner` every tick, after the scripts
+   * (through {@link SceneService.updateJuice}).
+   */
+  update(): void {
+    if (this.hitFlashes.size === 0) return;
+    const now = this.scene.time.unscaledElapsedSec;
+    for (const [stack, endSec] of this.hitFlashes) {
+      if (now >= endSec) {
+        stack.clearOverride(HIT_FLASH);
+        this.hitFlashes.delete(stack);
+      }
+    }
+  }
+
+  /** Forget every flash without restoring (the scene they belong to stopped). */
+  clear(): void {
+    this.hitFlashes.clear();
   }
 
   /**

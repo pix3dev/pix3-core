@@ -89,6 +89,7 @@ export class AudioApi {
    * ```ts
    * this.scene.audio.sfx('bounce');
    * this.scene.audio.sfx('score', { pitch: 1.2, volume: 0.8 });
+   * this.scene.audio.sfx('hit', { pitchVariation: 0.06 }); // ±6 % per shot, no new buffer
    * ```
    *
    * A silent no-op (returning null, never throwing) when Web Audio is unavailable
@@ -117,6 +118,7 @@ export class AudioApi {
       bus: 'sfx',
       label: `sfx:${preset}`,
       volume: Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1)),
+      pitchVariation: options.pitchVariation,
     });
   }
 

@@ -205,14 +205,15 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Juice — call it in the same handler as the mechanic (the contact frame: damage, effects and
   sound together). Scale it to the event; the numbers are starting points, not laws:
 
-  | Event                            | Effects                                                                           | `haptics.play`        |
-  | -------------------------------- | --------------------------------------------------------------------------------- | --------------------- |
-  | pickup, tap                      | `sfx` + `popIn` / `punchScale`                                                    | `selection` / `light` |
-  | hit                              | + `burst` ~14 sparks + `shake` ~6 px for 0.2–0.35 s; a blow adds `hitstop(40–70)` | `medium`              |
-  | big impact (a death, a boss hit) | + `hitstop` up to 150 + `flash`                                                   | `heavy`               |
-  | win / refused action             | `sfx('win')` / `sfx('deny')`                                                      | `success` / `warning` |
+  | Event                            | Effects                                                                                               | `haptics.play`        |
+  | -------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------- |
+  | pickup, tap                      | `sfx` + `popIn` / `punchScale`                                                                        | `selection` / `light` |
+  | hit                              | `sfx('hit')` + `hitFlash` + `burst` ~14 sparks + `shake` ~6 px, 0.2–0.35 s; a blow + `hitstop(40–70)` | `medium`              |
+  | big impact (a death, a boss hit) | + `hitstop` up to 150 + `flash`                                                                       | `heavy`               |
+  | win / refused action             | `sfx('win')` / `sfx('deny')`                                                                          | `success` / `warning` |
 
-  `hitstop` in ms; px scale like the defaults below. Juice is brief and returns to rest; it never
+  `hitstop` in ms; px scale like the defaults below. `shake`, `hitFlash`, `flash` play through the
+  hitstop; `burst`, `punchScale`, `popIn` after it. Juice is brief and returns to rest; it never
   delays input or the simulation. More is not better — heavy juice reads as "too much" and makes
   players dizzy; when in doubt, less. Five hits with a 230 ms hitstop are a second of frozen game.
   Knockback (a velocity from the attacker, slowed by friction, not a fixed distance) is your code.
@@ -221,11 +222,16 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 `viewportBaseSize` space); the defaults below are for a 540-px short side and grow with yours —
 ×2 on a 1080×1920 design — while a value you pass is used as given. Note the three transform effects take
   `duration` (seconds), **not** `durationSec`:
-  - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5 })` —
-    `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped. A screen shake is
+  - `scene.juice.shake(target, { amplitude: 8, frequency: 24, duration: 0.35, decay: 1.5, direction })` —
+    `amplitude` in the node's units (px in 2D), `duration: 0` = until stopped, `direction`
+    (radians) = along the blow only; a weaker shake than the playing one is ignored. A screen shake is
     `shake('camera2d')`: the active `Camera2D`, or — in the 2D starter, which has none — its
     `design-area` (the HUD and the game; the background stays still).
-  - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3 })` — `amount` 0.3 = +30%.
+  - `punchScale(target, { amount: 0.3, duration: 0.35, vibrato: 3, axis: 'all' })` — `amount` 0.3 = +30%;
+    squash & stretch = `axis: 'y'`, −0.25 landing / 0.25 jump (width compensates; about the origin).
+  - `hitFlash(target, { color: '#ffffff', durationSec: 0.06, amount: 1 })` — a `Sprite2D` /
+    `AnimatedSprite2D` / `Button2D` / `GeometryMesh` turns flat colour, alpha kept (authored
+    `core:flash` restored after); warm it in `onStart` with `{ amount: 0 }` (first flash compiles).
   - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start fraction of the node's resting scale (its scale when the pop first runs; an axis at 0 there rests at 1, so a node kept at `scale: [0, 0]` until its pop appears at full size). `easing` is accepted too.
   - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target; runs on
     the game's unscaled time (plays through a hitstop, stops with a pause).
@@ -261,8 +267,9 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   whole sequence ≤ ~500 ms (the stars on a result card). One star per transition; the rest is
   background. A character controller is your code (the engine has none): full speed in ~0.1 s,
   coyote time ~0.1 s, jump buffer ~0.12 s, a released jump halves the upward speed once.
-- Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick' | 'deny', { volume: 1, pitch: 1 })`
-  (`deny`: a short low two-tone buzz for a wrong move or a refused swap; `lose` ends a round);
+- Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick' | 'deny' | 'hit', { volume: 1, pitch: 1, pitchVariation: 0 })`
+  (`deny`: a short low two-tone buzz for a wrong move or a refused swap; `lose` ends a round;
+  `hit`: click + thump + ring, with `pitchVariation: 0.06`);
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
   Every request (these two, `AudioPlayer`, `core:PlaySound`) is journaled even when nothing is
   audible: `scene.audio.requested()` → `{ total, last: [{ sound, frame }] }`, and a run reports it
@@ -288,7 +295,7 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   calls `window.__pix3Back()` and `window.__pix3SetInsets(t, r, b, l)`.
 - Reduced motion: `this.scene.app.reducedMotion` (the system's `prefers-reduced-motion`, or
   `scene.app.setReducedMotion(on | null)` from your settings toggle). The engine already shakes a
-  quarter as far and skips `flash`; tweens are yours — skip a decorative one when it is true.
+  quarter as far, skips `flash`, halves `hitFlash`; tweens are yours — skip a decorative one when it is true.
   `pix3 play --reduced-motion` checks the game that way.
 - Save: `this.scene.storage` — `get('best', 0)` (a copy: change it, then `set` it back),
   `set('best', 12)`, `remove`, `clear`; values are JSON. It is read before the first `onStart`

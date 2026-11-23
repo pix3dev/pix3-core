@@ -66,6 +66,15 @@ describe('SfxSynth', () => {
     expect(host.createBuffer).toHaveBeenCalledTimes(SFX_PRESETS.length);
   });
 
+  it("renders 'hit' as a click, a thump and a ring: 168 ms of layers plus the tail", () => {
+    const buffer = new SfxSynth().getBuffer(makeHost(), 'hit')!;
+    expect(buffer.length).toBe(Math.ceil((0.168 + 0.02) * SAMPLE_RATE));
+    // The thump starts at 220 Hz: ~11 rising crossings in its first 50 ms (220 → ~125 Hz).
+    const crossings = zeroCrossings(buffer, 0.05);
+    expect(crossings).toBeGreaterThan(5);
+    expect(crossings).toBeLessThan(40);
+  });
+
   it('caches per preset + pitch and reuses the rendered buffer', () => {
     const synth = new SfxSynth();
     const host = makeHost();
@@ -142,6 +151,21 @@ describe('AudioApi.sfx', () => {
     api.sfx('score', { pitch: 1.25 });
     expect(host.createBuffer).toHaveBeenCalledTimes(1);
     expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it('pitchVariation goes to the playback rate: no new render, the cache stays one entry', () => {
+    const host = makeHost();
+    const play = vi.fn().mockReturnValue({ stop: () => {}, ended: Promise.resolve() });
+    const api = makeApi({ ...host, play });
+
+    for (let i = 0; i < 20; i++) api.sfx('hit', { pitchVariation: 0.06 });
+
+    expect(host.createBuffer).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(20);
+    expect(play).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ label: 'sfx:hit', pitchVariation: 0.06 })
+    );
   });
 
   it('returns null (and never throws) without an audio service or with an unknown preset', () => {

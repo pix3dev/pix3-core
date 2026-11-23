@@ -225,6 +225,34 @@ freezes them like every other juice effect» — теперь с исключе�
 (`core:Shake`, `core:PunchScale`), spec §6.12 если описывает то же; kit `pix3-scripts` (Juice,
 reference.md) — рецепт удара становится `hitstop` + `shake` + `hitFlash` + `burst` + `sfx('hit')`.
 
+**Сделано (2026-11-23).** 2.1: огибающая одна — `ShakeEnvelope` в `ShakeBehavior.ts` (её
+используют `core:Shake` и `Camera2D`); шаг — `shakeStep(scene, dt)` = новый
+`GameTime.unscaledDeltaSec` (реальная дельта текущего тика; `null` до первого тика — тогда `dt`,
+так работают спеки без раннера). Шаг, а не разность `unscaledElapsedSec`: при `scale = 1` он
+побитово равен прежнему `dt`, поэтому прогоны без hitstop / slow-mo не меняются. «Сильнейшая
+побеждает» — в `ShakeEnvelope.start` (запрос < амплитуда × огибающая сейчас — игнор, конфиг /
+ручки `Camera2D` не трогаются; равный — перезапуск, чтобы повтор по сигналу работал).
+`direction` — на один запрос (в `play` не пишется в конфиг; у `core:Shake` есть ключ конфига,
+отсутствие ключа = во все стороны, инспектор показывает пусто). 2.2: `juice.hitFlash` через новый
+`ShaderEffectStack.override` / `clearOverride` — пишет юниформы и держит define, не трогая
+авторские `params` / `enabled`, так что сохранение и инспектор видят авторское состояние и
+восстановление точное без отдельного «запомненного» снимка; добавленный эффект помечен
+`transient` (не сериализуется, нет в instance-схеме; `SceneSaver` / `GeometryMesh` пишут
+`effects` по результату `serialize()`). Окончание — `JuiceApi.update` из
+`SceneService.updateJuice`, который `SceneRunner` зовёт после скриптов каждого тика; сброс — в
+`clearTweens` (стоп сцены). Материал и юниформы у каждого узла свои (спека на два спрайта).
+2.3: `axis` в `core:PunchScale`; `amount` теперь от −0.9 (было от 0). Ключ `axis` не добавлен в
+конфиг по умолчанию — иначе каждый сохранённый `core:PunchScale` получил бы `axis: all`. 2.4:
+пресет `hit`, `SfxOptions.pitchVariation` → `audio.play`. `pix3 sfx` (свой синтезатор CLI) не
+менялся: `hit` в нём уже есть, а трёх слоёв его однословный голос не делает; в README нечего
+менять. Спеки: `juice-effects`, `Camera2D`, `GameTime`, `JuiceApi` (hitFlash: снятие, авторский
+эффект, `SceneSaver`, два спрайта, reduced motion, альфа по шейдеру), `SfxSynth`, `validate`
+(ключи), сквозная — `SceneRunner.time.spec.ts` → «one hit through a hitstop». Голдены / корпус
+смещений тряски не фиксируют (smoke-голдены проверяют `ok` / кадры; `.pix3replay` в репозитории
+нет); игра с `hitstop` + `shake` (корпус `recipe-bouncer-2d`) трясётся теперь во время заморозки —
+так задумано. Не проверено: пиксели вспышки на спрайте с альфой в Chrome (проверены юниформ,
+define и место вставки в шейдере).
+
 ---
 
 ## Этап 3. Вибрация в отчётах

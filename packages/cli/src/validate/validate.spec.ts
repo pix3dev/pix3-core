@@ -440,6 +440,20 @@ describe('level 1: components', () => {
     ]);
   });
 
+  it('core:Shake `direction` and core:PunchScale `axis` are known keys; a bad axis is not', async () => {
+    const report = await run({
+      'scenes/a.pix3scene': scene(
+        '  - id: a\n    type: Node2D\n    components:\n' +
+          '      - type: core:Shake\n        config: { amplitude: 6, direction: 1.57 }\n' +
+          "      - type: core:PunchScale\n        config: { amount: -0.25, axis: 'y' }\n" +
+          "      - type: core:PunchScale\n        config: { axis: 'z' }\n"
+      ),
+    });
+    expect(find(report, 'E_UNKNOWN_CONFIG_KEY')).toEqual([]);
+    expect(report.diagnostics.filter(d => d.path?.includes('components[1]'))).toEqual([]);
+    expect(report.diagnostics.some(d => d.path === 'root[0].components[2].config.axis')).toBe(true);
+  });
+
   it('E_USER_SCRIPT_NOT_FOUND: the id is the export name of an `extends Script` file', async () => {
     const report = await run(
       {

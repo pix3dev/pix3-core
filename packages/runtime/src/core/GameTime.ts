@@ -66,13 +66,22 @@ export class GameTime {
   /**
    * Seconds of REAL (unscaled) frame time the runner has advanced — a hitstop does not stop it, a
    * pause does, and in fixed / manual time it is ticks × the tick length. The clock of effects
-   * that must outlive a hitstop yet stay in step with the run (`scene.flash`).
+   * that must outlive a hitstop yet stay in step with the run (`scene.flash`, `hitFlash`).
    */
   get unscaledElapsedSec(): number {
     return this.unscaledElapsed;
   }
 
+  /**
+   * The REAL delta of the current tick (what {@link advance} was given), or `null` before the first
+   * tick — a clock no runner drives. Shakes advance by it, so they play through a hitstop.
+   */
+  get unscaledDeltaSec(): number | null {
+    return this.frameIndex > 0 ? this.unscaledDelta : null;
+  }
+
   private unscaledElapsed = 0;
+  private unscaledDelta = 0;
 
   /** The multiplier gameplay dt is scaled by this frame. */
   get scale(): number {
@@ -179,6 +188,7 @@ export class GameTime {
     const dt = Number.isFinite(realDtSec) && realDtSec > 0 ? realDtSec : 0;
     this.frameIndex += 1;
     this.unscaledElapsed += dt;
+    this.unscaledDelta = dt;
 
     if (this.hitstopRemainingSec > 0) {
       this.hitstopRemainingSec = Math.max(0, this.hitstopRemainingSec - dt);

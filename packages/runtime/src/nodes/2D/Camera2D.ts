@@ -5,7 +5,7 @@ import { NodeBase } from '../NodeBase';
 import type { PropertySchema } from '../../fw/property-schema';
 import { defineProperty, mergeSchemas } from '../../fw/property-schema';
 import { clampRange, dampingAlpha, deadzoneGoal } from '../../core/camera-math';
-import { shakeMotionScale, shakeNoise, type ShakeOptions } from '../../behaviors/ShakeBehavior';
+import { ShakeEnvelope, shakeStep, type ShakeOptions } from '../../behaviors/ShakeBehavior';
 
 /** Default configuration values for a freshly created 2D camera. */
 export const CAMERA2D_DEFAULTS = {
@@ -58,8 +58,8 @@ export interface Camera2DProps extends Omit<Node2DProps, 'type'> {
  * Solving is driven by the runtime tick (play mode only): {@link tick} calls
  * {@link solve} on the running clone, so the authored graph is never mutated and
  * the editor viewport (which owns its own free-navigation ortho camera) is
- * unaffected. Shake is advanced in the tick too, so it respects the global
- * `Time.scale` — a hitstop freezes it, slow-mo stretches it.
+ * unaffected. Shake is advanced in the tick too, on the runner's real frame delta
+ * (`shakeStep`): it plays through a hitstop and is not stretched by slow-mo.
  *
  * NOTE (v1): screen-anchored HUD shares the same ortho camera and therefore pans
  * / zooms with the world. A `CanvasLayer2D` (routed to a separate fixed overlay
@@ -81,9 +81,8 @@ export class Camera2D extends Node2D {
   private shakeFrequencyValue: number;
   private shakeDurationValue: number;
   private shakeDecayValue: number;
-  private shakeActive = false;
-  private shakeElapsed = 0;
-  private readonly shakeOffset = new Vector2();
+  private readonly shakeEnvelope = new ShakeEnvelope();
+  private readonly shakeOffset = new Vector3();
 
   // Scratch objects reused across frames (no per-frame allocation in solve()).
   private readonly scratchWorld = new Vector3();
@@ -197,52 +196,44 @@ export class Camera2D extends Node2D {
 
   /** Last solved additive shake offset (zero when idle). */
   getShakeOffset(out: Vector2): Vector2 {
-    return out.copy(this.shakeOffset);
+    return out.set(this.shakeOffset.x, this.shakeOffset.y);
   }
 
-  /** Start (or restart) a shake. Omitted options fall back to authored knobs. */
+  /**
+   * Start (or restart) a shake. Omitted options fall back to authored knobs. A request weaker than
+   * the shake playing now is ignored and leaves the knobs as they were; `direction` is for this
+   * request only.
+   */
   shake(options: ShakeOptions = {}): void {
-    if (options.amplitude != null && Number.isFinite(options.amplitude)) {
-      this.shakeAmplitudeValue = Math.max(0, options.amplitude);
-    }
-    if (options.frequency != null && Number.isFinite(options.frequency)) {
-      this.shakeFrequencyValue = Math.max(0, options.frequency);
-    }
-    if (options.duration != null && Number.isFinite(options.duration)) {
-      this.shakeDurationValue = Math.max(0, options.duration);
-    }
-    if (options.decay != null && Number.isFinite(options.decay)) {
-      this.shakeDecayValue = Math.max(0, options.decay);
-    }
-    this.shakeElapsed = 0;
-    this.shakeActive = true;
+    const pick = (value: number | undefined, current: number): number =>
+      value != null && Number.isFinite(value) ? Math.max(0, value) : current;
+    const params = {
+      amplitude: pick(options.amplitude, this.shakeAmplitudeValue),
+      frequency: pick(options.frequency, this.shakeFrequencyValue),
+      duration: pick(options.duration, this.shakeDurationValue),
+      decay: pick(options.decay, this.shakeDecayValue),
+      direction:
+        options.direction != null && Number.isFinite(options.direction)
+          ? options.direction
+          : undefined,
+    };
+    if (!this.shakeEnvelope.start(params)) return;
+    this.shakeAmplitudeValue = params.amplitude;
+    this.shakeFrequencyValue = params.frequency;
+    this.shakeDurationValue = params.duration;
+    this.shakeDecayValue = params.decay;
   }
 
   /** Stop shaking immediately and clear the offset. */
   stopShake(): void {
-    this.shakeActive = false;
-    this.shakeOffset.set(0, 0);
+    this.shakeEnvelope.stop();
+    this.shakeOffset.set(0, 0, 0);
   }
 
   private advanceShake(dt: number): void {
-    if (!this.shakeActive) {
-      this.shakeOffset.set(0, 0);
-      return;
+    if (!this.shakeEnvelope.advance(shakeStep(this.scene, dt), this.shakeOffset, false)) {
+      this.shakeOffset.set(0, 0, 0);
     }
-
-    this.shakeElapsed += Math.max(0, dt);
-    const duration = this.shakeDurationValue;
-    if (duration > 0 && this.shakeElapsed >= duration) {
-      this.shakeActive = false;
-      this.shakeOffset.set(0, 0);
-      return;
-    }
-
-    const progress = duration > 0 ? this.shakeElapsed / duration : 0;
-    const damp = Math.pow(Math.max(0, 1 - progress), this.shakeDecayValue);
-    const amp = this.shakeAmplitudeValue * damp * shakeMotionScale();
-    const phase = this.shakeElapsed * this.shakeFrequencyValue;
-    this.shakeOffset.set(shakeNoise(phase, 0) * amp, shakeNoise(phase, 100) * amp);
   }
 
   private solveFollow(dt: number): void {

@@ -406,11 +406,11 @@ export class SceneSaver {
         ];
       }
       // Drop the stale YAML-loaded value, then re-emit from the live stack (an
-      // editor detach must clear it). Empty stack → no `effects` key.
+      // editor detach must clear it). Nothing authored → no `effects` key.
       delete props.effects;
-      const spriteFx = node.getShaderEffectStack();
-      if (!spriteFx.isEmpty) {
-        props.effects = spriteFx.serialize();
+      const spriteFx = node.getShaderEffectStack().serialize();
+      if (spriteFx.length > 0) {
+        props.effects = spriteFx;
       }
     } else if (node instanceof TiledSprite2D) {
       if (node.texture) {
@@ -531,9 +531,9 @@ export class SceneSaver {
         delete props.anchor;
       }
       delete props.effects;
-      const animFx = node.getShaderEffectStack();
-      if (!animFx.isEmpty) {
-        props.effects = animFx.serialize();
+      const animFx = node.getShaderEffectStack().serialize();
+      if (animFx.length > 0) {
+        props.effects = animFx;
       }
     } else if (node instanceof Joystick2D) {
       if (node.radius !== 50) props.radius = node.radius;
@@ -578,9 +578,9 @@ export class SceneSaver {
       }
       this.serializeSliceBorder(node.sliceBorder, props);
       delete props.effects;
-      const buttonFx = node.getShaderEffectStack();
-      if (!buttonFx.isEmpty) {
-        props.effects = buttonFx.serialize();
+      const buttonFx = node.getShaderEffectStack().serialize();
+      if (buttonFx.length > 0) {
+        props.effects = buttonFx;
       }
     } else if (node instanceof Label2D) {
       this.serializeCommonUIControlProps(node, props);

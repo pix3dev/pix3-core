@@ -44,7 +44,8 @@ the rest. Everything named exists and is exported from `@pix3/runtime`; search t
   (returns the count, warns once when none has it).
 - Real-time overlays that survive hitstop: `scene.fadeToBlack(sec, onDone?)`,
   `scene.fadeFromBlack(sec, onDone?)`, `scene.switchCameraWithFade(cameraId, outSec, inSec,
-  onDone?)`, `scene.flash({ color, intensity, durationSec })`.
+  onDone?)`, `scene.flash({ color, intensity, durationSec })`; `scene.juice.shake` and
+  `scene.juice.hitFlash` run on the same real time (through a hitstop, not through a pause).
 - Time: `scene.time.setScale`, `reset`, `scale`, `isFrozen` beside `hitstop` / `slowMotion`.
   Waiting in game time (stretched by hitstop / slow-mo): `await scene.wait(0.3)`, or the
   cancellable `scene.tween.delay(0.3)` → a tween handle; both resolve `'cancelled'` when the

@@ -46,7 +46,8 @@ export class AppApi implements SignalLinkHost {
   /**
    * Fewer, smaller movements (`prefers-reduced-motion`, a game's settings toggle, a test run's
    * `reducedMotion`): `juice.shake` and `core:Shake` move a quarter as far, `flash` does not flash
-   * the screen. Tweens are untouched — read this to skip a decorative one yourself.
+   * the screen, `hitFlash` (one node, a hit's confirmation) plays at half strength at most. Tweens
+   * are untouched — read this to skip a decorative one yourself.
    */
   get reducedMotion(): boolean {
     return appLifecycle.reducedMotion;

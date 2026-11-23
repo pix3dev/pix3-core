@@ -125,4 +125,14 @@ export interface AttachedShaderEffect {
   params: Record<string, unknown>;
   /** This effect's uniform bag (shared into compiled programs). */
   uniforms: Record<string, { value: unknown }>;
+  /**
+   * Added at run time (`scene.juice.hitFlash`), not authored: never serialized, not in the
+   * instance schema.
+   */
+  transient?: boolean;
+  /**
+   * A run-time override is driving the uniforms and keeps the effect compiled in even when
+   * disabled; `params` / `enabled` still hold the authored state ({@link ShaderEffectStack.override}).
+   */
+  overridden?: boolean;
 }
