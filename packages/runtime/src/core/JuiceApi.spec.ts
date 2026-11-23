@@ -324,6 +324,25 @@ describe('juice.hitFlash', () => {
     expect(yamlOf(sprite)).toBe(authoredYaml);
   });
 
+  it('survives one tick however long it was, and ends with the scene', () => {
+    const { service, gameTime } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    gameTime.advance(1 / 60);
+
+    // Called between ticks (an input handler); the next tick is longer than the flash.
+    service.juice.hitFlash(sprite, { durationSec: 0.06 });
+    gameTime.advance(0.1);
+    service.updateJuice();
+    expect(amountOf(sprite)).toBe(1); // that tick's frame draws it
+    gameTime.advance(0.1);
+    service.updateJuice();
+    expect(amountOf(sprite)).toBe(0);
+
+    service.juice.hitFlash(sprite, { durationSec: Infinity }); // not a number of seconds: default
+    service.clearTweens(); // SceneRunner.stop()
+    expect(amountOf(sprite)).toBe(0);
+  });
+
   it('an effect it added is never saved', () => {
     const { service } = makeHarness();
     const sprite = new Sprite2D({ id: 'target' });

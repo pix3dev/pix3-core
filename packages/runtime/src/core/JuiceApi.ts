@@ -56,6 +56,7 @@ export interface HitFlashOptions {
 export const REDUCED_MOTION_HIT_FLASH_AMOUNT = 0.5;
 
 const HIT_FLASH = 'core:flash';
+const HIT_FLASH_SEC = 0.06;
 
 /** What `shake('camera2d')` shakes in a scene without a Camera2D: the 2D starter's group. */
 const SCREEN_SHAKE_FALLBACK = 'design-area';
@@ -103,8 +104,12 @@ export class JuiceApi {
   /** Targets already complained about; see {@link warnOnce}. */
   private readonly warned = new Set<string>();
 
-  /** Hit flashes playing: the flashed stack → when it ends, on the runner's unscaled clock. */
-  private readonly hitFlashes = new Map<ShaderEffectStack, number>();
+  /**
+   * Hit flashes playing: the flashed stack → when it ends on the runner's unscaled clock, and
+   * whether a tick has already drawn it. A flash survives one {@link update} whatever the clock
+   * says, so a long tick (a 15 fps frame is longer than the flash) still shows it once.
+   */
+  private readonly hitFlashes = new Map<ShaderEffectStack, { endSec: number; shown: boolean }>();
 
   constructor(private readonly scene: SceneService) {}
 
@@ -255,9 +260,13 @@ export class JuiceApi {
     if (this.scene.app.reducedMotion) {
       amount = Math.min(amount, REDUCED_MOTION_HIT_FLASH_AMOUNT);
     }
-    const durationSec = Math.max(0, options.durationSec ?? 0.06) || 0;
+    const requestedSec = options.durationSec ?? HIT_FLASH_SEC;
+    const durationSec = Number.isFinite(requestedSec) ? Math.max(0, requestedSec) : HIT_FLASH_SEC;
     stack.override(HIT_FLASH, { color, amount });
-    this.hitFlashes.set(stack, this.scene.time.unscaledElapsedSec + durationSec);
+    this.hitFlashes.set(stack, {
+      endSec: this.scene.time.unscaledElapsedSec + durationSec,
+      shown: false,
+    });
     return true;
   }
 
@@ -268,16 +277,21 @@ export class JuiceApi {
   update(): void {
     if (this.hitFlashes.size === 0) return;
     const now = this.scene.time.unscaledElapsedSec;
-    for (const [stack, endSec] of this.hitFlashes) {
-      if (now >= endSec) {
+    for (const [stack, flash] of this.hitFlashes) {
+      if (!flash.shown) {
+        flash.shown = true;
+      } else if (now >= flash.endSec) {
         stack.clearOverride(HIT_FLASH);
         this.hitFlashes.delete(stack);
       }
     }
   }
 
-  /** Forget every flash without restoring (the scene they belong to stopped). */
+  /** End every flash now (the scene they belong to stopped; a kept node must not stay flashed). */
   clear(): void {
+    for (const stack of this.hitFlashes.keys()) {
+      stack.clearOverride(HIT_FLASH);
+    }
     this.hitFlashes.clear();
   }
 
