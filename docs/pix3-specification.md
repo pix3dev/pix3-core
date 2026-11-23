@@ -938,6 +938,8 @@ The `properties` block allows overriding base prefab values. Overrides are track
 
 An instance is a clone rebuilt from the prefab's schema values **plus the blocks the disk format nests** (`SceneLoader.captureCloneProperties`): `layout:` / `flow:` of a 2D node and `material:` of a `GeometryMesh` / `InstancedMesh3D`. Without the `material:` block every mesh of an instance came out in the default blue PBR material (found on Skyways' island prefabs, 2026-11-13). An `initiallyVisible` the prefab did not author is not carried either: the schema reads it as `visible`, and kept on the clone it made play undo an instance's `visible` override of an inner node. `SceneLoader.instance-material.spec.ts` pins both.
 
+One scene load reads and parses each prefab **once**, however many instances it has: `parseScene` keeps a per-load `prefabCache` (path → parsed graph, shared with nested prefab parses) and every instance clones from that graph, since the clone only reads it. Before this, PipeBlast's board fetched `cell.pix3scene` once per cell on every load. The cache lives only for that load, so an edited prefab is picked up by the next one. `instantiatePrefab` (a runtime spawn) still reads the prefab on each call. `SceneLoader.prefab-cache.spec.ts` pins this.
+
 A prefab with **states** (abandoned / working, closed / open) is one child group per state under the root, all but the default `visible: false`; a script shows one by name (`root.findByName('active')` — inner ids are renamed in every instance but the first), a host scene by an override of `visible`. The kit's `pix3-scene-format` carries the recipe and the model-sheet scene that goes with it.
 
 ### 6.20.5 Prefab Operations

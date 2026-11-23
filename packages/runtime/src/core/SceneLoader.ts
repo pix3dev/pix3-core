@@ -275,6 +275,12 @@ export interface ScrollContainer2DProperties extends Group2DProperties {
 export interface ParseSceneOptions {
   filePath?: string;
   instanceStack?: string[];
+  /**
+   * Prefabs already parsed during this load, by path. One scene load fetches and parses each
+   * prefab once, however many instances it has; nested prefab parses share the same map. Not
+   * kept between loads, so an edited prefab is picked up by the next load.
+   */
+  prefabCache?: Map<string, Promise<SceneGraph>>;
 }
 
 interface PrefabMarkerMetadata {
@@ -328,6 +334,7 @@ export class SceneLoader {
     const nodeIndex = new Map<string, NodeBase>();
     const rootNodes: NodeBase[] = [];
     const instanceStack = [...(options.instanceStack ?? [])];
+    const prefabCache = options.prefabCache ?? new Map<string, Promise<SceneGraph>>();
 
     for (const definition of document.root ?? []) {
       const rootNode = await this.instantiateNode(
@@ -335,7 +342,8 @@ export class SceneLoader {
         null,
         nodeIndex,
         options.filePath ?? 'unknown',
-        instanceStack
+        instanceStack,
+        prefabCache
       );
       rootNodes.push(rootNode);
     }
@@ -354,7 +362,8 @@ export class SceneLoader {
     parent: NodeBase | null,
     index: Map<string, NodeBase>,
     sceneIdentifier: string,
-    instanceStack: string[]
+    instanceStack: string[],
+    prefabCache: Map<string, Promise<SceneGraph>>
   ): Promise<NodeBase> {
     if (definition.instance) {
       return await this.instantiateInstanceNode(
@@ -362,7 +371,8 @@ export class SceneLoader {
         parent,
         index,
         sceneIdentifier,
-        instanceStack
+        instanceStack,
+        prefabCache
       );
     }
 
@@ -391,7 +401,14 @@ export class SceneLoader {
 
     const childDefinitions = definition.children ?? [];
     for (const childDef of childDefinitions) {
-      await this.instantiateNode(childDef, node, index, sceneIdentifier, instanceStack);
+      await this.instantiateNode(
+        childDef,
+        node,
+        index,
+        sceneIdentifier,
+        instanceStack,
+        prefabCache
+      );
     }
 
     return node;
@@ -413,7 +430,8 @@ export class SceneLoader {
       null,
       new Map<string, NodeBase>(),
       `runtime-instantiate:${instancePath}`,
-      []
+      [],
+      new Map<string, Promise<SceneGraph>>()
     );
   }
 
@@ -422,7 +440,8 @@ export class SceneLoader {
     parent: NodeBase | null,
     index: Map<string, NodeBase>,
     sceneIdentifier: string,
-    instanceStack: string[]
+    instanceStack: string[],
+    prefabCache: Map<string, Promise<SceneGraph>>
   ): Promise<NodeBase> {
     if (index.has(definition.id)) {
       throw new SceneValidationError(`Duplicate node id "${definition.id}" detected.`, [
@@ -445,12 +464,21 @@ export class SceneLoader {
       ]);
     }
 
-    const nestedStack = [...instanceStack, normalizedInstancePath];
-    const prefabText = await this.resourceManager.readText(normalizedInstancePath);
-    const prefabGraph = await this.parseScene(prefabText, {
-      filePath: normalizedInstancePath,
-      instanceStack: nestedStack,
-    });
+    // Every instance clones from the same parsed prefab graph (the clone only reads it), so
+    // a board of 64 cells is one fetch and one parse, not 64.
+    let prefabGraphPromise = prefabCache.get(normalizedInstancePath);
+    if (!prefabGraphPromise) {
+      const nestedStack = [...instanceStack, normalizedInstancePath];
+      prefabGraphPromise = this.resourceManager.readText(normalizedInstancePath).then(prefabText =>
+        this.parseScene(prefabText, {
+          filePath: normalizedInstancePath,
+          instanceStack: nestedStack,
+          prefabCache,
+        })
+      );
+      prefabCache.set(normalizedInstancePath, prefabGraphPromise);
+    }
+    const prefabGraph = await prefabGraphPromise;
 
     if (!prefabGraph.rootNodes.length) {
       throw new SceneValidationError(`Instance "${normalizedInstancePath}" has no root nodes.`, [
