@@ -620,7 +620,8 @@ edited — replace that line with the three of the starter.
 **The design record.** The kit writes no design doc, and `pix3 new` no empty skeleton (it would
 rot). The kit's `AGENTS.md` has the agent write `design/GDD.md` with the first playable change and
 read it before any other file: pitch, loop, how the game differs from its references, what is not
-in the prototype, decisions as `X, because Y`, open questions — at most 60 lines, superseded
+in the prototype, decisions as `X, because Y`, each screen's focal point (the line `pix3-verify` →
+"Screens" checks the gallery against), open questions — at most 60 lines, superseded
 lines replaced, nothing the scenes and scripts already say. A structural choice, or anything the
 human decided or rejected, is recorded in the same turn, and the final report says which ("none"
 otherwise). It exists because intent, rejected options and scope otherwise live only in chat and

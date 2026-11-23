@@ -202,10 +202,22 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
 - Time: `scene.time.hitstop(ms)` — no options; only on a contact START, never per frame.
   `scene.time.slowMotion(scale, { durationMs, blendMs })` — both real-time ms; no `durationMs`
   = until `scene.time.reset()`.
-- Juice — call it together with the mechanic. Scale it to the event: a pickup gets a sound and
-  a pop, a hit adds a burst and a small shake, only a big impact (a death, a boss hit) gets
-  hitstop and a flash. Juice is brief and returns to rest; it never delays input or the
-  simulation. Every option is optional; defaults shown. Sizes and speeds are **design px** (the
+- Juice — call it in the same handler as the mechanic (the contact frame: damage, effects and
+  sound together). Scale it to the event; the numbers are starting points, not laws:
+
+  | Event                            | Effects                                                                           | `haptics.play`        |
+  | -------------------------------- | --------------------------------------------------------------------------------- | --------------------- |
+  | pickup, tap                      | `sfx` + `popIn` / `punchScale`                                                    | `selection` / `light` |
+  | hit                              | + `burst` ~14 sparks + `shake` ~6 px for 0.2–0.35 s; a blow adds `hitstop(40–70)` | `medium`              |
+  | big impact (a death, a boss hit) | + `hitstop` up to 150 + `flash`                                                   | `heavy`               |
+  | win / refused action             | `sfx('win')` / `sfx('deny')`                                                      | `success` / `warning` |
+
+  `hitstop` in ms; px scale like the defaults below. Juice is brief and returns to rest; it never
+  delays input or the simulation. More is not better — heavy juice reads as "too much" and makes
+  players dizzy; when in doubt, less. Five hits with a 230 ms hitstop are a second of frozen game.
+  Knockback (a velocity from the attacker, slowed by friction, not a fixed distance) is your code.
+  Put each effect's number in the script's config (`getPropertySchema`) so it can be zeroed and
+  compared; add effects one at a time. Every option is optional; defaults shown. Sizes and speeds are **design px** (the
 `viewportBaseSize` space); the defaults below are for a 540-px short side and grow with yours —
 ×2 on a 1080×1920 design — while a value you pass is used as given. Note the three transform effects take
   `duration` (seconds), **not** `durationSec`:
@@ -242,6 +254,13 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `fadeIn(node, sec)` and `crossFade(a, b, sec)` — no options; `fadeOut(node, sec, { hide: true })`;
   `killAll(target?)` — **without a target it kills every tween of the scene**, a result card's
   fade included; pass the board's node to reset only its own. Default `sec` = 0.3. Prefer these over hand-lerping.
+- Timing (starting points): answer input within ~100 ms — an anticipation never delays it. UI
+  transitions 150–300 ms, a big panel or modal up to ~500 ms (`popIn`'s 0.4 s `backOut` is a game
+  object's overshoot, not a UI transition). Entering = an `…Out` ease (`backOut` for a pop),
+  leaving = an `…In` ease, `linear` only for loops and progress. Stagger 20–50 ms an item, the
+  whole sequence ≤ ~500 ms (the stars on a result card). One star per transition; the rest is
+  background. A character controller is your code (the engine has none): full speed in ~0.1 s,
+  coyote time ~0.1 s, jump buffer ~0.12 s, a released jump halves the upward speed once.
 - Audio with no asset: `scene.audio.sfx('tap' | 'score' | 'bounce' | 'explosion' | 'powerup' | 'win' | 'lose' | 'laser' | 'tick' | 'deny', { volume: 1, pitch: 1 })`
   (`deny`: a short low two-tone buzz for a wrong move or a refused swap; `lose` ends a round);
   a file: `await scene.audio.play('res://audio/hit.ogg', { bus: 'sfx' | 'music' | 'master', volume, loop, playbackRate, pan, pitchVariation: 0, volumeVariation: 0 })`.
@@ -283,10 +302,14 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   `setStorageAdapter({ read(key), write(key, snapshot) })` before `startGame` (merging a cloud
   snapshot with the local one is the adapter's job, in `read` — `pix3-mobile` → "A cloud save").
 - Touch feedback: `this.scene.haptics.play('light')` — kinds `selection` / `light` / `medium` /
-  `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table. A
-  pulse no heavier than one under 60 ms ago is dropped (a burst of hits is one buzz). Raw
-  `vibrate(30)` / `vibrate([20, 40, 20])` / `stop()`; `setEnabled(false)` for the player's settings
-  toggle; `available`. A quiet `false` where nothing buzzes (desktop, iOS Safari, a hidden tab) —
+  `heavy` / `success` / `warning` / `error`; which event gets which kind is your game's table
+  (start from the Juice table). Buzz on every touch the player caused — even one kind for all
+  beats none — in the same handler as its picture: a buzz out of sync reads as no buzz.
+  Different materials, different kinds (a soft paddle `light`, a hard wall `heavy`); a fading
+  `vibrate([…])` after a springy hit, a short pulse just before something appears; never imitate
+  realism or ease in/out. A pulse no heavier than one under 60 ms ago is dropped (a burst of hits
+  is one buzz). Raw `vibrate(30)` / `vibrate([20, 40, 20])` / `stop()`; `setEnabled(false)` for
+  the player's settings toggle; `available`. A quiet `false` where nothing buzzes (desktop, iOS Safari, a hidden tab) —
   iOS needs a native shell that calls `setHapticsAdapter({ play(kind), vibrate(pattern) })`
   (Capacitor Haptics, `pix3-mobile`); never `navigator.vibrate` directly.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A

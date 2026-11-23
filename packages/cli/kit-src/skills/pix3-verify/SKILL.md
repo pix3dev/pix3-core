@@ -205,8 +205,16 @@ with `done(true)` on the state) only for what cannot be set. Add the entry with 
 On the sheet, check every tile: nothing cut off or overlapping at the narrow and the landscape
 size, no text running out of its box in the longest locale, no key shown instead of its text, and
 the play screen speaks in pictograms (AGENTS.md): no sentence on it — numbers, icons and at most a
-four-word refusal caption. A tile outlined red errored (`screens.json` says why). `--only menu,shop`
-re-takes a few.
+four-word refusal caption. Then the hierarchy: each screen has one focal point and it is the
+main action listed under **Screens** in `design/GDD.md` (`menu → play`, `result → again`); one
+role, one style (the primary button looks the same on every screen); gaps inside a group are
+smaller than between groups (HUD clusters); a modal is clearly in front (a dim or contrast
+behind it). A tile outlined red errored (`screens.json` says why). `--only menu,shop` re-takes a
+few.
+
+Report each visual finding as **where → principle → what it costs the player → fix**; first what
+hurts play (unreadable, untappable, no focus), then polish. A finding with no cost to the player
+is marked as taste.
 
 ### Goldens — pin how a seeded round ends
 

@@ -41,7 +41,8 @@ what a pictogram means — give every icon and button one. Draw the pictograms a
 Write that translation (or the brief, when there are no references) to `design/GDD.md` with
 the first playable change; an existing game keeps its own design doc instead. Sections:
 **Pitch** (2 lines), **Loop** (3–5 lines), **Unlike the references**, **Not in this prototype**,
-**Decisions** (`X, because Y`, one line each), **Open questions**. It holds the intent the code
+**Decisions** (`X, because Y`, one line each), **Screens** (one line: each screen's focal point,
+its main action — `menu → play; result → again`), **Open questions**. It holds the intent the code
 cannot show: do not restate controls, numbers or anything the scenes and scripts already say.
 At most 60 lines; replace a superseded line, never append history. What is not decided yet is
 an open question — do not invent a design.
