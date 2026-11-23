@@ -66,7 +66,7 @@ From `.plans/done/play-in-page.md` (S6, 2026-11-18):
   `Page.captureScreenshot`) on the agent page just after a 237-frame `pix3_game_run` in
   SwiftShader, then worked; not seen on a real GPU.
 
-From `.plans/design-feedback.md` (2026-11-23), review findings left open on purpose:
+From `.plans/done/design-feedback.md` (2026-11-23), review findings left open on purpose:
 
 - **Screen checks (`pix3 play --screens`)**: captions overlapping in one box mix their glyph masks
   (hide one caption at a time); a press target narrower than the 4 px seed scan is missed, and a
