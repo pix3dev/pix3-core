@@ -39,7 +39,7 @@ export interface PageMeasure {
 export interface Contrast {
   /** Text against the background, each the median over the glyph mask. */
   readonly median: number;
-  /** Text against the background's quartile nearest the text (a busy background's worst). */
+  /** The 25th percentile of the text's contrast with each background pixel (a busy background). */
   readonly worstQuartile: number;
 }
 
@@ -80,9 +80,16 @@ export const relativeLuminance = (r: number, g: number, b: number): number =>
 export const contrastRatio = (one: number, two: number): number =>
   (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
 
-/** The value at fraction `at` of an ascending list. */
-const quantile = (sorted: readonly number[], at: number): number =>
-  sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(at * (sorted.length - 1))))];
+/**
+ * The value at fraction `at` of an ascending list, between its two nearest elements (the median of
+ * an even list is the mean of the middle two).
+ */
+const quantile = (sorted: readonly number[], at: number): number => {
+  const position = Math.min(1, Math.max(0, at)) * (sorted.length - 1);
+  const low = Math.floor(position);
+  const high = Math.min(sorted.length - 1, low + 1);
+  return sorted[low] + (sorted[high] - sorted[low]) * (position - low);
+};
 
 const ascending = (values: number[]): number[] => values.sort((p, q) => p - q);
 
@@ -113,7 +120,9 @@ const sameImage = (one: RgbaImage, two: RgbaImage): boolean =>
  * A caption's contrast from its box (image px) in the shown and the bare picture. The glyph mask
  * is every pixel the two differ on; the text colour is the shown picture over the mask's core (the
  * half that changed most — an antialiased edge is half background), the background the bare
- * picture over the whole mask. With an outline the core holds two colours: it is split in two
+ * picture over the whole mask. `median` is the text against the background's median luminance (the
+ * value a violation is decided on); `worstQuartile` the 25th percentile of the text's contrast with
+ * each background pixel. With an outline the core holds two colours: it is split in two
  * where they differ most and each part's median is tried — the outline against the background
  * counts when it reads better than the fill.
  */
@@ -152,14 +161,11 @@ export const textContrast = (
     outline && core.length > 1
       ? splitTwo(core).map(part => quantile(part, 0.5))
       : [quantile(core, 0.5)];
-  let best: Contrast = { median: 0, worstQuartile: 0 };
-  for (const text of candidates) {
-    const worstBack = quantile(back, text > backMedian ? 0.75 : 0.25);
-    const median = contrastRatio(text, backMedian);
-    if (median > best.median)
-      best = { median, worstQuartile: Math.min(median, contrastRatio(text, worstBack)) };
-  }
-  return best;
+  const text = candidates.reduce((best, next) =>
+    contrastRatio(next, backMedian) > contrastRatio(best, backMedian) ? next : best
+  );
+  const perPixel = ascending(back.map(luminance => contrastRatio(text, luminance)));
+  return { median: contrastRatio(text, backMedian), worstQuartile: quantile(perPixel, 0.25) };
 };
 
 const round = (value: number, digits = 1): number => Number(value.toFixed(digits));

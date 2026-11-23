@@ -910,18 +910,20 @@ px, `targets` / `texts` how many were measured, each violation `{ check, node, t
 measured, threshold, box }` with `box` in the viewport's CSS px:
 
 - `tap-size` — a press target's shorter side under 44 CSS px; `measured` `{ width, height }`. A
-  target is what the runtime picks (`UIControl2D.acceptsPressAt`, the test `pointerTargetAt`
-  asks), measured by asking that test across the screen, so the design fit, the safe area, a
-  Camera2D and the screen's edge are in it and a rotated control gives its own sides; a disabled
-  one and one covered by a blocker (`blocksPointerInput`) or another control are left out. A node
-  a script hit-tests itself (`containsScreenPoint` on a pointer event) is not a target here.
+  target's area is where the runtime's pick (`UIControl2D.pointerTargetAt`) answers that control,
+  measured by asking it across the screen, so the design fit, the safe area, a Camera2D and the
+  screen's edge are in it, a rotated control gives its own sides and a control partly under a
+  blocker (`blocksPointerInput`) or another control is measured by the part a finger still
+  reaches; a disabled one and one covered everywhere are left out. A node a script hit-tests
+  itself (`containsScreenPoint` on a pointer event) is not a target here.
 - `text-size` — a caption's font (`labelFontSize` through every scale to the screen, not the
   glyphs' height) under 16 CSS px; `measured` in CSS px.
 - `contrast` — under 4.5:1, or 3:1 from 24 CSS px; `measured` `{ median, worstQuartile }`. The
   glyph mask is where the shown and the captionless frames differ inside the caption's box; the
   text colour is the shown frame there (as drawn: opacity, effects), the background the other one;
-  with an outline the better of fill and outline counts; `worstQuartile` is against the
-  background's quartile nearest the text (a busy background). A caption it cannot read — the frame
+  with an outline the better of fill and outline counts; `median` (what decides) is the text
+  against the background's median, `worstQuartile` the 25th percentile of the text's contrast with
+  each background pixel (a busy background). A caption it cannot read — the frame
   did not repeat itself, or no glyph pixel is on the picture — is in `notMeasured` with the reason,
   never estimated. Icons are not checked.
 

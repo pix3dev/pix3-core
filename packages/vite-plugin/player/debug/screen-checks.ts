@@ -3,12 +3,12 @@
  * target and every caption's font, and the captions hidden for a second frame (the glyph mask of
  * the contrast check, `packages/cli/src/play/screen-checks.ts`).
  *
- * A press target is what the runtime picks: a control whose `acceptsPressAt` takes the point — the
- * test `UIControl2D.pointerTargetAt` asks of every control — measured by asking that test over the
- * screen, 1 CSS px apart, from the node's origin outwards. So the size is the area a finger can hit
- * through every projection on the way (`setDesignFit`, the safe area, a Camera2D, the overlay band,
- * the screen's edges), and a rotated control is measured by its own sides. A target a blocker or
- * another control covers everywhere it was sampled is left out, as is a disabled one.
+ * A press target is what the runtime picks: a control at a point where `UIControl2D.pointerTargetAt`
+ * answers that very control. Its area is measured by asking that over the screen, 1 CSS px apart,
+ * from the node's origin outwards — so the size is the area a finger really gets, through every
+ * projection on the way (`setDesignFit`, the safe area, a Camera2D, the overlay band, the screen's
+ * edges), less what a blocker or another control covers; a rotated control is measured by its own
+ * sides. A target covered everywhere is left out, as is a disabled one.
  *
  * No value imports, `three` and `@pix3/runtime` included: the CLI bundles this file into a page
  * script for a built page too (`packages/cli/src/play/bundle.ts`); nodes are read by shape.
@@ -311,8 +311,6 @@ export interface ScreenMeasure {
 
 /** Cells a target's area may have before it is measured on a coarser grid. */
 const MAX_CELLS = 40_000;
-/** How many of a target's cells are asked who takes the press there (the cover check). */
-const COVER_SAMPLES = 64;
 
 /**
  * Measure the screen as it is now (`pix3 play --screens` pauses the runner and draws a frame
@@ -355,12 +353,14 @@ export const measureScreen = (runner: ShapeRunner | null): ScreenMeasure | null 
       name: control.name ?? '',
     };
 
+    // Where a press lands on this control: it accepts it, and nothing above takes it first.
     const hit = (x: number, y: number): boolean =>
       x >= visible.left &&
       y >= visible.top &&
       x < visible.right &&
       y < visible.bottom &&
-      control.acceptsPressAt(x * sx, y * sy);
+      control.acceptsPressAt(x * sx, y * sy) &&
+      control.pointerTargetAt(x * sx, y * sy) === control;
     const origin = m ? applyAffine(toInput, { x: m[12], y: m[13] }) : null;
     let seed =
       origin && hit(origin.x / sx, origin.y / sy) ? { x: origin.x / sx, y: origin.y / sy } : null;
@@ -375,12 +375,7 @@ export const measureScreen = (runner: ShapeRunner | null): ScreenMeasure | null 
         step *= 2;
         cells = fillRegion(seed, step, rect, hit, MAX_CELLS);
       }
-      const stride = Math.max(1, Math.floor((cells?.length ?? 0) / COVER_SAMPLES));
-      const reachable = (cells ?? []).some(
-        (cell, index) =>
-          index % stride === 0 && control.pointerTargetAt(cell.x * sx, cell.y * sy) === control
-      );
-      if (cells && reachable) {
+      if (cells) {
         const sides = regionSides(cells, step, hit);
         const box = boundsOf(cells);
         const half = step / 2;

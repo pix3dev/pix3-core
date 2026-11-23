@@ -84,6 +84,52 @@ describe('contrast maths', () => {
     expect(contrast.median).toBeCloseTo(21, 6);
   });
 
+  it('takes the worst quartile of per-pixel contrast, a background both darker and lighter', () => {
+    // Text of luminance ≈ 0.18 (#767676) over one row of 100 px: black under 55, ≈ 0.30 (#959595)
+    // under 20, white under 25. Per pixel 4.6, 1.52, 4.56:1 — the 25th percentile is 4.56:1, not
+    // the 1.52:1 of the background's own upper quartile.
+    const back = (x: number): Rgb =>
+      x < 55 ? [0, 0, 0] : x < 75 ? [0x95, 0x95, 0x95] : [255, 255, 255];
+    const row = { x: 0, y: 0, width: 100, height: 1 };
+    const shown = picture(100, 1, [0, 0, 0], () => [0x76, 0x76, 0x76]);
+    const bare = picture(100, 1, [0, 0, 0], x => back(x));
+    const text = relativeLuminance(0x76, 0x76, 0x76);
+    expect(text).toBeCloseTo(0.18, 2);
+    const contrast = textContrast(shown, bare, row, false);
+    if ('reason' in contrast) throw new Error(contrast.reason);
+    expect(contrast.worstQuartile).toBeCloseTo(contrastRatio(text, 1), 6);
+    expect(contrast.worstQuartile).toBeCloseTo(4.57, 1);
+    expect(contrast.median).toBeCloseTo(contrastRatio(text, 0), 6);
+  });
+
+  it('takes the median of an even sample between its two middle values', () => {
+    // Black text over a background half #202020, half #909090: the median background is the mean
+    // of the two luminances, 3.93:1 — under 4.5, so the caption is flagged (6.58:1 by the upper).
+    const back = (x: number): Rgb => (x < 20 ? [0x20, 0x20, 0x20] : [0x90, 0x90, 0x90]);
+    const shown = picture(40, 1, [0, 0, 0]);
+    const bare = picture(40, 1, [0, 0, 0], x => back(x));
+    const middle = (relativeLuminance(0x20, 0x20, 0x20) + relativeLuminance(0x90, 0x90, 0x90)) / 2;
+    const row = { x: 0, y: 0, width: 40, height: 1 };
+    const contrast = textContrast(shown, bare, row, false);
+    if ('reason' in contrast) throw new Error(contrast.reason);
+    expect(contrast.median).toBeCloseTo(contrastRatio(0, middle), 6);
+    expect(contrast.median).toBeCloseTo(3.93, 2);
+    const checks = screenChecks(
+      {
+        viewport: { width: 40, height: 1 },
+        targets: [],
+        texts: [
+          { node: 'caption', type: 'Label2D', name: '', fontPx: 18, outline: false, box: row },
+        ],
+      },
+      { shown, again: shown, bare },
+      1
+    );
+    expect(checks.violations).toMatchObject([
+      { check: 'contrast', node: 'caption', measured: { median: 3.93 }, threshold: 4.5 },
+    ]);
+  });
+
   it('takes an outline against the background when it reads better than the fill', () => {
     // Grey fill on a grey panel, with a black outline row above and below each bar.
     const shown = picture(40, 20, [0x80, 0x80, 0x80], (x, y) => {

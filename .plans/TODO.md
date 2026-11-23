@@ -66,5 +66,19 @@ From `.plans/done/play-in-page.md` (S6, 2026-11-18):
   `Page.captureScreenshot`) on the agent page just after a 237-frame `pix3_game_run` in
   SwiftShader, then worked; not seen on a real GPU.
 
+From `.plans/design-feedback.md` (2026-11-23), review findings left open on purpose:
+
+- **Screen checks (`pix3 play --screens`)**: captions overlapping in one box mix their glyph masks
+  (hide one caption at a time); a press target narrower than the 4 px seed scan is missed, and a
+  non-rectangular one is under-measured (centroid chords of a triangle); the frame with captions
+  hidden is not checked for repeating itself; a small caption fully covered by an opaque panel
+  still gets a `text-size` warning; a press target that is a script-hit-tested sprite is invisible
+  to the size check; the gallery checks never run in CI.
+- **Run report**: `haptics` and `analytics` are read through the first live root, so a run that
+  ends with no root loses them.
+- **`juice.hitFlash`**: not yet looked at on real pixels in Chrome (a sprite with transparent
+  edges); a sprite `hitFlash` added the effect to stays out of the 2D batcher for the rest of the
+  scene.
+
 Known behaviour (owner's call): an agent's script or policy edit makes Vite full-reload every game
 page, the human's included. `three` stays a peer dependency of `@pix3/vite-plugin`.

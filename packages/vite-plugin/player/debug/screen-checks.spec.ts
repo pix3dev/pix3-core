@@ -129,15 +129,17 @@ afterEach(() => {
 const measureAt = async (
   css: { width: number; height: number },
   dpr: number,
-  fit?: { minScale: number }
+  fit?: { minScale: number },
+  file = scene
 ) => {
   const game = await createHeadlessGame({
-    files: { 'scenes/main.pix3scene': scene },
+    files: { 'scenes/main.pix3scene': file },
     viewport: { width: 390, height: 844 },
   });
   games.push(game);
   await game.start('scenes/main.pix3scene');
-  (game.scene.findNode('off') as Button2D).enabled = false;
+  const off = game.scene.findNode('off') as Button2D | null;
+  if (off) off.enabled = false;
   if (fit) game.scene.setDesignFit(fit);
   // The page as the gallery sees it: a canvas of css × dpr device px filling the viewport.
   const input = game.runner.getLiveRootNodes()[0].input as unknown as {
@@ -192,5 +194,30 @@ describe('measureScreen', () => {
     hideCaptions(runner, false);
     expect(meshes().map(mesh => mesh.visible)).toEqual([true, true]);
     expect(measureScreen(null)).toBeNull();
+  });
+
+  it('measures a partly covered target by the strip a finger still reaches', async () => {
+    // A 100×60 button with a 90×60 one drawn over its right part: 10×60 of it is left.
+    const covered = `version: 1.0.0
+root:
+  - id: root
+    type: Group2D
+    properties: { width: 390, height: 844 }
+    children:
+      - id: under
+        type: Button2D
+        properties: { width: 100, height: 60, label: "", transform: { position: [0, 0], scale: [1, 1], rotation: 0 } }
+      - id: over
+        type: Button2D
+        properties: { width: 90, height: 60, label: "", transform: { position: [5, 0], scale: [1, 1], rotation: 0 } }
+`;
+    const { measure } = await measureAt({ width: 390, height: 844 }, 2, undefined, covered);
+    const sides = Object.fromEntries(
+      measure!.targets.map(target => [target.node, [target.width, target.height]])
+    );
+    expect(sides.under[0]).toBeCloseTo(10, 0);
+    expect(sides.under[1]).toBeCloseTo(60, 1);
+    expect(sides.over[0]).toBeCloseTo(90, 1);
+    expect(measure!.targets.find(target => target.node === 'under')!.box.width).toBeCloseTo(10, 0);
   });
 });
