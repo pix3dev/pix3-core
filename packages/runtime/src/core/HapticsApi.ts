@@ -32,6 +32,9 @@ const WEIGHT: Readonly<Record<HapticKind, number>> = {
 
 const HAPTIC_GAP_MS = 60;
 
+/** The `kind` a raw `vibrate(pattern)` call is recorded under. */
+const RAW_KIND = 'vibrate';
+
 /**
  * What became of one `play` / `vibrate` call: `played` — handed to the adapter or
  * `navigator.vibrate` said yes (not "a motor moved"); `throttled` — dropped by weight; `off` —
@@ -133,7 +136,7 @@ export class HapticsApi {
   /** A raw pattern, ms (`30`, `[20, 40, 20]`); false where it did not buzz. */
   vibrate(pattern: number | readonly number[]): boolean {
     const result = this.blocked() ?? (this.vibrateRaw(pattern) ? 'played' : 'unavailable');
-    return this.note('vibrate', result) === 'played';
+    return this.note(RAW_KIND, result) === 'played';
   }
 
   stop(): void {
@@ -152,8 +155,8 @@ export class HapticsApi {
   }
 
   private playKind(kind: HapticKind): HapticResult {
+    if (!Object.hasOwn(WEIGHT, kind)) return 'unavailable';
     const weight = WEIGHT[kind];
-    if (weight === undefined) return 'unavailable';
     const blocked = this.blocked();
     if (blocked) return blocked;
     const now = typeof performance === 'undefined' ? Date.now() : performance.now();
@@ -177,7 +180,10 @@ export class HapticsApi {
 
   private note(kind: string, result: HapticResult): HapticResult {
     this.calls += 1;
-    this.byKind[kind] = (this.byKind[kind] ?? 0) + 1;
+    // A string that is no kind is counted as one `unknown` (the event keeps it), so a script
+    // passing a new wrong string every frame cannot grow the report.
+    const counted = kind === RAW_KIND || Object.hasOwn(WEIGHT, kind) ? kind : 'unknown';
+    this.byKind[counted] = (this.byKind[counted] ?? 0) + 1;
     this.byResult[result] = (this.byResult[result] ?? 0) + 1;
     this.log.push({ kind, result, frame: this.frameOf() });
     if (this.log.length > HAPTICS_LOG_SIZE) {

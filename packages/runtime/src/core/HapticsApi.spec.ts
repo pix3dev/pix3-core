@@ -150,4 +150,14 @@ describe('HapticsApi (scene.haptics)', () => {
     expect(report.eventsDropped).toBe(101);
     expect(report.events[0]).toEqual({ kind: 'vibrate', result: 'played', frame: 0 });
   });
+
+  it('counts every string that is no kind as one `unknown`, keeping it in the event', () => {
+    const haptics = new HapticsApi();
+    haptics.play('thud' as HapticKind);
+    haptics.play('toString' as HapticKind);
+    const report = haptics.runReport();
+    expect(report.byKind).toEqual({ unknown: 2 });
+    expect(report.events.map(event => event.kind)).toEqual(['thud', 'toString']);
+    expect(report.byResult.unavailable).toBe(2);
+  });
 });
