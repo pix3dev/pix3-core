@@ -589,7 +589,11 @@ to change it; the look is game-wide, `TooltipBehavior.style` (`fontFamily`, `fon
 not carry (what a button does, what a pictogram means). The hit test is public on every 2D node:
 `node.containsScreenPoint(x, y)` (input units, the node's `width` × `height` centred on its
 origin, through its whole transform, overlay band or Camera2D) and `node.screenPointToWorld(x, y,
-target?)` — pass your own `target`, the default is a shared scratch vector. `Label2D.textSize` is
+target?)` — pass your own `target`, the default is a shared scratch vector. Which UI node a press
+takes: `control.acceptsPressAt(x, y)` (enabled, visible, inside its bounds and scroll containers)
+and `control.pointerTargetAt(x, y)` (the topmost control that accepts it or `ColorRect2D` that
+blocks it) — the runtime's own pick, which `pix3 play --screens` measures press targets with
+(`input.syncElementSize()` first takes the canvas size as a press would). `Label2D.textSize` is
 the laid-out text size, to fit a background to a label.
 
 ### Signals (node events)

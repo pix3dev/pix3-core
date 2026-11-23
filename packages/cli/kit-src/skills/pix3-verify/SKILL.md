@@ -217,6 +217,18 @@ smaller than between groups (HUD clusters); a modal is clearly in front (a dim o
 behind it). A tile outlined red errored (`screens.json` says why). `--only menu,shop` re-takes a
 few.
 
+The gallery measures what you cannot eyeball: each picture's `checks` in `screens.json` lists
+`violations` — `tap-size` (a press target's shorter side < 44 CSS px, `measured: { width, height }`),
+`text-size` (font < 16 CSS px), `contrast` (< 4.5:1, < 3:1 from 24 CSS px; `measured: { median,
+worstQuartile }` — a worst quartile far below the median is a busy background under the text) —
+each with `node`, `threshold` and a box drawn over the node on `sheet.png` (red tap, orange font,
+dashed magenta contrast). They are warnings (exit 0): fix each, or say in the report why it stays —
+a board cell under 44 px is allowed with that sentence (AGENTS.md). `notMeasured` is a caption whose
+contrast could not be read (the reason given): judge it on the tile yourself. Icons are not
+checked. Then open `sheet-blur.png` (the same sheet blurred): on each tile the first thing that
+jumps out must be the focal point the GDD's **Screens** line names for that screen; if something
+else wins, the hierarchy is wrong.
+
 Report each visual finding as **where → principle → what it costs the player → fix**; first what
 hurts play (unreadable, untappable, no focus), then polish. A finding with no cost to the player
 is marked as taste.

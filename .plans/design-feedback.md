@@ -366,6 +366,44 @@ define и место вставки в шейдере).
 мелкую кнопку и неконтрастную подпись, рамки видны на листе, `screens.json` перечисляет
 нарушения; README (`pix3 play` → screen gallery), kit `pix3-verify` → Screens обновлены.
 
+**Сделано (2026-11-23).** Перед снимком плитки галерея ставит раннер на паузу и рисует кадр;
+страница меряет его (`packages/vite-plugin/player/debug/screen-checks.ts`, в page-debug бандле CLI:
+`measureScreen`, `hideCaptions`), кадр снимается трижды — как есть, ещё раз, без подписей; у
+картинки в `screens.json` поле `checks` `{ viewport, targets, texts, violations, notMeasured }`,
+нарушение — `{ check: tap-size | text-size | contrast, node, type, name, measured, threshold, box }`
+(CSS px вьюпорта). Exit не меняется. Рамки — в `index.html` (CSS-оверлей по процентам плитки), их
+фотографирует тот же Chrome в `sheet.png`; `sheet-blur.png` — тот же лист без рамок (класс `plain`)
+с гауссом σ = 1.5 % ширины первой плитки (три box-прохода, `packages/cli/src/image/blur.ts`, кодек
+CLI). Решения:
+- **Источник «интерактивных».** В `InputService` реестра нет (только `claimUIPointer` /
+  `getUIHoverTarget`); нажатие получает то, что выбирает `UIControl2D.findPointerTarget`. Он стал
+  публичным `pointerTargetAt(x, y)`, его проверка одного контрола — `acceptsPressAt(x, y)`
+  (поведение не менялось); `InputService.syncElementSize()` берёт размер канваса как нажатие
+  (был частью `computePointerPosition`). Цель = контрол, чей `acceptsPressAt` принимает точку;
+  площадь меряется опросом этого теста по экрану (заливка от origin с шагом 1 CSS px, затем точные
+  стороны бисекцией через центр вдоль направлений самой узкой ширины выпуклой оболочки), поэтому
+  fit, safe area, Camera2D, overlay и край экрана учтены, а повёрнутый узел даёт свои стороны —
+  в том виде, в каком его пикает рантайм (у `Button2D` попадание не учитывает поворот и масштаб —
+  мерится то, что получает палец). Перекрытая цель: ни в одной из ≤ 64 проб `pointerTargetAt` не
+  вернул её. Узел, который скрипт проверяет сам (`containsScreenPoint` в событии указателя),
+  перечислить нельзя — так и написано в README.
+- **4.2: проверка первым шагом пройдена.** На фикстуре в этом headless Chrome (SwiftShader): пауза +
+  `renderOnce`, снимок A, ещё раз без рендера и 7 раз после `renderOnce` — 0 различающихся
+  пикселей при DPR 1, 2, 3; кадр без подписей отличается на 3829 / 10858 / 30334 px. Поэтому 4.2
+  сделан, а не отложен. Нарушение — по медиане; худший квартиль (фон на стороне текста) сообщается рядом. Ядро
+  маски — половина пикселей с наибольшим изменением (край глифа — полуфон); при обводке ядро
+  делится на два цвета разбиением Оцу, берётся лучший. Шрифт ≥ 24 CSS px — порог 3:1.
+- Проверяется только итоговая картинка плитки, не `bot.screenshot` политики.
+- Фикстура — `packages/cli/fixtures/screen-checks/` (вне `src`, не в пакете): `npx vite build` и
+  `pix3 play dist --screens`. Прогон (dist, 390x844@2, @3 и 1280x720@1; и dev-сервер @2):
+  `tap-size small-button 120×24 < 44` (на 1280×720 — 102.4×20.5), `text-size fine-print 12 px < 16`
+  (10.2 px), `contrast faint-caption 1.25:1 < 3` (#808080 на #707070, руками 1.254; на 1280×720
+  шрифт 20.5 px → 1.22:1 < 4.5), на 1280×720 ещё `text-size small-button 15.4 px`; кнопка «Play»
+  200×64 и белые подписи — без замечаний; `notMeasured` пуст. Спеки: математика и `measureScreen`
+  на headless-игре при DPR 1 и 3 × fit по умолчанию / `minScale: 1` (`screen-checks.spec.ts`
+  плеера), контраст и сборка нарушений (`cli/src/play/screen-checks.spec.ts`), размытие
+  (`blur.spec.ts`). В CI галерея в Chrome не гоняется.
+
 ---
 
 ## Вне объёма

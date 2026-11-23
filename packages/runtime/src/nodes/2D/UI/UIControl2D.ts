@@ -584,7 +584,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
         this.isPointInBounds(this.candidateWorld) &&
         this.isPointerAllowedByAncestorScrollContainers(this.candidateWorld) &&
         this.input?.claimUIPointer(candidate.pointerId, this, () =>
-          this.findPointerTarget(candidate)
+          this.pointerTargetAt(candidate.x, candidate.y)
         )
       )
         return resolved;
@@ -592,8 +592,28 @@ export abstract class UIControl2D extends Node2D implements Interactive {
     return null;
   }
 
-  /** Hit-test in paint order before a callback can reveal another control under this pointer. */
-  private findPointerTarget(candidate: CandidatePointer): UIControl2D | ColorRect2D | null {
+  /**
+   * Whether a press at this point (input units) would land on this control by its own test:
+   * enabled, visible, `acceptsPointerInput`, inside its bounds and its scroll containers' — what
+   * {@link pointerTargetAt} asks of every control. Public for whatever measures the press areas
+   * as the runtime picks them (`pix3 play --screens`); a game has no use for it.
+   */
+  acceptsPressAt(screenX: number, screenY: number): boolean {
+    if (!this.acceptsPointerInput || !this.enabled || !this.isVisibleInTree()) return false;
+    const point = this.screenPointToWorld(screenX, screenY, this.candidateWorld);
+    return (
+      !!point &&
+      this.isPointInBounds(point) &&
+      this.isPointerAllowedByAncestorScrollContainers(point)
+    );
+  }
+
+  /**
+   * The node a press at this point (input units) goes to: the topmost control that accepts it or
+   * a `ColorRect2D` that blocks it, in paint order (the overlay band above, then z). Hit-tested
+   * before a callback can reveal another control under the pointer; public for the same measuring.
+   */
+  pointerTargetAt(screenX: number, screenY: number): UIControl2D | ColorRect2D | null {
     let root: Object3D = this;
     while (root.parent) root = root.parent;
     const sceneRoots = this.scene?.getRootNodes();
@@ -604,16 +624,9 @@ export abstract class UIControl2D extends Node2D implements Interactive {
     for (const sceneRoot of roots) {
       sceneRoot.traverse(node => {
         if (node instanceof ColorRect2D) {
-          if (!node.blocksPointerAt(candidate.x, candidate.y)) return;
+          if (!node.blocksPointerAt(screenX, screenY)) return;
         } else if (node instanceof UIControl2D) {
-          if (!node.acceptsPointerInput || !node.enabled || !node.isVisibleInTree()) return;
-          const point = node.screenPointToWorld(candidate.x, candidate.y, node.candidateWorld);
-          if (
-            !point ||
-            !node.isPointInBounds(point) ||
-            !node.isPointerAllowedByAncestorScrollContainers(point)
-          )
-            return;
+          if (!node.acceptsPressAt(screenX, screenY)) return;
         } else return;
         let ancestor = node as Node2D;
         let layer = 0;
@@ -746,12 +759,7 @@ export abstract class UIControl2D extends Node2D implements Interactive {
   private getPhysicalHoverTarget(pointer: ResolvedPointer): object | null {
     return (
       this.input?.getUIHoverTarget(pointer.pointerId, pointer.screenX, pointer.screenY, () =>
-        this.findPointerTarget({
-          pointerId: pointer.pointerId,
-          x: pointer.screenX,
-          y: pointer.screenY,
-          down: pointer.down,
-        })
+        this.pointerTargetAt(pointer.screenX, pointer.screenY)
       ) ?? null
     );
   }

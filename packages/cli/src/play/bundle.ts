@@ -12,8 +12,9 @@ import type { Plugin } from 'esbuild';
  *   editor-core (`__PIX3_PLAYER__.loadTools()`), so this one is only for pages without it.
  *   Published package: prebuilt into `dist/play/prebuilt/page-test-host.js` at `prepack`
  *   (`scripts/build-play.mjs`); a repo checkout builds it into a temp folder from the sources;
- * - the **debug** script (`--profile`, `--tree`) — `FrameProfile` and `liveTree` from the player's
- *   debug sources (`packages/vite-plugin/player/debug/profile.ts`, `tree.ts`), one IIFE that sets
+ * - the **debug** script (`--profile`, `--tree`, `--screens`) — `FrameProfile`, `liveTree` and the
+ *   gallery's screen checks from the player's debug sources
+ *   (`packages/vite-plugin/player/debug/profile.ts`, `tree.ts`, `screen-checks.ts`), one IIFE that sets
  *   `window.__PIX3_PAGE_DEBUG_HOST__`; built beside the host, so a built page is profiled and its
  *   tree read without the player shipping any of it;
  * - the **policy** for a built page — the project's `design/tests/bots/<name>.ts`, compiled at run
@@ -109,7 +110,8 @@ export const buildPlayBundle = async (
       contents:
         "import { startPageProfile } from './profile';\n" +
         "import { liveTree } from './tree';\n" +
-        'window.__PIX3_PAGE_DEBUG_HOST__ = { startPageProfile, liveTree };\n',
+        "import { hideCaptions, measureScreen } from './screen-checks';\n" +
+        'window.__PIX3_PAGE_DEBUG_HOST__ = { startPageProfile, liveTree, measureScreen, hideCaptions };\n',
       resolveDir: playerDebugSrc,
       sourcefile: 'page-debug-entry.ts',
       loader: 'ts',

@@ -40,6 +40,14 @@ import {
   type GridPlay,
   type GridValue,
 } from './grid.ts';
+import { decodePng, encodePng } from '../image/png.ts';
+import { blurImage } from '../image/blur.ts';
+import {
+  screenChecks,
+  type CheckFrames,
+  type PageMeasure,
+  type ScreenChecks,
+} from './screen-checks.ts';
 import {
   formatScreensHuman,
   loadScreens,
@@ -103,6 +111,11 @@ interface PlayArgs {
   /** With a bot: the budget in game frames (1/60 s each), whatever the page's frame rate. */
   readonly frames: number;
   readonly screenshot?: string;
+  /**
+   * The gallery's checks on the `screenshot` (`--screens` sets it): the runner paused, the page
+   * measured and the frame taken twice and once without captions (`screen-checks.ts`).
+   */
+  readonly screenChecks?: boolean;
   /** Where `bot.screenshot(name)` pictures go (default beside --screenshot, else .pix3/screenshots). */
   readonly shots?: string;
   readonly json: boolean;
@@ -877,12 +890,17 @@ const playScreens = async (
       if (typeof url !== 'string') return broken(url.error);
       const browserContext = await chrome.createContext();
       try {
-        const { report, failed } = await playOnce(
+        const {
+          report,
+          failed,
+          screen: captured,
+        } = await playOnce(
           chrome,
           {
             ...runArgs,
             run: { ...(screen.overrides as PlayArgs['run']), ...runArgs.run },
             screenshot: file,
+            screenChecks: true,
             shots: join(out, stem),
             // A policy's wall-clock net; --seconds is how long a page without one runs.
             ...(screen.policy ? { seconds: DEFAULT_BOT_WALL_SECONDS } : {}),
@@ -908,12 +926,14 @@ const playScreens = async (
               ]
             : []),
         ];
+        const checks = captured && checksOf(captured, runArgs.scale);
         return {
           ...base,
           ...(report.screenshot ? { file: report.screenshot } : {}),
           status: failed || errors.length > 0 ? 'error' : 'ok',
           errors,
           shots: report.screenshots ?? [],
+          ...(checks ? { checks } : {}),
         };
       } catch (error) {
         return broken((error as Error).message);
@@ -930,11 +950,14 @@ const playScreens = async (
     )
   );
   const sheet = join(out, 'sheet.png');
-  const sheetError = await drawSheet(chrome, html, sheet).catch((error: Error) => error.message);
+  const blurred = join(out, 'sheet-blur.png');
+  const sheetError = await drawSheet(chrome, html, sheet, blurred).catch(
+    (error: Error) => error.message
+  );
   const report: ScreensReport = {
     out,
     html,
-    ...(sheetError ? {} : { sheet }),
+    ...(sheetError ? {} : { sheet, blurred }),
     pictures,
   };
   writeFileSync(join(out, 'screens.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -944,11 +967,39 @@ const playScreens = async (
   return pictures.some(picture => picture.status === 'error') ? 1 : 0;
 };
 
+/** A picture's checks from its capture; frames that do not decode leave contrast unmeasured. */
+const checksOf = (captured: ScreenCapture, scale: number): ScreenChecks | { error: string } => {
+  if ('error' in captured) return { error: `not checked: ${captured.error}` };
+  const measure = captured.measure ?? { viewport: { width: 0, height: 0 }, targets: [], texts: [] };
+  let frames: CheckFrames | null = null;
+  try {
+    frames = {
+      shown: decodePng(captured.shown),
+      again: decodePng(captured.again),
+      bare: decodePng(captured.bare),
+    };
+  } catch {
+    // An empty or broken capture: the sizes still stand, the contrast is "not measured".
+  }
+  return screenChecks(measure, frames, scale);
+};
+
 /** Chrome's longest screenshot side; a taller sheet is drawn scaled down to it. */
 const MAX_SHEET_PX = 16_000;
 
-/** `index.html` of the gallery photographed whole, at 1 CSS px a pixel (or scaled to fit). */
-const drawSheet = async (chrome: PipeChrome, html: string, png: string): Promise<null> => {
+/** The squint test's blur: σ as a share of a tile's width. */
+const BLUR_OF_TILE = 0.015;
+
+/**
+ * `index.html` of the gallery photographed whole, at 1 CSS px a pixel (or scaled to fit): with the
+ * checks' boxes into `png`, and without them, blurred (`BLUR_OF_TILE`), into `blurred`.
+ */
+const drawSheet = async (
+  chrome: PipeChrome,
+  html: string,
+  png: string,
+  blurred: string
+): Promise<null> => {
   const session = await chrome.openPage();
   try {
     await chrome.send(
@@ -957,29 +1008,36 @@ const drawSheet = async (chrome: PipeChrome, html: string, png: string): Promise
       session
     );
     await chrome.send('Page.navigate', { url: pathToFileURL(html).href }, session);
-    type Size = { width: number; height: number };
+    type Size = { width: number; height: number; tile: number };
     let size = null as Size | null;
     for (const deadline = Date.now() + 20_000; !size && Date.now() < deadline; ) {
       await sleep(100);
       size = (await chrome
         .evaluate(
           session,
-          `document.readyState === 'complete' && [...document.images].every(i => i.complete) ? { width: document.body.scrollWidth, height: document.body.scrollHeight } : null`
+          `document.readyState === 'complete' && [...document.images].every(i => i.complete) ? { width: document.body.scrollWidth, height: document.body.scrollHeight, tile: document.querySelector('figure img')?.getBoundingClientRect().width ?? 0 } : null`
         )
         .catch(() => null)) as Size | null;
     }
     if (!size) throw new Error('the sheet page did not load in 20 s');
-    const scale = Math.min(1, MAX_SHEET_PX / Math.max(size.width, size.height));
-    const shot = (await chrome.send(
-      'Page.captureScreenshot',
-      {
-        format: 'png',
-        captureBeyondViewport: true,
-        clip: { x: 0, y: 0, width: size.width, height: size.height, scale },
-      },
-      session
-    )) as { data?: string };
-    writeFileSync(png, Buffer.from(shot.data ?? '', 'base64'));
+    const { width, height, tile } = size;
+    const scale = Math.min(1, MAX_SHEET_PX / Math.max(width, height));
+    const shoot = async (): Promise<Buffer> => {
+      const shot = (await chrome.send(
+        'Page.captureScreenshot',
+        {
+          format: 'png',
+          captureBeyondViewport: true,
+          clip: { x: 0, y: 0, width, height, scale },
+        },
+        session
+      )) as { data?: string };
+      return Buffer.from(shot.data ?? '', 'base64');
+    };
+    writeFileSync(png, await shoot());
+    await chrome.evaluate(session, `document.body.classList.add('plain'), true`);
+    const plain = decodePng(await shoot());
+    writeFileSync(blurred, encodePng(blurImage(plain, tile * scale * BLUR_OF_TILE)));
     return null;
   } finally {
     await chrome.send('Page.close', {}, session).catch(() => undefined);
@@ -1015,7 +1073,7 @@ const playOnce = async (
   chrome: PipeChrome,
   args: PlayArgs,
   context: PlayContext
-): Promise<{ report: PlayReport; failed: boolean }> => {
+): Promise<{ report: PlayReport; failed: boolean; screen?: ScreenCapture }> => {
   const { io, url, root, policyName, policyFile, replayFile, replayPath, tag } = context;
   const errors: string[] = [];
   const session = await chrome.openPage(context.browserContext);
@@ -1097,7 +1155,7 @@ const playOnce = async (
     const shots: { name: string; frame: number; path: string }[] = [];
     const driven = status === 'running' && (args.bot !== undefined || args.gameRun !== null);
     const pageScripts =
-      status === 'running' && (args.profile || args.tree || driven)
+      status === 'running' && (args.profile || args.tree || args.screenChecks || driven)
         ? await context.pageScripts()
         : null;
     /**
@@ -1449,8 +1507,15 @@ const playOnce = async (
     }
 
     let screenshotPath: string | undefined;
+    let screen: ScreenCapture | undefined;
     if (args.screenshot) {
-      const png = await capture();
+      let png: Buffer;
+      if (args.screenChecks && pageScripts) {
+        screen = await captureChecked(chrome, session, pageScripts.debug, capture).catch(
+          (error: Error) => ({ error: error.message })
+        );
+        png = 'shown' in screen ? screen.shown : await capture();
+      } else png = await capture();
       screenshotPath = resolve(io.cwd, args.screenshot);
       mkdirSync(dirname(screenshotPath), { recursive: true });
       writeFileSync(screenshotPath, png);
@@ -1485,10 +1550,40 @@ const playOnce = async (
       ...(recorded ? { recorded } : {}),
       ...(replayReport ? { replay: replayReport } : {}),
     };
-    return { report, failed };
+    return { report, failed, ...(screen ? { screen } : {}) };
   } finally {
     unlisten();
   }
+};
+
+/** `--screens`: one paused frame measured and taken as shown, again, and without captions. */
+type ScreenCapture =
+  | { measure: PageMeasure | null; shown: Buffer; again: Buffer; bare: Buffer }
+  | { error: string };
+
+const captureChecked = async (
+  chrome: PipeChrome,
+  session: string,
+  debugScript: string,
+  capture: () => Promise<Buffer>
+): Promise<ScreenCapture> => {
+  const page = (expression: string): Promise<unknown> =>
+    chrome.evaluate(
+      session,
+      `(() => { const host = window.__PIX3_PAGE_DEBUG_HOST__; const runner = window.__PIX3_PLAYER__.runner; return ${expression}; })()`
+    );
+  await chrome.evaluate(session, `${debugScript}\n;true`);
+  await page('(runner.pause(), runner.renderOnce(), true)');
+  const measure = (await page(
+    'JSON.parse(JSON.stringify(host.measureScreen(runner)))'
+  )) as PageMeasure | null;
+  const shown = await capture();
+  await page('runner.renderOnce()');
+  const again = await capture();
+  await page('host.hideCaptions(runner, true)');
+  const bare = await capture();
+  await page('host.hideCaptions(runner, false)');
+  return { measure, shown, again, bare };
 };
 
 /** The policy a `--run` plays, if any (`{"bot": {"name": …}}`). */

@@ -894,11 +894,41 @@ project's locales, `localization:` or `locales/*.json`; the axis wins over a sta
 `--only a,b` picks states. Into `--shots <dir>` (default `.pix3/screenshots/screens-<time>/`):
 `<name>.<locale>.<size>.png`, `index.html` — the contact sheet, a row per state, each tile
 labelled in its corner as on `pix3 render`'s sheet, an errored one outlined red — `sheet.png`
-(that page photographed by the same Chrome; scaled down past 16000 px) and `screens.json`
-(`{ out, html, sheet, pictures: [{ screen, locale, size, file, status, errors, shots }] }`, also
-`--json`). The flags that set a run (`--bot`, `--run`, `--seed`, `--config`, `--storage`,
-`--scene`, `--golden`, `--record`, …) are refused: they belong in a state. Exit 1 when a picture
-errored (a page error, a policy that did not end `done(true)`), 2 when the list does not load.
+(that page photographed by the same Chrome; scaled down past 16000 px), `sheet-blur.png` (the
+same sheet without the check boxes, under a gaussian blur of σ = 1.5 % of the first tile's width —
+the squint test) and `screens.json` (`{ out, html, sheet, blurred, pictures: [{ screen, locale, size,
+file, status, errors, shots, checks }] }`, also `--json`). The flags that set a run (`--bot`,
+`--run`, `--seed`, `--config`, `--storage`, `--scene`, `--golden`, `--record`, …) are refused: they
+belong in a state. Exit 1 when a picture errored (a page error, a policy that did not end
+`done(true)`), 2 when the list does not load — never for a check.
+
+**The checks.** Before each picture the runner is paused and a frame drawn; the page measures it
+(`packages/vite-plugin/player/debug/screen-checks.ts`) and the frame is taken three times: as shown
+(the picture), again (it must match itself pixel for pixel), and with every caption hidden. `checks`
+of a picture: `{ viewport, targets, texts, violations, notMeasured }` — `viewport` the page in CSS
+px, `targets` / `texts` how many were measured, each violation `{ check, node, type, name,
+measured, threshold, box }` with `box` in the viewport's CSS px:
+
+- `tap-size` — a press target's shorter side under 44 CSS px; `measured` `{ width, height }`. A
+  target is what the runtime picks (`UIControl2D.acceptsPressAt`, the test `pointerTargetAt`
+  asks), measured by asking that test across the screen, so the design fit, the safe area, a
+  Camera2D and the screen's edge are in it and a rotated control gives its own sides; a disabled
+  one and one covered by a blocker (`blocksPointerInput`) or another control are left out. A node
+  a script hit-tests itself (`containsScreenPoint` on a pointer event) is not a target here.
+- `text-size` — a caption's font (`labelFontSize` through every scale to the screen, not the
+  glyphs' height) under 16 CSS px; `measured` in CSS px.
+- `contrast` — under 4.5:1, or 3:1 from 24 CSS px; `measured` `{ median, worstQuartile }`. The
+  glyph mask is where the shown and the captionless frames differ inside the caption's box; the
+  text colour is the shown frame there (as drawn: opacity, effects), the background the other one;
+  with an outline the better of fill and outline counts; `worstQuartile` is against the
+  background's quartile nearest the text (a busy background). A caption it cannot read — the frame
+  did not repeat itself, or no glyph pixel is on the picture — is in `notMeasured` with the reason,
+  never estimated. Icons are not checked.
+
+On `sheet.png` each violation is a box over its node (red a target, orange a font, dashed magenta
+a contrast; `index.html` shows the finding on hover); the human report lists them under the
+picture. Warnings, not failures: a board of cells under 44 px is allowed when the report says why
+(kit `AGENTS.md`). Only the end picture is checked, not a policy's `bot.screenshot` tiles.
 
 **The run grid.** List values make one run per combination, each a fresh load in a browser context
 of its own (`Target.createBrowserContext`: its own storage), with `--bot` or `--run`:

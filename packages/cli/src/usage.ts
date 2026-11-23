@@ -540,9 +540,13 @@ Reference it from a scene or script as res://<path inside the project>.
                  done(true) on the state (its bot.screenshot pictures are kept too); without one the
                  picture is taken after --seconds (default 2). --only a,b picks states. Writes
                  <name>.<locale>.<size>.png, index.html (the contact sheet: a row per state),
-                 sheet.png (its picture) and screens.json into --shots (default
-                 .pix3/screenshots/screens-<time>/); exit 1 when a picture errored (a page error, a
-                 policy that did not end done(true)), 2 when the list is unusable
+                 sheet.png (its picture, a box over each flagged node), sheet-blur.png (the sheet
+                 blurred: the squint test) and screens.json into --shots (default
+                 .pix3/screenshots/screens-<time>/). Each picture's checks: tap-size (a press
+                 target's shorter side < 44 CSS px), text-size (font < 16 CSS px), contrast (< 4.5:1,
+                 3:1 from 24 CSS px) — warnings with node, measured value and threshold. Exit 1
+                 when a picture errored (a page error, a policy that did not end done(true)), 2
+                 when the list is unusable; never for a check
 
   Exit 0 = the page ran frames, nothing threw, the bot or the run passed (an until met, or the
   policy's done(true)) and a --golden matched; 1 = errors, a failed or crashed bot, a run that

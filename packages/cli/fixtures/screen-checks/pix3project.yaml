@@ -1,0 +1,10 @@
+version: 1.0.0
+defaultExportScenePath: scenes/main.pix3scene
+viewportBaseSize:
+  width: 390
+  height: 844
+projectType: 2d
+targetPlatform: mobile
+metadata:
+  projectName: Screen checks
+autoloads: []

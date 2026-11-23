@@ -940,21 +940,10 @@ export class InputService {
    * the caller knows whether this event belongs to the primary one.
    */
   private computePointerPosition(event: PointerEvent): { x: number; y: number } {
-    if (!this.element) {
-      return { x: this.pointerPosition.x, y: this.pointerPosition.y };
-    }
-
-    // Calculate position relative to the element
-    const rect = this.element.getBoundingClientRect();
-    const dimensions = this.getInputDimensions();
-    this.width = dimensions.width;
-    this.height = dimensions.height;
-
-    const safeRectWidth = rect.width > 0 ? rect.width : 1;
-    const safeRectHeight = rect.height > 0 ? rect.height : 1;
-    const scaleX = this.width / safeRectWidth;
-    const scaleY = this.height / safeRectHeight;
-    this.unitsPerCssPx = scaleX > 0 ? scaleX : 1;
+    const rect = this.syncElementSize();
+    if (!rect) return { x: this.pointerPosition.x, y: this.pointerPosition.y };
+    const scaleX = this.width / (rect.width > 0 ? rect.width : 1);
+    const scaleY = this.height / (rect.height > 0 ? rect.height : 1);
 
     // An injected input is a fraction of the canvas: this canvas's size, whatever the recording's.
     const injected = this.injectedFraction;
@@ -963,6 +952,23 @@ export class InputService {
     const y = (event.clientY - rect.top) * scaleY;
 
     return { x, y };
+  }
+
+  /**
+   * Take the element's size the way a press does: `width` / `height` (input units) and
+   * {@link unitsPerCssPx} follow the canvas now, not as of the last pointer event. Returns the
+   * element's CSS rect, or null while detached. For a press and for whatever has to measure the
+   * screen as the next press will see it (`pix3 play --screens`).
+   */
+  syncElementSize(): DOMRect | null {
+    if (!this.element) return null;
+    const rect = this.element.getBoundingClientRect();
+    const dimensions = this.getInputDimensions();
+    this.width = dimensions.width;
+    this.height = dimensions.height;
+    const scaleX = this.width / (rect.width > 0 ? rect.width : 1);
+    this.unitsPerCssPx = scaleX > 0 ? scaleX : 1;
+    return rect;
   }
 
   /** Where the event is, as a fraction of the canvas (an injected input carries its own). */

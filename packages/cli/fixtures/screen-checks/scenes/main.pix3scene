@@ -1,0 +1,76 @@
+# The gallery's checks on known sizes (design 390×844 = CSS px at --size 390x844): a 120×24 button
+# (too small to tap), a 200×64 one (fine), a 12 px caption (too small to read), a grey caption on a
+# grey panel (too faint) and a white one on the dark background (fine).
+version: 1.0.0
+root:
+  - id: game-root
+    type: Group2D
+    name: Game Root
+    properties:
+      width: 390
+      height: 844
+      layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
+    children:
+      - id: background
+        type: ColorRect2D
+        name: Background
+        properties:
+          color: "#1a1a2e"
+          layout: { enabled: true, horizontalAlign: stretch, verticalAlign: stretch, left: 0, right: 0, top: 0, bottom: 0 }
+        children: []
+      - id: panel
+        type: ColorRect2D
+        name: Panel
+        properties:
+          width: 300
+          height: 80
+          color: "#707070"
+          transform: { position: [0, 250], scale: [1, 1], rotation: 0 }
+        children: []
+      - id: faint-caption
+        type: Label2D
+        name: Faint Caption
+        properties:
+          label: "Faint words"
+          labelFontSize: 24
+          labelColor: "#808080"
+          transform: { position: [0, 250], scale: [1, 1], rotation: 0 }
+        children: []
+      - id: title
+        type: Label2D
+        name: Title
+        properties:
+          label: "Readable title"
+          labelFontSize: 24
+          labelColor: "#ffffff"
+          transform: { position: [0, 120], scale: [1, 1], rotation: 0 }
+        children: []
+      - id: fine-print
+        type: Label2D
+        name: Fine Print
+        properties:
+          label: "tiny fine print"
+          labelFontSize: 12
+          labelColor: "#ffffff"
+          transform: { position: [0, 60], scale: [1, 1], rotation: 0 }
+        children: []
+      - id: small-button
+        type: Button2D
+        name: Small Button
+        properties:
+          width: 120
+          height: 24
+          label: "Go"
+          labelFontSize: 18
+          transform: { position: [0, -60], scale: [1, 1], rotation: 0 }
+        children: []
+      - id: big-button
+        type: Button2D
+        name: Big Button
+        properties:
+          width: 200
+          height: 64
+          label: "Play"
+          labelFontSize: 24
+          transform: { position: [0, -200], scale: [1, 1], rotation: 0 }
+        children: []
