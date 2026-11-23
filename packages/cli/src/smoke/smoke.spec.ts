@@ -410,6 +410,37 @@ export class Ads extends Script {
     ).toBeUndefined();
   });
 
+  it('--json reports every scene.haptics call with its frame, though nothing buzzes headless', async () => {
+    const root = project({
+      'scenes/main.pix3scene': scene(component('user:Buzz')),
+      'scripts/Buzz.ts': script(
+        'Buzz',
+        `  onUpdate(): void {
+    this.frames += 1;
+    if (this.frames === 2) this.scene?.haptics.play('light');
+  }`
+      ),
+    });
+    let out = '';
+    const io = { cwd: root, stdout: (text: string) => void (out += text), stderr: () => {} };
+    expect(await runSmokeCli([MAIN, '--frames', '3', '--json'], io)).toBe(0);
+    expect((JSON.parse(out) as { haptics: unknown }).haptics).toEqual({
+      calls: 1,
+      byKind: { light: 1 },
+      byResult: { unavailable: 1 },
+      eventsDropped: 0,
+      events: [{ kind: 'light', result: 'unavailable', frame: 1 }],
+    });
+    out = '';
+    expect(await runSmokeCli([MAIN, '--frames', '3'], io)).toBe(0);
+    expect(out).toContain('haptics: 1 call(s) (light 1; unavailable 1)');
+    // A game that never calls haptics says so: 0 is what a touch game must not report.
+    const quiet = project({ 'scenes/main.pix3scene': scene('') });
+    expect(
+      asReport(await runSmoke({ projectRoot: quiet, scene: MAIN, frames: 1 })).haptics
+    ).toMatchObject({ calls: 0, events: [] });
+  });
+
   it('--golden: --write pins the end state and the events, a later run matches or names the paths', async () => {
     const root = project({
       'scenes/main.pix3scene': scene(component('user:Count')),

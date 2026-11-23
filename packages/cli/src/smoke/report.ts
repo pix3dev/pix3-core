@@ -105,6 +105,12 @@ export interface SmokeReport {
    * events dropped before a sink was added, and the last 500 events with their frames.
    */
   readonly analytics?: SmokeAnalytics;
+  /**
+   * What the game asked of `scene.haptics` (absent only when the run never got a scene): every
+   * `play` / `vibrate` call counted by kind and result, the last 500 with their frames. Headless
+   * nothing can buzz, so every call is `unavailable` — the count is what matters.
+   */
+  readonly haptics?: SmokeHaptics;
   /** `--record`: the recording's text (the CLI writes it to the file and drops it from the report). */
   readonly recording?: string;
   /** `--replay`: how the recording played back. */
@@ -156,6 +162,29 @@ export const analyticsSummary = (analytics: SmokeAnalytics): string => {
   const dropped = analytics.dropped > 0 ? `, ${analytics.dropped} dropped before a sink` : '';
   return `analytics: ${analytics.total} event(s) tracked (${shown})${dropped}`;
 };
+
+/** One human line for a run's `scene.haptics` (shared by `pix3 smoke` and `pix3 play`). */
+export const hapticsSummary = (haptics: SmokeHaptics): string => {
+  const counts = (record: Readonly<Record<string, number>>): string =>
+    Object.entries(record)
+      .map(([key, count]) => `${key} ${count}`)
+      .join(', ');
+  if (haptics.calls === 0) return 'haptics: 0 calls';
+  return `haptics: ${haptics.calls} call(s) (${counts(haptics.byKind)}; ${counts(haptics.byResult)})`;
+};
+
+/** The runtime's `HapticsRunReport`; a grid's row drops the events. */
+export interface SmokeHaptics {
+  readonly calls: number;
+  readonly byKind: Readonly<Record<string, number>>;
+  readonly byResult: Readonly<Record<string, number>>;
+  readonly eventsDropped?: number;
+  readonly events?: readonly {
+    readonly kind: string;
+    readonly result: string;
+    readonly frame: number;
+  }[];
+}
 
 export interface SmokeAnalytics {
   readonly total: number;

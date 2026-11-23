@@ -270,9 +270,10 @@ export class SceneService {
    * Touch feedback: `play(kind)` (`'selection' | 'light' | 'medium' | 'heavy' | 'success' |
    * 'warning' | 'error'`, throttled), raw `vibrate(ms | [on, off, on…])` / `stop()`,
    * `setEnabled(on)`, `available`. `navigator.vibrate` unless the shell set `setHapticsAdapter`;
-   * quiet false where nothing buzzes (iOS Safari, Node, a hidden tab); never throws.
+   * quiet false where nothing buzzes (iOS Safari, Node, a hidden tab); never throws. Every call is
+   * recorded with its frame and result for the run report (`pix3 play / smoke --json`).
    */
-  readonly haptics = new HapticsApi();
+  readonly haptics = new HapticsApi(() => this.frame);
 
   /**
    * The game's save: `get(key, fallback)` (a copy), `set` / `remove` / `clear`, `await flush()`,

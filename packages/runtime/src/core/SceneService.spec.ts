@@ -491,6 +491,7 @@ describe('scene.haptics (core-tests/game15)', () => {
       expect(calls).toEqual([30, [20, 40, 20], 0]);
       Object.defineProperty(nav, 'vibrate', { configurable: true, value: undefined });
       expect(service.haptics.vibrate(30)).toBe(false);
+      expect(service.haptics.runReport().byResult).toEqual({ played: 2, unavailable: 1 });
     } finally {
       if (saved) Object.defineProperty(nav, 'vibrate', saved);
       else delete (nav as { vibrate?: unknown }).vibrate;

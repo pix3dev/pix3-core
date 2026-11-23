@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type { CliIo } from '../io.ts';
-import type { SmokeAnalytics } from '../smoke/report.ts';
+import type { SmokeAnalytics, SmokeHaptics } from '../smoke/report.ts';
 import {
   diffGolden,
   formatGoldenHuman,
@@ -160,6 +160,8 @@ export interface GridRun {
   readonly frames?: number;
   /** The game's `registerGameDebug` snapshot at the end, or null. */
   readonly game: unknown;
+  /** The run's `scene.haptics` counts (no events; not aggregated over the grid). */
+  readonly haptics?: Pick<SmokeHaptics, 'calls' | 'byKind' | 'byResult'>;
   /** What went wrong, in one line each. */
   readonly errors: readonly string[];
   /** `--check-determinism`: the paths the second run ended differently on (none = same). */
@@ -272,7 +274,7 @@ export const formatGridHuman = (runs: readonly GridRun[], aggregate: GridAggrega
         : ` DIFFERS-TWICE (${run.determinism.paths.slice(0, 3).join(', ')}${run.determinism.paths.length > 3 ? ', …' : ''})`
       : '';
     lines.push(
-      `  ${run.combo.label.padEnd(width)}  ${run.verdict.toUpperCase().padEnd(5)}${run.frames !== undefined ? ` f${run.frames}` : ''}${same}  ${state.length > 100 ? `${state.slice(0, 99)}…` : state}`
+      `  ${run.combo.label.padEnd(width)}  ${run.verdict.toUpperCase().padEnd(5)}${run.frames !== undefined ? ` f${run.frames}` : ''}${run.haptics ? ` haptics ${run.haptics.calls}` : ''}${same}  ${state.length > 100 ? `${state.slice(0, 99)}…` : state}`
     );
     for (const error of run.errors.slice(0, 3)) lines.push(`      error: ${error}`);
   }
@@ -320,6 +322,7 @@ export interface GridPlay {
   readonly frames?: number;
   readonly game: unknown;
   readonly analytics?: SmokeAnalytics;
+  readonly haptics?: SmokeHaptics;
   readonly errors: readonly string[];
 }
 
@@ -358,6 +361,15 @@ export const runGrid = async (options: {
       verdict: first.verdict,
       ...(first.frames !== undefined ? { frames: first.frames } : {}),
       game: first.game,
+      ...(first.haptics
+        ? {
+            haptics: {
+              calls: first.haptics.calls,
+              byKind: first.haptics.byKind,
+              byResult: first.haptics.byResult,
+            },
+          }
+        : {}),
       errors: first.errors,
       ...(determinism ? { determinism } : {}),
     };

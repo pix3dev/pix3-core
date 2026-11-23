@@ -7,6 +7,7 @@ import {
   gridCombos,
   parseSeedList,
   parseSizeList,
+  runGrid,
   runPool,
   type GridRun,
 } from './grid.ts';
@@ -92,5 +93,42 @@ describe('run grid', () => {
     });
     expect(results).toEqual([0, 10, 20, 30, 40]);
     expect(peak).toBe(2);
+  });
+
+  it('a combination carries its haptics counts (no events); the aggregate leaves them out', async () => {
+    let out = '';
+    const grid = (json: boolean) =>
+      runGrid({
+        combos: gridCombos({ seed: [{ value: 1, label: 'seed=1' }] }),
+        parallel: 1,
+        checkDeterminism: false,
+        io: { cwd: '/', stdout: text => void (out += text), stderr: () => {} },
+        json,
+        golden: null,
+        goldenRead: null,
+        play: async () => ({
+          verdict: 'pass',
+          game: { score: 1 },
+          haptics: {
+            calls: 2,
+            byKind: { light: 2 },
+            byResult: { unavailable: 2 },
+            eventsDropped: 0,
+            events: [{ kind: 'light', result: 'unavailable', frame: 4 }],
+          },
+          errors: [],
+        }),
+      });
+    expect(await grid(true)).toBe(0);
+    const parsed = JSON.parse(out) as { runs: { haptics: unknown }[]; aggregate: object };
+    expect(parsed.runs[0].haptics).toEqual({
+      calls: 2,
+      byKind: { light: 2 },
+      byResult: { unavailable: 2 },
+    });
+    expect(JSON.stringify(parsed.aggregate)).not.toContain('haptics');
+    out = '';
+    await grid(false);
+    expect(out).toContain('PASS  haptics 2');
   });
 });

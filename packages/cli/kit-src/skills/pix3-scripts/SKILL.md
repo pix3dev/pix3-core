@@ -318,7 +318,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   is one buzz). Raw `vibrate(30)` / `vibrate([20, 40, 20])` / `stop()`; `setEnabled(false)` for
   the player's settings toggle; `available`. A quiet `false` where nothing buzzes (desktop, iOS Safari, a hidden tab) —
   iOS needs a native shell that calls `setHapticsAdapter({ play(kind), vibrate(pattern) })`
-  (Capacitor Haptics, `pix3-mobile`); never `navigator.vibrate` directly.
+  (Capacitor Haptics, `pix3-mobile`); never `navigator.vibrate` directly. Every call shows in the
+  run report (`haptics` of `pix3 smoke --json` / `pix3 play --json`) with its frame, buzz or not.
 - Intents: `scene.commands.register('name', handler, { description })`, `dispatch(name)`. A
   handler that cannot do it (a swap that matches nothing) returns `false`: `dispatch` — and a
   bot's `bot.command()` — answers `false`.

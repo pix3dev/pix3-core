@@ -447,10 +447,13 @@ and indented otherwise, cut only past 4 000 characters (`--json` always carries 
 `--json` prints `{ ok, scene, frames, framesRequested, firstFrameOk, errors:
 [{ code, frame, script?, nodeId?, nodeName?, phase?, message, stack?, domAccess? }], warnings,
 nodes: { start, end }, timingsMs: { compile, load, firstFrame, step: { total, mean, p95, max },
-total }, scripts, domMissing, notes, game, logs, analytics? }` — `game` is the `registerGameDebug` provider's
+total }, scripts, domMissing, notes, game, logs, analytics?, haptics }` — `game` is the `registerGameDebug` provider's
 `snapshot()` at the end (when the game registers one), `logs` the first `console.log` lines,
 frame-stamped, `analytics` what the game tracked through `scene.analytics` (`{ total, dropped,
-events: [{ name, props, frame }] }`, the last 500; absent when it tracked nothing). Stacks are source-mapped to the project's files. With no scene argument `--json`
+events: [{ name, props, frame }] }`, the last 500; absent when it tracked nothing), `haptics` every
+`scene.haptics` call (`{ calls, byKind, byResult, eventsDropped, events: [{ kind, result, frame }] }`,
+the last 500; headless every result is `unavailable` — the count is the point; one human line).
+Stacks are source-mapped to the project's files. With no scene argument `--json`
 prints `{ ok, selection: "changed" | "all", reason, changed?, runs: [<that report, per scene>] }`.
 `--golden <file.json> [--write] [--tolerance …]` pins the run's end (one named scene) — see
 "Goldens" below.
@@ -904,7 +907,8 @@ ru,en`, and `--config` / `--bot-args` / `--storage` repeated or given a file hol
 `--parallel N` runs N at a time (each page paints in software — mind the cores);
 `--check-determinism` plays every combination twice and names the `gameState`/`analytics` paths
 on which the two ends differ. The report is a row per combination (its label — the axes that vary
-—, verdict `pass` / `fail` / `crash` / `error`, the bot's frames, the snapshot, its errors) and the
+—, verdict `pass` / `fail` / `crash` / `error`, the bot's frames, `haptics` counts `{ calls, byKind,
+byResult }` without events, the snapshot, its errors) and the
 aggregate (`--json`: `{ runs, aggregate, golden? }`): the share of each verdict; `numbers` — every
 number in the snapshots by path (`gameState.score`; an array counts by `….length`) with `n`, `min`,
 `median`, `p90` (linear between ranks), `max`, six significant digits; `outcomes` — every string or
@@ -941,7 +945,9 @@ The report carries `sounds: { requested, last: [{ sound, frame }] }` read from t
 game asked for no sound; `pix3_game_run` answers the same field for its run. Likewise
 `analytics: { total, dropped, events: [{ name, props, frame }] }` — what the game tracked through
 `scene.analytics` (the last 500 events, sink or no sink), absent when it tracked nothing; the human
-report prints the event names. `--golden <file.json> [--write] [--tolerance …]` pins the end of a
+report prints the event names. `haptics` is the same field as `pix3 smoke`'s (every
+`scene.haptics` call with its frame and result; on a desktop page all `unavailable`); never part of
+a golden. `--golden <file.json> [--write] [--tolerance …]` pins the end of a
 `--bot` / `--run` round (the snapshot and those events) — see "Goldens" above.
 
 `--tree` prints the running game's object tree at the end of the run (`tree` in `--json`:

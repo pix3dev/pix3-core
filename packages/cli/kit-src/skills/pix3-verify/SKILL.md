@@ -167,6 +167,11 @@ button, no part of the board inside a magenta band. `--no-safe-area-overlay` tak
 for a clean picture. The report also lists the sounds the game asked to play
 (`sounds: N requested`, and in `--json` `sounds.last` = `[{sound, frame}]`, a clip path or
 `sfx:<preset>`) — nobody listens to a headless page, so this is how a run proves a match clicks.
+Haptics likewise (`pix3 smoke` too): `haptics: N call(s)`, in `--json` `haptics.calls`,
+`byKind`, `byResult` and `events` = `[{kind, result, frame}]`. A run where the player touched
+things and `haptics.calls` is 0 is a defect: add `haptics.play` beside the effects (`pix3-scripts` →
+Juice). Headless and on a desktop every `byResult` is `unavailable` — expected, not a failure;
+`throttled` is a burst merged into one buzz, `off` the player's toggle.
 No editor, no MCP: it works from a subagent and in CI.
 
 `--run '<json>'` is `pix3_game_run` without the editor: the same params (`until`/`fail`

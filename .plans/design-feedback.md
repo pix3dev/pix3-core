@@ -294,6 +294,22 @@ define и место вставки в шейдере).
 (`pix3 play` / `pix3 smoke`), kit `pix3-scripts` / `pix3-verify` обновлены (в verify — «вибраций:
 0 при касаниях — дефект»).
 
+**Сделано (2026-11-23).** `HapticsApi` пишет каждый `play` / `vibrate` (`note`): `calls`, `byKind`
+(вид или `vibrate`; неизвестный вид — как передан, результат `unavailable`), `byResult`, последние
+500 событий `{ kind, result, frame }` и `eventsDropped`; `runReport()` (`@internal`), кадр —
+`scene.frame` через конструктор (`new HapticsApi(frameOf)`, по умолчанию 0). Возврат `play` /
+`vibrate` и пропуск по весу не менялись; `stop()` — не вызов. В `--json` у `pix3 smoke` и `pix3 play`
+поле `haptics` есть всегда, когда была сцена (в отличие от `analytics` — `calls: 0` и есть
+сигнал), человеческая строка `haptics: N call(s) (light 1; unavailable 1)` / `haptics: 0 calls`.
+`pix3 play` читает отчёт со страницы через `__PIX3_PLAYER__.runner` — менять плеер не пришлось.
+Решения: в сетке — счётчики `{ calls, byKind, byResult }` в строке комбинации (без событий) и
+`haptics N` в таблице, агрегат их не считает. Golden: `goldenOf` берёт только `gameState` и
+`analytics`, вибрации в файл попасть не могут — отдельной спеки не добавлял. Спеки: `HapticsApi`
+(каждый результат, кадр, ограничение списка, бросающий адаптер), `SceneService`, `smoke.spec`
+(`pix3 smoke --json` на фикстуре со `haptics.play('light')` — вызов на кадре 1, `unavailable`;
+игра без вызовов — `calls: 0`), `grid.spec`. Не проверено: `pix3 play` в Chrome (выражение
+чтения то же, что у `audio.requested`).
+
 ---
 
 ## Этап 4. Проверки в галерее экранов

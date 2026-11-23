@@ -38,6 +38,7 @@ import { compileAndImportScripts } from './compile-scripts.ts';
 import { installDomShim } from './dom-shim.ts';
 import type {
   SmokeAnalytics,
+  SmokeHaptics,
   SmokeError,
   SmokeErrorCode,
   SmokeJob,
@@ -403,6 +404,13 @@ export const runSmokeJob = async (
     } catch (thrown) {
       notes.push(`scene.analytics could not be read: ${describeThrown(thrown).message}`);
     }
+    let haptics: SmokeHaptics | null = null;
+    try {
+      const report = runner?.getLiveRootNodes()[0]?.scene?.haptics.runReport() ?? null;
+      if (report) haptics = JSON.parse(JSON.stringify(report));
+    } catch (thrown) {
+      notes.push(`scene.haptics could not be read: ${describeThrown(thrown).message}`);
+    }
     const warnings = [...warningsByKey.values()].map(({ warning, count }) =>
       count > 1 ? { ...warning, count } : warning
     );
@@ -438,6 +446,7 @@ export const runSmokeJob = async (
       game,
       logs: { count: logCount, lines: logs },
       ...(analytics ? { analytics } : {}),
+      ...(haptics ? { haptics } : {}),
       ...(recorder ? { recording: recorder.finish() } : {}),
       ...(replay ? { replay: replay as SmokeReplay } : {}),
       ...(botReport ? { bot: botReport } : {}),

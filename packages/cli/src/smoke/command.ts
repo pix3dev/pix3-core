@@ -13,6 +13,7 @@ import { isRecord } from '../validate/yaml-doc.ts';
 import { SMOKE_WORKER_FILE, withSmokeBundle } from './entry.ts';
 import {
   analyticsSummary,
+  hapticsSummary,
   isSmokeFailure,
   type SmokeFailure,
   type SmokeFailureCode,
@@ -689,6 +690,7 @@ export const formatSmokeHuman = (outcome: SmokeOutcome, root: string): string =>
     );
   }
   if (report.analytics) lines.push(`  ${analyticsSummary(report.analytics)}`);
+  if (report.haptics) lines.push(`  ${hapticsSummary(report.haptics)}`);
   if (report.bot) {
     const { name, done, error } = report.bot;
     lines.push(
@@ -978,6 +980,7 @@ const smokeGrid = async (
           frames: outcome.bot?.frames ?? outcome.frames,
           game: outcome.game?.snapshot ?? null,
           ...(outcome.analytics ? { analytics: outcome.analytics } : {}),
+          ...(outcome.haptics ? { haptics: outcome.haptics } : {}),
           errors: [
             ...outcome.errors.map(error => `frame ${error.frame} ${error.code}: ${error.message}`),
             ...(outcome.bot?.error ? [outcome.bot.error.message] : []),
