@@ -1,6 +1,6 @@
 # Pix3 plugin for Claude Code
 
-One skill, `new-project`: creates a Pix3 game project (`npm create pix3@next`, `npm install`,
+One skill, `new-project`: creates a Pix3 game project (`npm create pix3@latest`, `npm install`,
 `pix3 agent-setup claude`) and hands over to a Claude Code session in the new folder.
 
 ```text

@@ -2,7 +2,7 @@
 
 Pix3 2.x: the Pix3 editor as a Vite plugin. A game is a plain Vite + TypeScript project; `@pix3/vite-plugin` serves the editor on the same dev server at `/__pix3/`, writes scene edits back to the files, and builds playable HTML. Coding agents (Codex, Claude Code) work on the same files and drive the open editor through Chrome DevTools MCP.
 
-> **Status: development alpha.** `2.0.0-alpha.4` is on npm under the `next` tag. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy), the archived 1.x browser editor.
+> **Status: development alpha.** `2.0.0-alpha.N` is on npm: `create-pix3`, `@pix3/editor-core` and `@pix3/vite-plugin` on `latest`, `@pix3/runtime` and `@pix3/cli` under `next`. Cross-platform checks and end-to-end dogfood are still being completed. The 1.6.x packages on `latest` come from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy), the archived 1.x browser editor.
 
 ## Quick start: make a game with an AI agent
 
@@ -18,7 +18,7 @@ In Claude Code you can skip step 1 and let the agent do it: add the Pix3 plugin 
 1. Create the project in a terminal (pick `2d` or `3d`) and install it:
 
    ```bash
-   npm create pix3@next my-game -- --template 2d
+   npm create pix3@latest my-game -- --template 2d
    cd my-game
    npm install
    npx pix3 agent-setup claude    # or: codex — lets the agent use the editor in Chrome
@@ -87,7 +87,7 @@ Do not leave layout and polish to the human merely because an editor is availabl
 | [`packages/cli`](packages/cli)                 | `@pix3/cli`         | `pix3 new`, `validate`, `check`, `smoke`, `tree`, `sfx`, `kit`, `character-compile`, `editor`, `agent-setup`, `gap` |
 | [`packages/vite-plugin`](packages/vite-plugin) | `@pix3/vite-plugin` | Editor at `/__pix3/`, file API, sync barrier, build                                                                 |
 | [`packages/editor-core`](packages/editor-core) | `@pix3/editor-core` | The editor UI (Lit), prebuilt                                                                                       |
-| [`packages/create-pix3`](packages/create-pix3) | `create-pix3`       | `npm create pix3@next <dir> -- --template 2d\|3d`                                                                   |
+| [`packages/create-pix3`](packages/create-pix3) | `create-pix3`       | `npm create pix3@latest <dir> -- --template 2d\|3d`                                                                 |
 
 ## Development
 
@@ -108,7 +108,7 @@ Docs: [`docs/pix3-specification.md`](docs/pix3-specification.md) (version of rec
 
 ## Releasing
 
-Versions are lockstep (`2.0.0-alpha.N` for all five packages, plan §A.3); internal dependencies are pinned to that exact version, and a new project's `@pix3/*` versions are the same number (`{{PIX3_VERSION}}` is the CLI's own version). Every package has `publishConfig: { access: "public", tag: "next" }`, so a prerelease never lands on `latest` (which stays 1.6.x from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy)) even without `--tag`.
+Versions are lockstep (`2.0.0-alpha.N` for all five packages, plan §A.3); internal dependencies are pinned to that exact version, and a new project's `@pix3/*` versions are the same number (`{{PIX3_VERSION}}` is the CLI's own version). Every package has `publishConfig.access: "public"` and a `publishConfig.tag` that says where its prerelease goes: `next` for `@pix3/runtime` and `@pix3/cli`, whose `latest` stays 1.6.x from [`pix3-editor-legacy`](https://github.com/pix3dev/pix3-editor-legacy) until `2.0.0`; `latest` for `@pix3/editor-core`, `@pix3/vite-plugin` and `create-pix3`, which have no stable line — so a bare `npm create pix3` gets the current alpha. The tag is chosen at publish time because Trusted Publishing cannot move a dist-tag afterwards; `release:check` refuses a manifest whose tag differs (`PRERELEASE_TAG` in `scripts/release-check.mjs`).
 
 **1. Bump** (on a clean `main`):
 
@@ -134,37 +134,31 @@ It runs `npm pack` for every package into a temp dir (each `prepack` builds what
 git push origin main v2.0.0-alpha.N
 ```
 
-`.github/workflows/publish.yml` (npm Trusted Publishing, OIDC: no token, provenance attached by npm) checks that the tag equals the root version, runs `npm ci`, lint, type-check, tests and the full `npm run release:check`, then `npm publish` for each package in dependency order — a prerelease to `next`, a plain `X.Y.Z` to `latest`. A version already on npm is skipped, so re-running a failed run finishes the publish. Actions → "Publish" → Run workflow is a dry run (`npm publish --dry-run`) unless it runs on a `v*` tag with `dry_run` off. On npmjs.com every package's trusted publisher must be repository `pix3dev/pix3-core`, workflow `publish.yml`, environment `npm` (the GitHub environment `npm` can carry a required reviewer).
+`.github/workflows/publish.yml` (npm Trusted Publishing, OIDC: no token, provenance attached by npm) checks that the tag equals the root version, runs `npm ci`, lint, type-check, tests and the full `npm run release:check`, then `npm publish` for each package in dependency order — a prerelease to the package's `publishConfig.tag`, a plain `X.Y.Z` to `latest`. A version already on npm is skipped, so re-running a failed run finishes the publish. Actions → "Publish" → Run workflow is a dry run (`npm publish --dry-run`) unless it runs on a `v*` tag with `dry_run` off. On npmjs.com every package's trusted publisher must be repository `pix3dev/pix3-core`, workflow `publish.yml`, environment `npm` (the GitHub environment `npm` can carry a required reviewer).
 
 By hand instead, in dependency order, from a logged-in npm account with 2FA and publish rights on the `@pix3` scope (and on `create-pix3`):
 
 ```bash
-cd packages/runtime     && npm publish --tag next && cd ../..
-cd packages/editor-core && npm publish --tag next && cd ../..
-cd packages/vite-plugin && npm publish --tag next && cd ../..
-cd packages/cli         && npm publish --tag next && cd ../..
-cd packages/create-pix3 && npm publish --tag next && cd ../..
+cd packages/runtime     && npm publish && cd ../..
+cd packages/editor-core && npm publish && cd ../..
+cd packages/vite-plugin && npm publish && cd ../..
+cd packages/cli         && npm publish && cd ../..
+cd packages/create-pix3 && npm publish && cd ../..
 git push origin main v2.0.0-alpha.N
 ```
 
-or from the root, one at a time in the same order: `npm publish -w packages/runtime --tag next`, then `-w packages/editor-core`, `-w packages/vite-plugin`, `-w packages/cli`, `-w packages/create-pix3`. npm asks for the 2FA code (or pass `--otp <code>`). `prepack` builds `editor-core`, `vite-plugin` and `cli` again, so publish from the commit `release:check` passed on. The final `2.0.0` goes out with `--tag latest`, which overrides `publishConfig.tag` (CI picks it from the version).
+or from the root, one at a time in the same order: `npm publish -w packages/runtime`, then `-w packages/editor-core`, `-w packages/vite-plugin`, `-w packages/cli`, `-w packages/create-pix3`. npm asks for the 2FA code (or pass `--otp <code>`). `prepack` builds `editor-core`, `vite-plugin` and `cli` again, so publish from the commit `release:check` passed on. `publishConfig.tag` picks the dist-tag; the final `2.0.0` goes out with `--tag latest`, which overrides it (CI picks it from the version).
 
 **4. Verify:**
 
 ```bash
-npm view @pix3/runtime dist-tags      # latest: 1.6.x, next: 2.0.0-alpha.N (the same for every package)
-npm view create-pix3 dist-tags
-npm create pix3@next my-game -- --template 2d --yes
+npm view @pix3/runtime dist-tags      # latest: 1.6.x, next: 2.0.0-alpha.N (the same for @pix3/cli)
+npm view create-pix3 dist-tags        # latest: 2.0.0-alpha.N (the same for editor-core, vite-plugin)
+npm create pix3@latest my-game -- --template 2d --yes
 cd my-game && npm install && npm run check && npm run build
 ```
 
-**5. Move `latest` where there is no stable release.** npm always keeps a `latest` tag, and Trusted Publishing cannot move a dist-tag (OIDC covers `npm publish` only). `@pix3/editor-core`, `@pix3/vite-plugin` and `create-pix3` have no 1.x, so their `latest` would stay on an old alpha — and a bare `npm create pix3` takes `latest`. The publish run's summary lists each package whose `latest` lags with the command; from a logged-in account with 2FA:
-
-```bash
-for p in @pix3/editor-core @pix3/vite-plugin create-pix3; do npm dist-tag add "$p@2.0.0-alpha.N" latest; done
-```
-
-`@pix3/runtime` and `@pix3/cli` keep `latest` on 1.6.x until `2.0.0`.
+**5. Nothing to move by hand.** `latest` of `@pix3/editor-core`, `@pix3/vite-plugin` and `create-pix3` is set by the publish itself (their `publishConfig.tag`); their `next` stays on `2.0.0-alpha.12`, the last alpha published there — use `@latest` for them. `@pix3/runtime` and `@pix3/cli` keep `latest` on 1.6.x until `2.0.0`.
 
 ## License
 

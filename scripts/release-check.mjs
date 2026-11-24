@@ -3,7 +3,7 @@
 //
 // 1. `npm pack` every workspace package into a temp dir outside the repo (its `prepack` builds
 //    included, as `npm publish` runs it), prints name / size / file count of each tarball.
-// 2. Checks each tarball: the manifest (no `private`, `publishConfig.tag` = `next` for a prerelease, lockstep version,
+// 2. Checks each tarball: the manifest (no `private`, `publishConfig.tag` — see `PRERELEASE_TAG`, lockstep version,
 //    internal dependencies pinned to exactly that version, licence, every `main` / `bin` / `exports`
 //    target present, LICENSE and README present) and the contents — no specs, fixtures, plans,
 //    test harnesses, stray source maps, the Spine runtime (plan §A.3: its licence forbids
@@ -181,14 +181,30 @@ const promisedPaths = pkg => {
   return [...new Set(paths.map(path => path.replace(/^\.\//, '')))];
 };
 
+/**
+ * Where a prerelease of each package goes (its `publishConfig.tag`, which the publish workflow
+ * honours). `@pix3/runtime` and `@pix3/cli` have a stable 1.x on `latest`, so a 2.0 alpha goes to
+ * `next`; the other three have no stable line, so `latest` IS their alpha (a bare
+ * `npm create pix3` takes it) — published there directly, because Trusted Publishing cannot move a
+ * dist-tag afterwards.
+ */
+const PRERELEASE_TAG = {
+  '@pix3/runtime': 'next',
+  '@pix3/cli': 'next',
+  '@pix3/editor-core': 'latest',
+  '@pix3/vite-plugin': 'latest',
+  'create-pix3': 'latest',
+};
+
 const checkManifest = (dir, pkg, files) => {
   const where = pkg.name ?? dir;
   if (pkg.private) fail(where, '"private": true — npm publish refuses it');
   if (pkg.version !== version) fail(where, `version ${pkg.version}, root is ${version}`);
-  if (version.includes('-') && pkg.publishConfig?.tag !== 'next') {
+  const wanted = PRERELEASE_TAG[pkg.name] ?? 'next';
+  if (version.includes('-') && pkg.publishConfig?.tag !== wanted) {
     fail(
       where,
-      `publishConfig.tag is ${pkg.publishConfig?.tag ?? 'unset'}; prereleases go to "next"`
+      `publishConfig.tag is ${pkg.publishConfig?.tag ?? 'unset'}; its prereleases go to "${wanted}"`
     );
   }
   if (pkg.name.startsWith('@') && pkg.publishConfig?.access !== 'public') {

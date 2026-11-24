@@ -7,8 +7,11 @@ name: Publish
 #   2. Manual: Actions → "Publish" → Run workflow. On a `v*` tag ref with `dry_run` off it
 #      publishes; anywhere else it is a dry run (`npm publish --dry-run`, nothing leaves CI).
 #
-# A prerelease goes to `next`, a plain `X.Y.Z` to `latest`. A package whose version is already
-# on npm is skipped, so re-running a half-failed publish finishes it.
+# A prerelease goes to each package's `publishConfig.tag` — `next` for @pix3/runtime and @pix3/cli
+# (their `latest` is 1.6.x), `latest` for the three with no stable release (scripts/release-check.mjs
+# → PRERELEASE_TAG); a plain `X.Y.Z` goes to `latest` everywhere. Trusted Publishing cannot move a
+# dist-tag, so the tag is chosen at publish time. A package whose version is already on npm is
+# skipped, so re-running a half-failed publish finishes it.
 #
 # npmjs.com: each package's trusted publisher must name pix3dev/pix3-core, workflow `publish.yml`,
 # environment `npm`.
@@ -59,7 +62,8 @@ jobs:
           DRY_INPUT: ${{ inputs.dry_run }}
         run: |
           version=$(node -p "require('./package.json').version")
-          if [[ "$version" == *-* ]]; then tag=next; else tag=latest; fi
+          # Empty for a prerelease: each package publishes to its own publishConfig.tag.
+          if [[ "$version" == *-* ]]; then tag=; else tag=latest; fi
           dry=true
           if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" == v* ]]; then
             if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
@@ -71,7 +75,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "dry=$dry" >> "$GITHUB_OUTPUT"
-          echo "### $version → \`$tag\`$([[ $dry == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
+          echo "### $version$([[ $dry == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
 
       - run: npm ci
       - run: npm run lint
@@ -96,35 +100,9 @@ jobs:
               echo "- $name@$VERSION: already published" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
-            flags=(--tag "$TAG")
+            tag=${TAG:-$(node -p "require('./packages/$dir/package.json').publishConfig.tag")}
+            flags=(--tag "$tag")
             [[ "$DRY" == true ]] && flags+=(--dry-run)
             npm publish -w "packages/$dir" "${flags[@]}"
-            echo "- $name@$VERSION → \`$TAG\`$([[ $DRY == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
+            echo "- $name@$VERSION → \`$tag\`$([[ $DRY == true ]] && echo ' (dry run)')" >> "$GITHUB_STEP_SUMMARY"
           done
-
-      # Trusted Publishing cannot move a dist-tag, so `latest` of a package with no stable release
-      # (editor-core, vite-plugin, create-pix3 — a bare `npm create pix3` takes it) is moved by hand:
-      # README → "Releasing" step 5. This step only says when it lags, with the command.
-      - name: Packages whose latest lags
-        if: steps.plan.outputs.dry == 'false' && steps.plan.outputs.tag == 'next'
-        env:
-          VERSION: ${{ steps.plan.outputs.version }}
-        run: |
-          lagging=()
-          for dir in runtime editor-core vite-plugin cli create-pix3; do
-            name=$(node -p "require('./packages/$dir/package.json').name")
-            latest=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
-            # A package with a stable release keeps latest on it until the stable 2.0.0.
-            if [[ -n "$latest" && "$latest" != *-* ]]; then continue; fi
-            if [[ "$latest" != "$VERSION" ]]; then lagging+=("$name"); fi
-          done
-          if (( ${#lagging[@]} )); then
-            msg="latest lags on ${lagging[*]} — npm dist-tag add <pkg>@$VERSION latest (README → Releasing, step 5)"
-            echo "::warning::$msg"
-            {
-              echo "### \`latest\` to move by hand"
-              echo '```bash'
-              echo "for p in ${lagging[*]}; do npm dist-tag add \"\$p@$VERSION\" latest; done"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi

@@ -35,7 +35,7 @@ Say what you chose in one line.
 Run these as they are; `--yes` keeps npm and `create-pix3` from prompting.
 
 ```bash
-npm create --yes pix3@next <folder> -- --template <2d|3d> [--portrait] --yes
+npm create --yes pix3@latest <folder> -- --template <2d|3d> [--portrait] --yes
 cd <folder>
 npm install
 npx pix3 agent-setup claude
