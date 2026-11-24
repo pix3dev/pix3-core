@@ -1003,7 +1003,9 @@ frames longer than 33.4 ms), the game's **work per frame** (every tick's logic p
 **activities** the game reports through `scene.reportFrameProfilerActivities` (self ms per tick,
 mean and max; the engine reports none of its own), **renderer counters** of the painted frames
 (draw calls and triangles mean / max, geometries, textures, programs, and programs linked during
-the window — each one a main-thread stall), **JS heap** (start, end, peak; Chrome is launched with
+the window — each one a main-thread stall; it is the net change of the program count, so a
+program linked and deleted again inside the window — a shader variant only freed nodes used —
+reads 0: suspect that when render p99 / max spikes with a flat count), **JS heap** (start, end, peak; Chrome is launched with
 `--enable-precise-memory-info`), the Long Animation Frames, and the device with its GPU string.
 
 How the numbers are kept honest: the first second (and at least 5 frames) after the profile

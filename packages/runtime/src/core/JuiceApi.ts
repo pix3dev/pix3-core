@@ -229,9 +229,15 @@ export class JuiceApi {
    *
    * An authored `core:flash` is borrowed, never changed: its colour, `amount` and `enabled` come
    * back exactly when the flash ends (and a save never sees the flash). Without one, the effect is
-   * added for the run and left at `amount` 0 for the next hit. A call during a flash restarts its
-   * timer. The first flash of a node recompiles its shader — call
-   * `hitFlash(node, { amount: 0 })` in `onStart` for a target hit at a tense moment.
+   * added for the run and left at `amount` 0 for the next hit (the sprite rejoins the 2D batcher
+   * between hits). A call during a flash restarts its timer.
+   *
+   * Shader cost: a flash moves uniforms only — the added effect is compiled in from the first
+   * flash on and its start and end never switch the material's program. Nodes of one kind share
+   * the flash variant (one program cache key), and the runner holds it for the run
+   * ({@link SceneService.holdShaderPrograms}), so freeing the flashed nodes does not delete it: the
+   * first flash of a variant in a run compiles it once, right here, and no later hit compiles
+   * anything. Nothing to warm up.
    *
    * Returns whether it flashed; a node without a shader-effect stack (`Label2D`, `SpineSkeleton2D`,
    * a group) warns once and does nothing.
@@ -250,9 +256,14 @@ export class JuiceApi {
       return false;
     }
     const stack = node.getShaderEffectStack();
-    if (!stack.get(HIT_FLASH) && !stack.attach(HIT_FLASH, { transient: true })) {
+    const authored = stack.get(HIT_FLASH);
+    if (!authored && !stack.attach(HIT_FLASH, { transient: true })) {
       return false;
     }
+    // An authored, disabled flash switches its material to the flash variant and back: both are
+    // held, so neither is linked again for the next node of the same kind.
+    if (authored && !authored.enabled)
+      this.scene.holdShaderPrograms(node, stack.installedMaterials);
     const color =
       typeof options.color === 'string' && options.color.trim() ? options.color.trim() : '#ffffff';
     const requested = options.amount ?? 1;
@@ -263,6 +274,9 @@ export class JuiceApi {
     const requestedSec = options.durationSec ?? HIT_FLASH_SEC;
     const durationSec = Number.isFinite(requestedSec) ? Math.max(0, requestedSec) : HIT_FLASH_SEC;
     stack.override(HIT_FLASH, { color, amount });
+    // The flash variant's program outlives this node (it is often freed right after the hit), so
+    // the next node flashed links nothing; the first flash of a variant compiles it here.
+    this.scene.holdShaderPrograms(node, stack.installedMaterials);
     this.hitFlashes.set(stack, {
       endSec: this.scene.time.unscaledElapsedSec + durationSec,
       shown: false,

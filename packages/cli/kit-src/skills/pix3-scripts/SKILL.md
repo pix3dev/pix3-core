@@ -232,7 +232,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
     squash & stretch = `axis: 'y'`, −0.25 landing / 0.25 jump (width compensates; about the origin).
   - `hitFlash(target, { color: '#ffffff', durationSec: 0.06, amount: 1 })` — a `Sprite2D` /
     `AnimatedSprite2D` / `Button2D` / `GeometryMesh` turns flat colour, alpha kept (authored
-    `core:flash` restored after); warm it in `onStart` with `{ amount: 0 }` (first flash compiles).
+    `core:flash` restored after). Nothing to warm up: the first flash of a kind of node compiles its
+    shader once per session, in that call; later hits, on any node of that kind, compile nothing.
   - `popIn(target, { from: 0, duration: 0.4, ease: 'backOut' })` — `from` = start fraction of the node's resting scale (its scale when the pop first runs; an axis at 0 there rests at 1, so a node kept at `scale: [0, 0]` until its pop appears at full size). `easing` is accepted too.
   - `flash({ color: '#ffffff', intensity: 1, durationSec: 0.2 })` — full-screen, no target; runs on
     the game's unscaled time (plays through a hitstop, stops with a pause).

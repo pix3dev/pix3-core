@@ -169,7 +169,7 @@ export class AnimatedSprite2D
       nodeType: 'AnimatedSprite2D',
       target: 'basic',
       onAttachmentsChanged: () => {
-        this.mesh.userData[BATCHABLE_2D_KEY] = this.effectStack.isEmpty;
+        this.mesh.userData[BATCHABLE_2D_KEY] = this.effectStack.looksPlain;
       },
     });
     this.effectStack.install(this.material);

@@ -77,8 +77,12 @@ From `.plans/done/design-feedback.md` (2026-11-23), review findings left open on
 - **Run report**: `haptics` and `analytics` are read through the first live root, so a run that
   ends with no root loses them.
 - **`juice.hitFlash`**: not yet looked at on real pixels in Chrome (a sprite with transparent
-  edges); a sprite `hitFlash` added the effect to stays out of the 2D batcher for the rest of the
-  scene.
+  edges); the first flash of a variant in a session still compiles it synchronously in that call
+  (one hitch; `compileAsync` would need the flash to wait a frame); the program hold
+  (`ProgramKeeper`) cannot reproduce render-time clipping state, so a clipped (`ScrollContainer`)
+  flashed sprite may still compile per its own lifetime. Other effect variants only short-lived
+  nodes use (a `core:tint` on spawned sprites) are not held and still relink after the last such
+  node is freed (PipeBlast: the tint variant linked twice in a round).
 
 Known behaviour (owner's call): an agent's script or policy edit makes Vite full-reload every game
 page, the human's included. `three` stays a peer dependency of `@pix3/vite-plugin`.

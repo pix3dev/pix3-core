@@ -11,6 +11,7 @@ import { SceneSaver } from './SceneSaver';
 import { Sprite2D } from '../nodes/2D/Sprite2D';
 import { Node2D } from '../nodes/Node2D';
 import { REDUCED_MOTION_HIT_FLASH_AMOUNT } from './JuiceApi';
+import { BATCHABLE_2D_KEY } from './batch-2d';
 import type { AudioService } from './AudioService';
 import type { AssetLoader } from './AssetLoader';
 import type { ResourceManager } from './ResourceManager';
@@ -273,6 +274,82 @@ describe('juice.hitFlash', () => {
     expect(flash(sprite)).toBeDefined(); // kept for the next hit, no recompile then
   });
 
+  it('never changes the program its material draws with: start and end move uniforms only', () => {
+    const { service, gameTime } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    gameTime.advance(1 / 60);
+    service.juice.hitFlash(sprite, { durationSec: 0.06 });
+    const material = materialOf(sprite);
+    const variant = (): string =>
+      `${material.customProgramCacheKey()}|${Object.keys(material.defines ?? {}).join(',')}`;
+    const atFirstFlash = { variant: variant(), version: material.version };
+
+    for (let hit = 0; hit < 3; hit++) {
+      gameTime.advance(0.1);
+      service.updateJuice();
+      gameTime.advance(0.1);
+      service.updateJuice(); // ended
+      expect(amountOf(sprite)).toBe(0);
+      service.juice.hitFlash(sprite, { durationSec: 0.06 });
+      expect(amountOf(sprite)).toBe(1);
+    }
+    expect(variant()).toBe(atFirstFlash.variant);
+    expect(material.version).toBe(atFirstFlash.version); // no needsUpdate: no program switch
+  });
+
+  it('asks the runner to hold the flash variant’s program for the run', () => {
+    const { service } = makeHarness();
+    const held: { node: unknown; materials: unknown[] }[] = [];
+    const delegate = (service as unknown as { delegate: SceneServiceDelegate }).delegate;
+    delegate.holdShaderPrograms = (node, materials) =>
+      held.push({ node, materials: [...materials] });
+    const sprite = new Sprite2D({ id: 'target' });
+    service.juice.hitFlash(sprite);
+    expect(held).toEqual([{ node: sprite, materials: [materialOf(sprite)] }]);
+    expect(materialOf(sprite).defines?.PIX3_FX_FLASH).toBeDefined(); // the variant it holds
+
+    // An authored, disabled flash: the variant it returns to is held too, before the switch.
+    const authored = new Sprite2D({ id: 'authored' });
+    authored.attachEffect('core:flash', { enabled: false });
+    held.length = 0;
+    const defines: boolean[] = [];
+    delegate.holdShaderPrograms = () =>
+      defines.push('PIX3_FX_FLASH' in (materialOf(authored).defines ?? {}));
+    service.juice.hitFlash(authored);
+    expect(defines).toEqual([false, true]);
+  });
+
+  it('leaves the 2D batcher only while it flashes', () => {
+    const { service, gameTime } = makeHarness();
+    const sprite = new Sprite2D({ id: 'target' });
+    const batchable = (): unknown =>
+      (sprite.children.find(c => (c as unknown as Mesh).isMesh) as unknown as Mesh).userData[
+        BATCHABLE_2D_KEY
+      ];
+    expect(batchable()).toBe(true);
+    gameTime.advance(1 / 60);
+    service.juice.hitFlash(sprite, { durationSec: 0.06 });
+    expect(batchable()).toBe(false);
+    gameTime.advance(0.1);
+    service.updateJuice();
+    gameTime.advance(0.1);
+    service.updateJuice();
+    expect(batchable()).toBe(true); // the added flash at rest draws like no effect at all
+
+    const tinted = new Sprite2D({ id: 'tinted' });
+    tinted.attachEffect('core:tint', { params: { color: '#ff0000', amount: 1 } });
+    service.juice.hitFlash(tinted, { durationSec: 0.06 });
+    gameTime.advance(0.2);
+    service.updateJuice();
+    gameTime.advance(0.2);
+    service.updateJuice();
+    expect(
+      (tinted.children.find(c => (c as unknown as Mesh).isMesh) as unknown as Mesh).userData[
+        BATCHABLE_2D_KEY
+      ]
+    ).toBe(false); // an authored effect still draws itself
+  });
+
   it('keeps the alpha: the flash mixes the colour only, before the opaque write', () => {
     const { service } = makeHarness();
     const sprite = new Sprite2D({ id: 'target' });
@@ -360,7 +437,7 @@ describe('juice.hitFlash', () => {
     expect(materialOf(a)).not.toBe(materialOf(b));
     expect(flash(a)!.uniforms.uPix3FlashAmount).not.toBe(flash(b)!.uniforms.uPix3FlashAmount);
     expect(amountOf(a)).toBe(1);
-    expect(amountOf(b)).toBe(0); // the warm-up call: compiled in, nothing shown
+    expect(amountOf(b)).toBe(0); // amount 0: compiled in, nothing shown
   });
 
   it('plays at half strength under reduced motion', () => {

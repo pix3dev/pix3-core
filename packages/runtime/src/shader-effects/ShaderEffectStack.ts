@@ -42,8 +42,9 @@ export interface ShaderEffectStackOptions {
   /** Material family this stack drives (gates which effects can attach). */
   target: ShaderEffectTarget;
   /**
-   * Called after attach/detach (NOT on param edits or enable toggles). Hosts use
-   * it to sync side state such as the 2D batcher opt-out flag.
+   * Called after attach/detach and when an {@link ShaderEffectStack.override} starts or ends (NOT
+   * on param edits or enable toggles). Hosts use it to sync side state such as the 2D batcher
+   * opt-out flag ({@link ShaderEffectStack.looksPlain}).
    */
   onAttachmentsChanged?: () => void;
 }
@@ -131,6 +132,11 @@ export class ShaderEffectStack {
     material.customProgramCacheKey = () => shaderEffectsCacheKey(this.effects);
     this.materials.add(material);
     this.syncDefinesOn(material, true);
+  }
+
+  /** The materials this stack drives (the node's own, and in the editor its proxy's). */
+  get installedMaterials(): ReadonlySet<Material> {
+    return this.materials;
   }
 
   /** Unregister a material (editor proxy rebuild/dispose). */
@@ -247,6 +253,7 @@ export class ShaderEffectStack {
     if (!effect.overridden) {
       effect.overridden = true;
       if (!effect.enabled) this.syncDefines(true);
+      this.onAttachmentsChanged?.();
     }
     for (const [key, value] of Object.entries(params)) {
       const param = effect.info.params.find(p => p.key === key);
@@ -264,6 +271,7 @@ export class ShaderEffectStack {
     effect.overridden = false;
     this.applyParamsToUniforms(effect);
     if (!effect.enabled) this.syncDefines(true);
+    this.onAttachmentsChanged?.();
   }
 
   /** Read one param the way the inspector expects (vector2 → a fresh {x,y}). */
@@ -286,6 +294,16 @@ export class ShaderEffectStack {
 
   get isEmpty(): boolean {
     return this.effects.length === 0;
+  }
+
+  /**
+   * The material draws exactly what it would with no effects: none attached, or only transient
+   * ones (`juice.hitFlash`'s) not playing an override — those rest at their neutral params. A 2D
+   * host lets the batcher draw it then (the material, held out of the frame, keeps its compiled
+   * variant), so a flashed sprite rejoins its batch between hits.
+   */
+  get looksPlain(): boolean {
+    return this.effects.every(effect => effect.transient && !effect.overridden);
   }
 
   /**

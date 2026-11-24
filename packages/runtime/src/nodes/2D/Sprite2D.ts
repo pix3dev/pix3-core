@@ -114,10 +114,12 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
   private requestedTexturePath: string | null = null;
 
   /**
-   * Registry-backed shader effects on this sprite's material. While any effect
-   * is attached the mesh opts OUT of the 2D quad batcher (the batcher would draw
+   * Registry-backed shader effects on this sprite's material. While an effect
+   * changes what it draws the mesh opts OUT of the 2D quad batcher (the batcher would draw
    * it with its own stock material, dropping the injected GLSL); a passthrough
-   * mesh renders with its own effected material, so the injection just works.
+   * mesh renders with its own effected material, so the injection just works. A transient
+   * effect at rest (`juice.hitFlash` between hits) draws nothing extra, so it batches
+   * ({@link ShaderEffectStack.looksPlain}).
    */
   private readonly effectStack: ShaderEffectStack;
 
@@ -158,7 +160,7 @@ export class Sprite2D extends Node2D implements InstancePropertySchemaProvider, 
       nodeType: 'Sprite2D',
       target: 'basic',
       onAttachmentsChanged: () => {
-        this.mesh.userData[BATCHABLE_2D_KEY] = this.effectStack.isEmpty;
+        this.mesh.userData[BATCHABLE_2D_KEY] = this.effectStack.looksPlain;
       },
     });
     this.effectStack.install(this.material);

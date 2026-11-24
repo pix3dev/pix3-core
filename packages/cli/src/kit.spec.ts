@@ -456,6 +456,13 @@ describe('kit drift', () => {
     }
   });
 
+  it('asks for no hitFlash warm-up: the runner holds the flash variant (ProgramKeeper)', () => {
+    for (const [file, content] of texts) {
+      expect(content, file).not.toMatch(/hitFlash\([^)]*amount: 0|warm it in `onStart`/);
+    }
+    expect(text('.claude/skills/pix3-scripts/SKILL.md')).toContain('Nothing to warm up');
+  });
+
   it('calls only scene.* methods SceneService has, groups included', () => {
     // `this.scene.foo(…)` / `scene.foo(…)` in prose or code: `foo` must be a SceneService member
     // (a method or a getter such as `tween`, whose own members are not checked here).

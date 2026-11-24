@@ -1,5 +1,6 @@
 import {
   Camera,
+  Mesh,
   Scene,
   OrthographicCamera,
   Color,
@@ -7,8 +8,10 @@ import {
   Raycaster,
   Vector2,
   Vector3,
+  type Material,
   type Object3D,
 } from 'three';
+import { ProgramKeeper } from './program-keeper';
 import { SceneManager } from './SceneManager';
 import { RuntimeRenderer } from './RuntimeRenderer';
 import { InputService } from './InputService';
@@ -280,6 +283,11 @@ export class SceneRunner implements PlatformHost {
   private postFx: PostProcessingPipeline | null = null;
   /** Phase-3 2D quad batcher (only while enabled). Rebuilt from a fresh scene. */
   private batch2D: Batch2DSystem | null = null;
+  /**
+   * Shader programs held for the session (`holdShaderPrograms`); `null` once it turned out there
+   * is no WebGL renderer (a headless run), `undefined` before the first request.
+   */
+  private programKeeper: ProgramKeeper | null | undefined = undefined;
   private batch2DEnabled = false;
 
   /** Play-mode localization: its own instance so a game `setLocale` never leaks
@@ -943,6 +951,8 @@ export class SceneRunner implements PlatformHost {
     this.disposeLifecycle?.();
     this.disposeLifecycle = null;
     this.sceneService.app.clear();
+    this.programKeeper?.dispose();
+    this.programKeeper = undefined;
     platformHost.deactivate(this);
     this.pauseReasons.clear();
     this.audioService.setPaused(false);
@@ -2176,6 +2186,29 @@ export class SceneRunner implements PlatformHost {
     return null;
   }
 
+  /** See {@link SceneServiceDelegate.holdShaderPrograms}: the meshes under `node` drawing them. */
+  private holdShaderPrograms(node: NodeBase, materials: Iterable<Material>): void {
+    if (this.programKeeper === undefined) {
+      try {
+        this.programKeeper = new ProgramKeeper(this.renderer.getWebGLRenderer());
+      } catch {
+        this.programKeeper = null; // no GL context (headless): nothing to hold
+      }
+    }
+    const keeper = this.programKeeper;
+    if (!keeper) return;
+    const wanted = new Set(materials);
+    const camera =
+      node instanceof Node2D || !this.activeCamera
+        ? this.orthographicCamera
+        : this.activeCamera.camera;
+    node.traverse(object => {
+      if (!(object instanceof Mesh)) return;
+      const own = Array.isArray(object.material) ? object.material : [object.material];
+      if (own.some(material => wanted.has(material))) keeper.hold(object, camera, this.scene);
+    });
+  }
+
   private bindSceneServiceDelegate(): void {
     const runner = this;
     this.sceneService.setDelegate({
@@ -2229,6 +2262,9 @@ export class SceneRunner implements PlatformHost {
       },
       getFrameNumber(): number {
         return runner.frameNumber;
+      },
+      holdShaderPrograms(node: NodeBase, materials: Iterable<Material>): void {
+        runner.holdShaderPrograms(node, materials);
       },
       noteExternalCommand(name: string, args?: Record<string, unknown>): void {
         runner.runTap?.input({ kind: 'command', name, ...(args !== undefined ? { args } : {}) });

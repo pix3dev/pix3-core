@@ -457,7 +457,10 @@ game time accumulates separately.
   negative `amount` squashes first). Preset: `core:PunchScale`.
 - `hitFlash(target, { color, durationSec, amount })` — one node a flat colour for 0.06 s through
   its `core:flash` shader effect, on real time (shows during a hitstop); an authored `core:flash`
-  is restored exactly, an added one is never saved.
+  is restored exactly, an added one is never saved. A flash moves uniforms only; the variant is
+  shared by nodes of one kind and held by the runner for the session, so only the first flash of
+  a variant compiles (in that call) — however many flashed nodes are freed after. A node leaves
+  the 2D batcher only while its flash plays.
 - `popIn(target, { from, duration, easing })` — spawn pop from `from`× up to the
   authored scale with an overshoot easing. Preset: `core:PopIn` (plays on start). The resting
   scale is the node's scale when the pop first runs; an axis at 0 there rests at 1, so a node

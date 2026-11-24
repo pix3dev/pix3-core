@@ -95,6 +95,12 @@ export interface SceneServiceDelegate {
   raycastViewport(normalizedX: number, normalizedY: number): SceneRaycastHit | null;
   reportFrameProfilerActivities(activities: readonly FrameProfilerActivity[]): void;
   /**
+   * Keep the WebGL programs of `materials` (driven by meshes under `node`) alive for the run,
+   * compiling them now when they are new (the runner's `ProgramKeeper`). Optional: a delegate
+   * without a GL context does nothing.
+   */
+  holdShaderPrograms?(node: NodeBase, materials: Iterable<import('three').Material>): void;
+  /**
    * Read a `.pix3scene` by res:// path, parse it, and swap the running scene to
    * it. Resolves once the new scene's loop is ticking. Must NOT register the
    * graph in the shared SceneManager — the runner owns it exclusively.
@@ -389,6 +395,15 @@ export class SceneService {
    */
   updateJuice(): void {
     this.juiceApi?.update();
+  }
+
+  /**
+   * Keep the WebGL programs of `materials` alive for the run, compiled now when new — so a shader
+   * variant only short-lived nodes use is not linked again for each of them (`juice.hitFlash`).
+   * Nothing without a renderer (Node, a headless run).
+   */
+  holdShaderPrograms(node: NodeBase, materials: Iterable<import('three').Material>): void {
+    this.delegate?.holdShaderPrograms?.(node, materials);
   }
 
   /**

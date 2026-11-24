@@ -88,7 +88,7 @@ export class Button2D
   /** Natural size of the skin texture currently on the material (0 = unknown). */
   private skinTextureWidth = 0;
   private skinTextureHeight = 0;
-  /** Mirrors `!effectStack.isEmpty` without reading it before it is constructed. */
+  /** Mirrors `!effectStack.looksPlain` without reading it before it is constructed. */
   private skinEffectsActive = false;
   /** Registry-backed shader effects on the skin material; while non-empty the
    * skin mesh opts out of the 2D quad batcher (see Sprite2D for the why). */
@@ -139,7 +139,7 @@ export class Button2D
       nodeType: 'Button2D',
       target: 'basic',
       onAttachmentsChanged: () => {
-        this.skinEffectsActive = !this.effectStack.isEmpty;
+        this.skinEffectsActive = !this.effectStack.looksPlain;
         this.updateSkinBatchable();
       },
     });
