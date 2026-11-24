@@ -19,7 +19,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Type-aware eslint over four packages ran out of the default heap on the macOS runner.
       - run: npm run lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
       - run: npm run type-check
       - run: npm test
       # `npm pack` of all five packages: each `prepack` builds what it ships (the CLI bundle, runtime

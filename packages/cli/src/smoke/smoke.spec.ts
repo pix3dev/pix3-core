@@ -99,7 +99,8 @@ const asReport = (outcome: SmokeOutcome): SmokeReport => {
   return outcome;
 };
 
-describe('pix3 smoke', () => {
+// Each case runs the smoke bundle, some of them twice: a cold Windows runner took over 5 s.
+describe('pix3 smoke', { timeout: 20_000 }, () => {
   it('prints the game snapshot whole: one line when short, pretty-printed when long, capped far out', () => {
     expect(formatGameSnapshot({ ready: true, gold: 0 })).toBe('{"ready":true,"gold":0}');
     const long = {
