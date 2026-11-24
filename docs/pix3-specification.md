@@ -466,8 +466,11 @@ game time accumulates separately.
   independent of the fade-to-black overlay and run on real time (plays during a
   hitstop).
 
-Each transform effect is one reused component per node (no per-call allocation);
-`punchScale` and `popIn` respect `Time.scale`, the shake does not (above). One hit, all on the
+Each transform effect is one reused component per node (no per-call allocation). A call's
+options are for that play only: what it omits comes from the component's config (the defaults on
+a component the call created) or the `Camera2D`'s shake knobs, never from a previous call, and a
+call never writes the config — a `core:*` preset triggered by its signal plays its config as
+authored. `punchScale` and `popIn` respect `Time.scale`, the shake does not (above). One hit, all on the
 contact tick — the shake and the flash play during the freeze, the sparks after it:
 
 ```typescript

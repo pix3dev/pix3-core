@@ -200,9 +200,9 @@ export class Camera2D extends Node2D {
   }
 
   /**
-   * Start (or restart) a shake. Omitted options fall back to authored knobs. A request weaker than
-   * the shake playing now is ignored and leaves the knobs as they were; `direction` is for this
-   * request only.
+   * Start (or restart) a shake. The options are for this shake only — the knobs are never written,
+   * so an omitted option is the authored knob's, never a previous call's. A request weaker than the
+   * shake playing now is ignored.
    */
   shake(options: ShakeOptions = {}): void {
     const pick = (value: number | undefined, current: number): number =>
@@ -217,11 +217,7 @@ export class Camera2D extends Node2D {
           ? options.direction
           : undefined,
     };
-    if (!this.shakeEnvelope.start(params)) return;
-    this.shakeAmplitudeValue = params.amplitude;
-    this.shakeFrequencyValue = params.frequency;
-    this.shakeDurationValue = params.duration;
-    this.shakeDecayValue = params.decay;
+    this.shakeEnvelope.start(params);
   }
 
   /** Stop shaking immediately and clear the offset. */

@@ -44,6 +44,12 @@ export class PunchScaleBehavior extends Script {
   private active = false;
   private elapsed = 0;
   private readonly baseScale = new Vector3(1, 1, 1);
+  /**
+   * The options of the {@link play} call playing now — for that punch only; what it omits is
+   * read from the config every frame (so an inspector edit still lands). `null` for a
+   * {@link trigger}ed punch, which plays the config as authored.
+   */
+  private playing: PunchScaleOptions | null = null;
 
   private readonly onTriggerSignal = (): void => {
     this.trigger();
@@ -75,7 +81,7 @@ export class PunchScaleBehavior extends Script {
             step: 0.05,
             precision: 2,
           },
-          getValue: c => (c as PunchScaleBehavior).getAmount(),
+          getValue: c => PunchScaleBehavior.num((c as PunchScaleBehavior).config.amount, 0.3, -0.9),
           setValue: (c, v) => {
             (c as PunchScaleBehavior).config.amount = PunchScaleBehavior.num(v, 0.3, -0.9);
           },
@@ -91,7 +97,7 @@ export class PunchScaleBehavior extends Script {
             precision: 2,
             unit: 's',
           },
-          getValue: c => (c as PunchScaleBehavior).getDuration(),
+          getValue: c => PunchScaleBehavior.num((c as PunchScaleBehavior).config.duration, 0.35, 0),
           setValue: (c, v) => {
             (c as PunchScaleBehavior).config.duration = PunchScaleBehavior.num(v, 0.35, 0);
           },
@@ -106,7 +112,7 @@ export class PunchScaleBehavior extends Script {
             min: 0,
             step: 1,
           },
-          getValue: c => (c as PunchScaleBehavior).getVibrato(),
+          getValue: c => PunchScaleBehavior.num((c as PunchScaleBehavior).config.vibrato, 3, 0),
           setValue: (c, v) => {
             (c as PunchScaleBehavior).config.vibrato = PunchScaleBehavior.num(v, 3, 0);
           },
@@ -121,7 +127,7 @@ export class PunchScaleBehavior extends Script {
             group: 'Punch Scale',
             options: [...PUNCH_AXES],
           },
-          getValue: c => (c as PunchScaleBehavior).getAxis(),
+          getValue: c => PunchScaleBehavior.axisOf((c as PunchScaleBehavior).config.axis),
           setValue: (c, v) => {
             (c as PunchScaleBehavior).config.axis = PunchScaleBehavior.axisOf(v);
           },
@@ -167,23 +173,25 @@ export class PunchScaleBehavior extends Script {
     super.onDetach();
   }
 
-  /** Configure (partial) and (re)start the punch. Used by the juice API. */
+  /**
+   * (Re)start the punch with `options` for this punch only — the config is never written, so an
+   * omitted option is the authored config's (the defaults on a component the juice API made),
+   * never a previous call's. Used by the juice API.
+   */
   play(options: PunchScaleOptions = {}): void {
-    if (options.amount != null)
-      this.config.amount = PunchScaleBehavior.num(options.amount, 0.3, -0.9);
-    if (options.duration != null)
-      this.config.duration = PunchScaleBehavior.num(options.duration, 0.35, 0);
-    if (options.vibrato != null)
-      this.config.vibrato = PunchScaleBehavior.num(options.vibrato, 3, 0);
-    if (options.axis != null) this.config.axis = PunchScaleBehavior.axisOf(options.axis);
-    this.trigger();
+    this.start({ ...options });
   }
 
-  /** (Re)start the punch from the beginning. */
+  /** (Re)start the punch from the beginning with the config as authored. */
   trigger(): void {
+    this.start(null);
+  }
+
+  private start(options: PunchScaleOptions | null): void {
     if (!this.node) {
       return;
     }
+    this.playing = options;
     // Capture the resting scale only when idle so a re-trigger mid-punch does
     // not latch onto an already-scaled value.
     if (!this.active) {
@@ -250,16 +258,21 @@ export class PunchScaleBehavior extends Script {
     }
   }
 
+  /** An option of the play running now, else the config's value. */
+  private value<K extends keyof PunchScaleOptions>(key: K): unknown {
+    return this.playing?.[key] ?? this.config[key];
+  }
+
   private getAmount(): number {
-    return PunchScaleBehavior.num(this.config.amount, 0.3, -0.9);
+    return PunchScaleBehavior.num(this.value('amount'), 0.3, -0.9);
   }
 
   private getDuration(): number {
-    return PunchScaleBehavior.num(this.config.duration, 0.35, 0);
+    return PunchScaleBehavior.num(this.value('duration'), 0.35, 0);
   }
 
   private getAxis(): PunchScaleAxis {
-    return PunchScaleBehavior.axisOf(this.config.axis);
+    return PunchScaleBehavior.axisOf(this.value('axis'));
   }
 
   private static axisOf(value: unknown): PunchScaleAxis {
@@ -267,7 +280,7 @@ export class PunchScaleBehavior extends Script {
   }
 
   private getVibrato(): number {
-    return PunchScaleBehavior.num(this.config.vibrato, 3, 0);
+    return PunchScaleBehavior.num(this.value('vibrato'), 3, 0);
   }
 
   private getTriggerEvent(): string {

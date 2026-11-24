@@ -218,7 +218,8 @@ that started that frame ran `onStart` (its own first `onUpdate` has already run)
   players dizzy; when in doubt, less. Five hits with a 230 ms hitstop are a second of frozen game.
   Knockback (a velocity from the attacker, slowed by friction, not a fixed distance) is your code.
   Put each effect's number in the script's config (`getPropertySchema`) so it can be zeroed and
-  compared; add effects one at a time. Every option is optional; defaults shown. Sizes and speeds are **design px** (the
+  compared; add effects one at a time. Every option is optional; defaults shown; a call's options
+  are for that call only (an omitted one is the default, never your previous call's). Sizes and speeds are **design px** (the
 `viewportBaseSize` space); the defaults below are for a 540-px short side and grow with yours —
 ×2 on a 1080×1920 design — while a value you pass is used as given. Note the three transform effects take
   `duration` (seconds), **not** `durationSec`:

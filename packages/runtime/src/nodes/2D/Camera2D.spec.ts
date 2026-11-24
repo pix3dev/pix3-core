@@ -211,10 +211,21 @@ describe('Camera2D.shake — clock, strongest wins, direction', () => {
     cam.shake({ duration: 1, decay: 1 });
     cam.solve(0.1);
     cam.shake({ amplitude: 5, duration: 0.1 });
-    expect(cam.serializeConfig()).toMatchObject({ shakeAmplitude: 30, shakeDuration: 1 });
+    expect(cam.serializeConfig()).toMatchObject({ shakeAmplitude: 30, shakeDuration: 0.35 });
     cam.solve(0.2); // past the weak request's 0.1 s: still the strong shake
     const off = cam.getShakeOffset(new Vector2());
     expect(off.x !== 0 || off.y !== 0).toBe(true);
+  });
+
+  it('an omitted option is the authored knob, never a previous call’s', () => {
+    const cam = new Camera2D({ id: 'cam', name: 'Cam', shakeDuration: 0.2 });
+    cam.shake({ amplitude: 10, duration: 5, decay: 0 });
+    expect(cam.serializeConfig()).toMatchObject({ shakeAmplitude: 8, shakeDuration: 0.2 });
+    cam.stopShake();
+    cam.shake({ amplitude: 10, decay: 0 });
+    cam.solve(0.25); // past the authored 0.2 s
+    const off = cam.getShakeOffset(new Vector2());
+    expect(off.x === 0 && off.y === 0).toBe(true);
   });
 
   it('shakes along `direction` only', () => {

@@ -166,27 +166,19 @@ export class ShakeBehavior extends Script {
   }
 
   /**
-   * Configure (partial) and (re)start the shake. Used by the juice API. A request weaker than the
-   * shake playing now is ignored and leaves the config as it was; `direction` is for this request
-   * only (the config's own `direction` applies when it is omitted).
+   * (Re)start the shake with `options` for this shake only — the config is never written, so an
+   * omitted option is the authored config's (the defaults on a component the juice API made),
+   * never a previous call's. Used by the juice API. A request weaker than the shake playing now
+   * is ignored.
    */
   play(options: ShakeOptions = {}): void {
-    const amplitude = ShakeBehavior.optionNum(options.amplitude, 8);
-    const frequency = ShakeBehavior.optionNum(options.frequency, 24);
-    const duration = ShakeBehavior.optionNum(options.duration, 0.35);
-    const decay = ShakeBehavior.optionNum(options.decay, 1.5);
-    const started = this.envelope.start({
-      amplitude: amplitude ?? this.getAmplitude(),
-      frequency: frequency ?? this.getFrequency(),
-      duration: duration ?? this.getDuration(),
-      decay: decay ?? this.getDecay(),
+    this.envelope.start({
+      amplitude: ShakeBehavior.optionNum(options.amplitude, 8) ?? this.getAmplitude(),
+      frequency: ShakeBehavior.optionNum(options.frequency, 24) ?? this.getFrequency(),
+      duration: ShakeBehavior.optionNum(options.duration, 0.35) ?? this.getDuration(),
+      decay: ShakeBehavior.optionNum(options.decay, 1.5) ?? this.getDecay(),
       direction: finiteOrUndefined(options.direction) ?? this.getDirection(),
     });
-    if (!started) return;
-    if (amplitude !== undefined) this.config.amplitude = amplitude;
-    if (frequency !== undefined) this.config.frequency = frequency;
-    if (duration !== undefined) this.config.duration = duration;
-    if (decay !== undefined) this.config.decay = decay;
   }
 
   /** (Re)start the shake from the beginning with the configured values — unless a stronger one plays. */

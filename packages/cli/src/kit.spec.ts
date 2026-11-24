@@ -425,6 +425,37 @@ describe('kit drift', () => {
     expect(typeof runtime.registerGameDebug).toBe('function');
   });
 
+  it("the juice defaults it shows are the components' own (an omitted option is the default)", () => {
+    // A call's options are for that call only; what it omits is the config a component the juice
+    // API creates starts with — so the defaults the kit shows must be exactly those.
+    const scripts = text('.claude/skills/pix3-scripts/SKILL.md');
+    const shown = (call: string): Record<string, string> => {
+      const args = new RegExp(`\\b${call}\\(target, \\{ ([^}]+) \\}\\)`).exec(scripts)?.[1];
+      if (!args) throw new Error(`the kit shows no ${call}(target, { … })`);
+      return Object.fromEntries(
+        args
+          .split(',')
+          .map(part => part.trim().split(/:\s*/))
+          .filter(pair => pair.length === 2)
+          .map(([key, value]) => [key, value.replace(/^'|'$/g, '')])
+      );
+    };
+    const components = {
+      shake: new runtime.ShakeBehavior('s', 'core:Shake').config,
+      punchScale: new runtime.PunchScaleBehavior('p', 'core:PunchScale').config,
+      popIn: new runtime.PopInBehavior('i', 'core:PopIn').config,
+    };
+    for (const [call, config] of Object.entries(components)) {
+      const defaults = shown(call);
+      expect(Object.keys(defaults).length, call).toBeGreaterThan(2);
+      for (const [key, value] of Object.entries(defaults)) {
+        const own = key === 'ease' ? config.easing : config[key];
+        // `axis` is not in the config until someone sets it: the behaviour reads it as 'all'.
+        expect(String(own ?? (key === 'axis' ? 'all' : undefined)), `${call} ${key}`).toBe(value);
+      }
+    }
+  });
+
   it('calls only scene.* methods SceneService has, groups included', () => {
     // `this.scene.foo(…)` / `scene.foo(…)` in prose or code: `foo` must be a SceneService member
     // (a method or a getter such as `tween`, whose own members are not checked here).

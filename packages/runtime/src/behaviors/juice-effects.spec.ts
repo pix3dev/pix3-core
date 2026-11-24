@@ -94,15 +94,15 @@ describe('ShakeBehavior: the strongest shake wins', () => {
     shake.onUpdate(0.1); // strength now 20 × 0.9 = 18
 
     shake.play({ amplitude: 6, duration: 0.2 });
-    expect(shake.config.amplitude).toBe(20);
-    expect(shake.config.duration).toBe(1);
+    expect(shake.config.amplitude).toBe(8); // options never reach the config
+    expect(shake.config.duration).toBe(0.35);
     shake.onUpdate(0.5);
     expect(node.position.length()).toBeGreaterThan(0); // the strong one still plays at 0.6 s
 
     // Its tail (20 × 0.1 = 2 at 0.9 s) no longer blocks the next blow.
     shake.onUpdate(0.3);
     shake.play({ amplitude: 6, duration: 0.2 });
-    expect(shake.config.amplitude).toBe(6);
+    expect(shake.config.amplitude).toBe(8); // the options were for that shake only
     shake.onUpdate(0.25);
     expect(node.position.length()).toBe(0); // the new 0.2 s shake ran out, not the old 1 s one
   });
@@ -238,7 +238,7 @@ describe('PunchScaleBehavior: squash & stretch (axis)', () => {
     const punch = play(node, 'y', 0.3);
     punch.onUpdate(0.02);
     punch.play({ axis: 'y' });
-    punch.onUpdate(0.3);
+    punch.onUpdate(0.35); // the default duration: the first call's 0.3 s is not kept
     expect(node.scale.toArray()).toEqual([1, 1, 1]);
   });
 });
@@ -298,5 +298,90 @@ describe('PopInBehavior', () => {
     pop.onStart();
     pop.onUpdate(1);
     expect([node.scale.x, node.scale.y]).toEqual([-2, 2]);
+  });
+});
+
+describe('juice options are for that play only', () => {
+  it('punchScale: an omitted option is the config’s, never a previous call’s', () => {
+    const node = new Node2D({ id: 'n', name: 'n' });
+    const punch = new PunchScaleBehavior('punch', 'core:PunchScale');
+    punch.node = node;
+    punch.play({ axis: 'y', vibrato: 2, amount: -0.25, duration: 0.2 });
+    punch.onUpdate(0.001);
+    expect(node.scale.x).not.toBeCloseTo(node.scale.y, 3); // a squash
+    punch.onUpdate(0.3);
+    expect(punch.config).toMatchObject({ amount: 0.3, duration: 0.35, vibrato: 3 });
+    expect(punch.config.axis).toBeUndefined();
+
+    punch.play({ amount: 0.5 });
+    punch.onUpdate(0.001);
+    expect(node.scale.x).toBeCloseTo(node.scale.y, 12); // 'all' again, not the y-squash
+    expect(node.scale.x).toBeGreaterThan(1.4);
+    punch.onUpdate(0.3); // the default 0.35 s, not the 0.2 s of the first call
+    expect(node.scale.x).not.toBe(1);
+    punch.onUpdate(0.05);
+    expect(node.scale.x).toBe(1);
+  });
+
+  it('punchScale: a signal trigger plays the authored config, an inspector edit lands mid-play', () => {
+    const node = new Node2D({ id: 'n', name: 'n' });
+    const punch = new PunchScaleBehavior('punch', 'core:PunchScale');
+    punch.node = node;
+    punch.config.triggerEvent = 'hit';
+    punch.config.amount = 0.2;
+    punch.onStart();
+    punch.play({ amount: 0.8, axis: 'x' });
+    punch.onUpdate(0.4);
+    node.emit('hit');
+    punch.onUpdate(0);
+    expect(node.scale.x).toBeCloseTo(1.2, 9);
+    expect(node.scale.y).toBeCloseTo(1.2, 9);
+
+    const amount = PunchScaleBehavior.getPropertySchema().properties.find(
+      p => p.name === 'amount'
+    )!;
+    amount.setValue(punch, 0.6);
+    expect(amount.getValue(punch)).toBe(0.6);
+    punch.trigger();
+    punch.onUpdate(0);
+    expect(node.scale.x).toBeCloseTo(1.6, 9);
+    punch.onDetach();
+  });
+
+  it('punchScale: the inspector shows the config, not the play running now', () => {
+    const punch = new PunchScaleBehavior('punch', 'core:PunchScale');
+    punch.node = new Node2D({ id: 'n', name: 'n' });
+    punch.play({ amount: 0.9, axis: 'y' });
+    const props = PunchScaleBehavior.getPropertySchema().properties;
+    expect(props.find(p => p.name === 'amount')!.getValue(punch)).toBe(0.3);
+    expect(props.find(p => p.name === 'axis')!.getValue(punch)).toBe('all');
+  });
+
+  it('popIn: an omitted option is the config’s, never a previous call’s', () => {
+    const node = makeNode();
+    const pop = new PopInBehavior('pop', 'core:PopIn');
+    pop.node = node;
+    pop.config.playOnStart = false;
+    pop.onStart();
+    pop.play({ from: 0.5, duration: 0.2, easing: 'linear' });
+    pop.onUpdate(0.2);
+    expect(pop.config).toMatchObject({ from: 0, duration: 0.4, easing: 'backOut' });
+
+    pop.play({ easing: 'linear' });
+    expect(node.scale.x).toBeCloseTo(0, 9); // from 0, not 0.5
+    pop.onUpdate(0.2);
+    expect(node.scale.x).toBeCloseTo(0.5, 9); // half of the default 0.4 s
+  });
+
+  it('shake: an omitted option is the config’s, never a previous call’s', () => {
+    const node = makeNode();
+    const shake = new ShakeBehavior('shake', 'core:Shake');
+    shake.node = node;
+    shake.play({ amplitude: 3, duration: 5, decay: 0 });
+    shake.stop();
+    expect(shake.config).toMatchObject({ amplitude: 8, duration: 0.35, decay: 1.5 });
+    shake.play({ frequency: 30 });
+    shake.onUpdate(0.4); // past the default 0.35 s: the 5 s of the first call did not stick
+    expect(node.position.length()).toBe(0);
   });
 });

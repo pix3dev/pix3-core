@@ -33,6 +33,12 @@ export class PopInBehavior extends Script {
   private elapsed = 0;
   private captured = false;
   private readonly baseScale = new Vector3(1, 1, 1);
+  /**
+   * The options of the {@link play} call playing now — for that pop only; what it omits is read
+   * from the config every frame (so an inspector edit still lands). `null` for a
+   * {@link trigger}ed pop, which plays the config as authored.
+   */
+  private playing: { from?: number; duration?: number; easing?: KeyframeEasing } | null = null;
 
   private readonly onTriggerSignal = (): void => {
     this.trigger();
@@ -64,7 +70,7 @@ export class PopInBehavior extends Script {
             step: 0.05,
             precision: 2,
           },
-          getValue: c => (c as PopInBehavior).getFrom(),
+          getValue: c => PopInBehavior.num((c as PopInBehavior).config.from, 0, 0),
           setValue: (c, v) => {
             (c as PopInBehavior).config.from = PopInBehavior.num(v, 0, 0);
           },
@@ -73,7 +79,7 @@ export class PopInBehavior extends Script {
           name: 'duration',
           type: 'number',
           ui: { label: 'Duration', group: 'Pop In', min: 0, step: 0.05, precision: 2, unit: 's' },
-          getValue: c => (c as PopInBehavior).getDuration(),
+          getValue: c => PopInBehavior.num((c as PopInBehavior).config.duration, 0.4, 0),
           setValue: (c, v) => {
             (c as PopInBehavior).config.duration = PopInBehavior.num(v, 0.4, 0);
           },
@@ -86,7 +92,7 @@ export class PopInBehavior extends Script {
             group: 'Pop In',
             options: ['backOut', 'elasticOut', 'bounceOut', 'cubicOut', 'quadOut', 'linear'],
           },
-          getValue: c => (c as PopInBehavior).getEasing(),
+          getValue: c => PopInBehavior.easingOf((c as PopInBehavior).config.easing),
           setValue: (c, v) => {
             (c as PopInBehavior).config.easing = isKeyframeEasing(v) ? v : DEFAULT_EASING;
           },
@@ -135,23 +141,30 @@ export class PopInBehavior extends Script {
     super.onDetach();
   }
 
-  /** Configure (partial) and (re)start the pop. Used by the juice API. */
+  /**
+   * (Re)start the pop with `options` for this pop only — the config is never written, so an
+   * omitted option is the authored config's (the defaults on a component the juice API made),
+   * never a previous call's. Used by the juice API.
+   */
   play(options: PopInOptions = {}): void {
-    if (options.from != null) this.config.from = PopInBehavior.num(options.from, 0, 0);
-    if (options.duration != null)
-      this.config.duration = PopInBehavior.num(options.duration, 0.4, 0);
     const easing = options.easing ?? options.ease;
-    if (easing != null && isKeyframeEasing(easing)) {
-      this.config.easing = easing;
-    }
-    this.trigger();
+    this.start({
+      from: options.from,
+      duration: options.duration,
+      easing: isKeyframeEasing(easing) ? easing : undefined,
+    });
   }
 
-  /** (Re)start the pop from `from`× the authored scale. */
+  /** (Re)start the pop from `from`× the resting scale with the config as authored. */
   trigger(): void {
+    this.start(null);
+  }
+
+  private start(options: PopInBehavior['playing']): void {
     if (!this.node) {
       return;
     }
+    this.playing = options;
     this.captureBase();
     this.elapsed = 0;
     this.active = true;
@@ -211,15 +224,19 @@ export class PopInBehavior extends Script {
   }
 
   private getFrom(): number {
-    return PopInBehavior.num(this.config.from, 0, 0);
+    return PopInBehavior.num(this.playing?.from ?? this.config.from, 0, 0);
   }
 
   private getDuration(): number {
-    return PopInBehavior.num(this.config.duration, 0.4, 0);
+    return PopInBehavior.num(this.playing?.duration ?? this.config.duration, 0.4, 0);
   }
 
   private getEasing(): KeyframeEasing {
-    return isKeyframeEasing(this.config.easing) ? this.config.easing : DEFAULT_EASING;
+    return PopInBehavior.easingOf(this.playing?.easing ?? this.config.easing);
+  }
+
+  private static easingOf(value: unknown): KeyframeEasing {
+    return isKeyframeEasing(value) ? value : DEFAULT_EASING;
   }
 
   private getTriggerEvent(): string {
