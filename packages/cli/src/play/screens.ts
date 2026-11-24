@@ -232,10 +232,12 @@ export const formatScreensHuman = (report: ScreensReport): string => {
     if (checks && 'error' in checks) lines.push(`      checks: ${checks.error}`);
     else if (checks) {
       lines.push(
-        `      checks: ${checks.targets} target(s), ${checks.texts} caption(s), ${checks.violations.length} warning(s)`
+        `      checks: ${checks.targets} target(s), ${checks.texts} caption(s)${checks.covered.length > 0 ? ` (${checks.covered.length} covered, not judged)` : ''}, ${checks.violations.length} warning(s)`
       );
       for (const violation of checks.violations)
         lines.push(`      warning: ${describeViolation(violation)}`);
+      for (const caption of checks.covered)
+        lines.push(`      covered: ${caption.node} under ${caption.by.node}`);
       for (const skipped of checks.notMeasured)
         lines.push(`      not measured: ${skipped.check} ${skipped.node} — ${skipped.reason}`);
     }

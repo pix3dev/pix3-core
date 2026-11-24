@@ -10,6 +10,15 @@
  * edges), less what a blocker or another control covers; a rotated control is measured by its own
  * sides. A target covered everywhere is left out, as is a disabled one.
  *
+ * A caption is **covered** when something drawn after it hides its box: every sample point of the
+ * box (its centre and four points near the corners) lies inside a visible mesh of a later paint
+ * slot — the overlay band (`CanvasLayer2D`) after the main 2D pass, then `renderOrder`, which the
+ * runtime stamps from the tree order and z each frame — whose material is at least
+ * {@link COVER_MIN_OPACITY} opaque. Another caption's glyph plane never covers (it is mostly
+ * empty). A covered caption is reported, not judged: a modal's dimmer over the HUD is meant to
+ * dim it. What this misses: a mesh's box is taken as solid, so a sprite whose picture is mostly
+ * transparent over the caption (a glow, a frame with a hole) covers it here though the text shows.
+ *
  * No value imports, `three` and `@pix3/runtime` included: the CLI bundles this file into a page
  * script for a built page too (`packages/cli/src/play/bundle.ts`); nodes are read by shape.
  */
@@ -234,6 +243,28 @@ interface ShapeObject {
   updateWorldMatrix?(updateParents: boolean, updateChildren: boolean): void;
 }
 
+/** A mesh of the 2D tree, as the paint-order cover test reads it. */
+interface ShapeMesh extends ShapeObject {
+  readonly isMesh: true;
+  readonly parent?: ShapeObject | null;
+  readonly renderOrder: number;
+  readonly layers: { readonly mask: number };
+  readonly material: ShapeMaterial | readonly ShapeMaterial[];
+  readonly geometry: {
+    boundingBox: { min: Point; max: Point } | null;
+    computeBoundingBox(): void;
+  };
+}
+
+interface ShapeMaterial {
+  readonly opacity: number;
+}
+
+/** A 2D node: what maps a screen point (input units) to world units in its own band. */
+interface ShapeNode2D extends ShapeObject {
+  screenPointToWorld(x: number, y: number): Point | null;
+}
+
 /** A `UIControl2D`: a press target, a caption, or both. */
 interface ShapeControl extends ShapeObject {
   readonly nodeId: string;
@@ -245,7 +276,12 @@ interface ShapeControl extends ShapeObject {
   readonly labelFontSize: number;
   readonly labelOutlineWidth?: number;
   /** The caption's plane (1×1, scaled to the text box); protected in the runtime. */
-  readonly labelMesh?: { visible: boolean; readonly matrixWorld: ShapeMatrix } | null;
+  readonly labelMesh?: {
+    visible: boolean;
+    readonly matrixWorld: ShapeMatrix;
+    readonly renderOrder?: number;
+    readonly layers?: { readonly mask: number };
+  } | null;
   readonly input?: ShapeInput;
 }
 
@@ -300,6 +336,8 @@ export interface ScreenText {
   readonly fontPx: number;
   readonly outline: boolean;
   readonly box: Rect;
+  /** What is drawn over the whole caption (over its centre), when something is. */
+  readonly coveredBy?: { readonly node: string; readonly type: string; readonly name: string };
 }
 
 export interface ScreenMeasure {
@@ -311,6 +349,84 @@ export interface ScreenMeasure {
 
 /** Cells a target's area may have before it is measured on a coarser grid. */
 const MAX_CELLS = 40_000;
+
+/** The least material opacity of a mesh that covers a caption (a modal's dimmer is ~0.6–0.8). */
+export const COVER_MIN_OPACITY = 0.5;
+
+/** The overlay band's three.js layer (`LAYER_2D_OVERLAY` in the runtime: a `CanvasLayer2D`). */
+const OVERLAY_LAYER_BIT = 1 << 3;
+
+/** Where a mesh is in paint order: the overlay band after the main pass, then `renderOrder`. */
+const paintSlot = (mesh: {
+  readonly renderOrder?: number;
+  readonly layers?: { readonly mask: number };
+}): [number, number] => [
+  (mesh.layers?.mask ?? 0) & OVERLAY_LAYER_BIT ? 1 : 0,
+  mesh.renderOrder ?? 0,
+];
+
+const later = (one: [number, number], two: [number, number]): boolean =>
+  one[0] !== two[0] ? one[0] > two[0] : one[1] > two[1];
+
+/** A mesh that could cover a caption, with how to ask whether a screen point is on it. */
+interface Cover {
+  readonly slot: [number, number];
+  readonly owner: { node: string; type: string; name: string };
+  contains(x: number, y: number): boolean;
+}
+
+const isMesh = (value: ShapeObject): value is ShapeMesh =>
+  (value as Partial<ShapeMesh>).isMesh === true && !!(value as Partial<ShapeMesh>).geometry;
+
+/**
+ * Every visible, mostly opaque mesh of the live 2D tree, but the captions' own planes (`captions`):
+ * the candidates that can be drawn over a caption.
+ */
+const coversOf = (runner: ShapeRunner, captions: ReadonlySet<unknown>): Cover[] => {
+  const out: Cover[] = [];
+  const walk = (object: ShapeObject, owner: ShapeNode2D | null, node: ShapeObject | null): void => {
+    if (object.visible === false) return;
+    const asNode = object as Partial<ShapeNode2D>;
+    const ownerHere =
+      typeof asNode.screenPointToWorld === 'function' ? (object as ShapeNode2D) : owner;
+    const nodeHere = typeof object.nodeId === 'string' ? object : node;
+    if (isMesh(object) && ownerHere && nodeHere && !captions.has(object)) {
+      const materials = Array.isArray(object.material)
+        ? (object.material as readonly ShapeMaterial[])
+        : [object.material as ShapeMaterial];
+      const opaque = materials.some(material => (material?.opacity ?? 0) >= COVER_MIN_OPACITY);
+      if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+      const bounds = object.geometry.boundingBox;
+      const e = object.matrixWorld?.elements;
+      const toLocal = e && invertAffine({ a: e[0], b: e[1], c: e[4], d: e[5], e: e[12], f: e[13] });
+      if (opaque && bounds && toLocal) {
+        const mapper = ownerHere;
+        out.push({
+          slot: paintSlot(object),
+          owner: {
+            node: String(nodeHere.nodeId),
+            type: nodeHere.type ?? '',
+            name: nodeHere.name ?? '',
+          },
+          contains: (x, y) => {
+            const world = mapper.screenPointToWorld(x, y);
+            if (!world) return false;
+            const local = applyAffine(toLocal, { x: world.x, y: world.y });
+            return (
+              local.x >= bounds.min.x &&
+              local.x <= bounds.max.x &&
+              local.y >= bounds.min.y &&
+              local.y <= bounds.max.y
+            );
+          },
+        });
+      }
+    }
+    for (const child of object.children ?? []) walk(child, ownerHere, nodeHere);
+  };
+  for (const root of runner.getLiveRootNodes() as ShapeObject[]) walk(root, null, null);
+  return out;
+};
 
 /**
  * Measure the screen as it is now (`pix3 play --screens` pauses the runner and draws a frame
@@ -338,6 +454,22 @@ export const measureScreen = (runner: ShapeRunner | null): ScreenMeasure | null 
 
   const targets: ScreenTarget[] = [];
   const texts: ScreenText[] = [];
+  const covers = coversOf(runner!, new Set(controls.map(control => control.labelMesh)));
+  /** What covers the whole box (page CSS px) drawn after `slot`: the one over its centre. */
+  const coverOf = (box: Rect, slot: [number, number]): Cover['owner'] | undefined => {
+    const above = covers.filter(cover => later(cover.slot, slot));
+    if (above.length === 0) return undefined;
+    const inset = { x: box.width * 0.1, y: box.height * 0.1 };
+    const points = [
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      { x: box.x + inset.x, y: box.y + inset.y },
+      { x: box.x + box.width - inset.x, y: box.y + inset.y },
+      { x: box.x + inset.x, y: box.y + box.height - inset.y },
+      { x: box.x + box.width - inset.x, y: box.y + box.height - inset.y },
+    ].map(p => ({ x: (p.x - rect.left) * sx, y: (p.y - rect.top) * sy }));
+    const over = points.map(p => above.find(cover => cover.contains(p.x, p.y)));
+    return over.every(Boolean) ? over[0]!.owner : undefined;
+  };
   for (const control of controls) {
     // A copy each: the node answers in one scratch vector.
     const toWorld = affineFromSamples((x, y) => {
@@ -421,8 +553,16 @@ export const measureScreen = (runner: ShapeRunner | null): ScreenMeasure | null 
       box.y < viewport.height &&
       box.x + box.width > 0 &&
       box.y + box.height > 0;
-    if (onScreen)
-      texts.push({ ...label, fontPx, outline: (control.labelOutlineWidth ?? 0) > 0, box });
+    if (onScreen) {
+      const coveredBy = coverOf(box, paintSlot(mesh));
+      texts.push({
+        ...label,
+        fontPx,
+        outline: (control.labelOutlineWidth ?? 0) > 0,
+        box,
+        ...(coveredBy ? { coveredBy } : {}),
+      });
+    }
   }
   return { viewport, targets, texts };
 };

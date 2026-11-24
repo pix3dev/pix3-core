@@ -196,6 +196,57 @@ describe('measureScreen', () => {
     expect(measureScreen(null)).toBeNull();
   });
 
+  it('reports a caption under something drawn over it as covered — by paint order, not by type', async () => {
+    // A HUD with a modal over it: a dimmer (no blocksPointerInput) under a card in an overlay band,
+    // a caption on the card, a caption under a faint veil, and one beside the dimmer.
+    const modal = `version: 1.0.0
+root:
+  - id: root
+    type: Group2D
+    properties: { width: 390, height: 844 }
+    children:
+      - id: hud-score
+        type: Label2D
+        properties: { label: "score", labelFontSize: 12, transform: { position: [0, 380], scale: [1, 1], rotation: 0 } }
+      - id: hud-veiled
+        type: Label2D
+        properties: { label: "veiled", labelFontSize: 12, transform: { position: [0, -380], scale: [1, 1], rotation: 0 } }
+      - id: veil
+        type: ColorRect2D
+        properties: { width: 390, height: 100, color: "#000000", opacity: 0.3, transform: { position: [0, -380], scale: [1, 1], rotation: 0 } }
+      - id: hud-under-side
+        type: Label2D
+        properties: { label: "under", labelFontSize: 12, transform: { position: [140, 0], scale: [1, 1], rotation: 0 } }
+      - id: side-dimmer
+        type: ColorRect2D
+        properties: { width: 100, height: 100, color: "#000000", opacity: 0.8, transform: { position: [140, 0], scale: [1, 1], rotation: 0 } }
+      - id: hud-beside
+        type: Label2D
+        properties: { label: "beside", labelFontSize: 12, transform: { position: [-100, 0], scale: [1, 1], rotation: 0 } }
+  - id: overlay
+    type: CanvasLayer2D
+    properties: { width: 390, height: 844 }
+    children:
+      - id: dimmer
+        type: ColorRect2D
+        properties: { width: 390, height: 300, color: "#02041a", opacity: 0.78, transform: { position: [0, 300], scale: [1, 1], rotation: 0 } }
+      - id: card-title
+        type: Label2D
+        properties: { label: "on the card", labelFontSize: 12, transform: { position: [0, 300], scale: [1, 1], rotation: 0 } }
+`;
+    const { measure } = await measureAt({ width: 390, height: 844 }, 2, undefined, modal);
+    const coveredBy = Object.fromEntries(
+      measure!.texts.map(text => [text.node, text.coveredBy?.node ?? null])
+    );
+    expect(coveredBy).toEqual({
+      'hud-score': 'dimmer', // the overlay band draws after the whole main pass
+      'hud-veiled': null, // a 0.3 veil does not hide it: judged
+      'hud-under-side': 'side-dimmer', // a later sibling in the same pass
+      'hud-beside': null,
+      'card-title': null, // drawn after the dimmer: judged
+    });
+  });
+
   it('measures a partly covered target by the strip a finger still reaches', async () => {
     // A 100×60 button with a 90×60 one drawn over its right part: 10×60 of it is left.
     const covered = `version: 1.0.0

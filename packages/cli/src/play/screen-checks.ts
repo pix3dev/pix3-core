@@ -3,7 +3,9 @@
  * short side, a caption under 16 CSS px, a caption under 4.5:1 contrast (3:1 from 24 CSS px). The
  * sizes come measured from the page (`packages/vite-plugin/player/debug/screen-checks.ts`); the
  * contrast is read here from two pictures of one paused frame, with and without the captions.
- * Warnings, not errors: a board of cells is allowed under 44 px when the report says why.
+ * Warnings, not errors: a board of cells is allowed under 44 px when the report says why. A
+ * caption the page found covered by something drawn over it (a modal's dimmer over the HUD) is
+ * listed in `covered` and not judged.
  */
 
 import type { RgbaImage } from '../image/png.ts';
@@ -33,7 +35,17 @@ interface Named {
 export interface PageMeasure {
   readonly viewport: { readonly width: number; readonly height: number };
   readonly targets: readonly (Named & { readonly width: number; readonly height: number })[];
-  readonly texts: readonly (Named & { readonly fontPx: number; readonly outline: boolean })[];
+  readonly texts: readonly (Named & {
+    readonly fontPx: number;
+    readonly outline: boolean;
+    readonly coveredBy?: { readonly node: string; readonly type: string; readonly name: string };
+  })[];
+}
+
+/** A caption not judged: drawn under something that hides its whole box. */
+export interface CoveredCaption extends Named {
+  /** The node drawn over its centre. */
+  readonly by: { readonly node: string; readonly type: string; readonly name: string };
 }
 
 export interface Contrast {
@@ -53,10 +65,12 @@ export type ScreenViolation = Named &
 export interface ScreenChecks {
   /** The picture's page, CSS px; every `box` is in it. */
   readonly viewport: { readonly width: number; readonly height: number };
-  /** How many press targets and captions were measured. */
+  /** How many press targets and captions were measured (covered captions included). */
   readonly targets: number;
   readonly texts: number;
   readonly violations: readonly ScreenViolation[];
+  /** Captions under something drawn over them: neither size nor contrast is judged. */
+  readonly covered: readonly CoveredCaption[];
   /** Captions whose contrast could not be read, and why. */
   readonly notMeasured: readonly { node: string; check: 'contrast'; reason: string }[];
 }
@@ -189,6 +203,7 @@ export const screenChecks = (
 ): ScreenChecks => {
   const violations: ScreenViolation[] = [];
   const notMeasured: { node: string; check: 'contrast'; reason: string }[] = [];
+  const covered: CoveredCaption[] = [];
   for (const { width, height, ...target } of measure.targets) {
     if (Math.min(width, height) < TAP_MIN_PX)
       violations.push({
@@ -199,7 +214,11 @@ export const screenChecks = (
       });
   }
   const stable = frames && sameImage(frames.shown, frames.again);
-  for (const { fontPx, outline, ...text } of measure.texts) {
+  for (const { fontPx, outline, coveredBy, ...text } of measure.texts) {
+    if (coveredBy) {
+      covered.push({ ...named(text), by: coveredBy });
+      continue;
+    }
     if (fontPx < TEXT_MIN_PX)
       violations.push({
         ...named(text),
@@ -245,6 +264,7 @@ export const screenChecks = (
     targets: measure.targets.length,
     texts: measure.texts.length,
     violations,
+    covered,
     notMeasured,
   };
 };

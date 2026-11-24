@@ -224,8 +224,10 @@ worstQuartile }` — a worst quartile far below the median is a busy background 
 each with `node`, `threshold` and a box drawn over the node on `sheet.png` (red tap, orange font,
 dashed magenta contrast). They are warnings (exit 0): fix each, or say in the report why it stays —
 a board cell under 44 px is allowed with that sentence (AGENTS.md). `notMeasured` is a caption whose
-contrast could not be read (the reason given): judge it on the tile yourself. Icons are not
-checked. Then open `sheet-blur.png` (the same sheet blurred): on each tile the first thing that
+contrast could not be read (the reason given): judge it on the tile yourself. `covered` is a
+caption under something drawn over its whole box (`by`: a modal's dimmer over the HUD, a card),
+not judged for size or contrast — it is meant to be dim; check it is the screen you meant. Icons
+are not checked. Then open `sheet-blur.png` (the same sheet blurred): on each tile the first thing that
 jumps out must be the focal point the GDD's **Screens** line names for that screen; if something
 else wins, the hierarchy is wrong.
 

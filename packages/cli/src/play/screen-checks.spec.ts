@@ -200,6 +200,46 @@ const frames = () => {
 };
 
 describe('screenChecks', () => {
+  it('does not judge a covered caption: it lists it under covered', () => {
+    const tiny = {
+      node: 'hud-score',
+      type: 'Label2D',
+      name: 'Score',
+      fontPx: 6,
+      outline: false,
+      box: { x: 0, y: 0, width: 40, height: 10 },
+    };
+    const checks = screenChecks(
+      {
+        viewport: { width: 390, height: 844 },
+        targets: [],
+        texts: [{ ...tiny, coveredBy: { node: 'dimmer', type: 'ColorRect2D', name: 'Dimmer' } }],
+      },
+      null,
+      2
+    );
+    expect(checks.violations).toEqual([]);
+    expect(checks.notMeasured).toEqual([]);
+    expect(checks.covered).toEqual([
+      {
+        node: 'hud-score',
+        type: 'Label2D',
+        name: 'Score',
+        box: tiny.box,
+        by: { node: 'dimmer', type: 'ColorRect2D', name: 'Dimmer' },
+      },
+    ]);
+    expect(checks.texts).toBe(1);
+    // The same caption uncovered is judged.
+    expect(
+      screenChecks(
+        { viewport: { width: 390, height: 844 }, targets: [], texts: [tiny] },
+        null,
+        2
+      ).violations.map(v => v.check)
+    ).toEqual(['text-size']);
+  });
+
   it('flags a small target, small text and faint text, with node, value and threshold', () => {
     const checks = screenChecks(measure, frames(), 2);
     expect(checks).toMatchObject({

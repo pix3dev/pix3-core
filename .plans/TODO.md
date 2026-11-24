@@ -71,8 +71,9 @@ From `.plans/done/design-feedback.md` (2026-11-23), review findings left open on
 - **Screen checks (`pix3 play --screens`)**: captions overlapping in one box mix their glyph masks
   (hide one caption at a time); a press target narrower than the 4 px seed scan is missed, and a
   non-rectangular one is under-measured (centroid chords of a triangle); the frame with captions
-  hidden is not checked for repeating itself; a small caption fully covered by an opaque panel
-  still gets a `text-size` warning; a press target that is a script-hit-tested sprite is invisible
+  hidden is not checked for repeating itself; a caption counts as `covered` (not judged) by a
+  later mesh's whole box at ≥ 0.5 opacity, so a mostly transparent sprite over it (a glow, a frame
+  with a hole) hides a caption that still shows; a press target that is a script-hit-tested sprite is invisible
   to the size check; the gallery checks never run in CI.
 - **Run report**: `haptics` and `analytics` are read through the first live root, so a run that
   ends with no root loses them.

@@ -905,8 +905,8 @@ belong in a state. Exit 1 when a picture errored (a page error, a policy that di
 **The checks.** Before each picture the runner is paused and a frame drawn; the page measures it
 (`packages/vite-plugin/player/debug/screen-checks.ts`) and the frame is taken three times: as shown
 (the picture), again (it must match itself pixel for pixel), and with every caption hidden. `checks`
-of a picture: `{ viewport, targets, texts, violations, notMeasured }` — `viewport` the page in CSS
-px, `targets` / `texts` how many were measured, each violation `{ check, node, type, name,
+of a picture: `{ viewport, targets, texts, violations, covered, notMeasured }` — `viewport` the page
+in CSS px, `targets` / `texts` how many were measured, each violation `{ check, node, type, name,
 measured, threshold, box }` with `box` in the viewport's CSS px:
 
 - `tap-size` — a press target's shorter side under 44 CSS px; `measured` `{ width, height }`. A
@@ -926,6 +926,16 @@ measured, threshold, box }` with `box` in the viewport's CSS px:
   each background pixel (a busy background). A caption it cannot read — the frame
   did not repeat itself, or no glyph pixel is on the picture — is in `notMeasured` with the reason,
   never estimated. Icons are not checked.
+- `covered` (not a warning) — a caption drawn under something that hides it: every sample point of
+  its box (the centre and four points near the corners) is inside a visible mesh of a later paint
+  slot — the overlay band (`CanvasLayer2D`) after the main 2D pass, then the `renderOrder` the
+  runtime stamps from tree order and z — whose material opacity is at least 0.5, another caption's
+  glyph plane excepted. Neither `text-size` nor `contrast` is judged for it; each entry is
+  `{ node, type, name, box, by }`, `by` the node over its centre. A modal's dimmer over the HUD is
+  the case it is for (PipeBlast: 17 HUD captions under the result and settings dimmers), whether or
+  not the dimmer blocks input; the captions on the card above the dimmer are judged as usual.
+  What it misses: a mesh's box counts as solid, so a sprite mostly transparent over a caption (a
+  glow, a frame with a hole) covers it though the text shows; a cover under 0.5 opacity never does.
 
 On `sheet.png` each violation is a box over its node (red a target, orange a font, dashed magenta
 a contrast; `index.html` shows the finding on hover); the human report lists them under the
