@@ -552,6 +552,33 @@ describe('sync barrier', () => {
       })
     );
 
+  it('a frozen writer tab that said it holds nothing unsaved does not fail the flush (PipeBlast lab B4)', async () => {
+    const p = await start({ 'a.txt': 'a' });
+    const tab = await p.connectTab('tab-a');
+    await p.mutate('/__pix3/api/handover/claim', {
+      method: 'POST',
+      body: JSON.stringify({ writerId: 'tab-a' }),
+    });
+    // The tab never answers a flush, as a tab Chrome froze in the background.
+    const flush = async () =>
+      json(
+        await p.mutate('/__pix3/api/flush', {
+          method: 'POST',
+          body: JSON.stringify({ timeoutMs: 300 }),
+        })
+      );
+    expect(await flush()).toMatchObject({ ok: false, reason: 'timeout' });
+    tab.send({ type: 'state', unsaved: true });
+    await sleep(50);
+    expect(await flush()).toMatchObject({ ok: false, reason: 'timeout' });
+    tab.send({ type: 'state', unsaved: false });
+    await sleep(50);
+    expect(await flush()).toMatchObject({ ok: true, editor: true, silentTab: 'tab-a' });
+    // A tab that answers is still asked.
+    tab.onRequest('flush', () => ({ ok: false, reason: 'external_change' }));
+    expect(await flush()).toMatchObject({ ok: false, reason: 'external_change' });
+  });
+
   it('without an editor tab: rescans and reports what changed', async () => {
     const p = await start({ 'scenes/a.pix3scene': SCENE });
     writeFileSync(join(p.root, 'scenes/a.pix3scene'), `${SCENE}# v2\n`);

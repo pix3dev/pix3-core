@@ -163,7 +163,13 @@ const leafOps = (nodeId: string | null, a: LeafMap, b: LeafMap): LeafOp[] => {
     const prev = a.get(key);
     if (!prev || !deepEqual(prev.value, value)) ops.push({ kind: 'set', nodeId, path, value });
   }
-  for (const [key, { path }] of a) if (!b.has(key)) ops.push({ kind: 'delete', nodeId, path });
+  // An empty map `{}` is a leaf of its own; once it gains a key it is that key's ancestor, and
+  // deleting it would drop the key just set (`config: {}` → `config.board`, PipeBlast lab B1).
+  const bKeys = [...b.keys()];
+  for (const [key, { path }] of a) {
+    if (b.has(key) || bKeys.some(k => k.startsWith(`${key}.`))) continue;
+    ops.push({ kind: 'delete', nodeId, path });
+  }
   return ops;
 };
 

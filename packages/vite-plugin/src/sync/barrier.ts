@@ -33,6 +33,8 @@ export const VITE_CLIENT_WARNING =
   'a script, a bot policy or a module they import uses import.meta.hot, a CSS import or a ' +
   'non-literal import(). `pix3 check` names the file (W_EDITOR_*).';
 const MAX_SYNC_TIMEOUT_MS = 120_000;
+/** How long a writer tab that reported nothing unsaved may take to answer a flush. */
+const CLEAN_TAB_FLUSH_MS = 3_000;
 /**
  * Step 4 asks the tab again when its answer is behind (`rev` older than the rescan's, or a changed
  * module's stamp not the disk's): at most this many times, after 50, 100, 200 ms, and never past
@@ -124,7 +126,14 @@ export class SyncBarrier {
     if (!writer || !socket.hasTab(writer)) {
       return { ok: true, editor: socket.tabs().length > 0, flushed: false };
     }
-    const reply = await socket.request(writer, 'flush', { timeoutMs }, timeoutMs + 1_000);
+    // A writer that said it holds nothing unsaved answers a flush at once when it runs; silence
+    // then means Chrome froze it in the background (PipeBlast lab B4), and the disk is current.
+    const clean = socket.tab(writer)?.unsaved === false;
+    const wait = clean ? Math.min(timeoutMs, CLEAN_TAB_FLUSH_MS) : timeoutMs + 1_000;
+    const reply = await socket.request(writer, 'flush', { timeoutMs }, wait);
+    if (clean && reply.reason === 'timeout') {
+      return { ok: true, editor: true, flushed: false, saved: [], silentTab: writer };
+    }
     return { ...reply, editor: true, flushed: reply.ok };
   }
 

@@ -268,6 +268,8 @@ const resolvePath = (nodeMap: YMap, path: LeafPath): Resolved => {
       if (!isSeq(pair.value)) throw new ScenePatchError('`components` is not a sequence');
       const item = (pair.value as YSeq).items.find(c => isMap(c) && c.get('id') === next.id);
       if (!item) throw new ScenePatchError(`component ${next.id} not found`);
+      // The component segment's slot, so `containers[i]` stays the holder of segment i past it.
+      containers.push(map);
       map = item as YMap;
       i++;
       if (i === path.length - 1) throw new ScenePatchError('a path that ends at a component');

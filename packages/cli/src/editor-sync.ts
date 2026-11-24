@@ -112,4 +112,7 @@ export const describeUnsynced = (
   result: Extract<EditorSyncResult, { status: 'unsynced' }>
 ): string =>
   `the Pix3 editor at ${result.url} did not flush its unsaved scenes (${result.reason}); ` +
-  `save in the editor and retry, or pass --no-sync to read the disk as it is`;
+  (result.reason === 'timeout'
+    ? 'a tab in a background window may be frozen by Chrome: bring it to the front and retry, '
+    : 'save in the editor and retry, ') +
+  `or pass --no-sync to read the disk as it is`;

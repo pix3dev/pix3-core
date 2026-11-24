@@ -1458,7 +1458,7 @@ and builds a composer from it; with no such node the plain two-pass path runs an
 | `vignetteDarkness`           | number  | 0.5       | How dark the edges go                                                        |
 | `chromaticAberrationEnabled` | boolean | false     | Chromatic aberration on                                                      |
 | `chromaticAberrationOffset`  | number  | 0.002     | Channel separation                                                           |
-| `aoMode`                     | enum    | `inherit` | Ambient occlusion: `inherit` (project setting) \| `off` \| `ssao` \| `baked` |
+| `aoMode`                     | enum    | `inherit` | AO: `inherit` \| `off` \| `baked` \| `realtime` (SSAO) \| `adaptive`         |
 | `ssaoIntensity`              | number  | 2.5       | SSAO strength                                                                |
 | `ssaoRadius`                 | number  | 0.25      | SSAO sample radius, world units                                              |
 | `lutEnabled`                 | boolean | false     | Colour grading on                                                            |
@@ -1470,6 +1470,9 @@ and builds a composer from it; with no such node the plain two-pass path runs an
 - It has no transform: the properties sit flat in `properties`, and position/rotation/scale do not
   apply.
 - The whole stack is one lazily-created composer. Every effect off = no composer at all.
+- `aoMode: inherit` takes the project's default (`baked` unless set); `adaptive` picks `realtime`
+  on capable devices and `baked` otherwise; when `realtime` wins, baked aoMaps are suppressed so
+  the two do not stack.
 - In a single-file build, `postprocessing` is pulled in through the generated
   `virtual:pix3/postprocessing` module (a stub when no scene has a `PostProcess`) — using this
   node is fine for a build, it just adds weight.

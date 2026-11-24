@@ -605,6 +605,11 @@ export class LocalizationEditorService {
     await this.queue;
   }
 
+  /** Whether any table has edits the disk does not have. */
+  hasUnwrittenTables(): boolean {
+    return [...this.tables.keys()].some(locale => this.hasUnwrittenEdits(locale));
+  }
+
   /** Whether `locale` has edits its baseline (the disk the editor knows) does not. */
   hasUnwrittenEdits(locale: string): boolean {
     const table = this.tables.get(locale);

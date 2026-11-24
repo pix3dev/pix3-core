@@ -142,7 +142,10 @@ export const flushEditorBeforeBuild = async (
   if (reply.ok === false) {
     throw new EditorUnsyncedError(
       `The Pix3 editor at ${info.url} could not flush its unsaved scenes (${reply.reason ?? 'unknown'}). ` +
-        `Save in the editor and retry, or skip with PIX3_NO_SYNC=1.`
+        (reply.reason === 'timeout'
+          ? 'A tab in a background window may be frozen by Chrome: bring it to the front and retry, '
+          : 'Save in the editor and retry, ') +
+        `or skip with PIX3_NO_SYNC=1.`
     );
   }
   return reply.editor

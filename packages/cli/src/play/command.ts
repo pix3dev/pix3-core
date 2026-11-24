@@ -7,7 +7,7 @@ import { findProjectRoot } from '../manifest.ts';
 import { resolveEsbuild, withCommandBundle } from '../package-root.ts';
 import { COMMAND_USAGE } from '../usage.ts';
 import { findChrome, needsNoSandbox, describeChromeNotFound } from '../editor/chrome.ts';
-import { readDevInfo } from '../editor/dev-server.ts';
+import { findDevServer } from '../editor/dev-server.ts';
 import { PipeChrome, type CdpEvent } from './chrome-pipe.ts';
 import { formatProfileHuman, type PlayProfile } from './profile-report.ts';
 import { formatTreeHuman, type PlayTree } from './tree-report.ts';
@@ -514,11 +514,11 @@ const argsForCombo = (base: PlayArgs, combo: GridCombo): PlayArgs => {
 };
 
 /** The page to open: an explicit URL or file, `dist`, else the running dev server, else `dist`. */
-const resolveTarget = (
+const resolveTarget = async (
   args: PlayArgs,
   root: string | null,
   cwd: string
-): string | { error: string } => {
+): Promise<string | { error: string }> => {
   const withParam = (url: string, name: string, value: string | undefined): string =>
     value === undefined
       ? url
@@ -534,8 +534,17 @@ const resolveTarget = (
     return existsSync(html) ? pathToFileURL(html).href : { error: `${html} does not exist` };
   }
   if (args.target !== 'dist') {
-    const info = root ? readDevInfo(root) : null;
-    if (info) return withScene(`${info.publicUrl ?? info.url}?clean`);
+    const found = root ? await findDevServer(root) : ({ status: 'none' } as const);
+    if (found.status === 'live') {
+      return withScene(`${found.info.publicUrl ?? found.info.url}?clean`);
+    }
+    // A stale `dev.json` once loaded a dead page and reported `no-player` with a picture of
+    // nothing (PipeBlast lab B2): say the server is down instead of falling back to an old build.
+    if (found.status === 'stale') {
+      return {
+        error: `the dev server in .pix3/dev.json (${found.info.url}) does not answer — start it (\`npm run dev\`, or \`npx pix3 editor\`), or play the build with \`pix3 play dist\``,
+      };
+    }
     if (args.target === 'dev') {
       return {
         error: 'no dev server is running for this project (`npm run dev`, or `npx pix3 editor`)',
@@ -643,7 +652,7 @@ export const runPlayCli = async (argv: readonly string[], io: CliIo): Promise<nu
     : parsed;
   const env = io.env ?? process.env;
   const root = args.project ? resolve(io.cwd, args.project) : findProjectRoot(io.cwd);
-  const url = resolveTarget(args, root, io.cwd);
+  const url = await resolveTarget(args, root, io.cwd);
   if (typeof url !== 'string') {
     io.stderr(`pix3 play: ${url.error}\n`);
     return 2;
@@ -886,7 +895,7 @@ const playScreens = async (
         errors: [error],
         shots: [],
       });
-      const url = resolveTarget(runArgs, context.root, io.cwd);
+      const url = await resolveTarget(runArgs, context.root, io.cwd);
       if (typeof url !== 'string') return broken(url.error);
       const browserContext = await chrome.createContext();
       try {
@@ -1076,9 +1085,29 @@ const playOnce = async (
 ): Promise<{ report: PlayReport; failed: boolean; screen?: ScreenCapture }> => {
   const { io, url, root, policyName, policyFile, replayFile, replayPath, tag } = context;
   const errors: string[] = [];
+  /** Requests of the page that failed or answered ≥ 400: why a page has no player. */
+  const failedRequests: string[] = [];
+  const requestUrls = new Map<string, string>();
   const session = await chrome.openPage(context.browserContext);
   const unlisten = chrome.onEvent((event: CdpEvent) => {
     if (event.sessionId !== session) return;
+    if (event.method === 'Network.requestWillBeSent') {
+      const request = event.params.request as { url?: string } | undefined;
+      if (request?.url) requestUrls.set(String(event.params.requestId), request.url);
+      return;
+    }
+    if (event.method === 'Network.responseReceived') {
+      const response = event.params.response as { status?: number; url?: string } | undefined;
+      if (response && (response.status ?? 0) >= 400) {
+        failedRequests.push(`${response.status} ${response.url}`);
+      }
+      return;
+    }
+    if (event.method === 'Network.loadingFailed' && event.params.canceled !== true) {
+      const url = requestUrls.get(String(event.params.requestId)) ?? '(unknown url)';
+      failedRequests.push(`${String(event.params.errorText ?? 'failed')} ${url}`);
+      return;
+    }
     if (event.method === 'Runtime.exceptionThrown') {
       const details = event.params.exceptionDetails as {
         text?: string;
@@ -1136,11 +1165,14 @@ const playOnce = async (
         session
       );
     }
-    await chrome.send('Page.navigate', { url }, session);
+    await chrome.send('Network.enable', {}, session);
+    const navigation = (await chrome.send('Page.navigate', { url }, session)) as {
+      errorText?: string;
+    };
 
     // Booted when the player says so (`__PIX3_PLAYER__.status`), within 20 s.
-    let status = 'booting';
-    for (const deadline = Date.now() + 20_000; Date.now() < deadline; ) {
+    let status = navigation.errorText ? 'no-page' : 'booting';
+    for (const deadline = Date.now() + 20_000; status !== 'no-page' && Date.now() < deadline; ) {
       await sleep(200);
       status = String(
         (await chrome
@@ -1456,6 +1488,15 @@ const playOnce = async (
       'window.__PIX3_PLAYER__ ? window.__PIX3_PLAYER__.errors : []'
     )) ?? []) as string[];
     for (const error of playerErrors) if (!errors.includes(error)) errors.push(error);
+    // No player: say why, not just `no-player, 0 frame(s)` (PipeBlast lab B2, B5).
+    if (status === 'no-page') errors.push(`the page did not load: ${navigation.errorText}`);
+    else if (status === 'no-player' || status === 'loading' || status === 'booting') {
+      errors.push(
+        `the page has no running Pix3 player after 20 s (status: ${status})${
+          failedRequests.length > 0 ? `; failed requests: ${failedRequests.join(', ')}` : ''
+        }`
+      );
+    }
     // A page that says `running` but never advanced its loop is as dead as a black one: the
     // run passes only when frames went by (the release check plays the built page on this).
     // A replay steps the game itself (manual time): the page's own loop stays still.

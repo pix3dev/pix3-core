@@ -76,7 +76,7 @@ server is ignored). Diagnostics are one list, validate's plus:
 | --- | --- | --- |
 | `E_TYPE` | error | a tsc diagnostic (`message` starts with `TS<code>:`; `file`, `line`) |
 | `E_TYPECHECK_UNAVAILABLE` | error | TypeScript could not be found or installed (`fix` = the command to run) |
-| `E_EDITOR_UNSYNCED` | error | `.pix3/dev.json` points at a live dev server whose editor did not flush its unsaved scenes within 15 s (`--no-sync` reads the disk as it is) |
+| `E_EDITOR_UNSYNCED` | error | `.pix3/dev.json` points at a live dev server whose editor did not flush its unsaved scenes within 15 s (`--no-sync` reads the disk as it is). A writer tab that reported nothing unsaved and then went silent (Chrome froze it in a background window) does not count; one frozen with unsaved edits does — bring it to the front |
 | `E_RUNTIME_VERSION` | error | the version gate: the project resolves a `node_modules/@pix3/runtime` that is not the runtime this CLI validates (and smoke-runs) with — run the project's own CLI (`npx pix3 …`) or install the matching runtime |
 | `W_PIX3_VERSION_MISMATCH` | warning | an installed `@pix3/cli`, `@pix3/vite-plugin` or `@pix3/editor-core` is not this CLI's version (lockstep packages) |
 | `W_RUNTIME_NOT_INSTALLED` | warning | own `tsconfig.json`, and no `node_modules/@pix3/runtime` |
@@ -837,6 +837,11 @@ for `__PIX3_PLAYER__.status` to say `running`, and reports page exceptions, `con
 player's errors, the game's `registerGameDebug` snapshot and, with `--screenshot`, a PNG. Exit 0 =
 booted, frames went by, nothing threw, the bot or the run passed; 1 = otherwise (a page that says
 `running` with no frame counted is an error too); 2 = could not run. Code: `src/play/`.
+
+The dev server is the one `.pix3/dev.json` names, asked first (`/__pix3/api/hello`): a server that
+does not answer is refused with exit 2 (start it, or play `dist` explicitly) — the run does not
+fall back to an old build. A page that never gets a running player says why: the navigation error,
+or the page's requests that failed or answered ≥ 400 (a module Vite refused).
 
 **The page's test tools.** `--run` and `--bot` drive the game through the test host on the page
 itself, `window.__PIX3_PLAYER__.tools.call(name, params)` (`packages/editor-core/src/services/

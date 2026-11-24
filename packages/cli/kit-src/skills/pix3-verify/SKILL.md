@@ -82,7 +82,7 @@ Codes and what they usually mean:
 | `E_TYPE` | A TypeScript error in a script (`TS2339: Property … does not exist …`) |
 | `E_TYPECHECK_UNAVAILABLE` | TypeScript could not be installed — run the printed command |
 | `E_DEPENDENCIES_MISSING` | A project with its own `tsconfig.json` and no `node_modules` — `npm install`; tsc was skipped |
-| `E_EDITOR_UNSYNCED` | The open editor could not write its unsaved scenes before the check (a drag in progress, a tab that does not answer) — `pix3_sync` from the bridge, or `--no-sync` to read the disk as it is |
+| `E_EDITOR_UNSYNCED` | The open editor could not write its unsaved scenes before the check (a drag in progress, a tab with unsaved edits Chrome froze in a background window — bring it to the front) — `pix3_sync` from the bridge, or `--no-sync` to read the disk as it is |
 | `E_RUNTIME_VERSION` | The project installs another `@pix3/runtime` than the one this `pix3` checks and runs scenes with — call the project's own CLI (`npx pix3 check`), or `npm install` the runtime at the CLI's version; `pix3 smoke` refuses to run with the same code |
 | `W_PIX3_VERSION_MISMATCH` | Another installed `@pix3/*` package (`cli`, `vite-plugin`, `editor-core`) is not the CLI's version — `npm install` it at that version |
 | `W_RUNTIME_NOT_INSTALLED` | A project with its own `tsconfig.json` type-checks against its own `node_modules/@pix3/runtime`, and there is none — `npm install` |

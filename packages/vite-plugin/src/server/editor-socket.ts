@@ -12,7 +12,8 @@ import { isRecord } from './http.ts';
  * it. Everything the plugin tells the page — file changes, "re-import your scripts", "flush" —
  * goes over this socket.
  *
- * Client → plugin: `{type:'hello', tabId}` once, then `{type:'reply', id, ...}` answers.
+ * Client → plugin: `{type:'hello', tabId}` once, then `{type:'reply', id, ...}` answers and
+ * `{type:'state', unsaved}` whenever the tab's unsaved edits come or go.
  * Plugin → client: `{type:'welcome', ...}`, broadcast frames (`pix3:fs`, `pix3:writer`,
  * `pix3:scripts`), and requests `{type:'request', id, kind, ...}` that the tab answers by `id`.
  */
@@ -22,6 +23,8 @@ export interface EditorTab {
   readonly connectedAt: number;
   /** The page's `Origin` (the address the browser reached the server at), when it sent one. */
   readonly origin?: string;
+  /** The tab's last `state` frame: it holds edits the disk does not have (absent: never said). */
+  readonly unsaved?: boolean;
 }
 
 export type RequestReply = Record<string, unknown> & { readonly ok: boolean };
@@ -85,7 +88,11 @@ export class EditorSocket {
   }
 
   hasTab(tabId: string): boolean {
-    return this.tabs().some(tab => tab.tabId === tabId);
+    return this.tab(tabId) !== undefined;
+  }
+
+  tab(tabId: string): EditorTab | undefined {
+    return this.tabs().find(tab => tab.tabId === tabId);
   }
 
   broadcast(frame: Record<string, unknown>): void {
@@ -172,6 +179,10 @@ export class EditorSocket {
       );
       this.options.log?.(`editor tab ${tabId} connected`);
       this.options.onTabsChanged?.();
+      return;
+    }
+    if (message.type === 'state' && connection.tab && typeof message.unsaved === 'boolean') {
+      connection.tab = { ...connection.tab, unsaved: message.unsaved };
       return;
     }
     if (message.type === 'reply' && typeof message.id === 'string') {

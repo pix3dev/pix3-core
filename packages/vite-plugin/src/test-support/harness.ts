@@ -37,6 +37,8 @@ export interface FakeTab {
     predicate: (frame: Record<string, unknown>) => boolean,
     timeoutMs?: number
   ): Promise<Record<string, unknown>>;
+  /** A frame from the page (`{type:'state', unsaved}`). */
+  send(frame: Record<string, unknown>): void;
   close(): void;
 }
 
@@ -137,6 +139,7 @@ export const startProject = async (
       frames,
       onRequest: (kind, answer) => answers.set(kind, answer),
       waitFor,
+      send: frame => socket.send(JSON.stringify(frame)),
       close: () => socket.close(),
     };
   };

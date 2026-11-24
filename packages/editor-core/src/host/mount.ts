@@ -25,6 +25,7 @@ import type { EditorHost } from './EditorHost';
 import { ExternalReloadService } from './ExternalReloadService';
 import { HostService } from './HostService';
 import { SyncApplyService } from './SyncApplyService';
+import { installUnsavedReport } from './unsaved-report';
 import { WriterService } from './WriterService';
 
 export interface EditorHandle {
@@ -99,6 +100,7 @@ export async function mountEditorWith(
     },
     applySync: info => syncApply.apply(info),
   });
+  disposers.push(installUnsavedReport(host.sync, flush, service(LocalizationEditorService)));
 
   installDebugBridge();
   disposers.push(installEditorPresence());

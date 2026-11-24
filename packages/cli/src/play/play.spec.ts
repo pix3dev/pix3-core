@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -225,6 +226,27 @@ describe('pix3 play', () => {
     const runPolicy = await run(['dist', '--run', '{"bot":{"name":"gone"}}']);
     expect(runPolicy.code).toBe(2);
     expect(runPolicy.err).toContain(join('design', 'tests', 'bots', 'gone.ts'));
+  });
+
+  it('a dev.json whose server is gone is refused, not loaded (PipeBlast lab B2)', async () => {
+    const server = createServer();
+    const port = await new Promise<number>(done =>
+      server.listen(0, '127.0.0.1', () => done((server.address() as { port: number }).port))
+    );
+    await new Promise<void>(done => server.close(() => done()));
+    mkdirSync(join(root, '.pix3'));
+    const url = `http://127.0.0.1:${port}/`;
+    writeFileSync(
+      join(root, '.pix3', 'dev.json'),
+      JSON.stringify({ url, editorUrl: `${url}__pix3/`, port, pid: 0 })
+    );
+    mkdirSync(join(root, 'dist'));
+    writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>');
+    for (const argv of [[], ['dev']]) {
+      const stale = await run(argv);
+      expect(stale.code).toBe(2);
+      expect(stale.err).toContain(`the dev server in .pix3/dev.json (${url}) does not answer`);
+    }
   });
 
   it('turns list values into a grid of runs, each with its own size, args and overrides', async () => {

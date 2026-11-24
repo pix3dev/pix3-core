@@ -211,6 +211,8 @@ export interface HostSync {
     readonly expect?: Record<string, string>;
     readonly timeoutMs?: number;
   }): Promise<HookReply>;
+  /** Whether this tab holds edits the disk does not have (absent on a plugin before alpha.14). */
+  reportUnsaved?(unsaved: boolean): void;
 }
 
 export interface HostClaim {

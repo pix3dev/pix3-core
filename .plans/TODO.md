@@ -85,5 +85,9 @@ From `.plans/done/design-feedback.md` (2026-11-23), review findings left open on
   nodes use (a `core:tint` on spawned sprites) are not held and still relink after the last such
   node is freed (PipeBlast: the tint variant linked twice in a round).
 
+From the PipeBlast 3D style lab (2026-11-24): `.plans/pipeblast-3d-lab-bugs.md` — the editor
+writing invalid YAML into an empty `config: {}` (B1), four smaller bugs, and the renderer, bake and
+editor-preview settings a 3D scene cannot reach without a dev global.
+
 Known behaviour (owner's call): an agent's script or policy edit makes Vite full-reload every game
 page, the human's included. `three` stays a peer dependency of `@pix3/vite-plugin`.

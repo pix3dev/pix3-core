@@ -450,6 +450,35 @@ describe('targeted cases', () => {
     );
   });
 
+  it("a component's empty `config: {}` takes its first key as a nested block (PipeBlast lab B1)", () => {
+    const text =
+      'root:\n  - id: a\n    type: Node3D\n    components:\n      - id: c\n        type: user:Lab\n        config: {}\n  - id: b\n    type: Node3D\n';
+    const comp = { id: 'c' };
+    const added = applySceneOps(text, [
+      { kind: 'set', nodeId: 'a', path: ['components', comp, 'config', 'board'], value: '5x6' },
+    ]);
+    expect(added).toBe(text.replace('config: {}', 'config:\n          board: 5x6'));
+    expect(parse(added).root[0].components[0].config).toEqual({ board: '5x6' });
+
+    const second = applySceneOps(added, [
+      { kind: 'set', nodeId: 'a', path: ['components', comp, 'config', 'speed'], value: 2 },
+    ]);
+    expect(parse(second).root[0].components[0].config).toEqual({ board: '5x6', speed: 2 });
+
+    const removed = applySceneOps(second, [
+      { kind: 'delete', nodeId: 'a', path: ['components', comp, 'config', 'board'] },
+      { kind: 'delete', nodeId: 'a', path: ['components', comp, 'config', 'speed'] },
+    ]);
+    expect(parse(removed).root[0].components[0]).toEqual({ id: 'c', type: 'user:Lab' });
+
+    const before = parse(text) as SavedSceneDocument;
+    const after = structuredClone(before) as { root: { components?: { config: object }[] }[] };
+    after.root[0].components![0].config = { board: '5x6' };
+    expect(parse(applySceneOps(text, diffScenes(before, after as SavedSceneDocument)))).toEqual(
+      after
+    );
+  });
+
   it('keeps CRLF and a BOM, and a trailing comment on the edited line', async () => {
     const text = '\uFEFFroot:\r\n  - id: a # the hero\r\n    name: A # rename me\r\n';
     const patched = applySceneOps(text, [{ kind: 'set', nodeId: 'a', path: ['name'], value: 'B' }]);

@@ -224,6 +224,12 @@ export class EditorHostConnection {
   readonly sync: {
     setHandlers(handlers: HostSyncHandlers): void;
     run(options?: { expect?: Record<string, string>; timeoutMs?: number }): Promise<HookReply>;
+    /**
+     * Whether this tab holds edits the disk does not have. Sent to the plugin now and after every
+     * reconnect: a writer tab that said `false` and then stops answering (Chrome froze it in the
+     * background) does not hold a flush up.
+     */
+    reportUnsaved(unsaved: boolean): void;
   };
   readonly writer: {
     readonly id: string | null;
@@ -238,6 +244,8 @@ export class EditorHostConnection {
   readonly #session = takeSessionToken();
   private roots: ScriptRoots;
   private handlers: HostSyncHandlers = {};
+  /** Last {@link sync}.reportUnsaved; null until the editor reports. */
+  private unsaved: boolean | null = null;
   private socket: WebSocket | null = null;
   private hello: Hello | null = null;
   /** Tab the plugin says may write (from `welcome` and `pix3:writer`). */
@@ -269,6 +277,10 @@ export class EditorHostConnection {
         this.handlers = handlers;
       },
       run: options => this.runSync(options),
+      reportUnsaved: unsaved => {
+        this.unsaved = unsaved;
+        this.sendState();
+      },
     };
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const connection = this;
@@ -503,6 +515,11 @@ export class EditorHostConnection {
     return { ...(stamps ?? {}) };
   }
 
+  private sendState(): void {
+    if (this.unsaved === null || !this.hello || this.socket?.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify({ type: 'state', unsaved: this.unsaved }));
+  }
+
   private reply(id: string, body: HookReply): void {
     this.socket?.send(JSON.stringify({ type: 'reply', id, ...body }));
   }
@@ -519,6 +536,7 @@ export class EditorHostConnection {
         const hello = { ...message, tabId: this.tabId } as unknown as Hello;
         this.hello = hello;
         this.setWriter(hello.writerId);
+        this.sendState();
         this.emit(this.connectionListeners, 'open');
         for (const waiter of this.helloWaiters.splice(0)) waiter(hello);
         return;
