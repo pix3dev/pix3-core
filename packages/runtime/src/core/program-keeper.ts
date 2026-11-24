@@ -41,6 +41,8 @@ export class ProgramKeeper {
    * prewarm: its node draws with the same program this frame); later ones cost a key lookup.
    */
   hold(mesh: Mesh, camera: Camera, scene: Scene): void {
+    // A headless run (`pix3 smoke` in Node) draws nothing: its renderer compiles no program to hold.
+    if (typeof (this.renderer as { compile?: unknown }).compile !== 'function') return;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) {
       const variant = `${material.customProgramCacheKey()}|${Object.keys(material.defines ?? {})

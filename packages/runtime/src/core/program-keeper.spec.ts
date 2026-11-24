@@ -122,6 +122,14 @@ describe('ProgramKeeper', () => {
     expect(gl.users.size).toBe(0);
   });
 
+  it('does nothing on a renderer that compiles nothing (a headless run)', () => {
+    const keeper = new ProgramKeeper({} as unknown as WebGLRenderer);
+    const sprite = new Sprite2D({ id: 'target' });
+    sprite.getShaderEffectStack().attach('core:flash', { transient: true });
+    expect(() => keeper.hold(meshOf(sprite), new OrthographicCamera(), new Scene())).not.toThrow();
+    expect(keeper.size).toBe(0);
+  });
+
   it('looks at a material once per variant: a second material of a held variant drops its stand-in', () => {
     const gl = new FakeRenderer();
     const keeper = new ProgramKeeper(gl as unknown as WebGLRenderer);
