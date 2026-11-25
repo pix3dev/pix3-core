@@ -5,17 +5,26 @@ import { Script } from '@pix3/runtime';
 import { NodeBase, SceneManager, ScriptRegistry } from '@pix3/runtime';
 import { createInitialAppState } from '@/state/AppState';
 import { UpdateComponentPropertyOperation } from './UpdateComponentPropertyOperation';
+import { UpdateComponentPropertiesOperation } from './UpdateComponentPropertiesOperation';
 
 class TestComponent extends Script {
   constructor(id: string, type: string) {
     super(id, type);
-    this.config = { speed: 1 };
+    this.config = { speed: 1, size: 2 };
   }
 
   static getPropertySchema(): PropertySchema {
     return {
       nodeType: 'TestComponent',
       properties: [
+        {
+          name: 'size',
+          type: 'number',
+          getValue: (component: unknown) => (component as TestComponent).config.size,
+          setValue: (component: unknown, value: unknown) => {
+            (component as TestComponent).config.size = Number(value);
+          },
+        },
         {
           name: 'speed',
           type: 'number',
@@ -166,6 +175,39 @@ describe('UpdateComponentPropertyOperation', () => {
 
     const result = await operation.perform(context);
 
+    expect(result.didMutate).toBe(false);
+  });
+});
+
+describe('UpdateComponentPropertiesOperation', () => {
+  it('writes several properties as one undo step and undoes them all', async () => {
+    const { context, component, state } = createOperationContext();
+    const result = await new UpdateComponentPropertiesOperation({
+      nodeId: 'node-1',
+      componentId: 'comp-1',
+      values: [
+        { propertyName: 'speed', value: 5 },
+        { propertyName: 'size', value: 7 },
+      ],
+    }).perform(context);
+
+    expect(result.didMutate).toBe(true);
+    expect(component.config).toMatchObject({ speed: 5, size: 7 });
+    expect(state.scenes.descriptors['scene-1'].isDirty).toBe(true);
+
+    await result.commit!.undo();
+    expect(component.config).toMatchObject({ speed: 1, size: 2 });
+    await result.commit!.redo();
+    expect(component.config).toMatchObject({ speed: 5, size: 7 });
+  });
+
+  it('is no change when every value is already there', async () => {
+    const { context } = createOperationContext();
+    const result = await new UpdateComponentPropertiesOperation({
+      nodeId: 'node-1',
+      componentId: 'comp-1',
+      values: [{ propertyName: 'speed', value: 1 }],
+    }).perform(context);
     expect(result.didMutate).toBe(false);
   });
 });

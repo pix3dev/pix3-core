@@ -857,6 +857,21 @@ you never clone textures yourself. Author the region once and drive it from
 throwing `tickEditorPreview` disables the component and surfaces the error like a
 play-mode hook, so the editor keeps running.
 
+**Rebuild only what a property needs.** The human tunes `config` values in the inspector by
+dragging, arrow keys and the wiggle (a label click swings the value for ~2 s), so a preview
+sees a new value on many consecutive frames. Class every tunable as either **structural**
+(changes geometry, node count or topology: sizes in cells, radii that shape a mesh, counts) or
+**cosmetic** (a uniform, colour, opacity, light, material parameter, transform, shadow
+strength). A cosmetic change updates the live objects in place — set the uniform / material
+field — and never disposes and rebuilds the view; keep two keys, `structuralKey` (rebuild when
+it changes) and the rest (apply in place). One `JSON.stringify(allSettings)` key that rebuilds
+everything on any change makes every slider a full geometry rebuild per frame: the inspector
+stutters and the wiggle drops to a few coarse steps. Mark a property whose in-between values
+are invalid or structural with `ui.wiggle: false` (`configNumber(…, { wiggle: false })`), and so
+a property the editor preview never shows (applied only in play — a camera fit in `onUpdate`,
+the game renderer's exposure; or a script with no `tickEditorPreview` at all): a wiggle there
+moves nothing on screen and reads as "this knob does nothing".
+
 It draws only the component's own node: content a script spawns at play time (a match-3 board
 of 64 gem nodes) has no edit-mode picture — the viewport shows the empty board, and the board is
 seen in Play, `pix3 play --screenshot` or a policy's `bot.screenshot`. Temporary preview child

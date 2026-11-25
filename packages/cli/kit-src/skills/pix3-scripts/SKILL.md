@@ -90,6 +90,9 @@ export class Combo extends Script {
   Anything else is a full entry: `name` (= the config key), `type` (`vector2` `vector3`
   `object` …), `ui` (`label`, `group`, …), `getValue`, `setValue` — `setValue` is what the
   loader calls with the scene's value; clamp and coerce there.
+- Inspector tuning (drag, arrows, label wiggle) changes a value every frame: a cosmetic one (colour,
+  uniform, opacity, material, transform) updates live objects in place; only a structural one (geometry
+  size, count) rebuilds — key the rebuild on those alone. `{ wiggle: false }`: structural or play-only values.
 - One mechanic = one script — most land at 70–200 lines; a board or level manager runs longer,
   so split pure rules (matching, scoring, generation) into a plain module beside it (no
   `extends Script`) that a Node test can import. Tunable numbers go into `config`, not into

@@ -587,3 +587,56 @@ pix3-inspector-panel .inspector-subsection__hint,
 pix3-inspector-panel .inspector-subsection__title {
   font-size: 11px;
 }
+
+/* ── Wiggle and row revert ─────────────────────────────────────────────────────
+   The label text of a wiggleable property is a button: click swings the value in
+   the viewport (never saved). It stays text-looking; hover underlines it so the
+   affordance is findable, and a running wiggle tints the label. */
+pix3-inspector-panel .property-label__wiggle {
+  all: unset;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 2px;
+  text-decoration: underline dotted transparent;
+  text-underline-offset: 3px;
+}
+
+pix3-inspector-panel .property-label__wiggle:hover {
+  color: var(--fg-0);
+  text-decoration-color: var(--fg-3);
+}
+
+pix3-inspector-panel .property-label__wiggle:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+pix3-inspector-panel .property-label--wiggling,
+pix3-inspector-panel .property-label--wiggling .property-label__wiggle,
+pix3-inspector-panel .property-wiggle-button.is-active {
+  color: var(--accent);
+}
+
+/* The row revert ("back to the value before my edits") sits right after the
+   label text; small, so the label column keeps its width. */
+pix3-inspector-panel .property-session-revert {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+pix3-inspector-panel .property-session-revert svg {
+  width: 12px;
+  height: 12px;
+}
+
+pix3-inspector-panel .property-label-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+pix3-inspector-panel .component-revert-all {
+  color: var(--accent);
+}

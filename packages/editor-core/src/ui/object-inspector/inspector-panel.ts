@@ -26,6 +26,14 @@ import { readAlphaMask } from '@/core/alpha-mask';
 import { traceCollisionPolygon } from '@/core/contour-trace';
 import { mapImagePolygonToSpriteLocal } from '@/features/scene/collider-shapes';
 import { UpdateComponentPropertyCommand } from '@/features/scripts/UpdateComponentPropertyCommand';
+import { UpdateComponentPropertiesCommand } from '@/features/scripts/UpdateComponentPropertiesCommand';
+import {
+  PropertyWiggleService,
+  isWiggleable,
+  type WiggleState,
+} from '@/services/editor/PropertyWiggleService';
+import type { WiggleSpec } from '@/services/editor/property-wiggle';
+import { EditBaselines } from './edit-baselines';
 import { emojiAsArtFieldError } from '@/services/scene/emoji-as-art';
 import { InspectorResourcePreview } from './inspector-resource-preview';
 import { InspectorSectionRenderers } from './inspector-section-renderers';
@@ -90,6 +98,23 @@ export class InspectorPanel extends ComponentBase {
 
   @inject(Polygon2DEditController)
   private readonly polygonEditor!: Polygon2DEditController;
+
+  @inject(PropertyWiggleService)
+  private readonly wiggle!: PropertyWiggleService;
+
+  /** The running wiggle (label click), so its row shows the swinging value. */
+  @state()
+  wiggleState: WiggleState | null = null;
+
+  /** Per-property "value before my first edit" for the row revert (`edit-baselines.ts`). */
+  readonly editBaselines = new EditBaselines();
+  private disposeWiggleSubscription?: () => void;
+
+  private readonly onWiggleEscape = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this.wiggleState) {
+      this.wiggle.stop();
+    }
+  };
 
   @inject(AssetFileActivationService)
   private readonly assetActivation!: AssetFileActivationService;
@@ -196,6 +221,10 @@ export class InspectorPanel extends ComponentBase {
       }
       this.requestUpdate();
     });
+    this.disposeWiggleSubscription = this.wiggle.subscribe(next => {
+      this.wiggleState = next;
+    });
+    document.addEventListener('keydown', this.onWiggleEscape);
     this.updateSelectedNodes();
 
     // Track focus for context-aware shortcuts
@@ -254,6 +283,10 @@ export class InspectorPanel extends ComponentBase {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.wiggle.stop();
+    this.disposeWiggleSubscription?.();
+    this.disposeWiggleSubscription = undefined;
+    document.removeEventListener('keydown', this.onWiggleEscape);
     this.disposeSelectionSubscription?.();
     this.disposeSelectionSubscription = undefined;
     this.disposeSceneSubscription?.();
@@ -316,6 +349,8 @@ export class InspectorPanel extends ComponentBase {
 
     const nextPrimaryNodeId = this.primaryNode?.nodeId ?? null;
     if (previousPrimaryNodeId !== nextPrimaryNodeId) {
+      this.wiggle.stop();
+      this.editBaselines.clear();
       this.propertyPreviewStartValues.clear();
       this.componentPropertyPreviewStartValues.clear();
       this.refusedPropertyValues.clear();
@@ -351,6 +386,7 @@ export class InspectorPanel extends ComponentBase {
   /** Refresh the cached property/component display values from the selected node. */
   syncValuesFromNode(): void {
     if (!this.primaryNode) {
+      this.editBaselines.clear();
       this.propertySchema = null;
       this.propertyValues = {};
       this.componentPropertyValues = {};
@@ -361,6 +397,10 @@ export class InspectorPanel extends ComponentBase {
       this.isGroupsEditorOpen = false;
       return;
     }
+
+    // A value changed to something this session never wrote (an agent's edit, a merge): its
+    // row revert would overwrite that edit, so the baseline goes.
+    this.editBaselines.prune();
 
     // Get the schema for this node
     this.propertySchema = getNodePropertySchema(this.primaryNode);
@@ -655,6 +695,7 @@ export class InspectorPanel extends ComponentBase {
     if (!this.propertyPreviewStartValues.has(propertyName)) {
       this.propertyPreviewStartValues.set(propertyName, propDef.getValue(this.primaryNode));
     }
+    this.noteNodeEdit(propDef, value);
 
     const command = new UpdateObjectPropertyCommand({
       nodeId: this.primaryNode.nodeId,
@@ -699,6 +740,11 @@ export class InspectorPanel extends ComponentBase {
     // Find the property definition
     const propDef = this.propertySchema.properties.find(p => p.name === propertyName);
     if (!propDef) return;
+    this.noteNodeEdit(
+      propDef,
+      value,
+      hasPreviousValueOverride ? { value: previousValue } : undefined
+    );
 
     const command = new UpdateObjectPropertyCommand({
       nodeId: this.primaryNode.nodeId,
@@ -816,6 +862,7 @@ export class InspectorPanel extends ComponentBase {
     if (!this.componentPropertyPreviewStartValues.has(key)) {
       this.componentPropertyPreviewStartValues.set(key, propDef.getValue(component));
     }
+    this.noteComponentEdit(component, propDef, value);
 
     const command = new UpdateComponentPropertyCommand({
       nodeId: this.primaryNode.nodeId,
@@ -1028,6 +1075,15 @@ export class InspectorPanel extends ComponentBase {
     hasPreviousValueOverride: boolean = false
   ): Promise<void> {
     if (!this.primaryNode) return;
+    const target = this.primaryNode.components.find(c => c.id === componentId);
+    if (target) {
+      this.noteComponentEdit(
+        target,
+        propDef,
+        value,
+        hasPreviousValueOverride ? { value: previousValue } : undefined
+      );
+    }
 
     const command = new UpdateComponentPropertyCommand({
       nodeId: this.primaryNode.nodeId,
@@ -1057,6 +1113,145 @@ export class InspectorPanel extends ComponentBase {
     }
   }
 
+  // --- revert to "before my edits" and wiggle --------------------------------
+
+  /** Node properties tracked for the row revert: scalar values only (vectors are live objects). */
+  private static readonly REVERTIBLE_NODE_TYPES = new Set([
+    'number',
+    'boolean',
+    'string',
+    'color',
+    'select',
+    'enum',
+  ]);
+
+  private noteNodeEdit(propDef: PropertyDefinition, value: unknown, before?: { value: unknown }) {
+    const node = this.primaryNode;
+    if (!node || !InspectorPanel.REVERTIBLE_NODE_TYPES.has(propDef.type)) return;
+    const key = `node:${propDef.name}`;
+    this.editBaselines.noteStart(key, before ? before.value : propDef.getValue(node), () =>
+      propDef.getValue(node)
+    );
+    this.editBaselines.noteWritten(key, value);
+  }
+
+  private noteComponentEdit(
+    component: ScriptComponentLike,
+    propDef: PropertyDefinition,
+    value: unknown,
+    before?: { value: unknown }
+  ) {
+    const key = getComponentPropertyKey(component.id, propDef.name);
+    this.editBaselines.noteStart(
+      key,
+      before ? before.value : componentValueOrFallback(component, propDef),
+      () => componentValueOrFallback(component, propDef)
+    );
+    this.editBaselines.noteWritten(key, value);
+  }
+
+  /** The row's revert button: back to the value before the first edit, one undo step. */
+  async revertComponentProperty(componentId: string, propDef: PropertyDefinition): Promise<void> {
+    const baseline = this.editBaselines.baseline(
+      getComponentPropertyKey(componentId, propDef.name)
+    );
+    if (!baseline || baseline.value === undefined) return;
+    this.wiggle.stop();
+    await this.applyComponentPropertyChange(componentId, propDef, baseline.value);
+  }
+
+  async revertNodeProperty(propDef: PropertyDefinition): Promise<void> {
+    const baseline = this.editBaselines.baseline(`node:${propDef.name}`);
+    if (!baseline || baseline.value === undefined) return;
+    this.wiggle.stop();
+    await this.applyPropertyChange(propDef.name, baseline.value);
+  }
+
+  /** Properties of a component changed since the selection (for "Revert N changes"). */
+  changedComponentProperties(componentId: string): string[] {
+    const prefix = getComponentPropertyKey(componentId, '');
+    return this.editBaselines.changedKeys(prefix).map(key => key.slice(prefix.length));
+  }
+
+  /** The component header's "Revert N changes": every changed property, one undo step. */
+  async revertComponent(componentId: string): Promise<void> {
+    if (!this.primaryNode) return;
+    const values = this.changedComponentProperties(componentId).flatMap(propertyName => {
+      const baseline = this.editBaselines.baseline(
+        getComponentPropertyKey(componentId, propertyName)
+      );
+      return baseline && baseline.value !== undefined
+        ? [{ propertyName, value: baseline.value }]
+        : [];
+    });
+    if (values.length === 0) return;
+    this.wiggle.stop();
+    try {
+      await this.commandDispatcher.execute(
+        new UpdateComponentPropertiesCommand({
+          nodeId: this.primaryNode.nodeId,
+          componentId,
+          values,
+          label: `Revert ${values.length} change${values.length === 1 ? '' : 's'}`,
+        })
+      );
+    } catch (error) {
+      console.error('[InspectorPanel] Failed to revert component', componentId, error);
+    }
+  }
+
+  /** The value a wiggling row shows instead of its stored one, or `undefined`. */
+  wiggleValueFor(key: string): number | boolean | string | undefined {
+    return this.wiggleState?.key === key ? this.wiggleState.value : undefined;
+  }
+
+  /** Label click: wiggle a component property (again: full range; again: stop). */
+  toggleComponentWiggle(componentId: string, propDef: PropertyDefinition): void {
+    const component = this.primaryNode?.components.find(c => c.id === componentId);
+    if (!component || !isWiggleable(propDef)) return;
+    const key = getComponentPropertyKey(componentId, propDef.name);
+    const spec = this.wiggleSpec(propDef, this.componentPropertyValues[key]?.value);
+    if (!spec) return;
+    this.wiggle.toggle({ key, holder: component, isComponent: true, propDef, spec });
+  }
+
+  toggleNodeWiggle(propDef: PropertyDefinition): void {
+    const node = this.primaryNode;
+    if (!node || !isWiggleable(propDef)) return;
+    const spec = this.wiggleSpec(propDef, this.propertyValues[propDef.name]?.value);
+    if (!spec) return;
+    this.wiggle.toggle({
+      key: `node:${propDef.name}`,
+      holder: node,
+      isComponent: false,
+      propDef,
+      spec,
+    });
+  }
+
+  private wiggleSpec(propDef: PropertyDefinition, shown: unknown): WiggleSpec | null {
+    const text = typeof shown === 'string' ? shown : String(shown ?? '');
+    if (propDef.type === 'number') {
+      const base = Number.parseFloat(text);
+      if (!Number.isFinite(base)) return null;
+      return {
+        kind: 'number',
+        base,
+        min: typeof propDef.ui?.min === 'number' ? propDef.ui.min : undefined,
+        max: typeof propDef.ui?.max === 'number' ? propDef.ui.max : undefined,
+        step: propDef.ui?.step,
+      };
+    }
+    if (propDef.type === 'boolean') {
+      return { kind: 'boolean', base: text === 'true' };
+    }
+    if (propDef.type === 'color') {
+      const base = this.normalizeColorValue(text);
+      return base ? { kind: 'color', base } : null;
+    }
+    return null;
+  }
+
   protected render() {
     const hasSelection = this.selectedNodes.length > 0;
     const hasAssetSelection = this.selectedAssetItem !== null;
@@ -1083,4 +1278,22 @@ declare global {
   interface HTMLElementTagNameMap {
     'pix3-inspector-panel': InspectorPanel;
   }
+}
+
+type ScriptComponentLike = NodeBase['components'][number];
+
+/**
+ * A component property's value as the inspector shows it: a `config*` entry absent from the
+ * file reads `undefined`, but the script uses its fallback — which is what a revert must write.
+ */
+function componentValueOrFallback(component: ScriptComponentLike, propDef: PropertyDefinition) {
+  const value = propDef.getValue(component);
+  if (value !== undefined) return value;
+  const scratch = { config: {} as Record<string, unknown> };
+  try {
+    propDef.setValue(scratch, undefined);
+  } catch {
+    return undefined;
+  }
+  return propDef.getValue(scratch);
 }

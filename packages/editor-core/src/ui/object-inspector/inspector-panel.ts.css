@@ -325,6 +325,13 @@ pix3-inspector-panel pix3-panel {
   max-width: var(--inspector-number-width);
 }
 
+/* A ranged field (finite min and max) draws a range bar, which needs width:
+   it takes the rest of the row like Blender's sliders. */
+.property-group pix3-number-field[ranged] {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
 .property-group pix3-vector2-editor {
   max-width: calc(2 * var(--inspector-number-width) + var(--inspector-number-gap));
 }
@@ -340,8 +347,11 @@ pix3-inspector-panel pix3-panel {
 .property-label {
   font-size: 13px;
   color: var(--fg-2);
+  /* The label column grows with the panel (40% of the row, 92–240px): a wide
+     inspector shows long script-property names on one line instead of
+     wrapping them beside a short field. */
   min-width: 92px;
-  flex: 0 0 92px;
+  flex: 0 0 clamp(92px, 40%, 240px);
   display: flex;
   align-items: center;
   gap: 0.5rem;

@@ -1,3 +1,4 @@
+import { nothing } from 'lit';
 import { html } from '@/fw';
 import type { PropertyDefinition } from '@/fw';
 import { MeshInstance, getPropertiesByGroup, isShaderEffectHost } from '@pix3/runtime';
@@ -593,6 +594,7 @@ ${textPreview?.content || 'Empty file'}</pre
                     <div class="script-name">${component.type}</div>
                   </div>
                   <div class="script-actions">
+                    ${this.renderRevertComponentButton(component.id)}
                     ${this.renderEnabledSwitch(
                       component.enabled,
                       component.type,
@@ -616,6 +618,25 @@ ${textPreview?.content || 'Empty file'}</pre
         </div>
       </div>
     `;
+  }
+
+  /** "Revert N": every property of this component changed since the selection, one undo step. */
+  private renderRevertComponentButton(componentId: string) {
+    const count = this.host.changedComponentProperties(componentId).length;
+    if (count === 0) {
+      return nothing;
+    }
+    return html`<button
+      class="inspector-btn component-revert-all"
+      type="button"
+      title="Revert ${count} changed propert${count === 1
+        ? 'y'
+        : 'ies'} to the values before your edits (one undo step)"
+      @click=${() => void this.host.revertComponent(componentId)}
+    >
+      ${this.host.iconService.getIcon('corner-up-left', IconSize.SMALL)}
+      <span>Revert ${count}</span>
+    </button>`;
   }
 
   renderComponentProperties(component: ScriptComponent) {

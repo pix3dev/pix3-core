@@ -26,6 +26,10 @@ import {
 import { IconSize } from '@/services/editor/IconService';
 import type { InspectorPanel } from './inspector-panel';
 import { isReadOnlyTab } from '@/services/editor/read-only';
+import { isWiggleable } from '@/services/editor/PropertyWiggleService';
+
+const WIGGLE_TITLE =
+  'Click: swing the value in the viewport (not saved) · again: full range · again or Esc: stop';
 
 interface SelectOption {
   value: string;
@@ -1079,6 +1083,8 @@ export class InspectorPropertyRenderers {
     }
 
     const label = prop.ui?.label || prop.name;
+    // A wiggling row shows the swinging value (the stored one is untouched).
+    const shown = this.host.wiggleValueFor(key);
     // Component config on a prefab instance node is not serialized as an
     // override, so edits would be silently lost on save. Render the editors
     // read-only for every instance node (matching the disabled Add/Remove/Toggle
@@ -1101,7 +1107,7 @@ export class InspectorPropertyRenderers {
 
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-collision-polygon-editor
             .vertexCount=${points.length}
             .editing=${editing}
@@ -1123,7 +1129,7 @@ export class InspectorPropertyRenderers {
       const audioPreview = this.host.resourcePreview.getAudioPreview(state.value);
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-audio-resource-editor
             .resourceUrl=${state.value}
             .previewUrl=${audioPreview.previewUrl}
@@ -1145,7 +1151,7 @@ export class InspectorPropertyRenderers {
     if (prop.type === 'string' && prop.ui?.editor === 'model-resource') {
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-model-resource-editor
             .resourceUrl=${state.value}
             ?disabled=${readOnly}
@@ -1165,7 +1171,7 @@ export class InspectorPropertyRenderers {
             <input
               type="checkbox"
               class="property-checkbox"
-              .checked=${state.value === 'true'}
+              .checked=${typeof shown === 'boolean' ? shown : state.value === 'true'}
               ?disabled=${readOnly}
               @change=${(e: Event) =>
                 this.host.applyComponentPropertyChange(
@@ -1176,6 +1182,7 @@ export class InspectorPropertyRenderers {
             />
             <span class="property-label-text">${label}</span>
           </label>
+          ${this.renderComponentLabelActions(component, prop)}
         </div>
       `;
     }
@@ -1189,7 +1196,7 @@ export class InspectorPropertyRenderers {
       }
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-vector2-editor
             .x=${value.x}
             .y=${value.y}
@@ -1215,7 +1222,7 @@ export class InspectorPropertyRenderers {
       }
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-vector3-editor
             .x=${value.x}
             .y=${value.y}
@@ -1242,7 +1249,7 @@ export class InspectorPropertyRenderers {
       }
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <pix3-euler-editor
             .x=${value.x}
             .y=${value.y}
@@ -1263,8 +1270,9 @@ export class InspectorPropertyRenderers {
       const activeScene = this.host.sceneManager.getActiveSceneGraph();
       if (!activeScene) {
         return html`<div class="property-group component-property-group">
-          <span class="property-label">${label}</span
-          ><span class="error-text">No active scene</span>
+          ${this.renderComponentLabel(component, prop, label)}<span class="error-text"
+            >No active scene</span
+          >
         </div>`;
       }
 
@@ -1276,7 +1284,7 @@ export class InspectorPropertyRenderers {
 
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <select
             class="property-select"
             ?disabled=${readOnly}
@@ -1303,7 +1311,7 @@ export class InspectorPropertyRenderers {
       const options = this.getSelectOptions(prop);
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <select
             class="property-select property-select--enum"
             ?disabled=${readOnly}
@@ -1334,12 +1342,16 @@ export class InspectorPropertyRenderers {
         Number.isFinite(prop.ui.max);
 
       if (hasSlider) {
-        const numericValue = Number.parseFloat(state.value);
+        const numericValue = typeof shown === 'number' ? shown : Number.parseFloat(state.value);
         const safeValue = Number.isFinite(numericValue) ? numericValue : Number(prop.ui?.min);
 
         return html`
           <div class="property-group component-property-group">
-            <span class="property-label">${label}${prop.ui?.unit ? ` (${prop.ui.unit})` : ''}</span>
+            ${this.renderComponentLabel(
+              component,
+              prop,
+              `${label}${prop.ui?.unit ? ` (${prop.ui.unit})` : ''}`
+            )}
             <pix3-slider-number-editor
               .value=${safeValue}
               .min=${Number(prop.ui?.min)}
@@ -1358,10 +1370,14 @@ export class InspectorPropertyRenderers {
 
       // Script/behaviour tuning knobs get the same drag-to-scrub field as node
       // properties — these are the values users iterate on most.
-      const numericValue = Number.parseFloat(state.value);
+      const numericValue = typeof shown === 'number' ? shown : Number.parseFloat(state.value);
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}${prop.ui?.unit ? ` (${prop.ui.unit})` : ''}</span>
+          ${this.renderComponentLabel(
+            component,
+            prop,
+            `${label}${prop.ui?.unit ? ` (${prop.ui.unit})` : ''}`
+          )}
           <pix3-number-field
             .value=${Number.isFinite(numericValue) ? numericValue : 0}
             .step=${prop.ui?.step ?? 0.01}
@@ -1380,11 +1396,13 @@ export class InspectorPropertyRenderers {
     }
 
     if (prop.type === 'color') {
-      const pickerValue = this.host.getColorPickerValue(state.value);
+      const pickerValue = this.host.getColorPickerValue(
+        typeof shown === 'string' ? shown : state.value
+      );
 
       return html`
         <div class="property-group component-property-group">
-          <span class="property-label">${label}</span>
+          ${this.renderComponentLabel(component, prop, label)}
           <div class="property-color-editor">
             <input
               type="color"
@@ -1421,7 +1439,7 @@ export class InspectorPropertyRenderers {
 
     return html`
       <div class="property-group component-property-group">
-        <span class="property-label">${label}</span>
+        ${this.renderComponentLabel(component, prop, label)}
         <input
           type="text"
           class="property-input property-input--text ${state.isValid
@@ -1902,7 +1920,9 @@ export class InspectorPropertyRenderers {
 
     if (prop.type === 'number') {
       if (prop.name === 'opacity') {
-        const numericValue = Number.parseFloat(state.value);
+        const shownNumber = this.host.wiggleValueFor(`node:${prop.name}`);
+        const numericValue =
+          typeof shownNumber === 'number' ? shownNumber : Number.parseFloat(state.value);
         const safeValue = Number.isFinite(numericValue)
           ? Math.min(Math.max(numericValue, 0), 1)
           : 1;
@@ -1934,7 +1954,9 @@ export class InspectorPropertyRenderers {
         Number.isFinite(prop.ui.max);
 
       if (hasSlider) {
-        const numericValue = Number.parseFloat(state.value);
+        const shownNumber = this.host.wiggleValueFor(`node:${prop.name}`);
+        const numericValue =
+          typeof shownNumber === 'number' ? shownNumber : Number.parseFloat(state.value);
         const safeValue = Number.isFinite(numericValue) ? numericValue : Number(prop.ui?.min);
 
         return html`
@@ -1963,7 +1985,9 @@ export class InspectorPropertyRenderers {
       // Plain scalar: same drag-to-scrub field the transform rows use, so every
       // numeric property in the inspector behaves the same way (drag to scrub,
       // click to type, Shift/Ctrl for fine/coarse).
-      const numericValue = Number.parseFloat(state.value);
+      const shownNumber = this.host.wiggleValueFor(`node:${prop.name}`);
+      const numericValue =
+        typeof shownNumber === 'number' ? shownNumber : Number.parseFloat(state.value);
       return html`
         <div class="property-group">
           ${this.renderPropertyLabel(
@@ -1989,7 +2013,10 @@ export class InspectorPropertyRenderers {
     }
 
     if (prop.type === 'color') {
-      const pickerValue = this.host.getColorPickerValue(state.value);
+      const shownColor = this.host.wiggleValueFor(`node:${prop.name}`);
+      const pickerValue = this.host.getColorPickerValue(
+        typeof shownColor === 'string' ? shownColor : state.value
+      );
 
       return html`
         <div class="property-group">
@@ -2375,33 +2402,143 @@ export class InspectorPropertyRenderers {
     `;
   }
 
+  /**
+   * A component row's label: the text is a button that wiggles the value in the viewport (click
+   * again: full range; again: stop) when the property can wiggle, plus the row revert when the
+   * value differs from the one before the first edit.
+   */
+  renderComponentLabel(component: ScriptComponent, prop: PropertyDefinition, text: string) {
+    const key = getComponentPropertyKey(component.id, prop.name);
+    return this.renderLabel({
+      text,
+      key,
+      wiggleable: isWiggleable(prop),
+      onWiggle: () => this.host.toggleComponentWiggle(component.id, prop),
+      revert: this.host.editBaselines.isChanged(key)
+        ? {
+            value: this.host.editBaselines.baseline(key)?.value,
+            run: () => this.host.revertComponentProperty(component.id, prop),
+          }
+        : null,
+    });
+  }
+
+  /** Wiggle + revert buttons beside a checkbox row (its label already toggles the box). */
+  renderComponentLabelActions(component: ScriptComponent, prop: PropertyDefinition) {
+    const key = getComponentPropertyKey(component.id, prop.name);
+    const wiggling = this.host.wiggleState?.key === key;
+    const changed = this.host.editBaselines.isChanged(key);
+    return html`
+      <span class="property-label-actions">
+        ${isWiggleable(prop)
+          ? html`<button
+              type="button"
+              class="inspector-btn inspector-btn--icon property-wiggle-button ${wiggling
+                ? 'is-active'
+                : ''}"
+              aria-label="Wiggle ${prop.ui?.label ?? prop.name} in the viewport"
+              title=${WIGGLE_TITLE}
+              @click=${() => this.host.toggleComponentWiggle(component.id, prop)}
+            >
+              ${this.host.iconService.getIcon('activity', IconSize.SMALL)}
+            </button>`
+          : nothing}
+        ${changed
+          ? this.renderRevertButton(this.host.editBaselines.baseline(key)?.value, () =>
+              this.host.revertComponentProperty(component.id, prop)
+            )
+          : nothing}
+      </span>
+    `;
+  }
+
+  private renderLabel(options: {
+    text: string;
+    key: string;
+    wiggleable: boolean;
+    onWiggle: () => void;
+    revert: { value: unknown; run: () => Promise<void> } | null;
+    extraClass?: string;
+    title?: string;
+    trailing?: unknown;
+  }) {
+    const wiggling = this.host.wiggleState?.key === options.key;
+    return html`
+      <span
+        class="property-label ${options.extraClass ?? ''} ${wiggling
+          ? 'property-label--wiggling'
+          : ''}"
+        title=${ifDefined(options.title)}
+      >
+        ${options.wiggleable
+          ? html`<button
+              type="button"
+              class="property-label__wiggle"
+              title=${WIGGLE_TITLE}
+              aria-pressed=${wiggling ? 'true' : 'false'}
+              @click=${options.onWiggle}
+            >
+              ${options.text}
+            </button>`
+          : options.text}
+        ${options.trailing ?? nothing}
+        ${options.revert
+          ? this.renderRevertButton(options.revert.value, options.revert.run)
+          : nothing}
+      </span>
+    `;
+  }
+
+  private renderRevertButton(value: unknown, run: () => Promise<void>) {
+    const shown = typeof value === 'string' ? value : JSON.stringify(value);
+    return html`<button
+      class="inspector-btn inspector-btn--icon property-session-revert"
+      type="button"
+      aria-label="Revert to ${shown}"
+      title="Revert to ${shown} (the value before your edits)"
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        void run();
+      }}
+    >
+      ${this.host.iconService.getIcon('corner-up-left', IconSize.SMALL)}
+    </button>`;
+  }
+
   renderPropertyLabel(
     prop: PropertyDefinition,
     label: string,
     isOverridden: boolean,
     description?: string
   ) {
-    return html`
-      <span
-        class="property-label ${isOverridden ? 'property-label--overridden' : ''}"
-        title=${ifDefined(description)}
-      >
-        ${label}
-        ${isOverridden
-          ? html`
-              <button
-                class="inspector-btn inspector-btn--icon"
-                type="button"
-                aria-label="Revert prefab override"
-                title="Revert prefab override"
-                @click=${(e: Event) => this.onRevertPropertyClick(e, prop)}
-              >
-                ${this.host.iconService.getIcon('rotate-ccw', IconSize.SMALL)}
-              </button>
-            `
-          : null}
-      </span>
-    `;
+    const key = `node:${prop.name}`;
+    return this.renderLabel({
+      text: label,
+      key,
+      wiggleable: isWiggleable(prop),
+      onWiggle: () => this.host.toggleNodeWiggle(prop),
+      revert: this.host.editBaselines.isChanged(key)
+        ? {
+            value: this.host.editBaselines.baseline(key)?.value,
+            run: () => this.host.revertNodeProperty(prop),
+          }
+        : null,
+      extraClass: isOverridden ? 'property-label--overridden' : '',
+      title: description,
+      trailing: isOverridden
+        ? html`
+            <button
+              class="inspector-btn inspector-btn--icon"
+              type="button"
+              aria-label="Revert prefab override"
+              title="Revert prefab override"
+              @click=${(e: Event) => this.onRevertPropertyClick(e, prop)}
+            >
+              ${this.host.iconService.getIcon('rotate-ccw', IconSize.SMALL)}
+            </button>
+          `
+        : null,
+    });
   }
 
   onRevertPropertyClick(event: Event, prop: PropertyDefinition): void {

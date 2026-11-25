@@ -62,6 +62,14 @@ export interface PropertyUIHints {
   /** Hide from inspector */
   hidden?: boolean;
 
+  /**
+   * `false` opts the property out of the inspector's wiggle (click the label: the value swings
+   * around its current one in the editor viewport, never written). Use it for values that are
+   * structural or invalid in between — a grid size, a mode switch, a count that rebuilds a scene —
+   * and for values the editor preview never shows (applied only in play).
+   */
+  wiggle?: boolean;
+
   /** Property is read-only */
   readOnly?: boolean | ((target: unknown) => boolean);
 

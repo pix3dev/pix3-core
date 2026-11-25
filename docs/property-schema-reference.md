@@ -114,7 +114,8 @@ interface PropertyUIHints {
   precision?: number;
   unit?: string; // "°", "px", "ms", …
   options?: string[] | Record<string, unknown>; // enum
-  slider?: boolean;
+  slider?: boolean; // a range track beside the number; needs finite min and max
+  wiggle?: boolean; // false: no label-click wiggle (structural, invalid in between, or play-only)
   hidden?: boolean;
   readOnly?: boolean;
   colorFormat?: 'hex' | 'rgb' | 'rgba';
@@ -127,6 +128,8 @@ interface PropertySchema {
   groups?: Record<string, { label: string; expanded?: boolean }>;
 }
 ```
+
+How the inspector uses the number hints: `step` is the arrow-key step (ArrowUp/ArrowDown; Shift ×10, Ctrl/Cmd or Alt ×0.1 — the same modifiers as drag-scrub) and the scrub grid; `precision` is the display decimals, raised to the decimals of `step` when the step is finer (0.005 shows three); a finite `min` **and** `max` fills the field's background up to the value (Blender's range bar) without `slider`.
 
 Inspector behaviour: groups render Base-first then the rest; `number` → number input +
 unit, `boolean` → checkbox, `string` → text input, others fall back to text. User input →

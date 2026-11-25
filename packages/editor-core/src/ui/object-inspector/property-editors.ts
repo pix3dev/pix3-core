@@ -44,6 +44,33 @@ function dispatchLocate(source: HTMLElement, url: string): void {
 /** Axis identity for a number field — drives the coloured chip and reads like Blender/Unity. */
 export type NumberFieldAxis = 'x' | 'y' | 'z' | 'w' | 'h' | '';
 
+/** Decimal places of a step (0.005 → 3); float noise beyond 10 places is ignored. */
+function decimalsOf(v: number): number {
+  if (!Number.isFinite(v) || v === 0) {
+    return 0;
+  }
+  const text = Number.parseFloat(Math.abs(v).toFixed(10)).toString();
+  const dot = text.indexOf('.');
+  return dot < 0 ? 0 : text.length - dot - 1;
+}
+
+/**
+ * The step modifier for drag and arrow keys: Shift = coarse (×10), Ctrl/Cmd or
+ * Alt = fine (×0.1) — Chrome DevTools / Figma / Unity, so the keyboard habit
+ * carries over.
+ */
+function stepMultiplier(event: {
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}): number {
+  if (event.shiftKey) {
+    return 10;
+  }
+  return event.ctrlKey || event.metaKey || event.altKey ? 0.1 : 1;
+}
+
 /**
  * Shared styles for the drag-to-scrub number field. Kept as a standalone
  * template so every vector/size editor renders identical fields.
@@ -73,10 +100,29 @@ const NUMBER_FIELD_STYLES = css`
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
+    position: relative;
   }
 
   .field:hover:not(.disabled):not(.editing) {
     border-color: var(--line-2);
+  }
+
+  .field:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* Blender-style range bar: a field with a finite min and max fills its
+     background up to the value, so the position in the range reads at a glance. */
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--inspector-range-fill, color-mix(in srgb, var(--accent) 24%, transparent));
+    pointer-events: none;
+  }
+
+  .field > :not(.fill) {
+    position: relative;
   }
 
   .field.editing {
@@ -147,10 +193,17 @@ const NUMBER_FIELD_STYLES = css`
 /**
  * Drag-to-scrub number input (Blender / Unity style).
  *
- * - Press and drag horizontally to scrub the value live. Hold Shift for fine
- *   (×0.1) and Ctrl/Cmd for coarse (×10) steps.
+ * - Press and drag horizontally to scrub the value live.
+ * - ArrowUp / ArrowDown step by `step` — in text edit, or with the field
+ *   focused (Tab); Enter on a focused field starts text edit. Holding the key
+ *   repeats, and a held run is one undo step.
+ * - One modifier mapping for drag and arrows, as in Chrome DevTools, Figma and
+ *   Unity: Shift = coarse (×10), Ctrl/Cmd or Alt = fine (×0.1). A fine step
+ *   moves on a grid one decimal finer than `step`.
  * - A plain click (no drag) drops into text-edit mode; Enter or blur commits,
  *   Escape cancels.
+ * - With a finite `min` and `max` the background fills up to the value
+ *   (Blender's range bar).
  *
  * Emits `preview-change` continuously while scrubbing (coalesced into a single
  * undo step by the mutation gateway) and `commit-change` once on release / edit
@@ -200,11 +253,22 @@ export class NumberField extends ComponentBase {
   private dragged = false;
   private accumX = 0;
   private startValue = 0;
+  /** True while held arrow keys step the value: previews until the key is released. */
+  private keyStepping = false;
+  /** A fine (×0.1) step was used: show one more decimal so it is visible. */
+  @state()
+  private showFine = false;
 
   static styles = NUMBER_FIELD_STYLES;
 
+  private get safeStep(): number {
+    return Number.isFinite(this.step) && this.step > 0 ? this.step : 0;
+  }
+
+  /** Display decimals: the schema's precision, but never coarser than `step` (0.005 keeps 3). */
   private get decimals(): number {
-    return Number.isFinite(this.precision) && this.precision >= 0 ? this.precision : 2;
+    const precision = Number.isFinite(this.precision) && this.precision >= 0 ? this.precision : 2;
+    return Math.max(precision, decimalsOf(this.safeStep));
   }
 
   private get scrubSensitivity(): number {
@@ -225,15 +289,32 @@ export class NumberField extends ComponentBase {
     return result;
   }
 
-  /** Snap to the step grid and strip float noise to the field's precision. */
-  private snap(v: number): number {
-    const step = Number.isFinite(this.step) && this.step > 0 ? this.step : 0;
+  /**
+   * Snap to the step grid (a finer one for a fine step: `multiplier` < 1) and
+   * strip float noise to the field's precision.
+   */
+  private snap(v: number, multiplier = 1): number {
+    const step = this.safeStep * Math.min(1, multiplier);
     const snapped = step > 0 ? Math.round(v / step) * step : v;
-    return Number.parseFloat(snapped.toFixed(this.decimals));
+    return Number.parseFloat(snapped.toFixed(Math.max(this.decimals, decimalsOf(step))));
   }
 
+  /** Display text: the field's decimals, one more once a fine step has been used here. */
   private format(v: number): string {
-    return Number.parseFloat(v.toFixed(this.decimals)).toString();
+    return Number.parseFloat(v.toFixed(this.decimals + (this.showFine ? 1 : 0))).toString();
+  }
+
+  /** Edit text: the stored value without rounding, so Enter on an untouched field writes nothing new. */
+  private formatExact(v: number): string {
+    return Number.parseFloat(v.toFixed(10)).toString();
+  }
+
+  /** The range fill (0..1), or null when the field has no finite range. */
+  private get fillRatio(): number | null {
+    if (!Number.isFinite(this.min) || !Number.isFinite(this.max) || this.max <= this.min) {
+      return null;
+    }
+    return Math.min(1, Math.max(0, (this.value - this.min) / (this.max - this.min)));
   }
 
   private emit(type: 'preview-change' | 'commit-change', value: number): void {
@@ -274,9 +355,12 @@ export class NumberField extends ComponentBase {
     this.dragged = true;
     // A scrub previews a coalesced operation on every move: the idle flush waits for the release.
     setGestureInProgress(true);
-    const multiplier = event.shiftKey ? 0.1 : event.ctrlKey || event.metaKey ? 10 : 1;
+    const multiplier = stepMultiplier(event);
+    if (multiplier < 1) {
+      this.showFine = true;
+    }
     const delta = this.accumX * this.scrubSensitivity * multiplier;
-    const next = this.clamp(this.snap(this.startValue + delta));
+    const next = this.clamp(this.snap(this.startValue + delta, multiplier));
     if (next !== this.value) {
       this.value = next;
       this.emit('preview-change', next);
@@ -316,15 +400,84 @@ export class NumberField extends ComponentBase {
 
   private commitEdit(rawValue: string): void {
     this.editing = false;
+    if (this.keyStepping) {
+      // Blur with an arrow still held: the stepped value is the edit.
+      this.endKeyStep();
+      return;
+    }
     const parsed = Number.parseFloat(rawValue);
-    if (Number.isFinite(parsed)) {
+    if (Number.isFinite(parsed) && parsed !== this.value) {
       const next = this.clamp(parsed);
       this.value = next;
       this.emit('commit-change', next);
     }
   }
 
+  /**
+   * ArrowUp / ArrowDown: one step (× the modifier) from the current value —
+   * the typed text while editing. Previews on every repeat; the release commits.
+   */
+  private stepByKey(event: KeyboardEvent, input?: HTMLInputElement): boolean {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return false;
+    }
+    event.preventDefault();
+    if (this.disabled) {
+      return true;
+    }
+    const multiplier = stepMultiplier(event);
+    if (multiplier < 1) {
+      this.showFine = true;
+    }
+    const typed = input ? Number.parseFloat(input.value) : Number.NaN;
+    const from = Number.isFinite(typed) ? typed : this.value;
+    const step = (this.safeStep > 0 ? this.safeStep : 0.01) * multiplier;
+    // Add the step without snapping to the grid (DevTools, Blender): 37.9 + 1 is
+    // 38.9, not 39. Only float noise is rounded away.
+    const sum = from + (event.key === 'ArrowUp' ? step : -step);
+    const places = Math.min(10, Math.max(this.decimals, decimalsOf(step), decimalsOf(from)));
+    const next = this.clamp(Number.parseFloat(sum.toFixed(places)));
+    if (!this.keyStepping) {
+      this.keyStepping = true;
+      setGestureInProgress(true);
+    }
+    this.value = next;
+    if (input) {
+      input.value = this.formatExact(next);
+    }
+    this.emit('preview-change', next);
+    return true;
+  }
+
+  private endKeyStep(): void {
+    if (!this.keyStepping) {
+      return;
+    }
+    this.keyStepping = false;
+    setGestureInProgress(false);
+    this.emit('commit-change', this.value);
+  }
+
+  private onFieldKeydown(event: KeyboardEvent): void {
+    if (this.editing || this.stepByKey(event)) {
+      return;
+    }
+    if (event.key === 'Enter' && !this.disabled) {
+      event.preventDefault();
+      this.enterEdit();
+    }
+  }
+
+  private onKeyup(event: KeyboardEvent): void {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      this.endKeyStep();
+    }
+  }
+
   private onInputKeydown(event: KeyboardEvent): void {
+    if (this.stepByKey(event, event.target as HTMLInputElement)) {
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       (event.target as HTMLInputElement).blur();
@@ -334,17 +487,33 @@ export class NumberField extends ComponentBase {
     }
   }
 
+  protected updated(): void {
+    // `ranged` on the host lets the inspector stretch a ranged field across the
+    // row (the bar needs the width); an open-ended one keeps the number cap.
+    this.toggleAttribute('ranged', this.fillRatio !== null);
+  }
+
   protected render() {
     const chip = this.label || (this.axis ? this.axis.toUpperCase() : '');
-    const editValue = this.format(this.value);
+    const editValue = this.formatExact(this.value);
+    const fill = this.editing ? null : this.fillRatio;
     return html`
       <div
         class="field ${this.editing ? 'editing' : ''} ${this.disabled ? 'disabled' : ''}"
+        role="spinbutton"
+        aria-valuenow=${this.value}
+        aria-valuemin=${ifDefined(Number.isFinite(this.min) ? this.min : undefined)}
+        aria-valuemax=${ifDefined(Number.isFinite(this.max) ? this.max : undefined)}
+        aria-disabled=${this.disabled ? 'true' : 'false'}
+        tabindex=${ifDefined(this.disabled || this.editing ? undefined : 0)}
+        @keydown=${(e: KeyboardEvent) => this.onFieldKeydown(e)}
+        @keyup=${(e: KeyboardEvent) => this.onKeyup(e)}
         @pointerdown=${(e: PointerEvent) => this.onPointerDown(e)}
         @pointermove=${(e: PointerEvent) => this.onPointerMove(e)}
         @pointerup=${(e: PointerEvent) => this.onPointerUp(e)}
         @pointercancel=${(e: PointerEvent) => this.onPointerUp(e)}
       >
+        ${fill === null ? '' : html`<span class="fill" style="width: ${fill * 100}%"></span>`}
         ${chip ? html`<span class="axis axis--${this.axis || 'none'}">${chip}</span>` : ''}
         ${this.editing
           ? html`<input

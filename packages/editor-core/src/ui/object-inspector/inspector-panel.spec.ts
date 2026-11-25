@@ -1616,3 +1616,47 @@ describe('InspectorPanel and re-registered project scripts', () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('InspectorPanel row revert (the value before your edits)', () => {
+  type Params = { propertyPath: string; value: unknown; historyMode?: string };
+  const applying = (node: AmbientLightNode) =>
+    vi.fn(async (command: { params?: Params }) => {
+      if (command.params?.propertyPath === 'intensity') {
+        node.light.intensity = Number(command.params.value);
+      }
+    });
+
+  it('several edits, one click back to the first value; an outside change drops it', async () => {
+    const node = new AmbientLightNode({ id: 'amb', name: 'Ambient', intensity: 0.5 });
+    const execute = applying(node);
+    const { panel } = await setupInspectorForNode(node, execute);
+    const update = async () => {
+      panel.syncValuesFromNode();
+      panel.requestUpdate();
+      await panel.updateComplete;
+    };
+    const revertButton = () => panel.querySelector<HTMLButtonElement>('.property-session-revert');
+
+    expect(revertButton()).toBeNull();
+    await panel.previewPropertyChange('intensity', 0.6);
+    await panel.commitPropertyChange('intensity', 0.7);
+    await panel.applyPropertyChange('intensity', 0.9);
+    await update();
+    expect(revertButton()?.getAttribute('title')).toContain('0.5');
+
+    execute.mockClear();
+    revertButton()!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(execute.mock.calls.map(call => (call[0] as { params?: Params }).params)).toEqual([
+      expect.objectContaining({ propertyPath: 'intensity', value: 0.5, historyMode: 'commit' }),
+    ]);
+    await update();
+    expect(revertButton()).toBeNull();
+
+    // An agent's edit lands on a value this session never wrote: no revert over it.
+    await panel.applyPropertyChange('intensity', 0.8);
+    node.light.intensity = 0.33;
+    await update();
+    expect(revertButton()).toBeNull();
+  });
+});
