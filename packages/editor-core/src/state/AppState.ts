@@ -231,6 +231,11 @@ export interface UIState {
   showLayer3D: boolean;
   /** Projection mode of the editor-controlled 3D camera */
   editorCameraProjection: EditorCameraProjection;
+  /**
+   * View ▸ Look Through Camera: the viewport draws through the scene's camera (the one picked in
+   * the camera dropdown, else the one the game starts with) at the design aspect, navigation locked.
+   */
+  lookThroughCamera: boolean;
   /** Toggle for showing the 3D grid helper */
   showGrid: boolean;
   /** Toggle for the viewport's corner orientation gizmo (X/Y/Z view cube) */
@@ -341,6 +346,7 @@ export const createInitialAppState = (): AppState => ({
     showLayer2D: true,
     showLayer3D: true,
     editorCameraProjection: 'perspective',
+    lookThroughCamera: false,
     showGrid: true,
     showAxisGizmo: true,
     snapToGrid: false,

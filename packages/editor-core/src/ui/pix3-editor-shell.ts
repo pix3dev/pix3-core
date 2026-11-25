@@ -60,6 +60,7 @@ import { createShowPanelCommands } from '@/features/window/ShowPanelCommand';
 import { ResetLayoutCommand } from '@/features/window/ResetLayoutCommand';
 import { createAlign2DMenuCommands } from '@/features/alignment/Align2DMenuCommands';
 import { ToggleGridCommand } from '@/features/viewport/ToggleGridCommand';
+import { ToggleCameraViewCommand } from '@/features/viewport/ToggleCameraViewCommand';
 import { ToggleAxisGizmoCommand } from '@/features/viewport/ToggleAxisGizmoCommand';
 import { ToggleSnapToGridCommand } from '@/features/viewport/ToggleSnapToGridCommand';
 import { ToggleLayer2DCommand } from '@/features/viewport/ToggleLayer2DCommand';
@@ -291,6 +292,7 @@ export class Pix3EditorShell extends ComponentBase {
       ...createAlign2DMenuCommands(),
       ...createTransformModeCommands(),
       new ToggleGridCommand(),
+      new ToggleCameraViewCommand(),
       new ToggleAxisGizmoCommand(),
       new ToggleSnapToGridCommand(),
       new ToggleLayer2DCommand(),

@@ -147,6 +147,9 @@ export class EditorTabComponent extends ComponentBase {
   private showCollisionShapes = false;
 
   @state()
+  private lookThroughCamera = false;
+
+  @state()
   private navigationMode: NavigationMode = '3d';
 
   @state()
@@ -430,6 +433,7 @@ export class EditorTabComponent extends ComponentBase {
             snapToGrid: this.snapToGrid,
             showLighting: this.showLighting,
             showCollisionShapes: this.showCollisionShapes,
+            lookThroughCamera: this.lookThroughCamera,
             navigationMode: this.navigationMode,
             showLayer3D: this.showLayer3D,
             showLayer2D: this.showLayer2D,
@@ -449,6 +453,7 @@ export class EditorTabComponent extends ComponentBase {
             onTransformModeChange: m => this.handleTransformModeChange(m),
             onToggleNavigationMode: () => this.toggleNavigationMode(),
             onSelectPreviewCamera: itemId => this.handlePreviewCameraSelect(itemId),
+            onToggleLookThroughCamera: () => this.toggleLookThroughCamera(),
             onToggleGrid: () => this.toggleGrid(),
             onToggleAxisGizmo: () => this.toggleAxisGizmo(),
             onToggleSnapToGrid: () => this.toggleSnapToGrid(),
@@ -750,6 +755,7 @@ export class EditorTabComponent extends ComponentBase {
     this.showLayer3D = isChecked('view.toggle-layer-3d');
     this.showLighting = isChecked('view.toggle-lighting');
     this.showCollisionShapes = isChecked('view.toggle-collision-shapes');
+    this.lookThroughCamera = isChecked('view.look-through-camera');
     this.transformMode =
       TRANSFORM_MODES.find(mode => isChecked(transformModeCommandId(mode))) ?? 'select';
   }
@@ -760,6 +766,10 @@ export class EditorTabComponent extends ComponentBase {
         this.viewportRenderer.requestRender();
       }
     });
+  }
+
+  private toggleLookThroughCamera(): void {
+    void this.commandDispatcher.executeById('view.look-through-camera');
   }
 
   private toggleGrid(): void {

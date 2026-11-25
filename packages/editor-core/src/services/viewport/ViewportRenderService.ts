@@ -29,6 +29,14 @@ import {
 import type { ColliderShape } from '@/features/scene/collider-shapes';
 import type { Point2D } from '@pix3/runtime';
 import { ViewportAxisGizmo } from '@/services/viewport/ViewportAxisGizmo';
+import {
+  CameraViewCameras,
+  CameraViewOverlay,
+  cameraView2DFraming,
+  fitCameraViewFrame,
+  resolveCameraViewNode,
+  type CameraViewFrame,
+} from '@/services/viewport/ViewportCameraView';
 import { ViewportTransformSession } from '@/services/viewport/ViewportTransformSession';
 import {
   Viewport2DProxyRegistry,
@@ -196,6 +204,14 @@ export class ViewportRendererService {
   private transformGizmo?: THREE.Object3D;
   private selectedObjects = new Set<THREE.Object3D>();
   private previewCamera: THREE.Camera | null = null;
+  private previewCameraNode: Camera3D | null = null;
+  /**
+   * View ▸ Look Through Camera: the Camera3D the viewport draws and picks through, null when the
+   * mode is off or the scene has no camera. Resolved every frame in {@link updateCameraView}.
+   */
+  private cameraViewNode: Camera3D | null = null;
+  private readonly cameraViewCameras = new CameraViewCameras([LAYER_3D, LAYER_GIZMOS]);
+  private readonly cameraViewOverlay = new CameraViewOverlay();
   /** Lazily created post-processing composer (only while a PostProcess node is
    * active). Editor previews the 3D band through it; 2D content and adornments
    * are drawn clean on top. Null when no effects are enabled. */
@@ -926,13 +942,16 @@ export class ViewportRendererService {
     target: { x: number; y: number; z: number };
     zoom?: number;
   } | null {
-    if (!this.camera || !this.orbitControls) return null;
-    const position = this.camera.position;
+    // The orbit controls always hold the editor camera, also while the viewport looks through a
+    // scene camera — that is the pose a tab remembers.
+    const camera = this.getEditorNavigationCamera();
+    if (!camera || !this.orbitControls) return null;
+    const position = camera.position;
     const target = this.orbitControls.target;
     return {
       position: { x: position.x, y: position.y, z: position.z },
       target: { x: target.x, y: target.y, z: target.z },
-      zoom: this.camera.zoom,
+      zoom: camera.zoom,
     };
   }
 
@@ -942,15 +961,108 @@ export class ViewportRendererService {
     zoom?: number;
   }): void {
     this.ensureInitialized();
-    if (!this.camera || !this.orbitControls) return;
+    const camera = this.getEditorNavigationCamera();
+    if (!camera || !this.orbitControls) return;
 
-    this.camera.position.set(state.position.x, state.position.y, state.position.z);
+    camera.position.set(state.position.x, state.position.y, state.position.z);
     this.orbitControls.target.set(state.target.x, state.target.y, state.target.z);
     if (typeof state.zoom === 'number') {
-      this.camera.zoom = state.zoom;
-      this.camera.updateProjectionMatrix();
+      camera.zoom = state.zoom;
+      camera.updateProjectionMatrix();
     }
     this.orbitControls.update();
+  }
+
+  /** The camera the user navigates: the orbit controls' one, whatever the viewport draws through. */
+  private getEditorNavigationCamera():
+    | THREE.PerspectiveCamera
+    | THREE.OrthographicCamera
+    | undefined {
+    const object = this.orbitControls?.object;
+    if (object instanceof THREE.PerspectiveCamera || object instanceof THREE.OrthographicCamera) {
+      return object;
+    }
+    return this.camera;
+  }
+
+  /**
+   * Enter, follow or leave camera view, once per painted frame before anything reads `this.camera`.
+   * The frame is the project's design aspect (`viewportBaseSize`) fitted into the canvas: the game
+   * camera gets that aspect (as `SceneRunner` gives it the screen's), the viewport draws and picks
+   * through an editor copy of it widened to the whole canvas, and the 2D camera is placed so the
+   * design frame covers the same rectangle — the picture the player draws on a screen of that shape.
+   * Navigation is locked meanwhile; leaving restores the editor camera and the scene's 2D view.
+   */
+  private updateCameraView(): void {
+    const graph = appState.ui.lookThroughCamera ? this.sceneManager.getActiveSceneGraph() : null;
+    const sceneId = appState.scenes.activeSceneId;
+    const node = graph
+      ? resolveCameraViewNode(
+          graph.rootNodes,
+          sceneId ? (appState.scenes.previewCameraNodeIds[sceneId] ?? null) : null,
+          graph.nodeMap
+        )
+      : null;
+    const base = this.getProjectViewportBaseSize();
+    const frame = node ? fitCameraViewFrame(this.viewportSize, base.width / base.height) : null;
+    const wasActive = this.cameraViewNode !== null;
+
+    if (!node || !frame) {
+      if (wasActive) this.exitCameraView();
+      return;
+    }
+
+    this.cameraViewNode = node;
+    node.updateAspectRatio(frame.width / frame.height);
+    const camera = this.cameraViewCameras.sync(node.camera, frame, this.viewportSize);
+    if (this.camera !== camera) {
+      if (!wasActive) {
+        this.resetOrbitInternalState();
+        this.cancelPanMomentum();
+      }
+      this.camera = camera;
+      this.setOrbitEnabled(false);
+      this.createTransformControls();
+    }
+    if (this.gridHelper) this.gridHelper.visible = false;
+    this.applyCameraView2DFraming(frame, base);
+    this.cameraViewOverlay.show(this.canvasHost, frame, node.name || node.nodeId);
+  }
+
+  private exitCameraView(): void {
+    this.cameraViewNode = null;
+    this.cameraViewOverlay.hide();
+    this.camera = this.getEditorNavigationCamera() ?? this.perspectiveCamera;
+    this.createTransformControls();
+    // Picks up a projection switch made while the viewport looked through the camera.
+    this.syncEditorCameraProjection();
+    this.syncNavigationMode();
+    this.toggleGrid();
+    this.restoreZoomFromState();
+    this.sync2DServiceFrameThickness();
+    if (this.selection2DOverlay) this.refreshGizmoPositions();
+  }
+
+  private applyCameraView2DFraming(
+    frame: CameraViewFrame,
+    base: { width: number; height: number }
+  ): void {
+    const ortho = this.orthographicCamera;
+    if (!ortho) return;
+    const framing = cameraView2DFraming(frame, this.viewportSize, base, ortho.top - ortho.bottom);
+    if (
+      ortho.position.x === framing.x &&
+      ortho.position.y === framing.y &&
+      ortho.zoom === framing.zoom
+    ) {
+      return;
+    }
+    ortho.position.set(framing.x, framing.y, DEFAULT_2D_CAMERA_Z);
+    ortho.zoom = framing.zoom;
+    ortho.updateProjectionMatrix();
+    this.orthographicControls?.target.set(framing.x, framing.y, 0);
+    this.sync2DServiceFrameThickness();
+    if (this.selection2DOverlay) this.refreshGizmoPositions();
   }
 
   private setOrbitEnabled(enabled: boolean): void {
@@ -958,7 +1070,13 @@ export class ViewportRendererService {
     // Any appState.ui change re-runs syncNavigationMode() → setOrbitEnabled(true). During a
     // gizmo drag that would wake OrbitControls, which already entered ROTATE on the same
     // pointerdown, and the camera would spin along with the dragged object.
-    if (enabled && (appState.ui.navigationMode === '2d' || this.transformControls?.dragging)) {
+    // Camera view: the pose is the game camera's, never the editor's to orbit.
+    if (
+      enabled &&
+      (appState.ui.navigationMode === '2d' ||
+        this.transformControls?.dragging ||
+        this.cameraViewNode !== null)
+    ) {
       this.orbitControls.enabled = false;
       return;
     }
@@ -1136,6 +1254,11 @@ export class ViewportRendererService {
       return;
     }
 
+    // In camera view `this.camera` is the game camera's copy; the projection switch lands on exit.
+    if (this.cameraViewNode) {
+      return;
+    }
+
     const targetProjection = appState.ui.editorCameraProjection;
     const nextCamera =
       targetProjection === 'orthographic' ? this.editorOrthographicCamera : this.perspectiveCamera;
@@ -1182,8 +1305,9 @@ export class ViewportRendererService {
   }
 
   toggleGrid(): void {
-    if (this.gridHelper && this.gridHelper) {
-      this.gridHelper.visible = appState.ui.showGrid;
+    if (this.gridHelper) {
+      // The game has no editor grid; camera view hides it.
+      this.gridHelper.visible = appState.ui.showGrid && !this.cameraViewNode;
     }
   }
 
@@ -1230,6 +1354,7 @@ export class ViewportRendererService {
   }
 
   zoomDefault(): void {
+    if (this.cameraViewNode) return;
     if (appState.ui.navigationMode === '2d') {
       this.reset2DView();
       return;
@@ -1246,6 +1371,7 @@ export class ViewportRendererService {
   }
 
   zoomAll(): void {
+    if (this.cameraViewNode) return;
     if (appState.ui.navigationMode === '2d') {
       this.fit2DViewToSceneContent();
       return;
@@ -1341,6 +1467,7 @@ export class ViewportRendererService {
    * `factor > 1` zooms in, `factor < 1` zooms out. Works in both 2D and 3D modes.
    */
   zoomBy(factor: number): void {
+    if (this.cameraViewNode) return;
     if (!Number.isFinite(factor) || factor <= 0) {
       return;
     }
@@ -1402,10 +1529,12 @@ export class ViewportRendererService {
    * Returns false when nothing frameable was resolved (caller may fall back).
    */
   frameNodes(nodes: readonly NodeBase[], opts: FrameNodesOptions = {}): boolean {
+    const persist = opts.persist ?? true;
+    // Camera view holds the frame the game camera gives it; a framing would be undone next frame.
+    if (persist && this.cameraViewNode) return true;
     const computed = this.computeFramingBounds(nodes);
     if (!computed) return false;
     const { bounds, dim } = computed;
-    const persist = opts.persist ?? true;
 
     if (opts.switchNavigationMode && appState.ui.navigationMode !== dim) {
       this.switchNavigationModeSync(dim);
@@ -2033,6 +2162,8 @@ export class ViewportRendererService {
   private renderFrameBody(): void {
     if (!this.renderer || !this.scene || !this.camera) return;
 
+    this.updateCameraView();
+
     // Advance animation mixers
     this.animationTimer.update();
     const delta = Math.min(this.animationTimer.getDelta(), MAX_PREVIEW_DELTA_S);
@@ -2053,7 +2184,7 @@ export class ViewportRendererService {
     }
 
     // After the controls: a view-cube flight owns the camera pose for this frame.
-    this.axisGizmo.update(delta);
+    if (!this.cameraViewNode) this.axisGizmo.update(delta);
 
     this.contentSync3D.syncSprite3DBillboarding(this.camera);
 
@@ -2145,8 +2276,11 @@ export class ViewportRendererService {
       this.scene.background = savedBackground;
     }
 
-    // Render camera preview inset if a camera is selected
-    if (this.previewCamera) {
+    // Render camera preview inset if a camera is selected (camera view already shows it whole)
+    if (this.previewCamera && !this.cameraViewNode) {
+      // The aspect the game gives the camera on a screen of the design's shape.
+      const base = this.getProjectViewportBaseSize();
+      this.previewCameraNode?.updateAspectRatio(base.width / base.height);
       const savedBackground = this.scene.background;
       this.scene.background = null;
       const pixelRatio = this.renderer.getPixelRatio();
@@ -2230,7 +2364,7 @@ export class ViewportRendererService {
 
     // Orientation gizmo, over every pass. `autoClear` stays off: the gizmo owns a
     // 128px corner of the same framebuffer, and a clear here wipes the whole frame.
-    if (!this.suppressGizmosForCapture) {
+    if (!this.suppressGizmosForCapture && !this.cameraViewNode) {
       this.renderer.autoClear = false;
       this.axisGizmo.render(this.renderer);
     }
@@ -2656,21 +2790,25 @@ export class ViewportRendererService {
 
   /** Delegates to {@link ViewportNavigation.pan2D}. */
   pan2D(deltaX: number, deltaY: number): void {
+    if (this.cameraViewNode) return;
     this.navigation.pan2D(deltaX, deltaY);
   }
 
   /** Delegates to {@link ViewportNavigation.pan2DByDrag}. */
   pan2DByDrag(deltaX: number, deltaY: number): void {
+    if (this.cameraViewNode) return;
     this.navigation.pan2DByDrag(deltaX, deltaY);
   }
 
   /** Delegates to {@link ViewportNavigation.zoom2D}. */
   zoom2D(factor: number): void {
+    if (this.cameraViewNode) return;
     this.navigation.zoom2D(factor);
   }
 
   /** Delegates to {@link ViewportNavigation.zoom2DAroundPoint}. */
   zoom2DAroundPoint(factor: number, screenX: number, screenY: number): void {
+    if (this.cameraViewNode) return;
     this.navigation.zoom2DAroundPoint(factor, screenX, screenY);
   }
 
@@ -2681,6 +2819,7 @@ export class ViewportRendererService {
 
   /** Delegates to {@link ViewportNavigation.setZoom2D}. */
   setZoom2D(zoom: number): void {
+    if (this.cameraViewNode) return;
     this.navigation.setZoom2D(zoom);
   }
 
@@ -2717,6 +2856,7 @@ export class ViewportRendererService {
 
   /** Delegates to {@link ViewportNavigation.saveZoomToState}. */
   saveZoomToState(): void {
+    if (this.cameraViewNode) return;
     this.navigation.saveZoomToState();
   }
 
@@ -2727,6 +2867,7 @@ export class ViewportRendererService {
 
   /** Delegates to {@link ViewportNavigation.startPanMomentum}. */
   startPanMomentum(): void {
+    if (this.cameraViewNode) return;
     this.navigation.startPanMomentum();
   }
 
@@ -3364,13 +3505,10 @@ export class ViewportRendererService {
 
     // Clear previous selection object tracking
     this.selectedObjects.clear();
-    this.previewCamera =
-      previewCameraNodeId !== null
-        ? (() => {
-            const previewNode = sceneGraph.nodeMap.get(previewCameraNodeId);
-            return previewNode instanceof Camera3D ? previewNode.camera : null;
-          })()
-        : null;
+    const previewNode =
+      previewCameraNodeId !== null ? sceneGraph.nodeMap.get(previewCameraNodeId) : undefined;
+    this.previewCameraNode = previewNode instanceof Camera3D ? previewNode : null;
+    this.previewCamera = this.previewCameraNode?.camera ?? null;
 
     // Add selection boxes for selected nodes and attach transform controls to the first one
     let firstSelectedNode: Node3D | null = null;
@@ -4749,11 +4887,13 @@ export class ViewportRendererService {
    * viewport must not also treat it as a pick.
    */
   handleAxisGizmoPointerDown(event: PointerEvent): boolean {
+    if (this.cameraViewNode) return false;
     return this.axisGizmo.handlePointerDown(event);
   }
 
   /** True while a pointer event lands on the orientation gizmo's corner box. */
   isAxisGizmoInteraction(event: PointerEvent): boolean {
+    if (this.cameraViewNode) return false;
     return this.axisGizmo.containsPointer(event);
   }
 
@@ -4768,6 +4908,7 @@ export class ViewportRendererService {
 
   dispose(): void {
     this.disposeGestureProbe();
+    this.cameraViewOverlay.hide();
     // Cancel animation loop
     if (this.animationId !== undefined) {
       this.frameTicker.cancel(this.animationId);

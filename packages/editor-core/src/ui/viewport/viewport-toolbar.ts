@@ -14,6 +14,8 @@ export interface ViewportToolbarState {
   readonly snapToGrid: boolean;
   readonly showLighting: boolean;
   readonly showCollisionShapes: boolean;
+  /** View ▸ Look Through Camera is on. */
+  readonly lookThroughCamera: boolean;
   readonly navigationMode: NavigationMode | null;
   readonly showLayer3D: boolean;
   readonly showLayer2D: boolean;
@@ -46,6 +48,7 @@ export interface ViewportToolbarHandlers {
   readonly onTransformModeChange?: (mode: TransformMode) => void;
   readonly onToggleNavigationMode?: () => void;
   readonly onSelectPreviewCamera: (itemId: string) => void;
+  readonly onToggleLookThroughCamera?: () => void;
   readonly onToggleGrid: () => void;
   readonly onToggleAxisGizmo: () => void;
   readonly onToggleSnapToGrid: () => void;
@@ -176,6 +179,20 @@ export function renderViewportToolbar(
             handlers.onSelectPreviewCamera(e.detail.id);
           }}
         ></pix3-dropdown-button>
+        ${handlers.onToggleLookThroughCamera
+          ? renderToolbarButton(
+              {
+                ariaLabel: 'Look through camera',
+                title: `Look Through Camera: ${state.lookThroughCamera ? 'On' : 'Off'} (0)`,
+                iconName: 'video',
+                isPressed: state.lookThroughCamera,
+                isActive: state.lookThroughCamera,
+                onClick: handlers.onToggleLookThroughCamera,
+                extraClass: 'toolbar-button--camera-view',
+              },
+              iconService
+            )
+          : null}
       </div>
 
       ${state.showLocalePreview && handlers.onSelectPreviewLocale
