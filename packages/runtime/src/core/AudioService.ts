@@ -70,6 +70,23 @@ type ActiveAudioPlaybackEntry = Omit<ActiveAudioPlaybackSnapshot, 'elapsedMs'>;
 
 type WebkitAudioContextCtor = new () => AudioContext;
 
+/**
+ * Events that may carry the browser's user activation, i.e. the ones `resume()` can succeed in.
+ * `pointerdown` alone is not enough: by the HTML spec a TOUCH activates on `pointerup` / `touchend`
+ * (only a mouse activates on `pointerdown`), and iOS Safari follows it — a game that unlocked on
+ * `pointerdown` was silent on every iPhone while working on desktop. Listening to all of them costs
+ * one idempotent call per event.
+ */
+const GESTURE_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'touchstart',
+  'touchend',
+  'mousedown',
+  'click',
+  'keydown',
+] as const;
+
 interface WindowWithWebkitAudioContext extends Window {
   webkitAudioContext?: WebkitAudioContextCtor;
 }
@@ -94,6 +111,16 @@ export class AudioService {
   /** Page-activity half of {@link wantsAudible}: the document is visible and focused. */
   private pageActive = true;
   /**
+   * The player has touched this page since it last lost focus. A gesture inside the page is proof it
+   * is the one being used even when `document.hasFocus()` says otherwise — a game in a portal's
+   * iframe on iOS Safari is never focused by a tap, and treating it as "unfocused" kept it muted
+   * (and dropped every one-shot) for the whole session.
+   */
+  private interactedSinceBlur = false;
+  private lastFocused = true;
+  /** iOS: a silent buffer started inside the first gesture, which is what really opens the output. */
+  private primed = false;
+  /**
    * Host-pause half of {@link wantsAudible}. A paused game must go quiet even though its window is
    * still focused — a frozen scene over continuing music reads as a hang, not a pause. Suspending
    * the context (rather than stopping playbacks) is what makes resume seamless: every buffer picks
@@ -104,10 +131,7 @@ export class AudioService {
   /** Whether the browser has ever permitted this context to run (autoplay unlock has happened). */
   private unlockedByGesture = false;
   private warnedSuspendedPlay = false;
-  private readonly unlockFromPointerDown = (): void => {
-    this.unlock();
-  };
-  private readonly unlockFromKeydown = (): void => {
+  private readonly unlockFromGesture = (): void => {
     this.unlock();
   };
   private readonly handleContextStateChange = (): void => {
@@ -156,10 +180,13 @@ export class AudioService {
     // Deliberately NOT `{ once: true }`: `resume()` can reject (the gesture was not one the browser
     // counts, the context was still being constructed), and a one-shot listener spends the only
     // retry the service has on that failure. `unlock()` is idempotent and costs nothing per event.
-    window.addEventListener('pointerdown', this.unlockFromPointerDown);
-    window.addEventListener('keydown', this.unlockFromKeydown);
+    // Capture phase: a game handler that stops propagation must not swallow the unlock.
+    for (const type of GESTURE_EVENTS) {
+      window.addEventListener(type, this.unlockFromGesture, { capture: true, passive: true });
+    }
 
     // Auto-mute while the page is hidden or unfocused.
+    this.lastFocused = appLifecycle.focused;
     this.disposeLifecycle = appLifecycle.subscribe(this.handleActivityChange);
     // The reconciler's feedback edge: every completed suspend/resume re-runs it, so a transition
     // that landed after the intent behind it had already changed is corrected instead of sticking.
@@ -289,7 +316,13 @@ export class AudioService {
   }
 
   private handleActivityChange = (): void => {
-    this.pageActive = appLifecycle.visible && appLifecycle.focused;
+    const focused = appLifecycle.focused;
+    if (this.lastFocused && !focused) {
+      // A real blur (the player went elsewhere): only a new gesture here counts again.
+      this.interactedSinceBlur = false;
+    }
+    this.lastFocused = focused;
+    this.pageActive = appLifecycle.visible && (focused || this.interactedSinceBlur);
     this.updateWantsAudible();
   };
 
@@ -351,7 +384,9 @@ export class AudioService {
 
     // Only resume a context the browser has already let us out of autoplay jail for. Before the
     // first gesture `resume()` rejects, and retrying it on every focus event would spam the console.
-    if (context.state === 'suspended' && this.unlockedByGesture) {
+    // iOS also has 'interrupted' (a call, Siri, another app took the output): resume() leaves it too.
+    const state = context.state as string;
+    if ((state === 'suspended' || state === 'interrupted') && this.unlockedByGesture) {
       void context.resume().catch(err => {
         console.warn('[AudioService] Failed to resume AudioContext:', err);
       });
@@ -370,7 +405,35 @@ export class AudioService {
     }
 
     this.unlockedByGesture = true;
-    this.reconcileContextState();
+    if (!this.interactedSinceBlur && appLifecycle.visible) {
+      this.interactedSinceBlur = true;
+      this.handleActivityChange();
+    } else {
+      this.reconcileContextState();
+    }
+    this.prime();
+  }
+
+  /**
+   * Start one silent sample inside the gesture, once. iOS Safari opens the audio output for a page
+   * only when a source starts during a user activation; `resume()` alone can report 'running' and
+   * stay inaudible.
+   */
+  private prime(): void {
+    const context = this.context;
+    if (this.primed || !context || typeof context.createBuffer !== 'function') {
+      return;
+    }
+    try {
+      const source = context.createBufferSource();
+      source.buffer = context.createBuffer(1, 1, context.sampleRate || 44100);
+      source.connect(context.destination);
+      source.start(0);
+      source.onended = () => source.disconnect();
+      this.primed = true;
+    } catch {
+      // Retried on the next gesture.
+    }
   }
 
   /**
@@ -585,8 +648,9 @@ export class AudioService {
   }
 
   dispose(): void {
-    window.removeEventListener('pointerdown', this.unlockFromPointerDown);
-    window.removeEventListener('keydown', this.unlockFromKeydown);
+    for (const type of GESTURE_EVENTS) {
+      window.removeEventListener(type, this.unlockFromGesture, { capture: true });
+    }
     this.disposeLifecycle?.();
     this.disposeLifecycle = null;
     this.context?.removeEventListener?.('statechange', this.handleContextStateChange);
@@ -599,6 +663,8 @@ export class AudioService {
     this.pageActive = true;
     this.pausedByHost = false;
     this.unlockedByGesture = false;
+    this.interactedSinceBlur = false;
+    this.primed = false;
   }
 
   private createPlaybackId(): string {

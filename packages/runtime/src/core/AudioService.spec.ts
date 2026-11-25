@@ -501,6 +501,79 @@ describe('AudioService', () => {
   });
 
   /**
+   * iOS Safari: a touch grants user activation on `pointerup` / `touchend`, not on `pointerdown`, and
+   * a game inside a portal's iframe is never focused by a tap. Either one alone kept a game silent on
+   * every iPhone while it played fine on desktop.
+   */
+  describe('iOS unlock', () => {
+    /** A context the browser starts in autoplay jail, as every page does before a gesture. */
+    class SuspendedAudioContext extends MockAudioContext {
+      state: AudioContextState = 'suspended';
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('AudioContext', SuspendedAudioContext as unknown as typeof AudioContext);
+    });
+
+    it.each(['pointerup', 'touchend', 'click'])('resumes on %s (a touch activates there)', type => {
+      const service = new AudioService();
+      const ctx = context();
+      expect(ctx.state).toBe('suspended');
+
+      window.dispatchEvent(new Event(type));
+      ctx.settle();
+      expect(ctx.state).toBe('running');
+      service.dispose();
+    });
+
+    it('a tap inside a page that never got focus (an iframe) makes it audible', () => {
+      documentFocused = false;
+      const service = new AudioService();
+      const ctx = context();
+
+      window.dispatchEvent(new Event('touchend'));
+      ctx.settle();
+      expect(ctx.state).toBe('running');
+
+      // and a one-shot is started, not dropped as "page away"
+      service.play(createAudioBufferMock({ duration: 1, channels: 1, sampleRate: 48000 }));
+      expect(service.getActivePlaybackSnapshot(0)).toHaveLength(1);
+      service.dispose();
+    });
+
+    it('a real blur after the tap mutes again until the next gesture', () => {
+      const service = new AudioService();
+      const ctx = context();
+      window.dispatchEvent(new Event('pointerup'));
+      ctx.settle();
+      expect(ctx.state).toBe('running');
+
+      documentFocused = false;
+      window.dispatchEvent(new Event('blur'));
+      ctx.settle();
+      expect(ctx.state).toBe('suspended');
+
+      window.dispatchEvent(new Event('touchend'));
+      ctx.settle();
+      expect(ctx.state).toBe('running');
+      service.dispose();
+    });
+
+    it("resumes a context iOS left 'interrupted'", () => {
+      const service = new AudioService();
+      const ctx = context();
+      window.dispatchEvent(new Event('touchend'));
+      ctx.settle();
+
+      (ctx as { state: string }).state = 'interrupted';
+      window.dispatchEvent(new Event('touchend'));
+      ctx.settle();
+      expect(ctx.state).toBe('running');
+      service.dispose();
+    });
+  });
+
+  /**
    * The host pause (the editor's Pause button, `game_time {paused: true}`) is the second reason the
    * mixer can go quiet, and it is deliberately independent of focus: a paused game sits in a window
    * that is still focused, and music playing on over a frozen scene reads as a hang. Suspending the

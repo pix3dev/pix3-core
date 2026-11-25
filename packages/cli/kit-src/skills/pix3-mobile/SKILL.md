@@ -199,6 +199,11 @@ differ are not merged (the engine migrates after `read`): the newer schema wins 
 ## iOS audio
 
 The engine starts audio on the first touch, mutes it in the background and resumes it on return.
+It unlocks on every event a touch can carry user activation on (`pointerup`, `touchend`, `click` —
+iOS ignores `pointerdown` for that), starts a silent sample inside that gesture, resumes an
+`interrupted` context, and treats a tapped page as active even when `document.hasFocus()` is false
+(a portal's iframe on iOS is never focused by a tap). Do not add an unlock of your own. The ring /
+silent switch still mutes Web Audio on an iPhone — test with it off before calling the game silent.
 iOS can hand back, after a lock / unlock or a phone call, a context that says `running` while
 nothing sounds (its clock does not advance); the engine does not detect that yet. On a device:
 lock and unlock mid-game, take a call, switch apps with music playing — and if the game comes back
